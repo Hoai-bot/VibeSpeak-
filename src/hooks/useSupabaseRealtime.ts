@@ -24,22 +24,31 @@ export function useSupabaseRealtime(userId: string, betAmount: number) {
     fetchOrCreateProfile();
   }, [userId]);
 
-  // 2. Hàm Cập nhật EXP Thực Tế
+  // 2. Cập nhật EXP Thực Tế lên Supabase Database
   const updateUserExp = async (expChange: number) => {
     const newExp = Math.max(0, userExp + expChange);
     setUserExp(newExp);
     await supabase.from('profiles').update({ exp: newExp }).eq('id', userId);
   };
 
+  // 3. Hàm tìm trận PvP 1v1 (Lọc bỏ hoàn toàn các phòng rác tạo trước 30 giây)
   const findMatch = async () => {
     setMatchStatus('searching');
+    setMatchId(null);
+    setOpponent(null);
+    setOpponentScore(null);
 
+    // Lấy mốc thời gian 30 giây trước để bỏ qua phòng treo cũ
+    const thirtySecondsAgo = new Date(Date.now() - 30 * 1000).toISOString();
+
+    // BƯỚC A: Chỉ quét tìm các phòng "waiting" MỚI TẠO trong 30s trở lại đây
     const { data: waitingMatches } = await supabase
       .from('arena_matches')
       .select('*')
       .eq('status', 'waiting')
       .eq('bet_amount', betAmount)
       .neq('player1_id', userId)
+      .gt('created_at', thirtySecondsAgo)
       .order('created_at', { ascending: true })
       .limit(1);
 
@@ -59,6 +68,7 @@ export function useSupabaseRealtime(userId: string, betAmount: number) {
       }
     }
 
+    // BƯỚC B: Tạo phòng mới và giữ nguyên trạng thái 'searching' để chờ Player 2
     const { data: newMatch } = await supabase
       .from('arena_matches')
       .insert([{ player1_id: userId, bet_amount: betAmount, status: 'waiting' }])
@@ -71,12 +81,14 @@ export function useSupabaseRealtime(userId: string, betAmount: number) {
     }
   };
 
+  // 4. Gửi điểm số bài nói lên Supabase Arena Match
   const submitScore = async (score: number) => {
     if (!matchId) return;
     const scoreData = isPlayer1 ? { player1_score: score } : { player2_score: score };
     await supabase.from('arena_matches').update(scoreData).eq('id', matchId);
   };
 
+  // 5. Đồng bộ Realtime khi có Player 2 tham gia hoặc gửi điểm
   useEffect(() => {
     if (!matchId) return;
 
@@ -86,8 +98,10 @@ export function useSupabaseRealtime(userId: string, betAmount: number) {
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'arena_matches', filter: `id=eq.${matchId}` },
         (payload) => {
-          if (payload.new.status === 'in_progress' && matchStatus !== 'found') {
-            setOpponent(payload.new.player2_id);
+          if (payload.new.status === 'in_progress' && payload.new.player2_id) {
+            if (isPlayer1) {
+              setOpponent(payload.new.player2_id);
+            }
             setMatchStatus('found');
           }
 
@@ -103,7 +117,7 @@ export function useSupabaseRealtime(userId: string, betAmount: number) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [matchId, matchStatus, isPlayer1]);
+  }, [matchId, isPlayer1]);
 
   return { findMatch, submitScore, matchStatus, opponent, opponentScore, userExp, updateUserExp };
 }

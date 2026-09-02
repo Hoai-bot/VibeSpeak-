@@ -4,9 +4,19 @@ import confetti from 'canvas-confetti';
 import { useSupabaseRealtime } from '../hooks/useSupabaseRealtime';
 import { transcribeAndGradeAudio } from '../services/groqClient';
 
-export default function AllInArenaScreen({ onBack }: { onBack: () => void }) {
+export default function AllInArenaScreen({ 
+  onBack, 
+  customUserId 
+}: { 
+  onBack: () => void; 
+  customUserId?: string 
+}) {
   const [betAmount, setBetAmount] = useState<number>(100);
-  const userIdRef = useRef('runner_' + Math.floor(Math.random() * 100000));
+
+  // Sinh ID ngẫu nhiên riêng cho từng Tab để không bị trùng nhau gây nghẽn match-making
+  const userIdRef = useRef(
+    customUserId || 'runner_' + Math.floor(Math.random() * 1000000)
+  );
   const DUMMY_USER_ID = userIdRef.current;
 
   const { findMatch, submitScore, matchStatus, opponent, opponentScore, userExp, updateUserExp } =
@@ -20,7 +30,7 @@ export default function AllInArenaScreen({ onBack }: { onBack: () => void }) {
   const mediaRecorderRef = useRef<any>(null);
   const audioChunksRef = useRef<any[]>([]);
 
-  // 🔊 Phát âm thanh hiệu ứng bằng Web Audio API
+  // 🔊 Hiệu ứng âm thanh bằng Web Audio API
   const playSoundEffect = (type: 'victory' | 'defeat') => {
     try {
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
@@ -28,7 +38,6 @@ export default function AllInArenaScreen({ onBack }: { onBack: () => void }) {
       const ctx = new AudioCtx();
 
       if (type === 'victory') {
-        // Tần số nốt nhạc chiến thắng (C5 -> E5 -> G5 -> C6)
         const notes = [523.25, 659.25, 783.99, 1046.5];
         notes.forEach((freq, idx) => {
           const osc = ctx.createOscillator();
@@ -43,7 +52,6 @@ export default function AllInArenaScreen({ onBack }: { onBack: () => void }) {
           osc.stop(ctx.currentTime + idx * 0.12 + 0.3);
         });
       } else {
-        // Âm thanh trầm thất bại
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
         osc.type = 'sawtooth';
@@ -61,7 +69,7 @@ export default function AllInArenaScreen({ onBack }: { onBack: () => void }) {
     }
   };
 
-  // 🎆 Bắn pháo hoa Neon rực rỡ
+  // 🎆 Bắn pháo hoa Neon khi thắng
   const triggerVictoryConfetti = () => {
     confetti({
       particleCount: 120,
@@ -74,51 +82,77 @@ export default function AllInArenaScreen({ onBack }: { onBack: () => void }) {
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaRecorderRef.current = new MediaRecorder(stream);
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4';
+      mediaRecorderRef.current = new MediaRecorder(stream, { mimeType });
       audioChunksRef.current = [];
 
       mediaRecorderRef.current.ondataavailable = (event: any) => {
-        if (event.data.size > 0) audioChunksRef.current.push(event.data);
+        if (event.data && event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
       };
 
-      mediaRecorderRef.current.start();
+      mediaRecorderRef.current.start(100);
       setIsRecording(true);
     } catch (err) {
       alert('Không thể truy cập Micro!');
     }
   };
 
-  const stopRecording = () => {
-    if (!mediaRecorderRef.current) return;
+  const stopRecording = async () => {
+    const mediaRecorder = mediaRecorderRef.current;
+    if (!mediaRecorder || mediaRecorder.state === 'inactive') return;
+
     setIsRecording(false);
     setIsAnalyzing(true);
 
-    mediaRecorderRef.current.onstop = async () => {
-      const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
+    const processAudio = new Promise<Blob>((resolve) => {
+      mediaRecorder.onstop = () => {
+        const audioBlob = new Blob(audioChunksRef.current, {
+          type: mediaRecorder.mimeType || 'audio/webm',
+        });
+        resolve(audioBlob);
+      };
+      mediaRecorder.stop();
+    });
+
+    try {
+      if (mediaRecorder.stream) {
+        mediaRecorder.stream.getTracks().forEach((track: any) => track.stop());
+      }
+
+      const audioBlob = await processAudio;
       const res = await transcribeAndGradeAudio(audioBlob);
       setMyResult(res);
-      setIsAnalyzing(false);
 
-      submitScore(res.score);
-
-      if (mediaRecorderRef.current?.stream) {
-        mediaRecorderRef.current.stream.getTracks().forEach((track: any) => track.stop());
+      if (res.score > 0) {
+        await submitScore(res.score);
       }
-    };
-
-    mediaRecorderRef.current.stop();
+    } catch (error) {
+      console.error('❌ Lỗi thu âm Trạm 2:', error);
+      alert('Lỗi phân tích bài nói!');
+    } finally {
+      setIsAnalyzing(false);
+    }
   };
 
+  // Logic phân định kết quả (Chỉ tính khi cả 2 đã có điểm > 0)
   const getGameResult = () => {
-    if (!myResult || opponentScore === null) return null;
-    if (myResult.score > opponentScore) return { status: '🏆 VICTORY', color: '#39FF14', expChange: betAmount, sound: 'victory' };
-    if (myResult.score < opponentScore) return { status: '💀 DEFEAT', color: '#FF0055', expChange: -betAmount, sound: 'defeat' };
+    if (!myResult || myResult.score === 0 || opponentScore === null || opponentScore === 0) {
+      return null;
+    }
+
+    if (myResult.score > opponentScore) {
+      return { status: '🏆 VICTORY', color: '#39FF14', expChange: betAmount, sound: 'victory' };
+    }
+    if (myResult.score < opponentScore) {
+      return { status: '💀 DEFEAT', color: '#FF0055', expChange: -betAmount, sound: 'defeat' };
+    }
     return { status: '🤝 DRAW', color: '#00FFFF', expChange: 0, sound: 'draw' };
   };
 
   const gameResult = getGameResult();
 
-  // Kích hoạt hiệu ứng khi có kết quả
   useEffect(() => {
     if (gameResult && !expProcessed) {
       updateUserExp(gameResult.expChange);
@@ -141,12 +175,15 @@ export default function AllInArenaScreen({ onBack }: { onBack: () => void }) {
 
       <Text style={styles.header}>⚡ VIBESPEAK CYBER ARENA ⚡</Text>
 
-      {/* THẺ RUNNER HOLOGRAPHIC */}
+      {/* THẺ RUNNER */}
       <View style={styles.profileBadge}>
-        <Text style={styles.profileText}>👤 RUNNER: <Text style={{ color: '#00FFFF' }}>{DUMMY_USER_ID}</Text></Text>
+        <Text style={styles.profileText}>
+          👤 RUNNER: <Text style={{ color: '#00FFFF' }}>{DUMMY_USER_ID}</Text>
+        </Text>
         <Text style={styles.expBadgeText}>💎 {userExp} EXP</Text>
       </View>
 
+      {/* TRẠNG THÁI 1: CHỌN MỨC CƯỢC */}
       {matchStatus === 'idle' && (
         <View style={styles.box}>
           <Text style={styles.label}>[ CHỌN MỨC CƯỢC HŨ EXP ]</Text>
@@ -157,7 +194,9 @@ export default function AllInArenaScreen({ onBack }: { onBack: () => void }) {
                 style={[styles.betBtn, betAmount === amount && styles.activeBet]}
                 onPress={() => setBetAmount(amount)}
               >
-                <Text style={[styles.betText, betAmount === amount && { color: '#39FF14' }]}>{amount} EXP</Text>
+                <Text style={[styles.betText, betAmount === amount && { color: '#39FF14' }]}>
+                  {amount} EXP
+                </Text>
               </TouchableOpacity>
             ))}
           </View>
@@ -167,15 +206,25 @@ export default function AllInArenaScreen({ onBack }: { onBack: () => void }) {
         </View>
       )}
 
+      {/* TRẠNG THÁI 2: ĐANG SCAN TÌM ĐỐI THỦ */}
       {matchStatus === 'searching' && (
         <View style={styles.box}>
           <ActivityIndicator size="large" color="#FF007F" style={{ marginBottom: 15 }} />
-          <Text style={styles.statusText}>> SCANNING CYBERNETIC GRID...</Text>
+          <Text style={styles.statusText}>> SCANNING CYBERNETIC GRID FOR OPPONENT...</Text>
         </View>
       )}
 
+      {/* TRẠNG THÁI 3: ĐÃ MATCH THÀNH CÔNG -> BẮT ĐẦU THU ÂM */}
       {matchStatus === 'found' && (
-        <View style={[styles.box, { borderColor: gameResult ? gameResult.color : '#39FF14', shadowColor: gameResult ? gameResult.color : '#39FF14' }]}>
+        <View
+          style={[
+            styles.box,
+            {
+              borderColor: gameResult ? gameResult.color : '#39FF14',
+              shadowColor: gameResult ? gameResult.color : '#39FF14',
+            },
+          ]}
+        >
           <Text style={styles.vsTitle}>⚡ TARGET: {opponent} ⚡</Text>
           <Text style={styles.potText}>💰 TOTAL POT: {betAmount * 2} EXP</Text>
 
@@ -183,26 +232,50 @@ export default function AllInArenaScreen({ onBack }: { onBack: () => void }) {
             isAnalyzing ? (
               <View style={{ alignItems: 'center' }}>
                 <ActivityIndicator size="large" color="#00FFFF" />
-                <Text style={{ color: '#00FFFF', marginTop: 10, fontFamily: 'Courier New' }}>GROQ AI NEURAL PROCESSING...</Text>
+                <Text style={{ color: '#00FFFF', marginTop: 10, fontFamily: 'Courier New' }}>
+                  GROQ AI NEURAL PROCESSING...
+                </Text>
               </View>
             ) : (
               <TouchableOpacity
                 style={[styles.recordBtn, isRecording && styles.recordingActive]}
                 onPress={isRecording ? stopRecording : startRecording}
               >
-                <Text style={styles.recordText}>{isRecording ? '⏹️ STOP & SUBMIT' : '🎙️ TRANSMIT VOICE'}</Text>
+                <Text style={styles.recordText}>
+                  {isRecording ? '⏹️ STOP & SUBMIT' : '🎙️ TRANSMIT VOICE'}
+                </Text>
               </TouchableOpacity>
             )
           ) : (
             <View style={{ alignItems: 'center', width: '100%' }}>
-              <Text style={styles.scoreDetail}>MY SCORE: <Text style={{ color: '#39FF14', fontSize: 20 }}>{myResult.score}</Text></Text>
+              <Text
+                style={{
+                  color: '#00FFFF',
+                  fontSize: 13,
+                  marginBottom: 8,
+                  fontFamily: 'Courier New',
+                  fontStyle: 'italic',
+                }}
+              >
+                YOU SAID: "{myResult.text}"
+              </Text>
               <Text style={styles.scoreDetail}>
-                OPPONENT SCORE: {opponentScore !== null ? <Text style={{ color: '#FF007F', fontSize: 20 }}>{opponentScore}</Text> : '⏳ SPEECH IN PROGRESS...'}
+                MY SCORE: <Text style={{ color: '#39FF14', fontSize: 20 }}>{myResult.score}</Text>
+              </Text>
+              <Text style={styles.scoreDetail}>
+                OPPONENT SCORE:{' '}
+                {opponentScore !== null && opponentScore > 0 ? (
+                  <Text style={{ color: '#FF007F', fontSize: 20 }}>{opponentScore}</Text>
+                ) : (
+                  '⏳ SPEECH IN PROGRESS...'
+                )}
               </Text>
 
               {gameResult && (
                 <View style={styles.resultContainer}>
-                  <Text style={[styles.resultTitle, { color: gameResult.color }]}>{gameResult.status}</Text>
+                  <Text style={[styles.resultTitle, { color: gameResult.color }]}>
+                    {gameResult.status}
+                  </Text>
                   <Text style={[styles.expResultText, { color: gameResult.color }]}>
                     {gameResult.expChange >= 0 ? `+${gameResult.expChange}` : gameResult.expChange} EXP
                   </Text>
