@@ -1,30 +1,80 @@
-import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, TextInput, StyleSheet, ScrollView } from 'react-native';
+import React, { useState, useRef } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, Alert } from 'react-native';
+import { useSupabaseRealtime } from '../hooks/useSupabaseRealtime';
+import { transcribeAndGradeAudio } from '../services/groqClient';
 
 export default function AllInArenaScreen({ onBack }: { onBack: () => void }) {
-  const [betAmount, setBetAmount] = useState<string>('100');
-  const [isSearching, setIsSearching] = useState(false);
-  const [matchFound, setMatchFound] = useState(false); // Thêm state để chuyển sang màn hình VS
-  const [logs, setLogs] = useState<string[]>([
-    '> Khởi tạo kết nối mạng WebSocket...',
-    '> Ping: 12ms (Ổn định)'
-  ]);
+  const [betAmount, setBetAmount] = useState<number>(100);
+  const userIdRef = useRef('runner_' + Math.floor(Math.random() * 100000));
+  const DUMMY_USER_ID = userIdRef.current;
 
-  const addLog = (message: string) => {
-    setLogs(prev => [...prev, message]);
+  const { findMatch, matchStatus, opponent } = useSupabaseRealtime(DUMMY_USER_ID, betAmount);
+
+  // State Web Recording
+  const [isRecording, setIsRecording] = useState(false);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [result, setResult] = useState<{ text: string; score: number } | null>(null);
+
+  const mediaRecorderRef = useRef<any>(null);
+  const audioChunksRef = useRef<any[]>([]);
+
+  // Bắt đầu thu âm Web
+  const startRecording = async () => {
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        alert('Trình duyệt của bạn không hỗ trợ thu âm trực tiếp!');
+        return;
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaRecorderRef.current = new MediaRecorder(stream);
+      audioChunksRef.current = [];
+
+      mediaRecorderRef.current.ondataavailable = (event: any) => {
+        if (event.data && event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorderRef.current.start();
+      setIsRecording(true);
+    } catch (err: any) {
+      console.error('Lỗi Micro:', err);
+      alert('Không thể mở Micro! Vui lòng cho phép quyền truy cập Micro trên trình duyệt.');
+    }
   };
 
-  const handleFindMatch = () => {
-    setIsSearching(true);
-    addLog('> Đang dò tìm người chơi trong khu vực...');
-    
-    // Giả lập tìm đối thủ trong 3 giây
-    setTimeout(() => {
-      setIsSearching(false);
-      setMatchFound(true);
-      addLog('> [THÀNH CÔNG] Đã khóa mục tiêu: Shadow_Ninja!');
-      addLog('> Đang thiết lập kênh giao tiếp âm thanh mã hóa...');
-    }, 3000);
+  // Dừng thu âm & Phân tích
+  const stopRecording = () => {
+    try {
+      if (!mediaRecorderRef.current) return;
+
+      setIsRecording(false);
+      setIsAnalyzing(true);
+
+      mediaRecorderRef.current.onstop = async () => {
+        try {
+          const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
+          const res = await transcribeAndGradeAudio(audioBlob);
+          setResult(res);
+        } catch (error) {
+          console.error('Lỗi phân tích:', error);
+          setResult({ text: 'Lỗi trong quá trình xử lý audio', score: 0 });
+        } finally {
+          setIsAnalyzing(false);
+          // Tắt các track mic để giải phóng thiết bị
+          if (mediaRecorderRef.current?.stream) {
+            mediaRecorderRef.current.stream.getTracks().forEach((track: any) => track.stop());
+          }
+        }
+      };
+
+      mediaRecorderRef.current.stop();
+    } catch (err) {
+      console.error('Lỗi dừng ghi âm:', err);
+      setIsAnalyzing(false);
+      setIsRecording(false);
+    }
   };
 
   return (
@@ -34,88 +84,97 @@ export default function AllInArenaScreen({ onBack }: { onBack: () => void }) {
       </TouchableOpacity>
 
       <Text style={styles.header}>[ ĐẤU TRƯỜNG TẤT TAY ]</Text>
-      <Text style={styles.subHeader}>Kẻ thắng lấy tất cả. Kẻ thua mất sạch EXP.</Text>
 
-      {/* HIỂN THỊ KHU VỰC CƯỢC HOẶC KHU VỰC ĐỐI ĐẦU */}
-      {!matchFound ? (
-        <View style={styles.arenaBox}>
-          <Text style={styles.balanceText}>EXP HIỆN CÓ: <Text style={styles.highlight}>1,500</Text></Text>
-          
-          <Text style={styles.label}>Nhập số EXP muốn cược:</Text>
-          <TextInput
-            style={styles.input}
-            keyboardType="numeric"
-            value={betAmount}
-            onChangeText={setBetAmount}
-            editable={!isSearching}
-          />
-
-          <TouchableOpacity 
-            style={[styles.actionButton, isSearching && styles.disabledButton]} 
-            onPress={handleFindMatch}
-            disabled={isSearching}
-          >
-            <Text style={styles.actionText}>
-              {isSearching ? '⏳ ĐANG QUÉT ĐỐI THỦ...' : '🔥 TẤT TAY (MATCH)'}
-            </Text>
-          </TouchableOpacity>
-        </View>
-      ) : (
-        <View style={styles.matchupBox}>
-          <Text style={styles.vsTitle}>VS</Text>
-          <View style={styles.playerContainer}>
-             <Text style={styles.playerText}>Bạn</Text>
-             <Text style={styles.vsDivider}>⚡</Text>
-             <Text style={styles.opponentText}>Shadow_Ninja</Text>
+      {/* CHỜ GHÉP CẶP */}
+      {matchStatus === 'idle' && (
+        <View style={styles.box}>
+          <Text style={styles.label}>CHỌN MỨC CƯỢC EXP:</Text>
+          <View style={styles.betRow}>
+            {[50, 100, 500].map((amount) => (
+              <TouchableOpacity
+                key={amount}
+                style={[styles.betBtn, betAmount === amount && styles.activeBet]}
+                onPress={() => setBetAmount(amount)}
+              >
+                <Text style={styles.betText}>{amount} EXP</Text>
+              </TouchableOpacity>
+            ))}
           </View>
-          <Text style={styles.prizeText}>Tổng giải thưởng: <Text style={styles.highlight}>{parseInt(betAmount) * 2} EXP</Text></Text>
-          
-          <TouchableOpacity style={styles.recordButton}>
-            <Text style={styles.actionText}>🎙️ BẮT ĐẦU THU ÂM TRẢ LỜI</Text>
+
+          <TouchableOpacity style={styles.matchBtn} onPress={findMatch}>
+            <Text style={styles.matchText}>🔥 TẤT TAY (TÌM ĐỐI THỦ)</Text>
           </TouchableOpacity>
         </View>
       )}
-      
-      {/* Khung log Terminal hiển thị trạng thái (Đã làm cho nó có thể tự động cuộn và cập nhật log) */}
-      <ScrollView style={styles.logBox}>
-        {logs.map((log, index) => (
-          <Text key={index} style={[styles.logText, log.includes('[THÀNH CÔNG]') && { color: '#00FFFF' }]}>
-            {log}
-          </Text>
-        ))}
-      </ScrollView>
+
+      {/* ĐANG QUÉT */}
+      {matchStatus === 'searching' && (
+        <View style={styles.box}>
+          <ActivityIndicator size="large" color="#FF007F" style={{ marginBottom: 15 }} />
+          <Text style={styles.statusText}>> Đang quét mạng lưới tìm đối thủ...</Text>
+        </View>
+      )}
+
+      {/* MÀN HÌNH ĐẤU */}
+      {matchStatus === 'found' && (
+        <View style={[styles.box, { borderColor: '#39FF14' }]}>
+          <Text style={styles.vsTitle}>⚡ ĐỐI THỦ: {opponent} ⚡</Text>
+          <Text style={{ color: '#FFD700', marginBottom: 20 }}>Tổng hũ: {betAmount * 2} EXP</Text>
+
+          {!result ? (
+            <>
+              {isAnalyzing ? (
+                <View style={{ alignItems: 'center' }}>
+                  <ActivityIndicator size="large" color="#00FFFF" />
+                  <Text style={{ color: '#00FFFF', marginTop: 10 }}>Groq AI đang phân tích giọng nói...</Text>
+                </View>
+              ) : (
+                <TouchableOpacity
+                  style={[styles.recordBtn, isRecording && { backgroundColor: '#FF0000' }]}
+                  onPress={isRecording ? stopRecording : startRecording}
+                >
+                  <Text style={styles.recordText}>
+                    {isRecording ? '⏹️ DỪNG & GỬI BÀI' : '🎙️ BẮT ĐẦU NÓI (THU ÂM)'}
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </>
+          ) : (
+            <View style={{ alignItems: 'center', width: '100%' }}>
+              <Text style={{ color: '#FFF', fontSize: 16 }}>Văn bản nhận diện:</Text>
+              <Text style={{ color: '#00FFFF', fontStyle: 'italic', marginVertical: 8 }}>"{result.text}"</Text>
+              <Text style={{ color: '#39FF14', fontSize: 24, fontWeight: 'bold' }}>
+                ĐIỂM SỐ: {result.score} / 100
+              </Text>
+              <TouchableOpacity 
+                style={[styles.matchBtn, { marginTop: 15, backgroundColor: '#00FFFF' }]}
+                onPress={() => setResult(null)}
+              >
+                <Text style={[styles.recordText, { color: '#000' }]}>🔄 THỬ LẠI</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#1A0505', padding: 20, paddingTop: 60 }, // Nền đỏ nguy hiểm của bạn
-  backButton: { marginBottom: 20, alignSelf: 'flex-start', padding: 10, backgroundColor: '#330000', borderRadius: 8, borderWidth: 1, borderColor: '#FF007F' },
+  container: { flex: 1, backgroundColor: '#0A051B', padding: 20, paddingTop: 60 },
+  backButton: { marginBottom: 20, alignSelf: 'flex-start', padding: 10, backgroundColor: '#120B2C', borderRadius: 8, borderWidth: 1, borderColor: '#FF007F' },
   backText: { color: '#FF007F', fontSize: 14, fontWeight: 'bold' },
-  header: { color: '#FF007F', fontSize: 24, fontWeight: 'bold', textAlign: 'center', marginBottom: 5, fontFamily: 'Courier New' },
-  subHeader: { color: '#AAA', fontSize: 14, textAlign: 'center', marginBottom: 30, fontStyle: 'italic' },
-  
-  // Khu vực Cược
-  arenaBox: { backgroundColor: '#2A0000', padding: 20, borderRadius: 12, borderWidth: 2, borderColor: '#FF007F', alignItems: 'center', marginBottom: 20 },
-  balanceText: { color: '#FFF', fontSize: 18, fontWeight: 'bold', marginBottom: 20 },
-  highlight: { color: '#39FF14', fontSize: 22 },
-  label: { color: '#FFD700', fontSize: 14, marginBottom: 10 },
-  input: { backgroundColor: '#000', color: '#FF007F', fontSize: 24, fontWeight: 'bold', textAlign: 'center', width: '100%', padding: 15, borderRadius: 8, borderWidth: 1, borderColor: '#FF007F', marginBottom: 20 },
-  actionButton: { backgroundColor: '#FF007F', padding: 15, borderRadius: 8, width: '100%', alignItems: 'center' },
-  disabledButton: { backgroundColor: '#555', borderColor: '#333' },
-  actionText: { color: '#FFF', fontSize: 16, fontWeight: 'bold' },
-  
-  // Khu vực Đối đầu (VS)
-  matchupBox: { backgroundColor: '#2A0000', padding: 20, borderRadius: 12, borderWidth: 2, borderColor: '#00FFFF', alignItems: 'center', marginBottom: 20 },
-  vsTitle: { fontSize: 40, color: '#FF007F', fontWeight: '900', fontStyle: 'italic', marginBottom: 10 },
-  playerContainer: { flexDirection: 'row', alignItems: 'center', width: '100%', justifyContent: 'space-between', marginBottom: 15, backgroundColor: '#000', padding: 10, borderRadius: 8 },
-  playerText: { color: '#39FF14', fontSize: 18, fontWeight: 'bold', flex: 1, textAlign: 'center' },
-  vsDivider: { color: '#FFF', fontSize: 20, paddingHorizontal: 10 },
-  opponentText: { color: '#FF4500', fontSize: 18, fontWeight: 'bold', flex: 1, textAlign: 'center' },
-  prizeText: { color: '#FFF', fontSize: 16, marginBottom: 20, fontWeight: 'bold' },
-  recordButton: { backgroundColor: '#39FF14', padding: 15, borderRadius: 8, width: '100%', alignItems: 'center' },
-
-  // Khung Log Terminal
-  logBox: { flex: 1, backgroundColor: '#000', padding: 15, borderRadius: 8, borderWidth: 1, borderColor: '#333' },
-  logText: { color: '#39FF14', fontFamily: 'Courier New', fontSize: 12, marginBottom: 5 }
+  header: { color: '#FF007F', fontSize: 24, fontWeight: 'bold', textAlign: 'center', marginBottom: 30, fontFamily: 'Courier New' },
+  box: { backgroundColor: '#120B2C', padding: 20, borderRadius: 12, borderWidth: 2, borderColor: '#FF007F', alignItems: 'center' },
+  label: { color: '#00FFFF', fontSize: 14, fontWeight: 'bold', marginBottom: 15 },
+  betRow: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginBottom: 25 },
+  betBtn: { flex: 1, padding: 12, borderWidth: 1, borderColor: '#555', borderRadius: 8, alignItems: 'center', marginHorizontal: 5 },
+  activeBet: { borderColor: '#39FF14', backgroundColor: '#051A12' },
+  betText: { color: '#FFF', fontWeight: 'bold' },
+  matchBtn: { backgroundColor: '#FF007F', padding: 15, borderRadius: 8, width: '100%', alignItems: 'center' },
+  recordBtn: { backgroundColor: '#39FF14', padding: 15, borderRadius: 8, width: '100%', alignItems: 'center' },
+  matchText: { color: '#FFF', fontSize: 16, fontWeight: 'bold' },
+  recordText: { color: '#000', fontSize: 16, fontWeight: 'bold' },
+  statusText: { color: '#39FF14', fontFamily: 'Courier New', fontSize: 14 },
+  vsTitle: { color: '#39FF14', fontSize: 18, fontWeight: 'bold', marginBottom: 5 }
 });
