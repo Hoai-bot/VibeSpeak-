@@ -1,4 +1,13 @@
 {
+  "name": "vibespeak-cyber-arena",
+  "version": "1.0.0",
+  "main": "node_modules/expo/AppEntry.js",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web"
+  },
   "dependencies": {
     "@expo/cli": "^57.0.20",
     "@expo/metro-runtime": "~57.0.14",
@@ -20,5 +29,6 @@
   "devDependencies": {
     "@types/react": "~19.2.4",
     "typescript": "~6.0.3"
-  }
+  },
+  "private": true
 }

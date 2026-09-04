@@ -1,28 +1,50 @@
 import React, { useState, useRef } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, Modal } from 'react-native';
 import confetti from 'canvas-confetti';
 import { useBossRaidRealtime } from '../hooks/useBossRaidRealtime';
 import { transcribeAndGradeAudio } from '../services/groqClient';
 
 const SHADOW_PROMPT = "The neon lights in this sector always glitch when the rain is heavy.";
 
-export default function BossRaidScreen({ onBack }: { onBack: () => void }) {
+interface Props {
+  onBack: () => void;
+  onNavigateToOasis?: (bossSentence: string) => void;
+}
+
+export default function BossRaidScreen({ onBack, onNavigateToOasis }: Props) {
   const { bossName, maxHp, currentHp, isDefeated, attackBoss } = useBossRaidRealtime();
 
   const [isRecording, setIsRecording] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [lastDamage, setLastDamage] = useState<{ score: number; isCrit: boolean; text: string } | null>(null);
 
+  // 🎯 STATE CỨU HỘ OASIS TẠI TRẠM BOSS RAID
+  const [missCount, setMissCount] = useState<number>(0);
+  const [showOasisModal, setShowOasisModal] = useState<boolean>(false);
+
   const mediaRecorderRef = useRef<any>(null);
   const audioChunksRef = useRef<any[]>([]);
 
-  // 🔊 1. Phát âm thanh câu mẫu Bóng Ma (Web Speech Synthesis)
+  // 🔊 1. Phát âm thanh câu mẫu Bóng Ma Ma Mị (Cyberpunk Voice Engine)
   const playBossVoice = () => {
-    if ('speechSynthesis' in window) {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(SHADOW_PROMPT);
       utterance.lang = 'en-US';
-      utterance.rate = 0.9;
+      utterance.rate = 0.82; // Chậm rãi ma mị
+      utterance.pitch = 0.65; // Trầm giọng xuống
+
+      const voices = window.speechSynthesis.getVoices();
+      const ghostVoice = voices.find(
+        (v) =>
+          v.lang.includes('en') &&
+          (v.name.includes('Natural') ||
+           v.name.includes('Neural') ||
+           v.name.includes('Google') ||
+           v.name.includes('Premium'))
+      ) || voices.find((v) => v.lang.startsWith('en'));
+
+      if (ghostVoice) utterance.voice = ghostVoice;
       window.speechSynthesis.speak(utterance);
     } else {
       alert('Trình duyệt của bạn không hỗ trợ phát âm thanh AI!');
@@ -32,6 +54,10 @@ export default function BossRaidScreen({ onBack }: { onBack: () => void }) {
   // 🎙️ 2. Khởi tạo thiết bị ghi âm
   const startRecording = async () => {
     try {
+      if (typeof navigator === 'undefined' || !navigator.mediaDevices) {
+        alert('Trình duyệt không hỗ trợ ghi âm!');
+        return;
+      }
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4';
       mediaRecorderRef.current = new MediaRecorder(stream, { mimeType });
@@ -77,7 +103,7 @@ export default function BossRaidScreen({ onBack }: { onBack: () => void }) {
 
       // Đợi dữ liệu Blob và gửi lên Groq AI
       const audioBlob = await processAudio;
-      const res = await transcribeAndGradeAudio(audioBlob);
+      const res = await transcribeAndGradeAudio(audioBlob, SHADOW_PROMPT);
 
       // Tính sát thương & Critical Hit
       const isCrit = res.score >= 85;
@@ -93,6 +119,19 @@ export default function BossRaidScreen({ onBack }: { onBack: () => void }) {
           origin: { y: 0.6 },
           colors: ['#FF0055', '#FFD700', '#39FF14'],
         });
+      }
+
+      // 🎯 KÍCH HOẠT POPUP CỨU HỘ KHI ĐIỂM < 50 TRONG 2 LẦN LÊN TIẾP
+      if (res.score < 50) {
+        setMissCount((prev) => {
+          const next = prev + 1;
+          if (next >= 2) {
+            setShowOasisModal(true);
+          }
+          return next;
+        });
+      } else {
+        setMissCount(0);
       }
     } catch (error) {
       console.error('❌ Lỗi xử lý thu âm:', error);
@@ -168,6 +207,42 @@ export default function BossRaidScreen({ onBack }: { onBack: () => void }) {
           <Text style={{ color: '#FFD700', marginTop: 10, fontSize: 15 }}>BẠN ĐÃ SOÁN NGÔI THÀNH CÔNG BÓNG MA!</Text>
         </View>
       )}
+
+      {/* 🌴 MODAL CỨU HỘ OASIS CHO TRẠM BOSS RAID */}
+      <Modal visible={showOasisModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTag}>🚨 TÍN HIỆU CẤP CỨU (LOW DAMAGE)</Text>
+            <Text style={styles.modalTitle}>🌴 OASIS: TẬP PHÁT ÂM MẬT LỆNH</Text>
+            <Text style={styles.modalDesc}>
+              Sát thương tạo ra chưa đủ lớn để hạ gục Boss? Hãy sang Trạm Oasis để luyện tập lại khẩu hình và ngữ điệu cho câu lệnh này nhé!
+            </Text>
+
+            <TouchableOpacity
+              style={styles.modalOasisBtn}
+              onPress={() => {
+                setShowOasisModal(false);
+                setMissCount(0);
+                if (onNavigateToOasis) {
+                  onNavigateToOasis(`Ghost Shadowing: ${SHADOW_PROMPT}`);
+                }
+              }}
+            >
+              <Text style={styles.modalOasisBtnText}>🌴 CHUYỂN SANG OASIS CỨU HỘ</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.modalCancelBtn}
+              onPress={() => {
+                setShowOasisModal(false);
+                setMissCount(0);
+              }}
+            >
+              <Text style={styles.modalCancelText}>Ở lại tiếp tục chiến Boss</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -193,5 +268,16 @@ const styles = StyleSheet.create({
   attackText: { color: '#000', fontSize: 15, fontWeight: 'bold', fontFamily: 'Courier New' },
   analyzingText: { color: '#FF007F', marginTop: 10, fontSize: 12, fontFamily: 'Courier New' },
   resultBox: { marginTop: 12, alignItems: 'center' },
-  victoryBox: { backgroundColor: '#0D0620', padding: 25, borderRadius: 12, borderWidth: 2, borderColor: '#39FF14', alignItems: 'center' }
+  victoryBox: { backgroundColor: '#0D0620', padding: 25, borderRadius: 12, borderWidth: 2, borderColor: '#39FF14', alignItems: 'center' },
+  
+  // MODAL STYLES
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(5, 2, 13, 0.85)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+  modalContent: { backgroundColor: '#052C30', padding: 24, borderRadius: 20, borderWidth: 2, borderColor: '#00FFCC', width: '100%', alignItems: 'center' },
+  modalTag: { color: '#FF0055', fontSize: 11, fontWeight: 'bold', marginBottom: 6 },
+  modalTitle: { color: '#00FFCC', fontSize: 18, fontWeight: '900', marginBottom: 12, textAlign: 'center' },
+  modalDesc: { color: '#A0E0E0', fontSize: 12, textAlign: 'center', lineHeight: 18, marginBottom: 20 },
+  modalOasisBtn: { backgroundColor: '#00FFCC', paddingVertical: 14, paddingHorizontal: 20, borderRadius: 10, width: '100%', alignItems: 'center', marginBottom: 10 },
+  modalOasisBtnText: { color: '#000', fontSize: 13, fontWeight: '900' },
+  modalCancelBtn: { paddingVertical: 10 },
+  modalCancelText: { color: '#8888AA', fontSize: 11, textDecorationLine: 'underline' }
 });

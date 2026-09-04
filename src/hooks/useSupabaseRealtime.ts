@@ -1,13 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../services/supabaseClient';
-
-const ARENA_TOPICS = [
-  "Describe your favorite food and why you like it.",
-  "What is your dream job in the future?",
-  "Talk about a movie or book you really enjoyed.",
-  "How do you usually spend your weekends?",
-  "Why is learning English important to you?"
-];
+import { generateDynamicTopic, generateRoleplayScenario } from '../services/groqClient';
 
 export function useSupabaseRealtime(userId: string, betAmount: number) {
   const [matchId, setMatchId] = useState<string | null>(null);
@@ -18,7 +11,8 @@ export function useSupabaseRealtime(userId: string, betAmount: number) {
   const [userExp, setUserExp] = useState<number>(1000);
   const [userAvgScore, setUserAvgScore] = useState<number>(75);
   const [totalMatches, setTotalMatches] = useState<number>(0);
-  const [currentTopic, setCurrentTopic] = useState<string>(ARENA_TOPICS[0]);
+  const [currentTopic, setCurrentTopic] = useState<string>('Generating dynamic topic...');
+  const [roleplayScenario, setRoleplayScenario] = useState<{ scenario: string; roleA: string; roleB: string } | null>(null);
 
   // 1. Khởi tạo / Lấy Hồ sơ chỉ số thực tế của Runner
   useEffect(() => {
@@ -58,48 +52,68 @@ export function useSupabaseRealtime(userId: string, betAmount: number) {
     }).eq('id', userId);
   };
 
-  // 3. Hàm Tìm Trận Smart SBMM (Ghép khoảng điểm +/- 12)
-  const findMatch = async () => {
+  // 3. Hàm Tìm Trận Smart SBMM (Ghép Đội Cân Bằng Trình Đội & Cặp Đấu)
+  const findMatch = async (matchType: 'solo' | 'relay_2v2' | 'roleplay_2v2' = 'solo') => {
     setMatchStatus('searching');
     setMatchId(null);
     setOpponent(null);
     setOpponentScore(null);
+    setRoleplayScenario(null);
 
     const thirtySecondsAgo = new Date(Date.now() - 30 * 1000).toISOString();
 
-    // BƯỚC A: Chỉ lọc các phòng có player1_avg_score trong khoảng +/- 12 điểm
+    // BƯỚC A: Lọc các phòng cùng loại match_type và cược
     const { data: waitingMatches } = await supabase
       .from('arena_matches')
       .select('*')
       .eq('status', 'waiting')
+      .eq('match_type', matchType)
       .eq('bet_amount', betAmount)
       .neq('player1_id', userId)
       .gt('created_at', thirtySecondsAgo)
-      .gte('player1_avg_score', userAvgScore - 12)
-      .lte('player1_avg_score', userAvgScore + 12)
-      .order('created_at', { ascending: true })
-      .limit(1);
+      .order('created_at', { ascending: true });
 
     if (waitingMatches && waitingMatches.length > 0) {
-      const match = waitingMatches[0];
-      const { error } = await supabase
-        .from('arena_matches')
-        .update({ player2_id: userId, status: 'in_progress' })
-        .eq('id', match.id);
+      // Siết chặt khoảng chênh lệch: Solo (+/- 12d), Đấu đôi (+/- 8d để tổng điểm 2 đội ngang nhau)
+      const maxVariance = matchType === 'solo' ? 12 : 8;
 
-      if (!error) {
-        setMatchId(match.id);
-        setOpponent(match.player1_id);
-        setIsPlayer1(false);
-        setMatchStatus('found');
-        if (match.topic_prompt) setCurrentTopic(match.topic_prompt);
-        return;
+      const balancedMatch = waitingMatches.find((match) => {
+        const scoreDiff = Math.abs((match.player1_avg_score || 75) - userAvgScore);
+        return scoreDiff <= maxVariance;
+      });
+
+      if (balancedMatch) {
+        const { error } = await supabase
+          .from('arena_matches')
+          .update({ player2_id: userId, status: 'in_progress' })
+          .eq('id', balancedMatch.id);
+
+        if (!error) {
+          setMatchId(balancedMatch.id);
+          setOpponent(balancedMatch.player1_id);
+          setIsPlayer1(false);
+          setMatchStatus('found');
+          if (balancedMatch.topic_prompt) setCurrentTopic(balancedMatch.topic_prompt);
+          if (balancedMatch.scenario_data) setRoleplayScenario(balancedMatch.scenario_data);
+          return;
+        }
       }
     }
 
-    // BƯỚC B: Nếu không thấy đối thủ ngang trình, tạo phòng mới đẩy chỉ số avg_score lên
-    const randomTopic = ARENA_TOPICS[Math.floor(Math.random() * ARENA_TOPICS.length)];
-    setCurrentTopic(randomTopic);
+    // BƯỚC B: Nếu chưa có phòng cân bằng -> Sinh đề AI Động và tạo phòng mới
+    let topicToSave = '';
+    let scenarioDataToSave = null;
+
+    if (matchType === 'roleplay_2v2') {
+      const rpData = await generateRoleplayScenario();
+      topicToSave = `🎭 ROLEPLAY: ${rpData.scenario}`;
+      scenarioDataToSave = rpData;
+      setRoleplayScenario(rpData);
+    } else {
+      topicToSave = await generateDynamicTopic(userAvgScore);
+    }
+
+    setCurrentTopic(topicToSave);
 
     const { data: newMatch } = await supabase
       .from('arena_matches')
@@ -108,7 +122,9 @@ export function useSupabaseRealtime(userId: string, betAmount: number) {
           player1_id: userId, 
           bet_amount: betAmount, 
           status: 'waiting',
-          topic_prompt: randomTopic,
+          match_type: matchType,
+          topic_prompt: topicToSave,
+          scenario_data: scenarioDataToSave,
           player1_avg_score: userAvgScore
         }
       ])
@@ -145,6 +161,7 @@ export function useSupabaseRealtime(userId: string, betAmount: number) {
           }
 
           if (payload.new.topic_prompt) setCurrentTopic(payload.new.topic_prompt);
+          if (payload.new.scenario_data) setRoleplayScenario(payload.new.scenario_data);
 
           if (isPlayer1 && payload.new.player2_score !== null) {
             setOpponentScore(payload.new.player2_score);
@@ -169,6 +186,7 @@ export function useSupabaseRealtime(userId: string, betAmount: number) {
     userExp, 
     updateUserExp, 
     currentTopic,
-    userAvgScore 
+    userAvgScore,
+    roleplayScenario
   };
 }

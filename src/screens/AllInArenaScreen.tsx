@@ -1,55 +1,78 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, ScrollView } from 'react-native';
-import confetti from 'canvas-confetti';
-import { useSupabaseRealtime } from '../hooks/useSupabaseRealtime';
-import { transcribeAndGradeAudio } from '../services/groqClient';
-import { supabase } from '../services/supabaseClient';
+import React, { useState, useRef } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, Modal, ScrollView } from 'react-native';
+import { generateArenaTopic, transcribeAndGradeAudio } from '../services/groqClient';
 
-export default function AllInArenaScreen({ 
-  onBack, 
-  customUserId 
-}: { 
-  onBack: () => void; 
-  customUserId?: string 
-}) {
-  const [betAmount, setBetAmount] = useState<number>(100);
-  const [activeTab, setActiveTab] = useState<'arena' | 'leaderboard'>('arena');
-  const [leaderboardData, setLeaderboardData] = useState<any[]>([]);
+interface Props {
+  onBack: () => void;
+  onNavigateToOasis?: (topic: string) => void;
+}
 
-  const userIdRef = useRef(customUserId || 'runner_' + Math.floor(Math.random() * 1000000));
-  const DUMMY_USER_ID = userIdRef.current;
+type ArenaMode = 'SOLO' | 'RELAY' | 'ROLEPLAY';
 
-  const { findMatch, submitScore, matchStatus, opponent, opponentScore, userExp, updateUserExp } =
-    useSupabaseRealtime(DUMMY_USER_ID, betAmount);
+export function AllInArenaScreen({ onBack, onNavigateToOasis }: Props) {
+  const [selectedMode, setSelectedMode] = useState<ArenaMode>('SOLO');
+  const [topic, setTopic] = useState<string>('');
+  const [isMatching, setIsMatching] = useState<boolean>(false);
+  const [inBattle, setInBattle] = useState<boolean>(false);
+  const [opponentName, setOpponentName] = useState<string>('');
+  
+  const [isRecording, setIsRecording] = useState<boolean>(false);
+  const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
+  const [userSpeech, setUserSpeech] = useState<string>('');
+  const [score, setScore] = useState<number | null>(null);
 
-  const [isRecording, setIsRecording] = useState(false);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [myResult, setMyResult] = useState<{ text: string; score: number } | null>(null);
+  // 🎯 STATE CỨU HỘ OASIS TOÀN BỘ CÁC CHẾ ĐỘ
+  const [arenaMissCount, setArenaMissCount] = useState<number>(0);
+  const [showOasisModal, setShowOasisModal] = useState<boolean>(false);
 
   const mediaRecorderRef = useRef<any>(null);
   const audioChunksRef = useRef<any[]>([]);
 
-  // Tải dữ liệu Bảng xếp hạng khi đổi Tab
-  useEffect(() => {
-    if (activeTab === 'leaderboard') {
-      fetchLeaderboard();
-    }
-  }, [activeTab]);
+  // 1. TÌM TRẬN CHO CẢ SOLO, RELAY VÀ ROLEPLAY
+  const startMatch = async (mode: ArenaMode) => {
+    setSelectedMode(mode);
+    setIsMatching(true);
+    setInBattle(false);
+    setScore(null);
+    setUserSpeech('');
 
-  const fetchLeaderboard = async () => {
-    const { data } = await supabase.from('arena_leaderboard').select('*');
-    if (data) setLeaderboardData(data);
+    try {
+      const promptMode = mode === 'RELAY' ? 'Relay Storytelling' : mode === 'ROLEPLAY' ? 'Cyberpunk Roleplay' : 'Solo Debate';
+      const newTopic = await generateArenaTopic(promptMode);
+      setTopic(newTopic);
+    } catch (e) {
+      setTopic(mode === 'ROLEPLAY' ? 'Negotiate with a Cyberpunk Hacker' : 'Continue the Relay story in 2099.');
+    }
+
+    setTimeout(() => {
+      const botNames = {
+        SOLO: '🤖 CyberBot_V3',
+        RELAY: '🤝 Teammate_Neon',
+        ROLEPLAY: '🎭 AI_Hacker_Zero'
+      };
+      setOpponentName(botNames[mode]);
+      setIsMatching(false);
+      setInBattle(true);
+    }, 1500);
   };
 
   const startRecording = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      if (typeof navigator === 'undefined' || !navigator.mediaDevices) {
+        alert('Trình duyệt không hỗ trợ micro!');
+        return;
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } 
+      });
+
       const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4';
       mediaRecorderRef.current = new MediaRecorder(stream, { mimeType });
       audioChunksRef.current = [];
 
-      mediaRecorderRef.current.ondataavailable = (event: any) => {
-        if (event.data && event.data.size > 0) audioChunksRef.current.push(event.data);
+      mediaRecorderRef.current.ondataavailable = (e: any) => {
+        if (e.data && e.data.size > 0) audioChunksRef.current.push(e.data);
       };
 
       mediaRecorderRef.current.start(100);
@@ -79,11 +102,26 @@ export default function AllInArenaScreen({
     try {
       if (mediaRecorder.stream) mediaRecorder.stream.getTracks().forEach((t: any) => t.stop());
       const audioBlob = await processAudio;
-      const res = await transcribeAndGradeAudio(audioBlob);
-      setMyResult(res);
-      if (res.score > 0) await submitScore(res.score);
+
+      const res = await transcribeAndGradeAudio(audioBlob, topic);
+      setUserSpeech(res.text);
+      setScore(res.score);
+
+      // 🎯 KÍCH HOẠT POPUP CỨU HỘ OASIS KHI LỖI 2 LẦN LIÊN TIẾP (ÁP DỤNG SOLO, RELAY & ROLEPLAY)
+      if (res.score < 50) {
+        setArenaMissCount((prev) => {
+          const nextCount = prev + 1;
+          if (nextCount >= 2) {
+            setShowOasisModal(true);
+          }
+          return nextCount;
+        });
+      } else {
+        setArenaMissCount(0);
+      }
+
     } catch (error) {
-      alert('Lỗi phân tích bài nói!');
+      alert('Lỗi phân tích giọng nói!');
     } finally {
       setIsAnalyzing(false);
     }
@@ -91,110 +129,112 @@ export default function AllInArenaScreen({
 
   return (
     <View style={styles.container}>
-      {/* HEADER & TABS */}
       <View style={styles.topBar}>
-        <TouchableOpacity onPress={onBack} style={styles.backButton}>
+        <TouchableOpacity onPress={onBack} style={styles.backBtn}>
           <Text style={styles.backText}>🔙 EXIT</Text>
         </TouchableOpacity>
-        <View style={styles.tabGroup}>
-          <TouchableOpacity 
-            style={[styles.tabBtn, activeTab === 'arena' && styles.activeTabBtn]} 
-            onPress={() => setActiveTab('arena')}
-          >
-            <Text style={[styles.tabText, activeTab === 'arena' && styles.activeTabText]}>⚔️ ARENA</Text>
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={[styles.tabBtn, activeTab === 'leaderboard' && styles.activeTabBtn]} 
-            onPress={() => setActiveTab('leaderboard')}
-          >
-            <Text style={[styles.tabText, activeTab === 'leaderboard' && styles.activeTabText]}>🏆 TOP RUNNERS</Text>
-          </TouchableOpacity>
-        </View>
+        <Text style={styles.headerTitle}>⚔️ ALL-IN ARENA</Text>
       </View>
 
-      {/* TẠM THỜI CHỌN TÍNH NĂNG THEO TAB */}
-      {activeTab === 'leaderboard' ? (
-        <View style={styles.leaderboardBox}>
-          <Text style={styles.lbHeader}>⚡ HALL OF FAME ⚡</Text>
-          <ScrollView style={{ width: '100%' }}>
-            {leaderboardData.map((item, index) => (
-              <View key={index} style={styles.lbRow}>
-                <Text style={styles.lbRank}>#{index + 1}</Text>
-                <Text style={styles.lbName}>{item.runner_id}</Text>
-                <Text style={styles.lbScore}>+{item.total_profit} EXP</Text>
-              </View>
-            ))}
-          </ScrollView>
-        </View>
-      ) : (
-        <>
-          {/* BADGE PLAYER */}
-          <View style={styles.profileBadge}>
-            <Text style={styles.profileText}>👤 RUNNER: <Text style={{ color: '#00FFFF' }}>{DUMMY_USER_ID}</Text></Text>
-            <Text style={styles.expBadgeText}>💎 {userExp} EXP</Text>
+      <ScrollView contentContainerStyle={{ alignItems: 'center' }}>
+        {!inBattle && !isMatching && (
+          <View style={styles.startCard}>
+            <Text style={styles.arenaTitle}>⚔️ ĐẤU TRƯỜNG TẤT TAY</Text>
+            <Text style={styles.arenaDesc}>Chọn chế độ thi đấu để bắt đầu!</Text>
+            
+            <TouchableOpacity style={styles.matchBtn} onPress={() => startMatch('SOLO')}>
+              <Text style={styles.matchBtnText}>🎮 SOLO DEBATE (1v1)</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity style={[styles.matchBtn, { backgroundColor: '#FFD700', marginTop: 10 }]} onPress={() => startMatch('RELAY')}>
+              <Text style={[styles.matchBtnText, { color: '#000' }]}>🤝 RELAY STORYTELLING</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={[styles.matchBtn, { backgroundColor: '#00FFFF', marginTop: 10 }]} onPress={() => startMatch('ROLEPLAY')}>
+              <Text style={[styles.matchBtnText, { color: '#000' }]}>🎭 CYBERPUNK ROLEPLAY</Text>
+            </TouchableOpacity>
           </View>
+        )}
 
-          {/* CHỌN MỨC CƯỢC */}
-          {matchStatus === 'idle' && (
-            <View style={styles.box}>
-              <Text style={styles.label}>[ CHỌN HŨ CƯỢC EXP ]</Text>
-              <View style={styles.betRow}>
-                {[50, 100, 500].map((amount) => (
-                  <TouchableOpacity
-                    key={amount}
-                    style={[styles.betBtn, betAmount === amount && styles.activeBet]}
-                    onPress={() => setBetAmount(amount)}
-                  >
-                    <Text style={[styles.betText, betAmount === amount && { color: '#39FF14' }]}>{amount} EXP</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-              <TouchableOpacity style={styles.matchBtn} onPress={findMatch}>
-                <Text style={styles.matchText}>🔥 TẤT TAY (FIND MATCH)</Text>
-              </TouchableOpacity>
+        {isMatching && (
+          <View style={styles.startCard}>
+            <ActivityIndicator size="large" color="#FF007F" />
+            <Text style={styles.matchingText}>> ĐANG KẾT NỐI CHẾ ĐỘ {selectedMode}...</Text>
+          </View>
+        )}
+
+        {inBattle && (
+          <View style={styles.battleCard}>
+            <View style={styles.vsBox}>
+              <Text style={styles.playerName}>YOU</Text>
+              <Text style={styles.vsText}>VS</Text>
+              <Text style={styles.botName}>{opponentName}</Text>
             </View>
-          )}
 
-          {/* DOWNTIME SCANNING */}
-          {matchStatus === 'searching' && (
-            <View style={styles.box}>
-              <ActivityIndicator size="large" color="#FF007F" style={{ marginBottom: 15 }} />
-              <Text style={styles.statusText}>> SCANNING CYBERNETIC GRID FOR OPPONENT...</Text>
-            </View>
-          )}
+            <Text style={styles.topicTag}>[ {selectedMode} CHALLENGE ]</Text>
+            <Text style={styles.topicText}>{topic}</Text>
 
-          {/* TRẬN ĐẤU */}
-          {matchStatus === 'found' && (
-            <View style={styles.box}>
-              <Text style={styles.vsTitle}>⚡ TARGET: {opponent} ⚡</Text>
-              <Text style={styles.potText}>💰 TOTAL POT: {betAmount * 2} EXP</Text>
-
-              {!myResult ? (
-                isAnalyzing ? (
-                  <ActivityIndicator size="large" color="#00FFFF" />
-                ) : (
-                  <TouchableOpacity
-                    style={[styles.recordBtn, isRecording && styles.recordingActive]}
-                    onPress={isRecording ? stopRecording : startRecording}
-                  >
-                    <Text style={styles.recordText}>{isRecording ? '⏹️ STOP & SUBMIT' : '🎙️ TRANSMIT VOICE'}</Text>
-                  </TouchableOpacity>
-                )
+            <View style={styles.actionBox}>
+              {isAnalyzing ? (
+                <ActivityIndicator size="large" color="#00FFFF" />
               ) : (
-                <View style={{ width: '100%', alignItems: 'center' }}>
-                  <Text style={{ color: '#00FFFF', marginBottom: 10 }}>MY VOICE: "{myResult.text}"</Text>
-                  {/* THANH THANG ĐIỂM CYBER */}
-                  <View style={styles.scoreGauge}>
-                    <View style={[styles.scoreBar, { width: `${myResult.score}%`, backgroundColor: '#39FF14' }]} />
-                  </View>
-                  <Text style={{ color: '#39FF14', fontWeight: 'bold' }}>MY SCORE: {myResult.score}/100</Text>
-                  <Text style={{ color: '#FF007F', marginTop: 10 }}>OPPONENT SCORE: {opponentScore ?? '⏳ SPEECH IN PROGRESS...'}</Text>
-                </View>
+                <TouchableOpacity
+                  style={[styles.recordBtn, isRecording && styles.recordingActive]}
+                  onPress={isRecording ? stopRecording : startRecording}
+                >
+                  <Text style={styles.recordBtnText}>
+                    {isRecording ? '⏹️ DỪNG & GỬI BÀI' : '🎙️ THU ÂM PHÁT ÂM'}
+                  </Text>
+                </TouchableOpacity>
               )}
             </View>
-          )}
-        </>
-      )}
+
+            {score !== null && (
+              <View style={styles.resultBox}>
+                <Text style={styles.scoreText}>SCORE: {score} / 100</Text>
+                <Text style={styles.speechText}>AI Nghe Được: "{userSpeech}"</Text>
+                <TouchableOpacity style={styles.nextMatchBtn} onPress={() => startMatch(selectedMode)}>
+                  <Text style={styles.nextMatchText}>⚡ TÁI ĐẤU MỚI</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        )}
+      </ScrollView>
+
+      {/* 🌴 MODAL CỨU HỘ OASIS CHO CẢ 3 CHẾ ĐỘ */}
+      <Modal visible={showOasisModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTag}>🚨 CỨU HỘ {selectedMode}</Text>
+            <Text style={styles.modalTitle}>🌴 OASIS: HƯỚNG DẪN MẪU CÂU</Text>
+            <Text style={styles.modalDesc}>
+              Bạn gặp khó khăn trong chế độ {selectedMode} với chủ đề "{topic}"? Hãy sang Trạm Oasis để AI hỗ trợ từ vựng và mẫu câu giao tiếp tự do không áp lực!
+            </Text>
+
+            <TouchableOpacity
+              style={styles.modalOasisBtn}
+              onPress={() => {
+                setShowOasisModal(false);
+                setArenaMissCount(0);
+                if (onNavigateToOasis) onNavigateToOasis(`[${selectedMode}] ${topic}`);
+              }}
+            >
+              <Text style={styles.modalOasisBtnText}>🌴 CHUYỂN SANG OASIS CỨU HỘ</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.modalCancelBtn}
+              onPress={() => {
+                setShowOasisModal(false);
+                setArenaMissCount(0);
+              }}
+            >
+              <Text style={styles.modalCancelText}>Ở lại tiếp tục thi đấu</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -202,36 +242,40 @@ export default function AllInArenaScreen({
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#05020D', padding: 20, paddingTop: 40 },
   topBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-  backButton: { paddingHorizontal: 10, paddingVertical: 6, backgroundColor: '#0D0620', borderRadius: 6, borderWidth: 1, borderColor: '#FF007F' },
+  backBtn: { paddingHorizontal: 10, paddingVertical: 6, backgroundColor: '#0D0620', borderRadius: 6, borderWidth: 1, borderColor: '#FF007F' },
   backText: { color: '#FF007F', fontSize: 11, fontWeight: 'bold', fontFamily: 'Courier New' },
-  tabGroup: { flexDirection: 'row' },
-  tabBtn: { paddingHorizontal: 12, paddingVertical: 6, marginHorizontal: 2, borderRadius: 6, backgroundColor: '#0D0620' },
-  activeTabBtn: { backgroundColor: '#FF007F' },
-  tabText: { color: '#8888AA', fontSize: 11, fontWeight: 'bold', fontFamily: 'Courier New' },
-  activeTabText: { color: '#FFF' },
-  profileBadge: { backgroundColor: '#0D0620', padding: 14, borderRadius: 10, borderWidth: 1.5, borderColor: '#00FFFF', marginBottom: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  profileText: { color: '#FFF', fontWeight: 'bold', fontSize: 12, fontFamily: 'Courier New' },
-  expBadgeText: { color: '#39FF14', fontWeight: '900', fontSize: 15, fontFamily: 'Courier New' },
-  box: { backgroundColor: '#0D0620', padding: 20, borderRadius: 16, borderWidth: 2, borderColor: '#FF007F', alignItems: 'center' },
-  label: { color: '#00FFFF', fontSize: 12, fontWeight: 'bold', marginBottom: 15, fontFamily: 'Courier New' },
-  betRow: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginBottom: 20 },
-  betBtn: { flex: 1, padding: 12, borderWidth: 1, borderColor: '#332255', borderRadius: 8, alignItems: 'center', marginHorizontal: 3, backgroundColor: '#080314' },
-  activeBet: { borderColor: '#39FF14', backgroundColor: '#052212' },
-  betText: { color: '#8888AA', fontWeight: 'bold', fontFamily: 'Courier New' },
-  matchBtn: { backgroundColor: '#FF007F', padding: 14, borderRadius: 10, width: '100%', alignItems: 'center' },
-  recordBtn: { backgroundColor: '#39FF14', padding: 14, borderRadius: 10, width: '100%', alignItems: 'center' },
+  headerTitle: { color: '#FF007F', fontSize: 16, fontWeight: '900', fontFamily: 'Courier New' },
+  startCard: { backgroundColor: '#0D0620', padding: 24, borderRadius: 16, borderWidth: 2, borderColor: '#FF007F', alignItems: 'center', width: '100%', marginTop: 20 },
+  arenaTitle: { color: '#FF007F', fontSize: 18, fontWeight: '900', fontFamily: 'Courier New', marginBottom: 8, textAlign: 'center' },
+  arenaDesc: { color: '#AAAABB', fontSize: 12, fontFamily: 'Courier New', textAlign: 'center', marginBottom: 20 },
+  matchBtn: { backgroundColor: '#FF007F', paddingVertical: 14, paddingHorizontal: 24, borderRadius: 10, width: '100%', alignItems: 'center' },
+  matchBtnText: { color: '#FFF', fontSize: 13, fontWeight: '900', fontFamily: 'Courier New' },
+  matchingText: { color: '#FF007F', marginTop: 15, fontSize: 12, fontFamily: 'Courier New' },
+  battleCard: { backgroundColor: '#0D0620', padding: 20, borderRadius: 16, borderWidth: 2, borderColor: '#FF007F', width: '100%', alignItems: 'center' },
+  vsBox: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%', marginBottom: 16, paddingHorizontal: 10 },
+  playerName: { color: '#39FF14', fontSize: 14, fontWeight: '900', fontFamily: 'Courier New' },
+  vsText: { color: '#FF0055', fontSize: 18, fontWeight: '900', fontFamily: 'Courier New' },
+  botName: { color: '#00FFFF', fontSize: 14, fontWeight: '900', fontFamily: 'Courier New' },
+  topicTag: { color: '#FFD700', fontSize: 11, fontWeight: 'bold', fontFamily: 'Courier New', marginBottom: 6 },
+  topicText: { color: '#FFF', fontSize: 15, fontWeight: 'bold', fontFamily: 'Courier New', textAlign: 'center', marginBottom: 20 },
+  actionBox: { width: '100%', marginBottom: 15 },
+  recordBtn: { backgroundColor: '#39FF14', padding: 16, borderRadius: 12, alignItems: 'center' },
   recordingActive: { backgroundColor: '#FF0055' },
-  matchText: { color: '#FFF', fontSize: 14, fontWeight: '900', fontFamily: 'Courier New' },
-  recordText: { color: '#000', fontSize: 14, fontWeight: '900', fontFamily: 'Courier New' },
-  statusText: { color: '#39FF14', fontSize: 12, fontFamily: 'Courier New' },
-  vsTitle: { color: '#39FF14', fontSize: 16, fontWeight: '900', marginBottom: 4, fontFamily: 'Courier New' },
-  potText: { color: '#FFD700', fontSize: 13, fontWeight: 'bold', marginBottom: 15, fontFamily: 'Courier New' },
-  scoreGauge: { width: '100%', height: 10, backgroundColor: '#222', borderRadius: 5, overflow: 'hidden', marginVertical: 8 },
-  scoreBar: { height: '100%' },
-  leaderboardBox: { flex: 1, backgroundColor: '#0D0620', padding: 20, borderRadius: 16, borderWidth: 2, borderColor: '#00FFFF', alignItems: 'center' },
-  lbHeader: { color: '#00FFFF', fontSize: 18, fontWeight: '900', marginBottom: 15, fontFamily: 'Courier New' },
-  lbRow: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#221144' },
-  lbRank: { color: '#FFD700', fontWeight: 'bold', fontFamily: 'Courier New', width: 35 },
-  lbName: { color: '#FFF', flex: 1, fontFamily: 'Courier New' },
-  lbScore: { color: '#39FF14', fontWeight: 'bold', fontFamily: 'Courier New' },
+  recordBtnText: { color: '#000', fontSize: 13, fontWeight: '900', fontFamily: 'Courier New' },
+  resultBox: { backgroundColor: '#05020D', padding: 14, borderRadius: 10, borderWidth: 1, borderColor: '#FF007F', width: '100%', alignItems: 'center' },
+  scoreText: { color: '#39FF14', fontSize: 14, fontWeight: 'bold', fontFamily: 'Courier New', marginBottom: 4 },
+  speechText: { color: '#AAAABB', fontSize: 12, fontFamily: 'Courier New', marginBottom: 10, textAlign: 'center' },
+  nextMatchBtn: { backgroundColor: '#221144', paddingVertical: 8, paddingHorizontal: 16, borderRadius: 6, borderWidth: 1, borderColor: '#FF007F' },
+  nextMatchText: { color: '#FF007F', fontSize: 11, fontWeight: 'bold', fontFamily: 'Courier New' },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(5, 2, 13, 0.85)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+  modalContent: { backgroundColor: '#052C30', padding: 24, borderRadius: 20, borderWidth: 2, borderColor: '#00FFCC', width: '100%', alignItems: 'center' },
+  modalTag: { color: '#FF0055', fontSize: 11, fontWeight: 'bold', fontFamily: 'Courier New', marginBottom: 6 },
+  modalTitle: { color: '#00FFCC', fontSize: 18, fontWeight: '900', fontFamily: 'Courier New', marginBottom: 12, textAlign: 'center' },
+  modalDesc: { color: '#A0E0E0', fontSize: 12, fontFamily: 'Courier New', textAlign: 'center', lineHeight: 18, marginBottom: 20 },
+  modalOasisBtn: { backgroundColor: '#00FFCC', paddingVertical: 14, paddingHorizontal: 20, borderRadius: 10, width: '100%', alignItems: 'center', marginBottom: 10 },
+  modalOasisBtnText: { color: '#000', fontSize: 13, fontWeight: '900', fontFamily: 'Courier New' },
+  modalCancelBtn: { paddingVertical: 10 },
+  modalCancelText: { color: '#8888AA', fontSize: 11, fontFamily: 'Courier New', textDecorationLine: 'underline' }
 });
+
+export default AllInArenaScreen;
