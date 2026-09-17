@@ -1,0 +1,20 @@
+# 🚀 Environment & Key Files
+.env
+.env*.local
+
+# 📦 Dependencies
+node_modules/
+.pnpm-store/
+
+# 📱 Expo & Build Artifacts
+.expo/
+web-build/
+dist/
+
+# 🛠️ Test & Temporary Files
+test-ai.js
+*.zip
+*.log
+
+# 🔊 Assets & Media Cleanup
+Assets/Sounds/typewriter_click.mp3.mp3

@@ -1,0 +1,98 @@
+[
+  {
+    "scenario_id": "STATION_CAFE_03",
+    "scenario_name": "Trạm Quán Cafe (Tuyến Xanh Lá)",
+    "scenario_description": "Học viên thực hành gọi món và đặt bàn tại một quán cà phê phong cách Retro Wave.",
+    "difficulty": "Easy",
+    "mock_stream_data": [
+      {
+        "turn_id": "T01",
+        "original_audio_duration_seconds": 3.5,
+        "original_text": "I want book table for two.",
+        "analysis": {
+          "score": 65,
+          "upgrades": {
+            "grammar_ok": "I want to book a table for two.",
+            "natural_ok": "I'd like to get a table for two, please.",
+            "native_style": "Can we get a table for two?"
+          },
+          "explanation": "Thiếu 'to' sau động từ 'want'. Phiên bản 'I'd like to...' mang sắc thái lịch sự hơn, trong khi 'Can we get...' là cách người bản xứ thường dùng nhất khi bước vào quán."
+        }
+      },
+      {
+        "turn_id": "T02",
+        "original_audio_duration_seconds": 4.2,
+        "original_text": "Give me a hot coffee and no sugar.",
+        "analysis": {
+          "score": 58,
+          "upgrades": {
+            "grammar_ok": "Give me a hot coffee with no sugar.",
+            "natural_ok": "Could I have a hot coffee with no sugar, please?",
+            "native_style": "Can I get a hot coffee, unsweetened?"
+          },
+          "explanation": "Thay vì dùng 'and no sugar', hãy dùng 'with no sugar'. Cấu trúc mệnh lệnh 'Give me' nghe khá cộc lốc; dùng 'Could I have...' hoặc 'Can I get...' sẽ tự nhiên và lịch thiệp hơn nhiều."
+        }
+      }
+    ]
+  },
+  {
+    "scenario_id": "STATION_INTERVIEW_08",
+    "scenario_name": "Trạm Phỏng Vấn Công Sở (Tuyến Đỏ)",
+    "scenario_description": "Học viên tham gia phỏng vấn xin việc và trả lời câu hỏi hóc búa về điểm yếu cá nhân.",
+    "difficulty": "Hard",
+    "mock_stream_data": [
+      {
+        "turn_id": "T01",
+        "original_audio_duration_seconds": 5.8,
+        "original_text": "My weakness is pay too much attention to details.",
+        "analysis": {
+          "score": 72,
+          "upgrades": {
+            "grammar_ok": "My weakness is paying too much attention to details.",
+            "natural_ok": "My weakness is that I tend to pay too much attention to details.",
+            "native_style": "I'd say my biggest weakness is being a bit of a perfectionist."
+          },
+          "explanation": "Cần danh động từ 'paying' làm bổ ngữ sau 'is'. Sử dụng cụm 'tend to' để giảm tính khẳng định tiêu cực. Người bản xứ thường dùng từ 'perfectionist' (người cầu toàn) để biến điểm yếu thành điểm mạnh một cách tinh tế."
+        }
+      }
+    ]
+  },
+  {
+    "scenario_id": "ARENA_MATCH_89",
+    "scenario_name": "Đấu Trường Tất Tay - Vòng Đối Đầu",
+    "scenario_description": "Mẫu dữ liệu giả lập phòng đấu thời gian thực giữa hai học viên.",
+    "difficulty": "Medium",
+    "mock_stream_data": [
+      {
+        "turn_id": "T01_PLAYER_A",
+        "player_id": "DEV_USER_01",
+        "player_role": "Competitor_A",
+        "original_text": "I work in this company for three years and I like it.",
+        "analysis": {
+          "score": 78,
+          "upgrades": {
+            "grammar_ok": "I have worked in this company for three years and I like it.",
+            "natural_ok": "I've been working at this company for three years now, and I really enjoy it.",
+            "native_style": "I've been with this company for three years now and absolutely love it."
+          },
+          "explanation": "Dùng thì Hiện tại Hoàn thành Tiếp diễn ('have been working') để nhấn mạnh quá trình liên tục kéo dài 3 năm. Động từ 'love' hoặc cụm 'been with' tạo cảm giác tự nhiên và gắn bó hơn."
+        }
+      },
+      {
+        "turn_id": "T01_PLAYER_B",
+        "player_id": "ACE_USER_99",
+        "player_role": "Competitor_B",
+        "original_text": "Actually, my English not very good but I learn fast.",
+        "analysis": {
+          "score": 60,
+          "upgrades": {
+            "grammar_ok": "Actually, my English is not very good, but I learn quickly.",
+            "natural_ok": "Actually, my English isn't great, but I'm a fast learner.",
+            "native_style": "To be honest, my English is a bit rusty, but I pick things up super fast."
+          },
+          "explanation": "Thiếu động từ to be 'is' sau danh từ 'English', và trạng từ 'quickly' bổ nghĩa cho động từ 'learn'. 'A fast learner' là cách diễn đạt phổ biến, còn cụm 'rusty' (hơi lục nghề/bị mòn) thể hiện phong cách bản xứ sành điệu."
+        }
+      }
+    ]
+  }
+]

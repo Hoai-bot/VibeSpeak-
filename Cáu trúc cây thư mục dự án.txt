@@ -1,0 +1,63 @@
+vibespeak-app/
+│
+├── frontend/                          # 📱 THƯ MỤC ỨNG DỤNG REACT NATIVE (EXPO)
+│   ├── assets/                        # Chứa tài nguyên tĩnh
+│   │   ├── fonts/                     # Font chữ (Courier New, Digital, Retro)
+│   │   ├── images/                    # UI Assets (Bản đồ SVG, Băng cassette, Avatar)
+│   │   └── sounds/                    # SFX (typewriter_click.mp3, ding_complete.mp3)
+│   │
+│   ├── src/                           # 🧠 LÕI XỬ LÝ CỦA FRONT-END
+│   │   ├── components/                # Các UI Component dùng chung
+│   │   │   ├── animations/            # (Hiệu ứng: Máy chữ Neon, Cassette quay trục)
+│   │   │   ├── arena/                 # (Giao diện VS Grid, Bộ đếm ngược, Nút Tất tay)
+│   │   │   └── common/                # (Nút bấm cơ bản, Header, Modal)
+│   │   │
+│   │   ├── screens/                   # Các màn hình chính của ứng dụng
+│   │   │   ├── SubwayMapScreen.tsx    # Bản đồ lộ trình Tàu điện ngầm
+│   │   │   ├── ScenarioScreen.tsx     # Luyện tập 1:1 tại các Trạm
+│   │   │   ├── DebriefCassetteScreen.tsx # Màn hình gỡ băng báo cáo
+│   │   │   ├── AllInArenaScreen.tsx   # Đấu Trường Tất Tay (Real-time)
+│   │   │   ├── ShadowArenaScreen.tsx  # Đấu Trường Bóng Ma (Bất đồng bộ)
+│   │   │   └── OasisReliefScreen.tsx  # Trạm Cứu Trợ Tâm Lý
+│   │   │
+│   │   ├── navigation/                # Cấu hình điều hướng (React Navigation)
+│   │   │   └── AppNavigator.tsx       
+│   │   │
+│   │   ├── services/                  # Xử lý gọi API và logic nghiệp vụ ngoài
+│   │   │   ├── supabaseClient.ts      # Khởi tạo kết nối Supabase
+│   │   │   ├── groqAiService.ts       # Gửi audio STT & gọi Groq API (Streaming)
+│   │   │   └── audioRecorder.ts       # Xử lý Expo-AV (Thu âm Mono 16kHz)
+│   │   │
+│   │   ├── hooks/                     # Custom Hooks (Tái sử dụng logic)
+│   │   │   ├── useSupabaseRealtime.ts # Lắng nghe WebSockets cho Đấu trường
+│   │   │   ├── useTypewriter.ts       # Hook đồng bộ chữ và âm thanh cơ học
+│   │   │   └── useFluencyCheck.ts     # Bóc tách và phân tích điểm trôi chảy
+│   │   │
+│   │   ├── store/                     # Quản lý State toàn cục (Zustand hoặc Redux)
+│   │   │   └── userStore.ts           # Lưu trạng thái Quỹ EXP, Streak, is_sealed
+│   │   │
+│   │   └── utils/                     # Các hàm hỗ trợ (Format ngày tháng, tính toán)
+│   │
+│   ├── App.tsx                        # Điểm khởi chạy ứng dụng Frontend
+│   ├── app.json                       # Cấu hình Expo (Tên app, icon, version)
+│   └── package.json                   
+│
+├── supabase/                          # 🗄️ THƯ MỤC QUẢN LÝ BACK-END (SUPABASE CLI)
+│   ├── migrations/                    # File SQL tạo bảng và Transaction
+│   │   ├── 20260901_init_users.sql    # (Bảng User, Tuyến tàu, Cấu hình trạm)
+│   │   ├── 20260902_arena_logic.sql   # (Bảng Đấu trường và Transaction cược điểm)
+│   │   ├── 20260903_shadow_boss.sql   # (Bảng Bóng ma và Đấu trường bất đồng bộ)
+│   │   └── 20260904_unlock_seal.sql   # (Stored Procedure giải ấn đặc quyền)
+│   │
+│   ├── functions/                     # Supabase Edge Functions (Nếu cần chạy tác vụ nền)
+│   │   └── extract_shadow_bosses/     # Script tự động trích xuất Top Player hàng tuần
+│   │
+│   └── config.toml                    # Cấu hình dự án Supabase nội bộ
+│
+├── docs/                              # 📚 TÀI LIỆU THIẾT KẾ ĐÃ CHỐT
+│   ├── vibespeak_specs.md             # Đặc tả yêu cầu hệ thống
+│   ├── vibespeak_ui_wireframes.md     # Bản vẽ ASCII UI (Cassette, Arena, Trạm cứu trợ)
+│   └── vibespeak_prompts.md           # Chứa System Prompt V5 (Chấm 5 tiêu chí)
+│
+├── .gitignore
+└── README.md                          # Hướng dẫn cài đặt và chạy dự án
