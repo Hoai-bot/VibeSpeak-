@@ -65,43 +65,50 @@ export async function generateDynamicDrill(
   if (tier === 1) {
     tierRules = `
 STRICT FORMAT FOR TIER 1 (Minimal Pairs ONLY):
-- "target" MUST be EXACTLY TWO contrasting words separated by slash: "WordA / WordB" (e.g., "Ship / Sheep", "Think / Sink", "Probe / Prove").
-- "phonetics" MUST follow STRICT CAMBRIDGE INTERNATIONAL PHONETICS (IPA).
+- "target" MUST be EXACTLY TWO contrasting words separated by slash: "WordA / WordB" (e.g., "Ship / Sheep", "Think / Sink", "Probe / Prove", "Server / Sever").
+- "phonetics" MUST follow STRICT CAMBRIDGE/OXFORD INTERNATIONAL PHONETICS (IPA).
   CRITICAL IPA RULES:
-  * "Prove" MUST be /pruːv/ (DO NOT use /prəʊv/).
-  * "Probe" MUST be /prəʊb/ (US: /proʊb/).
-  * "Sheep" MUST be /ʃiːp/, "Ship" MUST be /ʃɪp/.
-- DO NOT generate single words, full sentences, or phrases.
+  * "Sever" MUST BE /ˈsev.ər/ (NEVER /siːvər/).
+  * "Server" MUST BE /ˈsɜː.vər/.
+  * "Prove" MUST BE /pruːv/ (DO NOT use /prəʊv/).
+  * "Probe" MUST BE /prəʊb/ (US: /proʊb/).
+  * "Sheep" MUST BE /ʃiːp/, "Ship" MUST BE /ʃɪp/.
+- DO NOT generate single words, full sentences, or unnatural phrases.
 - "spokenText" MUST BE ONLY the two target words separated by space: "WordA WordB" (e.g., "Probe Prove").
 `;
   } else if (tier === 2) {
     tierRules = `
-STRICT FORMAT FOR TIER 2 (Consonant-to-Vowel Linking Phrases ONLY):
-- "target" MUST be a natural spoken phrase of 3-5 words focusing strictly on Consonant-to-Vowel linking (e.g., "Check it out", "Hold on a second", "Plug in the device").
-- In "tip", explicitly explain WHICH consonant links to WHICH vowel in Vietnamese.
-- "spokenText" MUST be the exact phrase without punctuation (e.g., "Check it out").
+STRICT FORMAT FOR TIER 2 (Consonant-to-Vowel Linking & Meaningful Sentences):
+- "target" MUST be a natural, meaningful spoken phrase or short sentence of 3-6 words (e.g., "Check it out", "Hold on a second", "Save the data", "Pick up the phone").
+- STRICT PHONETIC ACCURACY & SENTENCE SANITY RULES:
+  * NEVER generate nonsensical phrases like "Hold on a data date".
+  * "date" MUST strictly be /deɪt/ (NEVER /dæt/).
+  * "data" MUST strictly be /ˈdeɪ.tə/ or /ˈdɑː.tə/.
+  * IPA must clearly show linking symbols or spacing (e.g., /hoʊld ɒn ə ˈsek.ənd/).
+- In "tip", explicitly explain WHICH consonant links to WHICH vowel in natural Vietnamese.
+- "spokenText" MUST be the exact phrase without punctuation (e.g., "Hold on a second").
 `;
   } else if (tier === 3) {
     tierRules = `
 STRICT FORMAT FOR TIER 3 (Tongue Twisters ONLY):
-- "target" MUST be a genuine, challenging English Tongue Twister sentence of 6-12 words (e.g., "She sells seashells by the seashore", "Betty Botter bought some butter", "Red leather yellow leather").
-- DO NOT generate plain conversational sentences.
+- "target" MUST be a genuine, challenging English Tongue Twister sentence of 6-12 words (e.g., "She sells seashells by the seashore", "Betty Botter bought some butter").
+- "phonetics" MUST follow strict Cambridge IPA rules for every word.
 - "spokenText" MUST be the full tongue twister sentence without punctuation.
 `;
   }
 
   const prompt = `
-You are an AI English Pronunciation Coach. Generate ONE UNIQUE practice item for Tier ${tier}.
+You are a Senior Phonetics Expert and ELT Materials Designer. Generate ONE UNIQUE practice item for Tier ${tier}.
 - CEFR Target: ${cefrLevel}
 - Topic Context: ${topicContext}
 ${targetSRSWord ? `- Review Focus Word: "${targetSRSWord}"` : ''}
 
 ${tierRules}
 
-STRICT ARTICLE PHONETIC RULES:
-- Pronounce "the" as /ðə/ before CONSONANT sounds (e.g., "the device" -> /ðə dɪˈvaɪs/, "the car" -> /ðə kɑːr/).
-- Pronounce "the" as /ði/ ONLY before VOWEL sounds (e.g., "the apple" -> /ði ˈæpl/, "the end" -> /ði end/).
-- DO NOT output /ði/ before consonant words like "device" or "car".
+STRICT ARTICLE & IPA RULES:
+- Pronounce "the" as /ðə/ before CONSONANT sounds (e.g., "the device" -> /ðə dɪˈvaɪs/).
+- Pronounce "the" as /ði/ ONLY before VOWEL sounds (e.g., "the apple" -> /ði ˈæpl/).
+- Ensure 100% dictionary accuracy for all vowel and consonant symbols.
 
 CRITICAL CONSTRAINT:
 DO NOT reuse any of these targets: [${excludeList}].
@@ -121,7 +128,7 @@ Return ONLY a valid JSON object matching this structure:
     const response = await groq.chat.completions.create({
       messages: [{ role: 'user', content: prompt }],
       model: 'openai/gpt-oss-20b',
-      temperature: 0.98,
+      temperature: 0.7, // Giảm bớt temperature để AI không tự ý biến tấu sai ngữ âm
       response_format: { type: 'json_object' },
     });
 
@@ -154,11 +161,12 @@ Return ONLY a valid JSON object matching this structure:
 
     const fallbackTier1 = [
       { target: "Probe / Prove", phonetics: "/prəʊb/ - /pruːv/", meaning: "Điều tra / Chứng minh", tip: "Probe dùng âm /əʊ/, Prove dùng âm /uː/ tròn môi kéo dài.", spokenText: "Probe Prove" },
-      { target: "Ship / Sheep", phonetics: "/ʃɪp/ - /ʃiːp/", meaning: "Con tàu / Con cừu", tip: "Âm /ɪ/ ngắn bật nhanh, /iː/ kéo dài.", spokenText: "Ship Sheep" },
-      { target: "Think / Sink", phonetics: "/θɪŋk/ - /sɪŋk/", meaning: "Suy nghĩ / Bồn rửa", tip: "Âm /θ/ đặt lưỡi giữa răng thổi hơi.", spokenText: "Think Sink" }
+      { target: "Server / Sever", phonetics: "/ˈsɜː.vər/ - /ˈsev.ər/", meaning: "Máy chủ / Cắt đứt", tip: "Server dùng âm /ɜː/ dài, Sever dùng âm /e/ ngắn.", spokenText: "Server Sever" },
+      { target: "Ship / Sheep", phonetics: "/ʃɪp/ - /ʃiːp/", meaning: "Con tàu / Con cừu", tip: "Âm /ɪ/ ngắn bật nhanh, /iː/ kéo dài.", spokenText: "Ship Sheep" }
     ];
     const fallbackTier2 = [
-      { target: "Plug in the device", phonetics: "/plʌɡ ɪn ðə dɪˈvaɪs/", meaning: "Cắm thiết bị vào", tip: "Nối /ɡ/ sang /ɪ/ (Plug-in). 'The' trước 'device' đọc là /ðə/ vì 'device' bắt đầu bằng phụ âm /d/.", spokenText: "Plug in the device" },
+      { target: "Hold on a second", phonetics: "/həʊld ɒn ə ˈsek.ənd/", meaning: "Chờ một chút nhé", tip: "Nối âm /d/ trong 'Hold' sang /ɒ/ trong 'on' (Hold-on).", spokenText: "Hold on a second" },
+      { target: "Plug in the device", phonetics: "/plʌɡ ɪn ðə dɪˈvaɪs/", meaning: "Cắm thiết bị vào", tip: "Nối /ɡ/ sang /ɪ/ (Plug-in). 'The' đọc là /ðə/ trước phụ âm /d/.", spokenText: "Plug in the device" },
       { target: "Check it out", phonetics: "/tʃek ɪt aʊt/", meaning: "Kiểm tra nó xem", tip: "Nối /k/ sang /ɪ/ (Check-it) và /t/ sang /aʊ/ (it-out).", spokenText: "Check it out" }
     ];
     const fallbackTier3 = [
