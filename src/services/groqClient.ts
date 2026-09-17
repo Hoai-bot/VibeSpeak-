@@ -181,8 +181,15 @@ EXPECTED JSON FORMAT:
     const safeFluency = rawFluency > 0 ? rawFluency : Math.max(finalScore - 5, 60);
     const safeSemantic = rawSemantic > 0 ? rawSemantic : Math.min(finalScore + 5, 100);
 
+    // 🎯 KHỐI AN TOÀN CHỐNG CRASH HÀM LƯU SRS
     if (finalScore < 60) {
-      await saveWeakWordToSRS(targetText);
+      try {
+        if (typeof saveWeakWordToSRS === 'function') {
+          await saveWeakWordToSRS(targetText);
+        }
+      } catch (srsErr) {
+        console.warn("⚠️ Bỏ qua lỗi lưu SRS để không sập tiến trình chấm điểm:", srsErr);
+      }
     }
 
     return {
