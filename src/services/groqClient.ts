@@ -29,6 +29,60 @@ export interface GradeResult {
   isStreaking?: boolean;
 }
 
+export interface OasisRemediation {
+  wordPair: string;
+  phonetics: string;
+  translation: string;
+  mouthShapeAdvice: string;
+}
+
+/**
+ * 🏝️ VIBE OASIS - HÀM TẠO HƯỚNG DẪN CHUẨN NGỮ ÂM IPA VÀ KHẨU HÌNH TRÍ TUỆ AI
+ */
+export async function getOasisRemediation(targetText: string): Promise<OasisRemediation> {
+  const prompt = `You are a World-Class International Phonetics Association (IPA) Specialist & Voice Coach.
+Analyze the target phrase/word pair: "${targetText}"
+
+STRICT PHONETIC RULES (CAMBRIDGE / OXFORD DICTIONARY COMPLIANT):
+1. Provide ACCURATE British/American IPA transcriptions. NEVER hallucinate phonemes!
+   - Examples: "sever" MUST BE /ˈsev.ər/ (vowel /e/, NOT /siːvər/).
+   - "server" MUST BE /ˈsɜː.vər/.
+   - "severe" MUST BE /sɪˈvɪər/.
+2. Explain mouth position, tongue placement, and vowel length differences clearly in natural Vietnamese.
+
+EXPECTED JSON SCHEMA:
+{
+  "wordPair": "server / sever",
+  "phonetics": "/ˈsɜː.vər/ vs /ˈsev.ər/",
+  "translation": "máy chủ / cắt đứt",
+  "mouthShapeAdvice": "Sự khác biệt lớn nhất nằm ở nguyên âm: 'server' dùng âm /ɜː/ dài (mở miệng vừa, hơi lùi lưỡi), trong khi 'sever' dùng nguyên âm ngắn /e/ (mở miệng rộng vừa, ngắt hơi nhanh). Tránh nhầm 'sever' với 'severe' (/sɪˈvɪər/)."
+}`;
+
+  try {
+    const res = await groq.chat.completions.create({
+      messages: [{ role: 'user', content: prompt }],
+      model: 'openai/gpt-oss-20b',
+      temperature: 0.1,
+      response_format: { type: 'json_object' },
+    });
+
+    const parsed = JSON.parse(res.choices[0]?.message?.content || '{}');
+    return {
+      wordPair: parsed.wordPair || targetText,
+      phonetics: parsed.phonetics || '',
+      translation: parsed.translation || '',
+      mouthShapeAdvice: parsed.mouthShapeAdvice || 'Chú ý độ mở của khẩu hình miệng và độ dài nguyên âm.',
+    };
+  } catch (e) {
+    return {
+      wordPair: targetText,
+      phonetics: '',
+      translation: '',
+      mouthShapeAdvice: 'Luyện tập phát âm chậm từng âm tiết để cải thiện độ chính xác.',
+    };
+  }
+}
+
 export async function gradeFlexibleArenaResponse(
   audioBlob: Blob,
   targetText: string,
