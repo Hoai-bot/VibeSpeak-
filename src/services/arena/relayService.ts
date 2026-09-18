@@ -4,46 +4,38 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const ACTIVE_GROQ_KEY = process.env.EXPO_PUBLIC_GROQ_API_KEY || '';
 const groq = new Groq({ apiKey: ACTIVE_GROQ_KEY, dangerouslyAllowBrowser: true });
+const STORAGE_KEY_RELAY = '@vibespeak_history_arena_tier2_relay_v1';
 
 export interface RelayChallenge {
   topic: string;
-  player1Prompt: string;
-  player2Prompt: string;
-  scoringFocus: string;
+  context: string;
+  player1Guideline: string;
+  player2Guideline: string;
+  keyVocabulary: string[];
 }
 
 export async function generateRelayChallenge(cefrLevel: string = 'B2'): Promise<RelayChallenge> {
   let levelRules = '';
   if (cefrLevel === 'A1' || cefrLevel === 'A2') {
-    levelRules = `
-- CEFR LEVEL: BASIC (${cefrLevel})
-- Sentences MUST be simple and short (4-7 words per player).
-- Player 1: "I love learning English on my phone."
-- Player 2: "Me too, it helps me speak much better."`;
+    levelRules = `- Level EASY (${cefrLevel}): Everyday topics (hobbies, food, weekend plans). Simple guidelines.`;
   } else if (cefrLevel === 'B1' || cefrLevel === 'B2') {
-    levelRules = `
-- CEFR LEVEL: INTERMEDIATE (${cefrLevel})
-- Sentences MUST be natural conversation/workplace sentences (8-12 words per player).
-- Player 1: "Traditional learning methods are getting outdated for young students."
-- Player 2: "That is why we built VibeSpeak to gamify English learning."`;
+    levelRules = `- Level INTERMEDIATE (${cefrLevel}): Education, technology, workplace issues. Business-lite guidelines.`;
   } else {
-    levelRules = `
-- CEFR LEVEL: ADVANCED (${cefrLevel})
-- Sentences MUST use business/tech jargon and complex clauses (12-18 words per player).
-- Player 1: "Legacy corporate training infrastructure lacks real-time interactive feedback for global teams."
-- Player 2: "Deploying our scalable AI voice matrix will immediately optimize employee fluency metrics."`;
+    levelRules = `- Level ADVANCED (${cefrLevel}/C2): Executive pitches, AI startup strategies, economics, global market trends. Complex guidelines.`;
   }
 
-  const prompt = `Generate ONE 2-Player Relay Challenge tailored STRICTLY to CEFR level ${cefrLevel}.
+  const prompt = `You are a 2-Player Open Speaking Relay Challenge Generator for CEFR ${cefrLevel}.
+Create ONE unified topic where 2 players collaborate to complete a 60-second discussion/pitch (~30s each).
 
 ${levelRules}
 
 Return ONLY JSON:
 {
-  "topic": "Challenge Title",
-  "player1Prompt": "Player 1 sentence",
-  "player2Prompt": "Player 2 sentence",
-  "scoringFocus": "Detailed Vietnamese feedback criteria"
+  "topic": "Topic Name",
+  "context": "Brief context or problem statement",
+  "player1Guideline": "What Player 1 should discuss in 30s (e.g. Present the current problem/situation)",
+  "player2Guideline": "What Player 2 should discuss in 30s (e.g. Offer solutions and call to action)",
+  "keyVocabulary": ["word1", "word2", "word3"]
 }`;
 
   try {
@@ -58,10 +50,11 @@ Return ONLY JSON:
     return parsed;
   } catch (error) {
     return {
-      topic: `Relay Challenge (${cefrLevel})`,
-      player1Prompt: cefrLevel.startsWith('A') ? "Do you like learning English online?" : "Global communication requires strong pronunciation skills.",
-      player2Prompt: cefrLevel.startsWith('A') ? "Yes, I practice speaking every single day." : "Our platform provides instant voice feedback to solve that.",
-      scoringFocus: "Giữ nhịp độ giao tiếp tự nhiên giữa 2 bạn."
+      topic: `Green Energy Transition [${cefrLevel}]`,
+      context: "Discussing how small businesses can adopt sustainable energy solutions.",
+      player1Guideline: "Player 1 (30s): Explain why traditional energy is getting too expensive and harmful.",
+      player2Guideline: "Player 2 (30s): Propose switching to solar power and highlight the long-term financial benefits.",
+      keyVocabulary: ["sustainability", "renewable energy", "cost-effective"]
     };
   }
 }
