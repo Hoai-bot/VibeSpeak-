@@ -24,24 +24,26 @@ export default function CyberArenaScreen({ onBack }: Props) {
   const [relayData, setRelayData] = useState<RelayChallenge | null>(null);
   const [roleplayData, setRoleplayData] = useState<RoleplayScenario | null>(null);
 
-  // 🎙️ STATE QUẢN LÝ GHI ÂM VÀ CHẤM ĐIỂM 3D
+  // 🎙️ STATE QUẢN LÝ GHI ÂM VÀ CHẤM ĐIỂM
   const [isRecording, setIsRecording] = useState<boolean>(false);
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
   const [result, setResult] = useState<GradeResult | null>(null);
   const [recordedAudioUri, setRecordedAudioUri] = useState<string | null>(null);
 
-  // ⏱️ STATE ĐỒNG HỒ ĐẾM NGƯỢC 30S CHO TẦNG RELAY
+  // ⏱️ STATE ĐỒNG HỒ ĐẾM NGƯỢC
   const [timeLeft, setTimeLeft] = useState<number>(30);
   const [activePlayer, setActivePlayer] = useState<1 | 2>(1);
   const timerRef = useRef<any>(null);
 
   const mediaRecorderRef = useRef<any>(null);
   const audioChunksRef = useRef<any[]>([]);
+  const currentAudioElementRef = useRef<HTMLAudioElement | null>(null); // Khóa kiểm soát Audio nghe lại
 
   const levels: CEFRLevel[] = ['A1', 'A2', 'B1', 'B2', 'C1'];
 
   const loadArenaChallenge = async (tier = arenaTier, level = cefrLevel) => {
     stopTimer();
+    stopAudioPlayback();
     setLoading(true);
     setResult(null);
     setRecordedAudioUri(null);
@@ -67,7 +69,7 @@ export default function CyberArenaScreen({ onBack }: Props) {
     loadArenaChallenge(arenaTier, cefrLevel);
   }, [arenaTier]);
 
-  // ⏱️ HÀM BẮT ĐẦU ĐỒNG HỒ ĐẾM NGƯỢC 30S LẦN LƯỢT CHO 2 BẠN
+  // ⏱️ HÀM ĐẾM NGƯỢC 30S TỰ ĐỘNG DỪNG (ÁP DỤNG CHO CẢ SOLO & RELAY)
   const startTimer = () => {
     setTimeLeft(30);
     setActivePlayer(1);
@@ -76,8 +78,15 @@ export default function CyberArenaScreen({ onBack }: Props) {
     timerRef.current = setInterval(() => {
       setTimeLeft((prev) => {
         if (prev <= 1) {
-          setActivePlayer((current) => (current === 1 ? 2 : 1));
-          return 30; // Reset lại 30s cho lượt tiếp theo
+          if (arenaTier === 1) {
+            // Tầng Solo: Tự động dừng ghi âm và gửi AI chấm điểm ngay khi hết 30s
+            stopAndGrade();
+            return 0;
+          } else if (arenaTier === 2) {
+            // Tầng Relay: Chuyển lượt sang Bạn 2
+            setActivePlayer((current) => (current === 1 ? 2 : 1));
+            return 30;
+          }
         }
         return prev - 1;
       });
@@ -90,8 +99,17 @@ export default function CyberArenaScreen({ onBack }: Props) {
     setActivePlayer(1);
   };
 
-  // 🎙️ BẮT ĐẦU GHI ÂM MICRO & ĐỒNG HỒ
+  const stopAudioPlayback = () => {
+    if (currentAudioElementRef.current) {
+      currentAudioElementRef.current.pause();
+      currentAudioElementRef.current.currentTime = 0;
+      currentAudioElementRef.current = null;
+    }
+  };
+
+  // 🎙️ BẮT ĐẦU GHI ÂM MICRO
   const startRecording = async () => {
+    stopAudioPlayback();
     try {
       if (typeof navigator === 'undefined' || !navigator.mediaDevices) {
         alert("Trình duyệt không hỗ trợ Micro!");
@@ -112,8 +130,10 @@ export default function CyberArenaScreen({ onBack }: Props) {
       setResult(null);
       setRecordedAudioUri(null);
 
-      // Kích hoạt đồng hồ nếu ở Tầng Relay
-      if (arenaTier === 2) startTimer();
+      // Bật đồng hồ đếm ngược 30s cho Tầng 1 (Solo) và Tầng 2 (Relay)
+      if (arenaTier === 1 || arenaTier === 2) {
+        startTimer();
+      }
     } catch (err) {
       alert("Chưa cấp quyền truy cập Micro!");
     }
@@ -164,10 +184,13 @@ export default function CyberArenaScreen({ onBack }: Props) {
     }
   };
 
+  // 🎧 PHÁT ÂM THANH NGHE LẠI CHỐNG LỖI TREO
   const playRecordedAudio = () => {
     if (recordedAudioUri) {
+      stopAudioPlayback();
       const audio = new Audio(recordedAudioUri);
-      audio.play();
+      currentAudioElementRef.current = audio;
+      audio.play().catch(e => console.error("Playback failed:", e));
     }
   };
 
@@ -310,16 +333,17 @@ export default function CyberArenaScreen({ onBack }: Props) {
           <Text style={styles.nextText}>🔄 ĐỔI ĐỀ THÁCH ĐẤU MỚI ({cefrLevel})</Text>
         </TouchableOpacity>
 
-        {/* ⏱️ ĐỒNG HỒ ĐẾM NGƯỢC 30S HIỂN THỊ KHI ĐANG GHI ÂM RELAY */}
-        {arenaTier === 2 && isRecording && (
+        {/* ⏱️ ĐỒNG HỒ ĐẾM NGƯỢC THỜI GIAN THI ĐẤU */}
+        {isRecording && (
           <View style={styles.timerContainer}>
             <Text style={styles.playerTurnText}>
-              {activePlayer === 1 ? '👤 DÀNH CHO BẠN 1 (ĐẶT VẤN ĐỀ)' : '👤 ĐẾN LƯỢT BẠN 2 (GIẢI PHÁP)'}
+              {arenaTier === 1 
+                ? '🎙️ ĐANG GHI ÂM SOLO (TỰ ĐỘNG DỪNG KHI HẾT 30S)' 
+                : (activePlayer === 1 ? '👤 DÀNH CHO BẠN 1 (ĐẶT VẤN ĐỀ)' : '👤 ĐẾN LƯỢT BẠN 2 (GIẢI PHÁP)')}
             </Text>
             <Text style={[styles.timerNumber, timeLeft <= 5 && { color: '#FF0055' }]}>
               ⏱️ 00:{timeLeft < 10 ? `0${timeLeft}` : timeLeft}
             </Text>
-            <Text style={styles.timerSub}>Đổi lượt ngay khi đồng hồ nhảy lượt!</Text>
           </View>
         )}
 
@@ -437,7 +461,6 @@ const styles = StyleSheet.create({
   timerContainer: { backgroundColor: '#120826', padding: 12, borderRadius: 12, borderWidth: 2, borderColor: '#39FF14', width: '100%', alignItems: 'center', marginBottom: 12 },
   playerTurnText: { color: '#39FF14', fontSize: 11, fontWeight: '900', marginBottom: 2 },
   timerNumber: { color: '#00FFCC', fontSize: 24, fontWeight: '900', marginVertical: 2 },
-  timerSub: { color: '#AAAABB', fontSize: 9, fontStyle: 'italic' },
 
   recordBtn: { backgroundColor: '#39FF14', padding: 14, borderRadius: 12, width: '100%', alignItems: 'center', marginBottom: 15 },
   recordText: { color: '#000', fontSize: 12, fontWeight: '900' },
