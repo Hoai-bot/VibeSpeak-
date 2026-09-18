@@ -1,10 +1,8 @@
 // src/services/arena/roleplayService.ts
 import { Groq } from 'groq-sdk';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const ACTIVE_GROQ_KEY = process.env.EXPO_PUBLIC_GROQ_API_KEY || '';
 const groq = new Groq({ apiKey: ACTIVE_GROQ_KEY, dangerouslyAllowBrowser: true });
-const STORAGE_KEY_ROLEPLAY = '@vibespeak_history_arena_tier3_roleplay_v1';
 
 export interface RoleplayScenario {
   scenarioTitle: string;
@@ -14,60 +12,55 @@ export interface RoleplayScenario {
   goal: string;
 }
 
-async function getRoleplayHistory(): Promise<string[]> {
-  try {
-    const data = await AsyncStorage.getItem(STORAGE_KEY_ROLEPLAY);
-    return data ? JSON.parse(data) : [];
-  } catch { return []; }
-}
-
-async function saveRoleplayHistory(title: string): Promise<void> {
-  try {
-    const history = await getRoleplayHistory();
-    const clean = title.toLowerCase().trim();
-    if (!history.includes(clean)) {
-      history.push(clean);
-      if (history.length > 50) history.shift();
-      await AsyncStorage.setItem(STORAGE_KEY_ROLEPLAY, JSON.stringify(history));
-    }
-  } catch (e) { console.error(e); }
-}
-
 export async function generateRoleplayScenario(cefrLevel: string = 'B2'): Promise<RoleplayScenario> {
-  const history = await getRoleplayHistory();
-  const excludeList = history.join(', ');
+  let levelRules = '';
+  if (cefrLevel === 'A1' || cefrLevel === 'A2') {
+    levelRules = `
+- CEFR LEVEL: BASIC (${cefrLevel})
+- Situation: Ordering food, asking directions, meeting a new friend at school.
+- AI Initial Message: Simple question (e.g., "Hello! What drink would you like to order today?")`;
+  } else if (cefrLevel === 'B1' || cefrLevel === 'B2') {
+    levelRules = `
+- CEFR LEVEL: INTERMEDIATE (${cefrLevel})
+- Situation: Job interview, reporting a problem to customer service, travel booking.
+- AI Initial Message: "Can you tell me about a project you recently completed at work?"`;
+  } else {
+    levelRules = `
+- CEFR LEVEL: ADVANCED (${cefrLevel})
+- Situation: Pitching to Venture Capitalists, salary negotiation, crisis management in tech.
+- AI Initial Message: "Your startup valuation seems high. Why should our fund invest $1M in your platform?"`;
+  }
 
-  const prompt = `You are a Professional Roleplay Scenario Designer for Business English (Tier 3 Arena).
-Generate ONE UNIQUE roleplay situation between User and AI Bot.
-- FORBIDDEN SCENARIOS: [${excludeList}].
+  const prompt = `Generate ONE Roleplay Scenario tailored STRICTLY to CEFR Level ${cefrLevel}.
+
+${levelRules}
 
 Return ONLY JSON:
 {
-  "scenarioTitle": "Venture Capital Pitch",
-  "aiRole": "Tech Investor",
-  "userRole": "Startup Founder",
-  "initialAiMessage": "Welcome to our investment firm. Why should we invest in your English AI app?",
-  "goal": "Thuyết phục nhà đầu tư trong 30 giây về tính khả thi của ứng dụng VibeSpeak."
+  "scenarioTitle": "Scenario Name",
+  "aiRole": "AI Character",
+  "userRole": "User Character",
+  "initialAiMessage": "AI greeting/question",
+  "goal": "Vietnamese explanation of user goal"
 }`;
 
   try {
     const response = await groq.chat.completions.create({
       messages: [{ role: 'user', content: prompt }],
       model: 'openai/gpt-oss-20b',
-      temperature: 0.95,
+      temperature: 0.9,
       response_format: { type: 'json_object' },
     });
 
     const parsed: RoleplayScenario = JSON.parse(response.choices[0]?.message?.content || '{}');
-    if (parsed.scenarioTitle) await saveRoleplayHistory(parsed.scenarioTitle);
     return parsed;
   } catch (error) {
     return {
-      scenarioTitle: "Tech Job Interview",
-      aiRole: "HR Manager AI",
-      userRole: "Software Engineer Applicant",
-      initialAiMessage: "Can you describe a challenging technical project you recently completed?",
-      goal: "Giới thiệu bản thân và kinh nghiệm xử lý công nghệ bằng tiếng Anh tự tin."
+      scenarioTitle: `Roleplay (${cefrLevel})`,
+      aiRole: cefrLevel.startsWith('A') ? "Cafe Staff" : "Tech Interviewer",
+      userRole: cefrLevel.startsWith('A') ? "Customer" : "Applicant",
+      initialAiMessage: cefrLevel.startsWith('A') ? "Welcome! What can I get for you today?" : "Tell me about your experience with AI technology.",
+      goal: "Giao tiếp tự nhiên và tự tin hoàn thành tình huống."
     };
   }
 }

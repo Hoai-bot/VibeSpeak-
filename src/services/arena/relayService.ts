@@ -4,7 +4,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const ACTIVE_GROQ_KEY = process.env.EXPO_PUBLIC_GROQ_API_KEY || '';
 const groq = new Groq({ apiKey: ACTIVE_GROQ_KEY, dangerouslyAllowBrowser: true });
-const STORAGE_KEY_RELAY = '@vibespeak_history_arena_tier2_relay_v1';
 
 export interface RelayChallenge {
   topic: string;
@@ -13,62 +12,56 @@ export interface RelayChallenge {
   scoringFocus: string;
 }
 
-async function getRelayHistory(): Promise<string[]> {
-  try {
-    const data = await AsyncStorage.getItem(STORAGE_KEY_RELAY);
-    return data ? JSON.parse(data) : [];
-  } catch { return []; }
-}
-
-async function saveRelayHistory(topic: string): Promise<void> {
-  try {
-    const history = await getRelayHistory();
-    const clean = topic.toLowerCase().trim();
-    if (!history.includes(clean)) {
-      history.push(clean);
-      if (history.length > 50) history.shift();
-      await AsyncStorage.setItem(STORAGE_KEY_RELAY, JSON.stringify(history));
-    }
-  } catch (e) { console.error(e); }
-}
-
 export async function generateRelayChallenge(cefrLevel: string = 'B2'): Promise<RelayChallenge> {
-  const history = await getRelayHistory();
-  const excludeList = history.join(', ');
+  let levelRules = '';
+  if (cefrLevel === 'A1' || cefrLevel === 'A2') {
+    levelRules = `
+- CEFR LEVEL: BASIC (${cefrLevel})
+- Sentences MUST be simple and short (4-7 words per player).
+- Player 1: "I love learning English on my phone."
+- Player 2: "Me too, it helps me speak much better."`;
+  } else if (cefrLevel === 'B1' || cefrLevel === 'B2') {
+    levelRules = `
+- CEFR LEVEL: INTERMEDIATE (${cefrLevel})
+- Sentences MUST be natural conversation/workplace sentences (8-12 words per player).
+- Player 1: "Traditional learning methods are getting outdated for young students."
+- Player 2: "That is why we built VibeSpeak to gamify English learning."`;
+  } else {
+    levelRules = `
+- CEFR LEVEL: ADVANCED (${cefrLevel})
+- Sentences MUST use business/tech jargon and complex clauses (12-18 words per player).
+- Player 1: "Legacy corporate training infrastructure lacks real-time interactive feedback for global teams."
+- Player 2: "Deploying our scalable AI voice matrix will immediately optimize employee fluency metrics."`;
+  }
 
-  const prompt = `You are a 2-Player Real-Human PvP Relay Challenge Generator for Tier 2.
-Generate ONE UNIQUE 2-part conversation/pitch challenge for Player 1 and Player 2.
+  const prompt = `Generate ONE 2-Player Relay Challenge tailored STRICTLY to CEFR level ${cefrLevel}.
 
-RULES:
-1. Player 1 presents the problem/challenge sentence.
-2. Player 2 counters with the solution/pitch sentence immediately.
-3. FORBIDDEN TOPICS: [${excludeList}].
+${levelRules}
 
 Return ONLY JSON:
 {
-  "topic": "EdTech Pitch Relay",
-  "player1Prompt": "Traditional learning methods are getting outdated and slow for students.",
-  "player2Prompt": "That is why we built VibeSpeak to gamify English learning experience.",
-  "scoringFocus": "Nối nhịp giao tiếp mượt mà, phản xạ tự nhiên giữa 2 người chơi."
+  "topic": "Challenge Title",
+  "player1Prompt": "Player 1 sentence",
+  "player2Prompt": "Player 2 sentence",
+  "scoringFocus": "Detailed Vietnamese feedback criteria"
 }`;
 
   try {
     const response = await groq.chat.completions.create({
       messages: [{ role: 'user', content: prompt }],
       model: 'openai/gpt-oss-20b',
-      temperature: 0.95,
+      temperature: 0.9,
       response_format: { type: 'json_object' },
     });
 
     const parsed: RelayChallenge = JSON.parse(response.choices[0]?.message?.content || '{}');
-    if (parsed.topic) await saveRelayHistory(parsed.topic);
     return parsed;
   } catch (error) {
     return {
-      topic: "Startup Idea Relay",
-      player1Prompt: "High-level English skills are in high demand for international tech jobs.",
-      player2Prompt: "Our platform provides real-time AI voice feedback to bridge that gap.",
-      scoringFocus: "Phối hợp ăn ý và giữ độ mượt mà khi đổi lượt nói."
+      topic: `Relay Challenge (${cefrLevel})`,
+      player1Prompt: cefrLevel.startsWith('A') ? "Do you like learning English online?" : "Global communication requires strong pronunciation skills.",
+      player2Prompt: cefrLevel.startsWith('A') ? "Yes, I practice speaking every single day." : "Our platform provides instant voice feedback to solve that.",
+      scoringFocus: "Giữ nhịp độ giao tiếp tự nhiên giữa 2 bạn."
     };
   }
 }

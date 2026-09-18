@@ -12,38 +12,38 @@ export interface SoloTopic {
   keywords: string[];
 }
 
-async function getSoloHistory(): Promise<string[]> {
-  try {
-    const data = await AsyncStorage.getItem(STORAGE_KEY_SOLO);
-    return data ? JSON.parse(data) : [];
-  } catch { return []; }
-}
-
-async function saveSoloHistory(title: string): Promise<void> {
-  try {
-    const history = await getSoloHistory();
-    const clean = title.toLowerCase().trim();
-    if (!history.includes(clean)) {
-      history.push(clean);
-      if (history.length > 50) history.shift();
-      await AsyncStorage.setItem(STORAGE_KEY_SOLO, JSON.stringify(history));
-    }
-  } catch (e) { console.error(e); }
-}
-
 export async function generateSoloTopic(cefrLevel: string = 'B2'): Promise<SoloTopic> {
-  const history = await getSoloHistory();
-  const excludeList = history.join(', ');
+  // 🎯 BỘ QUY TẮC PHÂN CẤP ĐỘ CEFR RÕ RỆT
+  let levelRules = '';
+  if (cefrLevel === 'A1' || cefrLevel === 'A2') {
+    levelRules = `
+- CEFR LEVEL: EASY (${cefrLevel})
+- Vocabulary: Super basic, daily life, simple words (e.g., family, food, daily routine, favorite things).
+- Question length: Short (6-10 words).
+- Example: "Talk about your favorite food and why you like it."`;
+  } else if (cefrLevel === 'B1' || cefrLevel === 'B2') {
+    levelRules = `
+- CEFR LEVEL: INTERMEDIATE (${cefrLevel})
+- Vocabulary: Workplace, technology, social issues, university life.
+- Question length: Medium (10-15 words).
+- Example: "Explain how online learning can help students manage their time better."`;
+  } else {
+    levelRules = `
+- CEFR LEVEL: ADVANCED (${cefrLevel}/C2)
+- Vocabulary: Professional, business pitch, AI ethics, global economics, startup investment.
+- Question length: Advanced (15+ words).
+- Example: "Pitch an AI-driven solution to solve identity verification challenges in fintech."`;
+  }
 
-  const prompt = `You are an AI Business Pitch Coach for Solo Arena (Tier 1).
-Generate ONE UNIQUE 30-second Elevator Pitch topic.
-- FORBIDDEN TOPICS: [${excludeList}].
+  const prompt = `You are an AI Pitch Coach. Generate ONE 100% UNIQUE Solo Pitch topic for CEFR level ${cefrLevel}.
+
+${levelRules}
 
 Return ONLY JSON:
 {
-  "title": "AI Cyber Specialist Pitch",
-  "promptText": "Explain how your product protects user identity in a decentralized web.",
-  "keywords": ["decentralized", "encryption", "privacy"]
+  "title": "Topic Title",
+  "promptText": "Clear topic instruction tailored to ${cefrLevel}",
+  "keywords": ["keyword1", "keyword2", "keyword3"]
 }`;
 
   try {
@@ -55,13 +55,14 @@ Return ONLY JSON:
     });
 
     const parsed: SoloTopic = JSON.parse(response.choices[0]?.message?.content || '{}');
-    if (parsed.title) await saveSoloHistory(parsed.title);
     return parsed;
   } catch (error) {
     return {
-      title: "AI Education Pitch",
-      promptText: "Pitch your ideas on using AI to revolutionize pronunciation learning.",
-      keywords: ["gamification", "phonetics", "speech recognition"]
+      title: `Practice Topic (${cefrLevel})`,
+      promptText: cefrLevel.startsWith('A') 
+        ? "Tell us about your favorite hobby in 30 seconds."
+        : "Pitch your idea on how AI will change education in the next 5 years.",
+      keywords: ["practice", "speaking", "english"]
     };
   }
 }
