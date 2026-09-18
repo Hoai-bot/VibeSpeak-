@@ -17,11 +17,11 @@ export interface RelayChallenge {
 export async function generateRelayChallenge(cefrLevel: string = 'B2'): Promise<RelayChallenge> {
   let levelRules = '';
   if (cefrLevel === 'A1' || cefrLevel === 'A2') {
-    levelRules = `- Level EASY (${cefrLevel}): Everyday topics (hobbies, food, weekend plans). Simple guidelines.`;
+    levelRules = `- Level EASY (${cefrLevel}): Everyday topics (hobbies, food, daily plans). Simple guidelines.`;
   } else if (cefrLevel === 'B1' || cefrLevel === 'B2') {
     levelRules = `- Level INTERMEDIATE (${cefrLevel}): Education, technology, workplace issues. Business-lite guidelines.`;
   } else {
-    levelRules = `- Level ADVANCED (${cefrLevel}/C2): Executive pitches, AI startup strategies, economics, global market trends. Complex guidelines.`;
+    levelRules = `- Level ADVANCED (${cefrLevel}/C2): Executive pitches, AI startup strategies, global market trends. Complex guidelines.`;
   }
 
   const prompt = `You are a 2-Player Open Speaking Relay Challenge Generator for CEFR ${cefrLevel}.
@@ -33,8 +33,8 @@ Return ONLY JSON:
 {
   "topic": "Topic Name",
   "context": "Brief context or problem statement",
-  "player1Guideline": "What Player 1 should discuss in 30s (e.g. Present the current problem/situation)",
-  "player2Guideline": "What Player 2 should discuss in 30s (e.g. Offer solutions and call to action)",
+  "player1Guideline": "What Player 1 should discuss in 30s",
+  "player2Guideline": "What Player 2 should discuss in 30s",
   "keyVocabulary": ["word1", "word2", "word3"]
 }`;
 
@@ -47,7 +47,15 @@ Return ONLY JSON:
     });
 
     const parsed: RelayChallenge = JSON.parse(response.choices[0]?.message?.content || '{}');
-    return parsed;
+    
+    // Bọc dữ liệu mặc định tránh undefined gây văng app
+    return {
+      topic: parsed.topic || `Green Energy Transition [${cefrLevel}]`,
+      context: parsed.context || "Discussing how small businesses can adopt sustainable energy solutions.",
+      player1Guideline: parsed.player1Guideline || "Player 1 (30s): Explain why traditional energy is getting too expensive.",
+      player2Guideline: parsed.player2Guideline || "Player 2 (30s): Propose switching to solar power and highlight benefits.",
+      keyVocabulary: parsed.keyVocabulary || ["sustainability", "renewable energy", "cost-effective"]
+    };
   } catch (error) {
     return {
       topic: `Green Energy Transition [${cefrLevel}]`,
