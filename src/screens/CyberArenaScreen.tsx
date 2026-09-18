@@ -16,9 +16,8 @@ export default function CyberArenaScreen({ onBack }: Props) {
   const [opponentType, setOpponentType] = useState<'bot' | 'human'>('bot');
   const [roomId, setRoomId] = useState<string>('ROOM_5384');
   
-  // 🎯 QUẢN LÝ CẤP ĐỘ CEFR (A1 - C1)
+  // 🎯 QUẢN LÝ CẤP ĐỘ CEFR (A1 - C1) CHO HƯỚNG 1
   const [cefrLevel, setCefrLevel] = useState<CEFRLevel>('B2');
-  const [topicContext, setTopicContext] = useState<string>('Tech & AI Innovations');
 
   const [loading, setLoading] = useState<boolean>(true);
   const [soloData, setSoloData] = useState<SoloTopic | null>(null);
@@ -61,12 +60,12 @@ export default function CyberArenaScreen({ onBack }: Props) {
         <View style={styles.headerBanner}>
           <Text style={styles.bannerTag}>[ REAL-TIME ARENA ]</Text>
           <Text style={styles.bannerTitle}>THI ĐẤU PHẢN XẠ & CƯỢC EXP</Text>
-          <Text style={styles.bannerSub}>Luyện tập phản xạ cùng AI Bot hoặc tạo phòng thách đấu trực tiếp với đồng đội.</Text>
+          <Text style={styles.bannerSub}>Chọn đối thủ, chế độ và cấp độ thi đấu phù hợp để chinh phục trận đấu!</Text>
         </View>
 
         {/* 1. CHỌN ĐỐI THỦ THI ĐẤU */}
         <View style={styles.sectionBox}>
-          <Text style={styles.sectionLabel}>👥 CHỌN ĐỐI THỦ THI ĐẤU:</Text>
+          <Text style={styles.sectionLabel}>👥 1. CHỌN ĐỐI THỦ THI ĐẤU:</Text>
           <View style={styles.rowSelector}>
             <TouchableOpacity 
               style={[styles.selectBtn, opponentType === 'bot' && styles.activeBot]}
@@ -84,15 +83,15 @@ export default function CyberArenaScreen({ onBack }: Props) {
 
           {opponentType === 'human' && (
             <View style={styles.roomBox}>
-              <Text style={styles.roomLabel}>🔑 Mã phòng ghép cặp:</Text>
+              <Text style={styles.roomLabel}>🔑 Mã phòng thi đấu ghép cặp:</Text>
               <TextInput style={styles.roomInput} value={roomId} onChangeText={setRoomId} />
             </View>
           )}
         </View>
 
-        {/* 2. CHỌN CHẾ ĐỘ THI ĐẤU (3 TẦNG) */}
+        {/* 2. CHỌN CHẾ ĐỘ THI ĐẤU */}
         <View style={styles.sectionBox}>
-          <Text style={styles.sectionLabel}>🎯 CHỌN CHẾ ĐỘ THI ĐẤU:</Text>
+          <Text style={styles.sectionLabel}>🎯 2. CHỌN CHẾ ĐỘ THI ĐẤU:</Text>
           
           <TouchableOpacity style={[styles.tierCard, arenaTier === 1 && styles.activeTier1]} onPress={() => setArenaTier(1)}>
             <Text style={styles.tierTitle}>⚡ TẦNG 1: SOLO 30S PULSE</Text>
@@ -110,9 +109,9 @@ export default function CyberArenaScreen({ onBack }: Props) {
           </TouchableOpacity>
         </View>
 
-        {/* 📊 3. CHỌN CẤP ĐỘ THI ĐẤU (NHÚNG TRỰC TIẾP) */}
+        {/* 📊 3. CHỌN CẤP ĐỘ THI ĐẤU (HIỂN THỊ TRỰC TIẾP DẠNG BẢNG NÚT) */}
         <View style={styles.sectionBox}>
-          <Text style={styles.sectionLabel}>📊 CHỌN CẤP ĐỘ THI ĐẤU (CEFR):</Text>
+          <Text style={styles.sectionLabel}>📊 3. CHỌN CẤP ĐỘ THI ĐẤU (CEFR):</Text>
           <View style={styles.levelRow}>
             {levels.map((lvl) => (
               <TouchableOpacity
@@ -171,7 +170,7 @@ export default function CyberArenaScreen({ onBack }: Props) {
         )}
 
         <TouchableOpacity style={styles.startBtn} onPress={() => loadArenaChallenge(arenaTier, cefrLevel)}>
-          <Text style={styles.startBtnText}>⚡ TẠO ĐỀ THÁCH ĐẤU MỚI ({cefrLevel})</Text>
+          <Text style={styles.startBtnText}>⚡ BẮT ĐẦU THÁCH ĐẤU ({cefrLevel})</Text>
         </TouchableOpacity>
       </ScrollView>
     </View>
@@ -211,7 +210,6 @@ const styles = StyleSheet.create({
   tierTitle: { color: '#FFF', fontSize: 12, fontWeight: 'bold' },
   tierSub: { color: '#8888CC', fontSize: 10, marginTop: 2 },
 
-  // Giao diện nút chọn cấp độ A1-C1
   levelRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 },
   levelBtn: { flex: 1, paddingVertical: 10, marginHorizontal: 2, backgroundColor: '#1A0B36', borderRadius: 8, borderWidth: 1, borderColor: '#3A1559', alignItems: 'center' },
   activeLevelBtn: { backgroundColor: '#FF007F', borderColor: '#FF007F' },
