@@ -24,13 +24,13 @@ export default function CyberArenaScreen({ onBack }: Props) {
   const [relayData, setRelayData] = useState<RelayChallenge | null>(null);
   const [roleplayData, setRoleplayData] = useState<RoleplayScenario | null>(null);
 
-  // 🎙️ STATE QUẢN LÝ GHI ÂM VÀ CHẤM ĐIỂM
+  // 🎙️ STATE GHI ÂM VÀ CHẤM ĐIỂM
   const [isRecording, setIsRecording] = useState<boolean>(false);
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
   const [result, setResult] = useState<GradeResult | null>(null);
   const [recordedAudioUri, setRecordedAudioUri] = useState<string | null>(null);
 
-  // ⏱️ STATE ĐỒNG HỒ ĐẾM NGƯỢC
+  // ⏱️ STATE ĐỒNG HỒ ĐẾM NGƯỢC CHUẨN CHO CẢ 3 TẦNG
   const [timeLeft, setTimeLeft] = useState<number>(30);
   const [activePlayer, setActivePlayer] = useState<1 | 2>(1);
   const timerRef = useRef<any>(null);
@@ -69,37 +69,54 @@ export default function CyberArenaScreen({ onBack }: Props) {
     loadArenaChallenge(arenaTier, cefrLevel);
   }, [arenaTier]);
 
-  // ⏱️ LOGIC ĐẾM NGƯỢC CHUẨN: 30S BẠN 1 ➔ 30S BẠN 2 ➔ TỰ ĐỘNG DỪNG VÀ CHẤM ĐIỂM
+  // ⏱️ QUẢN LÝ THỜI GIAN ĐẾM NGƯỢC CHUẨN XÁC
   const startTimer = () => {
-    setTimeLeft(30);
-    setActivePlayer(1);
     if (timerRef.current) clearInterval(timerRef.current);
 
-    timerRef.current = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev <= 1) {
-          if (arenaTier === 1) {
-            // Solo: Hết 30s tự động dừng
+    if (arenaTier === 1) {
+      // Solo: 30s tự dừng
+      setTimeLeft(30);
+      timerRef.current = setInterval(() => {
+        setTimeLeft((prev) => {
+          if (prev <= 1) {
             stopAndGrade();
             return 0;
-          } else if (arenaTier === 2) {
-            // Relay: Kiểm tra lượt hiện tại
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    } else if (arenaTier === 2) {
+      // Relay: 30s Bạn 1 + 30s Bạn 2 (Tổng 60s)
+      setTimeLeft(30);
+      setActivePlayer(1);
+      timerRef.current = setInterval(() => {
+        setTimeLeft((prev) => {
+          if (prev <= 1) {
             setActivePlayer((current) => {
-              if (current === 1) {
-                // Đang ở Bạn 1 -> Chuyển sang Bạn 2 và cho 30s tiếp theo
-                return 2;
-              } else {
-                // Đã hết 30s của Bạn 2 (Tổng 60s) -> Dừng và chấm điểm ngay lập tức!
+              if (current === 1) return 2;
+              else {
                 stopAndGrade();
                 return 2;
               }
             });
-            return 30; // Reset 30s cho Bạn 2
+            return 30;
           }
-        }
-        return prev - 1;
-      });
-    }, 1000);
+          return prev - 1;
+        });
+      }, 1000);
+    } else if (arenaTier === 3) {
+      // Roleplay: Đồng hồ 60s đếm ngược liên tục
+      setTimeLeft(60);
+      timerRef.current = setInterval(() => {
+        setTimeLeft((prev) => {
+          if (prev <= 1) {
+            stopAndGrade();
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
   };
 
   const stopTimer = () => {
@@ -139,10 +156,8 @@ export default function CyberArenaScreen({ onBack }: Props) {
       setResult(null);
       setRecordedAudioUri(null);
 
-      // Bật đồng hồ đếm ngược 30s/lượt
-      if (arenaTier === 1 || arenaTier === 2) {
-        startTimer();
-      }
+      // Kích hoạt đồng hồ tương ứng từng tầng
+      startTimer();
     } catch (err) {
       alert("Chưa cấp quyền truy cập Micro!");
     }
@@ -174,7 +189,7 @@ export default function CyberArenaScreen({ onBack }: Props) {
       setRecordedAudioUri(url);
 
       if (blob.size < 1000) {
-        setResult({ score: 0, phoneticScore: 0, fluencyScore: 0, semanticScore: 0, transcribedText: "(Âm thanh quá ngắn)", feedback: "Hãy nói rõ ràng hơn trong 30-60 giây!" });
+        setResult({ score: 0, phoneticScore: 0, fluencyScore: 0, semanticScore: 0, transcribedText: "(Âm thanh quá ngắn)", feedback: "Hãy nói rõ ràng hơn trong thời lượng quy định!" });
         setIsAnalyzing(false);
         return;
       }
@@ -193,7 +208,6 @@ export default function CyberArenaScreen({ onBack }: Props) {
     }
   };
 
-  // 🎧 PHÁT ÂM THANH NGHE LẠI
   const playRecordedAudio = () => {
     if (recordedAudioUri) {
       stopAudioPlayback();
@@ -263,7 +277,7 @@ export default function CyberArenaScreen({ onBack }: Props) {
 
           <TouchableOpacity style={[styles.tierCard, arenaTier === 3 && styles.activeTier3]} onPress={() => setArenaTier(3)}>
             <Text style={styles.tierTitle}>🎭 TẦNG 3: ROLEPLAY 60S (NHẬP VAI)</Text>
-            <Text style={styles.tierSub}>Nhập vai xử lý tình huống thực tế với AI Bot.</Text>
+            <Text style={styles.tierSub}>Nhập vai xử lý tình huống thực tế 60s (với AI Bot hoặc Bạn học).</Text>
           </TouchableOpacity>
         </View>
 
@@ -330,9 +344,15 @@ export default function CyberArenaScreen({ onBack }: Props) {
             {arenaTier === 3 && roleplayData && (
               <>
                 <Text style={styles.cardTitle}>🎭 KỊCH BẢN: {roleplayData.scenarioTitle} [{cefrLevel}]</Text>
-                <Text style={styles.roleText}>🤖 AI Bot: {roleplayData.aiRole} | 👨‍🎓 Bạn: {roleplayData.userRole}</Text>
-                <Text style={styles.cardDesc}>💬 AI Bot nói: "{roleplayData.initialAiMessage}"</Text>
-                <Text style={styles.keyText}>🎯 Mục tiêu: {roleplayData.goal}</Text>
+                <Text style={styles.roleText}>
+                  {opponentType === 'bot' 
+                    ? `🤖 AI Bot: ${roleplayData.aiRole}  |  👨‍🎓 Bạn: ${roleplayData.userRole}`
+                    : `👤 Người chơi 1: ${roleplayData.aiRole}  |  👥 Người chơi 2: ${roleplayData.userRole}`}
+                </Text>
+                <Text style={styles.cardDesc}>
+                  💬 {opponentType === 'bot' ? 'AI Bot bắt đầu:' : 'Gợi ý bắt đầu:'} "{roleplayData.initialAiMessage}"
+                </Text>
+                <Text style={styles.keyText}>🎯 Mục tiêu giao tiếp: {roleplayData.goal}</Text>
               </>
             )}
           </View>
@@ -342,16 +362,16 @@ export default function CyberArenaScreen({ onBack }: Props) {
           <Text style={styles.nextText}>🔄 ĐỔI ĐỀ THÁCH ĐẤU MỚI ({cefrLevel})</Text>
         </TouchableOpacity>
 
-        {/* ⏱️ ĐỒNG HỒ ĐẾM NGƯỢC THỜI GIAN THI ĐẤU */}
+        {/* ⏱️ THANH ĐỒNG HỒ ĐẾM NGƯỢC THỜI GIAN THI ĐẤU */}
         {isRecording && (
           <View style={styles.timerContainer}>
             <Text style={styles.playerTurnText}>
-              {arenaTier === 1 
-                ? '🎙️ ĐANG GHI ÂM SOLO (TỰ ĐỘNG DỪNG KHI HẾT 30S)' 
-                : (activePlayer === 1 ? '👤 DÀNH CHO BẠN 1 (30S ĐẦU)' : '👤 ĐẾN LƯỢT BẠN 2 (30S SAU - SẼ TỰ DỪNG)')}
+              {arenaTier === 1 && '🎙️ ĐANG GHI ÂM SOLO (TỰ ĐỘNG DỪNG KHI HẾT 30S)'}
+              {arenaTier === 2 && (activePlayer === 1 ? '👤 DÀNH CHO BẠN 1 (30S ĐẦU)' : '👤 ĐẾN LƯỢT BẠN 2 (30S SAU - SẼ TỰ DỪNG)')}
+              {arenaTier === 3 && '🎭 ĐANG GHI ÂM ROLEPLAY 60S (TỰ ĐỘNG DỪNG KHI HẾT 60S)'}
             </Text>
             <Text style={[styles.timerNumber, timeLeft <= 5 && { color: '#FF0055' }]}>
-              ⏱️ 00:{timeLeft < 10 ? `0${timeLeft}` : timeLeft}
+              ⏱️ {timeLeft < 10 ? `00:0${timeLeft}` : `00:${timeLeft}`}
             </Text>
           </View>
         )}
