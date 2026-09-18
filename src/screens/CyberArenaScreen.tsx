@@ -13,28 +13,24 @@ interface Props {
 export default function CyberArenaScreen({ onBack }: Props) {
   const [arenaTier, setArenaTier] = useState<1 | 2 | 3>(1);
   
-  // 🎯 QUẢN LÝ CẤP ĐỘ A1-C1 VÀ CHỦ ĐỀ CHO TRẠM 2
+  // 🎯 QUẢN LÝ STATE CẤP ĐỘ CEFR VÀ CHỦ ĐỀ
   const [cefrLevel, setCefrLevel] = useState<CEFRLevel>('B2');
-  const [topicContext, setTopicContext] = useState<string>('Business & Startup');
+  const [topicContext, setTopicContext] = useState<string>('Tech & AI Innovations');
 
   const [loading, setLoading] = useState<boolean>(true);
   const [soloData, setSoloData] = useState<SoloTopic | null>(null);
   const [relayData, setRelayData] = useState<RelayChallenge | null>(null);
   const [roleplayData, setRoleplayData] = useState<RoleplayScenario | null>(null);
 
-  // ⚡ HÀM SINH BÀI TẬP TRẠM 2 TRUYỀN CHÍNH XÁC CẤP ĐỘ VÀO SERVICE
   const loadArenaChallenge = async (tier = arenaTier, level = cefrLevel, topic = topicContext) => {
     setLoading(true);
     if (tier === 1) {
-      // Tầng 1: Solo Pulse theo cấp độ
       const data = await generateSoloTopic(level);
       setSoloData(data);
     } else if (tier === 2) {
-      // Tầng 2: Tiếp sức 2 người PvP theo cấp độ
       const data = await generateRelayChallenge(level);
       setRelayData(data);
     } else {
-      // Tầng 3: Nhập vai Roleplay với Bot theo cấp độ
       const data = await generateRoleplayScenario(level);
       setRoleplayData(data);
     }
@@ -55,7 +51,7 @@ export default function CyberArenaScreen({ onBack }: Props) {
         <Text style={styles.title}>⚔️ TRẠM 2: CYBER ARENA</Text>
       </View>
 
-      {/* Selector 3 Tầng Arena */}
+      {/* Tab Chọn 3 Tầng */}
       <View style={styles.tierSelector}>
         <TouchableOpacity style={[styles.tab, arenaTier === 1 && styles.activeTab1]} onPress={() => setArenaTier(1)}>
           <Text style={styles.tabText}>TẦNG 1: SOLO (PvE)</Text>
@@ -68,7 +64,7 @@ export default function CyberArenaScreen({ onBack }: Props) {
         </TouchableOpacity>
       </View>
 
-      {/* 🎯 BỘ CHỌN CẤP ĐỘ (A1-C1) VÀ CHỦ ĐỀ RIÊNG CHO TRẠM 2 */}
+      {/* 🎯 BỘ CHỌN CẤP ĐỘ A1 - C1 VÀ CHỦ ĐỀ LUYỆN TẬP TRẠM 2 */}
       <LevelTopicSelector
         currentLevel={cefrLevel}
         currentTopic={topicContext}
@@ -88,7 +84,6 @@ export default function CyberArenaScreen({ onBack }: Props) {
           <ActivityIndicator size="large" color="#FF007F" style={{ marginVertical: 40 }} />
         ) : (
           <View style={styles.card}>
-            {/* TẦNG 1: SOLO PULSE */}
             {arenaTier === 1 && soloData && (
               <>
                 <Text style={styles.cardTitle}>🎙️ {soloData.title} [{cefrLevel}]</Text>
@@ -97,23 +92,21 @@ export default function CyberArenaScreen({ onBack }: Props) {
               </>
             )}
 
-            {/* TẦNG 2: CO-OP RELAY (PVP 2 NGƯỜI) */}
             {arenaTier === 2 && relayData && (
               <>
                 <Text style={styles.cardTitle}>👥 {relayData.topic} [{cefrLevel}]</Text>
                 <View style={styles.relayBox}>
-                  <Text style={styles.playerTag}>👤 ĐỒNG ĐỘI 1 (Mở đề):</Text>
+                  <Text style={styles.playerTag}>👤 ĐỒNG ĐỘI 1 (Phần A):</Text>
                   <Text style={styles.cardDesc}>"{relayData.player1Prompt}"</Text>
                 </View>
                 <View style={[styles.relayBox, { borderColor: '#FF007F' }]}>
-                  <Text style={[styles.playerTag, { color: '#FF007F' }]}>👤 ĐỒNG ĐỘI 2 (Nối câu):</Text>
+                  <Text style={[styles.playerTag, { color: '#FF007F' }]}>👤 ĐỒNG ĐỘI 2 (Phần B):</Text>
                   <Text style={styles.cardDesc}>"{relayData.player2Prompt}"</Text>
                 </View>
                 <Text style={styles.keyText}>🎯 Tiêu chí: {relayData.scoringFocus}</Text>
               </>
             )}
 
-            {/* TẦNG 3: ROLEPLAY MASTER */}
             {arenaTier === 3 && roleplayData && (
               <>
                 <Text style={styles.cardTitle}>🎭 {roleplayData.scenarioTitle} [{cefrLevel}]</Text>
