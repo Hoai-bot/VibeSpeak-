@@ -5,7 +5,6 @@ import { generateDynamicDrill, DrillItem } from '../services/aiGenerator';
 import { speakNaturalText } from '../services/ttsService';
 import { gradeFlexibleArenaResponse, GradeResult } from '../services/groqClient';
 import OasisRescueScreen from './OasisRescueScreen';
-import { LevelTopicSelector, CEFRLevel } from '../components/LevelTopicSelector';
 
 interface Props {
   initialTier?: 1 | 2 | 3;
@@ -14,11 +13,6 @@ interface Props {
 
 export default function NeonBeatPulseScreen({ initialTier = 1, onBack }: Props) {
   const [tier, setTier] = useState<1 | 2 | 3>(initialTier);
-  
-  // 🎯 CẤP ĐỘ CEFR & CHỦ ĐỀ LUYỆN TẬP
-  const [cefrLevel, setCefrLevel] = useState<CEFRLevel>('B2');
-  const [topicContext, setTopicContext] = useState<string>('Tech & AI Innovations');
-
   const [currentDrill, setCurrentDrill] = useState<DrillItem | null>(null);
   const [loadingDrill, setLoadingDrill] = useState<boolean>(true);
 
@@ -36,24 +30,20 @@ export default function NeonBeatPulseScreen({ initialTier = 1, onBack }: Props) 
   const mediaRecorderRef = useRef<any>(null);
   const audioChunksRef = useRef<any[]>([]);
 
-  const loadNextDrill = async (
-    selectedTier: 1 | 2 | 3 = tier, 
-    level: CEFRLevel = cefrLevel, 
-    topic: string = topicContext
-  ) => {
+  const loadNextDrill = async (selectedTier: 1 | 2 | 3 = tier) => {
     setLoadingDrill(true);
     setResult(null);
     setRecordedAudioUri(null);
     setShowRescue(false);
     setAttempts(0);
 
-    const newDrill = await generateDynamicDrill(selectedTier, level, topic);
+    const newDrill = await generateDynamicDrill(selectedTier);
     setCurrentDrill(newDrill);
     setLoadingDrill(false);
   };
 
   useEffect(() => {
-    loadNextDrill(tier, cefrLevel, topicContext);
+    loadNextDrill(tier);
   }, [tier]);
 
   const startRecording = async () => {
@@ -124,7 +114,7 @@ export default function NeonBeatPulseScreen({ initialTier = 1, onBack }: Props) 
         }
 
         setTimeout(() => {
-          loadNextDrill(tier, cefrLevel, topicContext);
+          loadNextDrill(tier);
         }, 2200);
       } else {
         setStreak(0); // Reset streak khi đọc chưa đạt
@@ -193,20 +183,6 @@ export default function NeonBeatPulseScreen({ initialTier = 1, onBack }: Props) 
         </TouchableOpacity>
       </View>
 
-      {/* 🎯 BỘ CHỌN CẤP ĐỘ CEFR VÀ CHỦ ĐỀ HỌC TAP */}
-      <LevelTopicSelector
-        currentLevel={cefrLevel}
-        currentTopic={topicContext}
-        onSelectLevel={(lvl) => {
-          setCefrLevel(lvl);
-          loadNextDrill(tier, lvl, topicContext);
-        }}
-        onSelectTopic={(tpc) => {
-          setTopicContext(tpc);
-          loadNextDrill(tier, cefrLevel, tpc);
-        }}
-      />
-
       <ScrollView contentContainerStyle={{ alignItems: 'center', width: '100%' }}>
         {loadingDrill || !currentDrill ? (
           <ActivityIndicator size="large" color="#00FFFF" style={{ marginVertical: 40 }} />
@@ -227,7 +203,7 @@ export default function NeonBeatPulseScreen({ initialTier = 1, onBack }: Props) 
           </View>
         )}
 
-        <TouchableOpacity style={styles.nextBtn} onPress={() => loadNextDrill(tier, cefrLevel, topicContext)}>
+        <TouchableOpacity style={styles.nextBtn} onPress={() => loadNextDrill(tier)}>
           <Text style={styles.nextText}>🔄 TẠO BÀI TẬP MỚI</Text>
         </TouchableOpacity>
 
@@ -284,7 +260,7 @@ const styles = StyleSheet.create({
   activeStreak: { borderColor: '#39FF14', backgroundColor: '#004411' },
   streakText: { color: '#39FF14', fontSize: 10, fontWeight: 'bold' },
   
-  tierSelector: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginBottom: 10 },
+  tierSelector: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginBottom: 15 },
   tierTab: { backgroundColor: '#0D0620', paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: '#332255', width: '32%', alignItems: 'center' },
   activeTier1: { borderColor: '#00FFFF', backgroundColor: '#003344' },
   activeTier2: { borderColor: '#FF007F', backgroundColor: '#440022' },

@@ -12,6 +12,8 @@ interface Props {
 
 export default function CyberArenaScreen({ onBack }: Props) {
   const [arenaTier, setArenaTier] = useState<1 | 2 | 3>(1);
+  
+  // 🎯 QUẢN LÝ CẤP ĐỘ A1-C1 VÀ CHỦ ĐỀ CHO TRẠM 2
   const [cefrLevel, setCefrLevel] = useState<CEFRLevel>('B2');
   const [topicContext, setTopicContext] = useState<string>('Business & Startup');
 
@@ -20,15 +22,19 @@ export default function CyberArenaScreen({ onBack }: Props) {
   const [relayData, setRelayData] = useState<RelayChallenge | null>(null);
   const [roleplayData, setRoleplayData] = useState<RoleplayScenario | null>(null);
 
+  // ⚡ HÀM SINH BÀI TẬP TRẠM 2 TRUYỀN CHÍNH XÁC CẤP ĐỘ VÀO SERVICE
   const loadArenaChallenge = async (tier = arenaTier, level = cefrLevel, topic = topicContext) => {
     setLoading(true);
     if (tier === 1) {
+      // Tầng 1: Solo Pulse theo cấp độ
       const data = await generateSoloTopic(level);
       setSoloData(data);
     } else if (tier === 2) {
+      // Tầng 2: Tiếp sức 2 người PvP theo cấp độ
       const data = await generateRelayChallenge(level);
       setRelayData(data);
     } else {
+      // Tầng 3: Nhập vai Roleplay với Bot theo cấp độ
       const data = await generateRoleplayScenario(level);
       setRoleplayData(data);
     }
@@ -62,7 +68,7 @@ export default function CyberArenaScreen({ onBack }: Props) {
         </TouchableOpacity>
       </View>
 
-      {/* Bộ Chọn Cấp Độ CEFR & Chủ Đề */}
+      {/* 🎯 BỘ CHỌN CẤP ĐỘ (A1-C1) VÀ CHỦ ĐỀ RIÊNG CHO TRẠM 2 */}
       <LevelTopicSelector
         currentLevel={cefrLevel}
         currentTopic={topicContext}
@@ -82,32 +88,35 @@ export default function CyberArenaScreen({ onBack }: Props) {
           <ActivityIndicator size="large" color="#FF007F" style={{ marginVertical: 40 }} />
         ) : (
           <View style={styles.card}>
+            {/* TẦNG 1: SOLO PULSE */}
             {arenaTier === 1 && soloData && (
               <>
-                <Text style={styles.cardTitle}>🎙️ {soloData.title}</Text>
+                <Text style={styles.cardTitle}>🎙️ {soloData.title} [{cefrLevel}]</Text>
                 <Text style={styles.cardDesc}>"{soloData.promptText}"</Text>
                 <Text style={styles.keyText}>🔑 Từ khóa gợi ý: {soloData.keywords?.join(', ')}</Text>
               </>
             )}
 
+            {/* TẦNG 2: CO-OP RELAY (PVP 2 NGƯỜI) */}
             {arenaTier === 2 && relayData && (
               <>
-                <Text style={styles.cardTitle}>👥 {relayData.topic}</Text>
+                <Text style={styles.cardTitle}>👥 {relayData.topic} [{cefrLevel}]</Text>
                 <View style={styles.relayBox}>
-                  <Text style={styles.playerTag}>👤 ĐỒNG ĐỘI 1:</Text>
+                  <Text style={styles.playerTag}>👤 ĐỒNG ĐỘI 1 (Mở đề):</Text>
                   <Text style={styles.cardDesc}>"{relayData.player1Prompt}"</Text>
                 </View>
                 <View style={[styles.relayBox, { borderColor: '#FF007F' }]}>
-                  <Text style={[styles.playerTag, { color: '#FF007F' }]}>👤 ĐỒNG ĐỘI 2:</Text>
+                  <Text style={[styles.playerTag, { color: '#FF007F' }]}>👤 ĐỒNG ĐỘI 2 (Nối câu):</Text>
                   <Text style={styles.cardDesc}>"{relayData.player2Prompt}"</Text>
                 </View>
                 <Text style={styles.keyText}>🎯 Tiêu chí: {relayData.scoringFocus}</Text>
               </>
             )}
 
+            {/* TẦNG 3: ROLEPLAY MASTER */}
             {arenaTier === 3 && roleplayData && (
               <>
-                <Text style={styles.cardTitle}>🎭 {roleplayData.scenarioTitle}</Text>
+                <Text style={styles.cardTitle}>🎭 {roleplayData.scenarioTitle} [{cefrLevel}]</Text>
                 <Text style={styles.roleText}>🤖 AI Bot: {roleplayData.aiRole}  |  👨‍🎓 Bạn: {roleplayData.userRole}</Text>
                 <Text style={styles.cardDesc}>💬 AI Bot nói: "{roleplayData.initialAiMessage}"</Text>
                 <Text style={styles.keyText}>🎯 Mục tiêu: {roleplayData.goal}</Text>
@@ -117,7 +126,7 @@ export default function CyberArenaScreen({ onBack }: Props) {
         )}
 
         <TouchableOpacity style={styles.nextBtn} onPress={() => loadArenaChallenge(arenaTier, cefrLevel, topicContext)}>
-          <Text style={styles.nextText}>🔄 ĐỔI THÁCH ĐẤU MỚI</Text>
+          <Text style={styles.nextText}>🔄 ĐỔI THÁCH ĐẤU MỚI ({cefrLevel})</Text>
         </TouchableOpacity>
       </ScrollView>
     </View>
