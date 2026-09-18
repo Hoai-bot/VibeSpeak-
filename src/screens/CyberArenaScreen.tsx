@@ -37,7 +37,7 @@ export default function CyberArenaScreen({ onBack }: Props) {
 
   const mediaRecorderRef = useRef<any>(null);
   const audioChunksRef = useRef<any[]>([]);
-  const currentAudioElementRef = useRef<HTMLAudioElement | null>(null); // Khóa kiểm soát Audio nghe lại
+  const currentAudioElementRef = useRef<HTMLAudioElement | null>(null);
 
   const levels: CEFRLevel[] = ['A1', 'A2', 'B1', 'B2', 'C1'];
 
@@ -69,7 +69,7 @@ export default function CyberArenaScreen({ onBack }: Props) {
     loadArenaChallenge(arenaTier, cefrLevel);
   }, [arenaTier]);
 
-  // ⏱️ HÀM ĐẾM NGƯỢC 30S TỰ ĐỘNG DỪNG (ÁP DỤNG CHO CẢ SOLO & RELAY)
+  // ⏱️ LOGIC ĐẾM NGƯỢC CHUẨN: 30S BẠN 1 ➔ 30S BẠN 2 ➔ TỰ ĐỘNG DỪNG VÀ CHẤM ĐIỂM
   const startTimer = () => {
     setTimeLeft(30);
     setActivePlayer(1);
@@ -79,13 +79,22 @@ export default function CyberArenaScreen({ onBack }: Props) {
       setTimeLeft((prev) => {
         if (prev <= 1) {
           if (arenaTier === 1) {
-            // Tầng Solo: Tự động dừng ghi âm và gửi AI chấm điểm ngay khi hết 30s
+            // Solo: Hết 30s tự động dừng
             stopAndGrade();
             return 0;
           } else if (arenaTier === 2) {
-            // Tầng Relay: Chuyển lượt sang Bạn 2
-            setActivePlayer((current) => (current === 1 ? 2 : 1));
-            return 30;
+            // Relay: Kiểm tra lượt hiện tại
+            setActivePlayer((current) => {
+              if (current === 1) {
+                // Đang ở Bạn 1 -> Chuyển sang Bạn 2 và cho 30s tiếp theo
+                return 2;
+              } else {
+                // Đã hết 30s của Bạn 2 (Tổng 60s) -> Dừng và chấm điểm ngay lập tức!
+                stopAndGrade();
+                return 2;
+              }
+            });
+            return 30; // Reset 30s cho Bạn 2
           }
         }
         return prev - 1;
@@ -130,7 +139,7 @@ export default function CyberArenaScreen({ onBack }: Props) {
       setResult(null);
       setRecordedAudioUri(null);
 
-      // Bật đồng hồ đếm ngược 30s cho Tầng 1 (Solo) và Tầng 2 (Relay)
+      // Bật đồng hồ đếm ngược 30s/lượt
       if (arenaTier === 1 || arenaTier === 2) {
         startTimer();
       }
@@ -184,7 +193,7 @@ export default function CyberArenaScreen({ onBack }: Props) {
     }
   };
 
-  // 🎧 PHÁT ÂM THANH NGHE LẠI CHỐNG LỖI TREO
+  // 🎧 PHÁT ÂM THANH NGHE LẠI
   const playRecordedAudio = () => {
     if (recordedAudioUri) {
       stopAudioPlayback();
@@ -339,7 +348,7 @@ export default function CyberArenaScreen({ onBack }: Props) {
             <Text style={styles.playerTurnText}>
               {arenaTier === 1 
                 ? '🎙️ ĐANG GHI ÂM SOLO (TỰ ĐỘNG DỪNG KHI HẾT 30S)' 
-                : (activePlayer === 1 ? '👤 DÀNH CHO BẠN 1 (ĐẶT VẤN ĐỀ)' : '👤 ĐẾN LƯỢT BẠN 2 (GIẢI PHÁP)')}
+                : (activePlayer === 1 ? '👤 DÀNH CHO BẠN 1 (30S ĐẦU)' : '👤 ĐẾN LƯỢT BẠN 2 (30S SAU - SẼ TỰ DỪNG)')}
             </Text>
             <Text style={[styles.timerNumber, timeLeft <= 5 && { color: '#FF0055' }]}>
               ⏱️ 00:{timeLeft < 10 ? `0${timeLeft}` : timeLeft}
