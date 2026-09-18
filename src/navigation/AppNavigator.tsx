@@ -1,3 +1,4 @@
+// src/navigation/AppNavigator.tsx
 import React, { Component, useState, useEffect, ReactNode } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { onAuthStateChanged, User } from 'firebase/auth';
@@ -6,7 +7,7 @@ import { auth } from '../services/firebaseClient';
 import AuthScreen from '../screens/AuthScreen';
 import SubwayMapScreen from '../screens/SubwayMapScreen';
 import NeonBeatPulseScreen from '../screens/NeonBeatPulseScreen';
-import AllInArenaScreen from '../screens/AllInArenaScreen';
+import CyberArenaScreen from '../screens/CyberArenaScreen';
 import BossRaidScreen from '../screens/BossRaidScreen';
 import ShadowBossScreen from '../screens/ShadowBossScreen';
 import OasisScreen from '../screens/OasisScreen';
@@ -127,7 +128,7 @@ export default function AppNavigator() {
 
       case 'STATION_2_ALL_IN':
         return (
-          <AllInArenaScreen 
+          <CyberArenaScreen 
             onBack={() => setCurrentRoute('SUBWAY_MAP')} 
           />
         );
