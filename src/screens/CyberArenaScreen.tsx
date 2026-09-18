@@ -16,7 +16,7 @@ export default function CyberArenaScreen({ onBack }: Props) {
   const [opponentType, setOpponentType] = useState<'bot' | 'human'>('bot');
   const [roomId, setRoomId] = useState<string>('ROOM_5384');
   
-  // 🎯 QUẢN LÝ CẤP ĐỘ CEFR (A1 - C1) CHO HƯỚNG 1
+  // 🎯 QUẢN LÝ CẤP ĐỘ CEFR (A1 - C1)
   const [cefrLevel, setCefrLevel] = useState<CEFRLevel>('B2');
 
   const [loading, setLoading] = useState<boolean>(true);
@@ -99,8 +99,8 @@ export default function CyberArenaScreen({ onBack }: Props) {
           </TouchableOpacity>
 
           <TouchableOpacity style={[styles.tierCard, arenaTier === 2 && styles.activeTier2]} onPress={() => setArenaTier(2)}>
-            <Text style={styles.tierTitle}>⚔️ TẦNG 2: DUEL 60S ARENA (RELAY)</Text>
-            <Text style={styles.tierSub}>Đấu tranh luận 2 bạn nối câu tiếp sức trong 60 giây.</Text>
+            <Text style={styles.tierTitle}>⚔️ TẦNG 2: DUEL 60S ARENA (RELAY CO-OP)</Text>
+            <Text style={styles.tierSub}>Đấu tiếp sức 2 bạn cùng hợp tác hoàn thành 1 chủ đề Mini-Pitching trong 60 giây.</Text>
           </TouchableOpacity>
 
           <TouchableOpacity style={[styles.tierCard, arenaTier === 3 && styles.activeTier3]} onPress={() => setArenaTier(3)}>
@@ -109,7 +109,7 @@ export default function CyberArenaScreen({ onBack }: Props) {
           </TouchableOpacity>
         </View>
 
-        {/* 📊 3. CHỌN CẤP ĐỘ THI ĐẤU (HIỂN THỊ TRỰC TIẾP DẠNG BẢNG NÚT) */}
+        {/* 📊 3. CHỌN CẤP ĐỘ THI ĐẤU */}
         <View style={styles.sectionBox}>
           <Text style={styles.sectionLabel}>📊 3. CHỌN CẤP ĐỘ THI ĐẤU (CEFR):</Text>
           <View style={styles.levelRow}>
@@ -135,32 +135,39 @@ export default function CyberArenaScreen({ onBack }: Props) {
           <ActivityIndicator size="large" color="#FF007F" style={{ marginVertical: 20 }} />
         ) : (
           <View style={styles.card}>
+            {/* TẦNG 1: SOLO PULSE */}
             {arenaTier === 1 && soloData && (
               <>
-                <Text style={styles.cardTitle}>🎙️ {soloData.title} [{cefrLevel}]</Text>
+                <Text style={styles.cardTitle}>🎙️ CHỦ ĐỀ: {soloData.title} [{cefrLevel}]</Text>
                 <Text style={styles.cardDesc}>"{soloData.promptText}"</Text>
                 <Text style={styles.keyText}>🔑 Gợi ý từ khóa: {soloData.keywords?.join(', ')}</Text>
               </>
             )}
 
+            {/* TẦNG 2: RELAY CO-OP (HỢP TÁC CÙNG 1 CHỦ ĐỀ) */}
             {arenaTier === 2 && relayData && (
               <>
-                <Text style={styles.cardTitle}>👥 {relayData.topic} [{cefrLevel}]</Text>
+                <Text style={styles.cardTitle}>🎯 CHỦ ĐỀ CHUNG: {relayData.topic} [{cefrLevel}]</Text>
+                
                 <View style={styles.relayBox}>
-                  <Text style={styles.playerTag}>👤 ĐỒNG ĐỘI 1 (Phần A):</Text>
+                  <Text style={styles.playerTag}>👤 BẠN 1 (ĐẶT VẤN ĐỀ):</Text>
                   <Text style={styles.cardDesc}>"{relayData.player1Prompt}"</Text>
                 </View>
+
                 <View style={[styles.relayBox, { borderColor: '#FF007F' }]}>
-                  <Text style={[styles.playerTag, { color: '#FF007F' }]}>👤 ĐỒNG ĐỘI 2 (Phần B):</Text>
+                  <Text style={[styles.playerTag, { color: '#FF007F' }]}>👤 BẠN 2 (GIẢI QUYẾT TÌNH HUỐNG):</Text>
                   <Text style={styles.cardDesc}>"{relayData.player2Prompt}"</Text>
                 </View>
-                <Text style={styles.keyText}>🎯 Tiêu chí: {relayData.scoringFocus}</Text>
+
+                <Text style={styles.keyText}>🤝 Hai bạn hãy phối hợp đọc nối tiếp 2 câu trên để hoàn thành bài Pitching!</Text>
+                <Text style={[styles.keyText, { color: '#AAAABB', marginTop: 4 }]}>🎯 Tiêu chí: {relayData.scoringFocus}</Text>
               </>
             )}
 
+            {/* TẦNG 3: ROLEPLAY MASTER */}
             {arenaTier === 3 && roleplayData && (
               <>
-                <Text style={styles.cardTitle}>🎭 {roleplayData.scenarioTitle} [{cefrLevel}]</Text>
+                <Text style={styles.cardTitle}>🎭 KỊCH BẢN: {roleplayData.scenarioTitle} [{cefrLevel}]</Text>
                 <Text style={styles.roleText}>🤖 AI Bot: {roleplayData.aiRole} | 👨‍🎓 Bạn: {roleplayData.userRole}</Text>
                 <Text style={styles.cardDesc}>💬 AI Bot nói: "{roleplayData.initialAiMessage}"</Text>
                 <Text style={styles.keyText}>🎯 Mục tiêu: {roleplayData.goal}</Text>
@@ -170,7 +177,7 @@ export default function CyberArenaScreen({ onBack }: Props) {
         )}
 
         <TouchableOpacity style={styles.startBtn} onPress={() => loadArenaChallenge(arenaTier, cefrLevel)}>
-          <Text style={styles.startBtnText}>⚡ BẮT ĐẦU THÁCH ĐẤU ({cefrLevel})</Text>
+          <Text style={styles.startBtnText}>⚡ TẠO ĐỀ THÁCH ĐẤU MỚI ({cefrLevel})</Text>
         </TouchableOpacity>
       </ScrollView>
     </View>
@@ -217,11 +224,11 @@ const styles = StyleSheet.create({
   activeLevelText: { color: '#FFFFFF', fontWeight: '900' },
 
   card: { width: '100%', backgroundColor: '#120826', padding: 14, borderRadius: 12, borderWidth: 2, borderColor: '#FF007F', marginBottom: 15 },
-  cardTitle: { color: '#00FFCC', fontSize: 15, fontWeight: 'bold', marginBottom: 6, textAlign: 'center' },
+  cardTitle: { color: '#00FFCC', fontSize: 15, fontWeight: 'bold', marginBottom: 8, textAlign: 'center' },
   cardDesc: { color: '#FFF', fontSize: 12, fontStyle: 'italic', marginBottom: 6, textAlign: 'center' },
-  keyText: { color: '#FFD700', fontSize: 10, textAlign: 'center' },
+  keyText: { color: '#FFD700', fontSize: 10, textAlign: 'center', marginTop: 4 },
 
-  relayBox: { backgroundColor: '#0A0518', padding: 8, borderRadius: 8, borderWidth: 1, borderColor: '#00FFCC', marginBottom: 6 },
+  relayBox: { backgroundColor: '#0A0518', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#00FFCC', marginBottom: 8 },
   playerTag: { color: '#00FFCC', fontSize: 9, fontWeight: 'bold', marginBottom: 2 },
   roleText: { color: '#AAAABB', fontSize: 10, textAlign: 'center', marginBottom: 6 },
 
