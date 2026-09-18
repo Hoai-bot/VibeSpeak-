@@ -1,9 +1,10 @@
 // src/screens/CyberArenaScreen.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, TextInput, ActivityIndicator } from 'react-native';
 import { generateSoloTopic, SoloTopic } from '../services/arena/soloService';
 import { generateRelayChallenge, RelayChallenge } from '../services/arena/relayService';
 import { generateRoleplayScenario, RoleplayScenario } from '../services/arena/roleplayService';
+import { gradeFlexibleArenaResponse, GradeResult } from '../services/groqClient';
 
 export type CEFRLevel = 'A1' | 'A2' | 'B1' | 'B2' | 'C1';
 
@@ -23,10 +24,21 @@ export default function CyberArenaScreen({ onBack }: Props) {
   const [relayData, setRelayData] = useState<RelayChallenge | null>(null);
   const [roleplayData, setRoleplayData] = useState<RoleplayScenario | null>(null);
 
+  // 🎙️ STATE QUẢN LÝ GHI ÂM VÀ CHẤM ĐIỂM 3D
+  const [isRecording, setIsRecording] = useState<boolean>(false);
+  const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
+  const [result, setResult] = useState<GradeResult | null>(null);
+  const [recordedAudioUri, setRecordedAudioUri] = useState<string | null>(null);
+
+  const mediaRecorderRef = useRef<any>(null);
+  const audioChunksRef = useRef<any[]>([]);
+
   const levels: CEFRLevel[] = ['A1', 'A2', 'B1', 'B2', 'C1'];
 
   const loadArenaChallenge = async (tier = arenaTier, level = cefrLevel) => {
     setLoading(true);
+    setResult(null);
+    setRecordedAudioUri(null);
     try {
       if (tier === 1) {
         const data = await generateSoloTopic(level);
@@ -48,6 +60,84 @@ export default function CyberArenaScreen({ onBack }: Props) {
   useEffect(() => {
     loadArenaChallenge(arenaTier, cefrLevel);
   }, [arenaTier]);
+
+  // 🎙️ BẮT ĐẦU GHI ÂM MICRO
+  const startRecording = async () => {
+    try {
+      if (typeof navigator === 'undefined' || !navigator.mediaDevices) {
+        alert("Trình duyệt không hỗ trợ Micro!");
+        return;
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4';
+      
+      mediaRecorderRef.current = new MediaRecorder(stream, { mimeType });
+      audioChunksRef.current = [];
+
+      mediaRecorderRef.current.ondataavailable = (e: any) => {
+        if (e.data && e.data.size > 0) audioChunksRef.current.push(e.data);
+      };
+
+      mediaRecorderRef.current.start(100);
+      setIsRecording(true);
+      setResult(null);
+      setRecordedAudioUri(null);
+    } catch (err) {
+      alert("Chưa cấp quyền truy cập Micro!");
+    }
+  };
+
+  // ⏹️ DỪNG GHI ÂM VÀ GỬI AI CHẤM ĐIỂM
+  const stopAndGrade = async () => {
+    const mediaRecorder = mediaRecorderRef.current;
+    if (!mediaRecorder || mediaRecorder.state === 'inactive') return;
+
+    setIsRecording(false);
+    setIsAnalyzing(true);
+
+    const processAudio = new Promise<{ blob: Blob; url: string }>((resolve) => {
+      mediaRecorder.onstop = () => {
+        const blob = new Blob(audioChunksRef.current, { type: mediaRecorder.mimeType || 'audio/webm' });
+        const url = URL.createObjectURL(blob);
+        if (mediaRecorder.stream) {
+          mediaRecorder.stream.getTracks().forEach((t: any) => t.stop());
+        }
+        resolve({ blob, url });
+      };
+      mediaRecorder.stop();
+    });
+
+    try {
+      const { blob, url } = await processAudio;
+      setRecordedAudioUri(url);
+
+      if (blob.size < 1000) {
+        setResult({ score: 0, phoneticScore: 0, fluencyScore: 0, semanticScore: 0, transcribedText: "(Âm thanh quá ngắn)", feedback: "Hãy nói rõ ràng hơn trong 30-60 giây!" });
+        setIsAnalyzing(false);
+        return;
+      }
+
+      // Xác định ngữ cảnh để gửi AI chấm điểm
+      let targetContext = "";
+      if (arenaTier === 1) targetContext = soloData?.promptText || "";
+      else if (arenaTier === 2) targetContext = `${relayData?.topic}: ${relayData?.context}`;
+      else targetContext = `${roleplayData?.scenarioTitle}: ${roleplayData?.goal}`;
+
+      const res = await gradeFlexibleArenaResponse(blob, targetContext);
+      setResult(res);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  const playRecordedAudio = () => {
+    if (recordedAudioUri) {
+      const audio = new Audio(recordedAudioUri);
+      audio.play();
+    }
+  };
 
   return (
     <View style={styles.container}>
@@ -148,7 +238,7 @@ export default function CyberArenaScreen({ onBack }: Props) {
               </>
             )}
 
-            {/* TẦNG 2: RELAY CO-OP (NÓI TỰ DO THỜI GIAN 60S) */}
+            {/* TẦNG 2: RELAY CO-OP */}
             {arenaTier === 2 && relayData && (
               <>
                 <Text style={styles.cardTitle}>🎯 CHỦ ĐỀ: {relayData.topic} [{cefrLevel}]</Text>
@@ -169,9 +259,6 @@ export default function CyberArenaScreen({ onBack }: Props) {
                 </View>
 
                 <Text style={styles.keyText}>🔑 Từ khóa gợi ý: {relayData.keyVocabulary?.join(', ')}</Text>
-                <Text style={[styles.keyText, { color: '#00FFCC', marginTop: 6 }]}>
-                  🎙️ Bấm mic để 2 bạn lần lượt thể hiện quan điểm cá nhân trong ~30 giây!
-                </Text>
               </>
             )}
 
@@ -187,9 +274,47 @@ export default function CyberArenaScreen({ onBack }: Props) {
           </View>
         )}
 
-        <TouchableOpacity style={styles.startBtn} onPress={() => loadArenaChallenge(arenaTier, cefrLevel)}>
-          <Text style={styles.startBtnText}>⚡ TẠO ĐỀ THÁCH ĐẤU MỚI ({cefrLevel})</Text>
+        <TouchableOpacity style={styles.nextBtn} onPress={() => loadArenaChallenge(arenaTier, cefrLevel)}>
+          <Text style={styles.nextText}>🔄 ĐỔI ĐỀ THÁCH ĐẤU MỚI ({cefrLevel})</Text>
         </TouchableOpacity>
+
+        {/* 🎙️ NÚT GHI ÂM VÀ CHẤM ĐIỂM */}
+        {isAnalyzing ? (
+          <ActivityIndicator size="large" color="#39FF14" style={{ marginVertical: 15 }} />
+        ) : (
+          <TouchableOpacity 
+            style={[styles.recordBtn, isRecording && { backgroundColor: '#FF0055' }]} 
+            onPress={isRecording ? stopAndGrade : startRecording}
+          >
+            <Text style={styles.recordText}>
+              {isRecording ? '⏹️ DỪNG & AI CHẤM ĐIỂM ARENA' : '🎙️ BẮT ĐẦU THÌ THẤU GHI ÂM'}
+            </Text>
+          </TouchableOpacity>
+        )}
+
+        {/* 📊 BẢNG KẾT QUẢ CHẤM ĐIỂM 3D */}
+        {result && (
+          <View style={styles.resultCard}>
+            <Text style={[styles.resultScore, result.score >= 80 ? { color: '#39FF14' } : { color: '#FF0055' }]}>
+              🏆 {result.score}/100 ĐIỂM THÁCH ĐẤU
+            </Text>
+            <Text style={styles.transcribedText}>🗣️ Bài nói nhận diện: "{result.transcribedText}"</Text>
+
+            <View style={styles.breakdownRow}>
+              <Text style={styles.breakdownText}>🎯 Phôn âm: {result.phoneticScore}</Text>
+              <Text style={styles.breakdownText}>⚡ Trôi chảy: {result.fluencyScore}</Text>
+              <Text style={styles.breakdownText}>💡 Ngữ nghĩa: {result.semanticScore}</Text>
+            </View>
+
+            <Text style={styles.feedbackText}>💡 AI Nhận xét: {result.feedback}</Text>
+
+            {recordedAudioUri && (
+              <TouchableOpacity style={styles.replayBtn} onPress={playRecordedAudio}>
+                <Text style={styles.replayText}>🎧 NGHE LẠI BÀI THI CỦA BẠN</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
       </ScrollView>
     </View>
   );
@@ -234,7 +359,7 @@ const styles = StyleSheet.create({
   levelBtnText: { color: '#8888CC', fontSize: 12, fontWeight: 'bold' },
   activeLevelText: { color: '#FFFFFF', fontWeight: '900' },
 
-  card: { width: '100%', backgroundColor: '#120826', padding: 14, borderRadius: 12, borderWidth: 2, borderColor: '#FF007F', marginBottom: 15 },
+  card: { width: '100%', backgroundColor: '#120826', padding: 14, borderRadius: 12, borderWidth: 2, borderColor: '#FF007F', marginBottom: 12 },
   cardTitle: { color: '#00FFCC', fontSize: 15, fontWeight: 'bold', marginBottom: 8, textAlign: 'center' },
   cardDesc: { color: '#FFF', fontSize: 12, fontStyle: 'italic', marginBottom: 6, textAlign: 'center' },
   keyText: { color: '#FFD700', fontSize: 10, textAlign: 'center', marginTop: 4 },
@@ -243,6 +368,18 @@ const styles = StyleSheet.create({
   playerTag: { color: '#00FFCC', fontSize: 9, fontWeight: 'bold', marginBottom: 2 },
   roleText: { color: '#AAAABB', fontSize: 10, textAlign: 'center', marginBottom: 6 },
 
-  startBtn: { backgroundColor: '#FF007F', padding: 14, borderRadius: 10, width: '100%', alignItems: 'center', marginBottom: 25 },
-  startBtnText: { color: '#FFF', fontSize: 12, fontWeight: '900' }
+  nextBtn: { backgroundColor: '#110022', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#FFD700', width: '100%', alignItems: 'center', marginBottom: 12 },
+  nextText: { color: '#FFD700', fontSize: 11, fontWeight: 'bold' },
+
+  recordBtn: { backgroundColor: '#39FF14', padding: 14, borderRadius: 12, width: '100%', alignItems: 'center', marginBottom: 15 },
+  recordText: { color: '#000', fontSize: 12, fontWeight: '900' },
+
+  resultCard: { backgroundColor: '#120826', padding: 14, borderRadius: 12, borderWidth: 1, borderColor: '#39FF14', width: '100%', alignItems: 'center', marginBottom: 25 },
+  resultScore: { fontSize: 16, fontWeight: '900', marginBottom: 6 },
+  transcribedText: { color: '#AAAABB', fontSize: 11, textAlign: 'center', marginBottom: 8, fontStyle: 'italic' },
+  breakdownRow: { flexDirection: 'row', justifyContent: 'space-around', width: '100%', marginBottom: 8, backgroundColor: '#0A0518', padding: 8, borderRadius: 8 },
+  breakdownText: { color: '#00FFCC', fontSize: 10, fontWeight: 'bold' },
+  feedbackText: { color: '#39FF14', fontSize: 11, textAlign: 'center', marginBottom: 10 },
+  replayBtn: { backgroundColor: '#FF007F', paddingVertical: 8, paddingHorizontal: 14, borderRadius: 8 },
+  replayText: { color: '#FFF', fontSize: 10, fontWeight: 'bold' }
 });
