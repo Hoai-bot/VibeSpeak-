@@ -41,16 +41,47 @@ export default function CyberArenaScreen({ onBack }: Props) {
 
   const levels: CEFRLevel[] = ['A1', 'A2', 'B1', 'B2', 'C1'];
 
-  // 🔊 HÀM PHÁT GIỌNG ĐỌC AI CỦA CÂU HỎI TÌNH HUỐNG (TTS)
+  // 🔊 TỐI ƯU GIỌNG ĐỌC NATURAL / PREMIUM TRÊN TRÌNH DUYỆT (TTS)
   const speakAiMessage = (text: string) => {
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      window.speechSynthesis.cancel(); // Ngắt giọng đọc cũ nếu có
+      window.speechSynthesis.cancel(); // Dừng câu thoại cũ
+      
       const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = 'en-US'; // Chuẩn giọng Anh - Mỹ
-      utterance.rate = 0.95; // Tốc độ nói tự nhiên
+      
+      // Lấy danh sách giọng đọc tích hợp sẵn trên hệ thống/trình duyệt
+      const voices = window.speechSynthesis.getVoices();
+      
+      // Ưu tiên chọn giọng Natural / Neural / Google US English để có âm điệu tự nhiên nhất
+      const premiumVoice = voices.find(
+        (v) => v.lang.startsWith('en') && (
+          v.name.includes('Natural') || 
+          v.name.includes('Google') || 
+          v.name.includes('Neural') ||
+          v.name.includes('Samantha') || 
+          v.name.includes('Karen')
+        )
+      ) || voices.find((v) => v.lang.includes('en-US'));
+
+      if (premiumVoice) {
+        utterance.voice = premiumVoice;
+      }
+
+      utterance.lang = 'en-US';
+      utterance.rate = 0.92; // Tốc độ nói vừa phải, tránh bị dồn chữ
+      utterance.pitch = 1.0; // Giữ tông giọng trầm ấm tự nhiên
+
       window.speechSynthesis.speak(utterance);
     }
   };
+
+  // Lắng nghe sự kiện load giọng đọc từ trình duyệt (Web Speech API async loader)
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.onvoiceschanged = () => {
+        window.speechSynthesis.getVoices();
+      };
+    }
+  }, []);
 
   const loadArenaChallenge = async (tier = arenaTier, level = cefrLevel) => {
     stopTimer();
@@ -72,7 +103,6 @@ export default function CyberArenaScreen({ onBack }: Props) {
       } else {
         const data = await generateRoleplayScenario(level);
         setRoleplayData(data);
-        // 🔊 Tự động đọc câu hỏi khởi đầu khi vào Tầng 3
         if (data?.initialAiMessage) {
           setTimeout(() => speakAiMessage(data.initialAiMessage), 500);
         }
@@ -153,7 +183,7 @@ export default function CyberArenaScreen({ onBack }: Props) {
   const startRecording = async () => {
     stopAudioPlayback();
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      window.speechSynthesis.cancel(); // Dừng đọc TTS khi bắt đầu ghi âm
+      window.speechSynthesis.cancel();
     }
 
     try {
@@ -359,7 +389,7 @@ export default function CyberArenaScreen({ onBack }: Props) {
               </>
             )}
 
-            {/* TẦNG 3: ROLEPLAY MASTER (TÍCH HỢP DUAL-MODAL READ & LISTEN) */}
+            {/* TẦNG 3: ROLEPLAY MASTER */}
             {arenaTier === 3 && roleplayData && (
               <>
                 <Text style={styles.cardTitle}>🎭 KỊCH BẢN: {roleplayData.scenarioTitle} [{cefrLevel}]</Text>
