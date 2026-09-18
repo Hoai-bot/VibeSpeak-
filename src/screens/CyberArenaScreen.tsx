@@ -30,12 +30,18 @@ export default function CyberArenaScreen({ onBack }: Props) {
   const [result, setResult] = useState<GradeResult | null>(null);
   const [recordedAudioUri, setRecordedAudioUri] = useState<string | null>(null);
 
+  // ⏱️ STATE ĐỒNG HỒ ĐẾM NGƯỢC 30S CHO TẦNG RELAY
+  const [timeLeft, setTimeLeft] = useState<number>(30);
+  const [activePlayer, setActivePlayer] = useState<1 | 2>(1);
+  const timerRef = useRef<any>(null);
+
   const mediaRecorderRef = useRef<any>(null);
   const audioChunksRef = useRef<any[]>([]);
 
   const levels: CEFRLevel[] = ['A1', 'A2', 'B1', 'B2', 'C1'];
 
   const loadArenaChallenge = async (tier = arenaTier, level = cefrLevel) => {
+    stopTimer();
     setLoading(true);
     setResult(null);
     setRecordedAudioUri(null);
@@ -61,7 +67,30 @@ export default function CyberArenaScreen({ onBack }: Props) {
     loadArenaChallenge(arenaTier, cefrLevel);
   }, [arenaTier]);
 
-  // 🎙️ BẮT ĐẦU GHI ÂM MICRO
+  // ⏱️ HÀM BẮT ĐẦU ĐỒNG HỒ ĐẾM NGƯỢC 30S LẦN LƯỢT CHO 2 BẠN
+  const startTimer = () => {
+    setTimeLeft(30);
+    setActivePlayer(1);
+    if (timerRef.current) clearInterval(timerRef.current);
+
+    timerRef.current = setInterval(() => {
+      setTimeLeft((prev) => {
+        if (prev <= 1) {
+          setActivePlayer((current) => (current === 1 ? 2 : 1));
+          return 30; // Reset lại 30s cho lượt tiếp theo
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  };
+
+  const stopTimer = () => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    setTimeLeft(30);
+    setActivePlayer(1);
+  };
+
+  // 🎙️ BẮT ĐẦU GHI ÂM MICRO & ĐỒNG HỒ
   const startRecording = async () => {
     try {
       if (typeof navigator === 'undefined' || !navigator.mediaDevices) {
@@ -82,6 +111,9 @@ export default function CyberArenaScreen({ onBack }: Props) {
       setIsRecording(true);
       setResult(null);
       setRecordedAudioUri(null);
+
+      // Kích hoạt đồng hồ nếu ở Tầng Relay
+      if (arenaTier === 2) startTimer();
     } catch (err) {
       alert("Chưa cấp quyền truy cập Micro!");
     }
@@ -89,6 +121,7 @@ export default function CyberArenaScreen({ onBack }: Props) {
 
   // ⏹️ DỪNG GHI ÂM VÀ GỬI AI CHẤM ĐIỂM
   const stopAndGrade = async () => {
+    stopTimer();
     const mediaRecorder = mediaRecorderRef.current;
     if (!mediaRecorder || mediaRecorder.state === 'inactive') return;
 
@@ -117,7 +150,6 @@ export default function CyberArenaScreen({ onBack }: Props) {
         return;
       }
 
-      // Xác định ngữ cảnh để gửi AI chấm điểm
       let targetContext = "";
       if (arenaTier === 1) targetContext = soloData?.promptText || "";
       else if (arenaTier === 2) targetContext = `${relayData?.topic}: ${relayData?.context}`;
@@ -244,14 +276,14 @@ export default function CyberArenaScreen({ onBack }: Props) {
                 <Text style={styles.cardTitle}>🎯 CHỦ ĐỀ: {relayData.topic} [{cefrLevel}]</Text>
                 <Text style={styles.cardDesc}>📌 Bối cảnh: "{relayData.context}"</Text>
                 
-                <View style={styles.relayBox}>
+                <View style={[styles.relayBox, activePlayer === 1 && isRecording && { borderColor: '#39FF14', borderWidth: 2 }]}>
                   <Text style={styles.playerTag}>⏱️ BẠN 1 (30 giây đầu - Ý kiến 1):</Text>
                   <Text style={[styles.cardDesc, { textAlign: 'left', fontStyle: 'normal' }]}>
                     💡 {relayData.player1Guideline}
                   </Text>
                 </View>
 
-                <View style={[styles.relayBox, { borderColor: '#FF007F' }]}>
+                <View style={[styles.relayBox, { borderColor: '#FF007F' }, activePlayer === 2 && isRecording && { borderColor: '#39FF14', borderWidth: 2 }]}>
                   <Text style={[styles.playerTag, { color: '#FF007F' }]}>⏱️ BẠN 2 (30 giây sau - Ý kiến 2):</Text>
                   <Text style={[styles.cardDesc, { textAlign: 'left', fontStyle: 'normal' }]}>
                     💡 {relayData.player2Guideline}
@@ -278,6 +310,19 @@ export default function CyberArenaScreen({ onBack }: Props) {
           <Text style={styles.nextText}>🔄 ĐỔI ĐỀ THÁCH ĐẤU MỚI ({cefrLevel})</Text>
         </TouchableOpacity>
 
+        {/* ⏱️ ĐỒNG HỒ ĐẾM NGƯỢC 30S HIỂN THỊ KHI ĐANG GHI ÂM RELAY */}
+        {arenaTier === 2 && isRecording && (
+          <View style={styles.timerContainer}>
+            <Text style={styles.playerTurnText}>
+              {activePlayer === 1 ? '👤 DÀNH CHO BẠN 1 (ĐẶT VẤN ĐỀ)' : '👤 ĐẾN LƯỢT BẠN 2 (GIẢI PHÁP)'}
+            </Text>
+            <Text style={[styles.timerNumber, timeLeft <= 5 && { color: '#FF0055' }]}>
+              ⏱️ 00:{timeLeft < 10 ? `0${timeLeft}` : timeLeft}
+            </Text>
+            <Text style={styles.timerSub}>Đổi lượt ngay khi đồng hồ nhảy lượt!</Text>
+          </View>
+        )}
+
         {/* 🎙️ NÚT GHI ÂM VÀ CHẤM ĐIỂM */}
         {isAnalyzing ? (
           <ActivityIndicator size="large" color="#39FF14" style={{ marginVertical: 15 }} />
@@ -298,7 +343,6 @@ export default function CyberArenaScreen({ onBack }: Props) {
             styles.resultCard, 
             result.score >= 75 ? { borderColor: '#39FF14' } : { borderColor: '#FF0055' }
           ]}>
-            {/* Banner Thắng / Thua */}
             <View style={[
               styles.outcomeBanner, 
               result.score >= 75 ? { backgroundColor: '#004411' } : { backgroundColor: '#440011' }
@@ -389,6 +433,11 @@ const styles = StyleSheet.create({
 
   nextBtn: { backgroundColor: '#110022', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#FFD700', width: '100%', alignItems: 'center', marginBottom: 12 },
   nextText: { color: '#FFD700', fontSize: 11, fontWeight: 'bold' },
+
+  timerContainer: { backgroundColor: '#120826', padding: 12, borderRadius: 12, borderWidth: 2, borderColor: '#39FF14', width: '100%', alignItems: 'center', marginBottom: 12 },
+  playerTurnText: { color: '#39FF14', fontSize: 11, fontWeight: '900', marginBottom: 2 },
+  timerNumber: { color: '#00FFCC', fontSize: 24, fontWeight: '900', marginVertical: 2 },
+  timerSub: { color: '#AAAABB', fontSize: 9, fontStyle: 'italic' },
 
   recordBtn: { backgroundColor: '#39FF14', padding: 14, borderRadius: 12, width: '100%', alignItems: 'center', marginBottom: 15 },
   recordText: { color: '#000', fontSize: 12, fontWeight: '900' },
