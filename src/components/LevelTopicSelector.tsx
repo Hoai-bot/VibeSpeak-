@@ -13,10 +13,10 @@ interface Props {
 
 const LEVELS: CEFRLevel[] = ['A1', 'A2', 'B1', 'B2', 'C1'];
 const TOPICS = [
-  'Daily Life & Hobbies',
-  'Campus & Education',
   'Tech & AI Innovations',
   'Business & Startup',
+  'Daily Life & Hobbies',
+  'Campus & Education',
   'Cyberpunk World',
 ];
 
@@ -28,32 +28,32 @@ export const LevelTopicSelector: React.FC<Props> = ({
 }) => {
   return (
     <View style={styles.container}>
-      {/* Chọn Cấp độ CEFR */}
-      <Text style={styles.label}>🎯 CẤP ĐỘ (CEFR):</Text>
-      <View style={styles.row}>
+      {/* 🎯 BỘ CHỌN CẤP ĐỘ THI ĐẤU (CEFR) */}
+      <Text style={styles.sectionTitle}>📊 CHỌN CẤP ĐỘ THI ĐẤU (CEFR):</Text>
+      <View style={styles.levelRow}>
         {LEVELS.map((lvl) => (
           <TouchableOpacity
             key={lvl}
-            style={[styles.chip, currentLevel === lvl && styles.activeChip]}
+            style={[styles.levelBtn, currentLevel === lvl && styles.activeLevelBtn]}
             onPress={() => onSelectLevel(lvl)}
           >
-            <Text style={[styles.chipText, currentLevel === lvl && styles.activeText]}>
+            <Text style={[styles.levelBtnText, currentLevel === lvl && styles.activeLevelText]}>
               {lvl}
             </Text>
           </TouchableOpacity>
         ))}
       </View>
 
-      {/* Chọn Chủ đề Topic Context */}
-      <Text style={[styles.label, { marginTop: 10 }]}>💡 CHỦ ĐỀ LUYỆN TẬP:</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.topicRow}>
+      {/* 💡 CHỌN CHỦ ĐỀ LUYỆN TẬP */}
+      <Text style={[styles.sectionTitle, { marginTop: 12 }]}>💡 CHỌN CHỦ ĐỀ LUYỆN TẬP:</Text>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.topicScrollView}>
         {TOPICS.map((topic) => (
           <TouchableOpacity
             key={topic}
             style={[styles.topicChip, currentTopic === topic && styles.activeTopicChip]}
             onPress={() => onSelectTopic(topic)}
           >
-            <Text style={[styles.topicText, currentTopic === topic && styles.activeText]}>
+            <Text style={[styles.topicText, currentTopic === topic && styles.activeTopicText]}>
               {topic}
             </Text>
           </TouchableOpacity>
@@ -65,37 +65,71 @@ export const LevelTopicSelector: React.FC<Props> = ({
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: '#12122b',
+    width: '100%',
+    backgroundColor: '#120826',
     padding: 12,
     borderRadius: 12,
-    marginHorizontal: 16,
-    marginBottom: 12,
     borderWidth: 1,
-    borderColor: '#2a2a5a',
+    borderColor: '#3A1559',
+    marginBottom: 15,
   },
-  label: { color: '#00ffcc', fontSize: 12, fontWeight: 'bold', marginBottom: 6 },
-  row: { flexDirection: 'row', justifyContent: 'space-between' },
-  chip: {
-    paddingVertical: 6,
-    paddingHorizontal: 12,
+  sectionTitle: {
+    color: '#00FFCC',
+    fontSize: 11,
+    fontWeight: 'bold',
+    marginBottom: 8,
+  },
+  levelRow: {
+    flexDirection: 'row',
+    justify: 'space-between',
+    width: '100%',
+  },
+  levelBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    marginHorizontal: 2,
+    backgroundColor: '#1A0B36',
     borderRadius: 8,
-    backgroundColor: '#1a1a3a',
     borderWidth: 1,
-    borderColor: '#3a3a7a',
+    borderColor: '#3A1559',
+    alignItems: 'center',
   },
-  activeChip: { backgroundColor: '#00ffcc', borderColor: '#00ffcc' },
-  chipText: { color: '#8888cc', fontWeight: 'bold', fontSize: 12 },
-  activeText: { color: '#000', fontWeight: 'bold' },
-  topicRow: { flexDirection: 'row' },
+  activeLevelBtn: {
+    backgroundColor: '#FF007F',
+    borderColor: '#FF007F',
+  },
+  levelBtnText: {
+    color: '#8888CC',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  activeLevelText: {
+    color: '#FFFFFF',
+    fontWeight: '900',
+  },
+  topicScrollView: {
+    flexDirection: 'row',
+  },
   topicChip: {
     paddingVertical: 6,
     paddingHorizontal: 12,
+    backgroundColor: '#1A0B36',
     borderRadius: 16,
-    backgroundColor: '#1a1a3a',
-    marginRight: 8,
     borderWidth: 1,
-    borderColor: '#3a3a7a',
+    borderColor: '#3A1559',
+    marginRight: 8,
   },
-  activeTopicChip: { backgroundColor: '#ff007f', borderColor: '#ff007f' },
-  topicText: { color: '#aaa', fontSize: 12 },
+  activeTopicChip: {
+    backgroundColor: '#00FFCC',
+    borderColor: '#00FFCC',
+  },
+  topicText: {
+    color: '#AAAABB',
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
+  activeTopicText: {
+    color: '#000000',
+    fontWeight: 'bold',
+  },
 });
