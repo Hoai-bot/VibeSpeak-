@@ -287,16 +287,35 @@ export default function CyberArenaScreen({ onBack }: Props) {
             onPress={isRecording ? stopAndGrade : startRecording}
           >
             <Text style={styles.recordText}>
-              {isRecording ? '⏹️ DỪNG & AI CHẤM ĐIỂM ARENA' : '🎙️ BẮT ĐẦU THÌ THẤU GHI ÂM'}
+              {isRecording ? '⏹️ DỪNG & AI CHẤM ĐIỂM ARENA' : '🎙️ BẮT ĐẦU THI ĐẤU GHI ÂM'}
             </Text>
           </TouchableOpacity>
         )}
 
-        {/* 📊 BẢNG KẾT QUẢ CHẤM ĐIỂM 3D */}
+        {/* 📊 BẢNG KẾT QUẢ CHẤM ĐIỂM 3D & THẮNG / THUA */}
         {result && (
-          <View style={styles.resultCard}>
-            <Text style={[styles.resultScore, result.score >= 80 ? { color: '#39FF14' } : { color: '#FF0055' }]}>
-              🏆 {result.score}/100 ĐIỂM THÁCH ĐẤU
+          <View style={[
+            styles.resultCard, 
+            result.score >= 75 ? { borderColor: '#39FF14' } : { borderColor: '#FF0055' }
+          ]}>
+            {/* Banner Thắng / Thua */}
+            <View style={[
+              styles.outcomeBanner, 
+              result.score >= 75 ? { backgroundColor: '#004411' } : { backgroundColor: '#440011' }
+            ]}>
+              <Text style={[
+                styles.outcomeText, 
+                result.score >= 75 ? { color: '#39FF14' } : { color: '#FF0055' }
+              ]}>
+                {result.score >= 75 ? '🏆 VICTORY - CHIẾN THẮNG!' : '💀 DEFEAT - THẤT BẠI!'}
+              </Text>
+              <Text style={styles.rewardText}>
+                {result.score >= 75 ? '+100 EXP | +15 RANK PT' : '+10 EXP (Điểm an ủi)'}
+              </Text>
+            </View>
+
+            <Text style={styles.resultScore}>
+              📊 ĐIỂM THÁCH ĐẤU: {result.score}/100
             </Text>
             <Text style={styles.transcribedText}>🗣️ Bài nói nhận diện: "{result.transcribedText}"</Text>
 
@@ -374,8 +393,11 @@ const styles = StyleSheet.create({
   recordBtn: { backgroundColor: '#39FF14', padding: 14, borderRadius: 12, width: '100%', alignItems: 'center', marginBottom: 15 },
   recordText: { color: '#000', fontSize: 12, fontWeight: '900' },
 
-  resultCard: { backgroundColor: '#120826', padding: 14, borderRadius: 12, borderWidth: 1, borderColor: '#39FF14', width: '100%', alignItems: 'center', marginBottom: 25 },
-  resultScore: { fontSize: 16, fontWeight: '900', marginBottom: 6 },
+  resultCard: { backgroundColor: '#120826', padding: 14, borderRadius: 12, borderWidth: 2, width: '100%', alignItems: 'center', marginBottom: 25 },
+  outcomeBanner: { width: '100%', paddingVertical: 8, borderRadius: 8, alignItems: 'center', marginBottom: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' },
+  outcomeText: { fontSize: 16, fontWeight: '900', letterSpacing: 1 },
+  rewardText: { color: '#FFD700', fontSize: 11, fontWeight: 'bold', marginTop: 2 },
+  resultScore: { fontSize: 15, fontWeight: '900', color: '#FFF', marginBottom: 6 },
   transcribedText: { color: '#AAAABB', fontSize: 11, textAlign: 'center', marginBottom: 8, fontStyle: 'italic' },
   breakdownRow: { flexDirection: 'row', justifyContent: 'space-around', width: '100%', marginBottom: 8, backgroundColor: '#0A0518', padding: 8, borderRadius: 8 },
   breakdownText: { color: '#00FFCC', fontSize: 10, fontWeight: 'bold' },
