@@ -17,8 +17,8 @@ export async function generateRoleplayScenario(cefrLevel: string = 'B2'): Promis
   if (cefrLevel === 'A1' || cefrLevel === 'A2') {
     levelRules = `
 - CEFR LEVEL: BASIC (${cefrLevel})
-- Situation: Ordering food, asking directions, meeting a new friend at school.
-- AI Initial Message: Simple question (e.g., "Hello! What drink would you like to order today?")`;
+- Make sure initialAiMessage directly triggers ALL parts mentioned in the goal.
+- Example for Cafeteria: "Hello! Welcome to the school campus. What drink would you like to order, and do you need directions to the seating area?"`;
   } else if (cefrLevel === 'B1' || cefrLevel === 'B2') {
     levelRules = `
 - CEFR LEVEL: INTERMEDIATE (${cefrLevel})
@@ -35,12 +35,14 @@ export async function generateRoleplayScenario(cefrLevel: string = 'B2'): Promis
 
 ${levelRules}
 
+CRITICAL: The "goal" and the "initialAiMessage" MUST match 100%. If goal requires asking directions, initialAiMessage MUST mention or prompt for directions.
+
 Return ONLY JSON:
 {
   "scenarioTitle": "Scenario Name",
   "aiRole": "AI Character",
   "userRole": "User Character",
-  "initialAiMessage": "AI greeting/question",
+  "initialAiMessage": "AI greeting/question matching the goal",
   "goal": "Vietnamese explanation of user goal"
 }`;
 
@@ -53,14 +55,20 @@ Return ONLY JSON:
     });
 
     const parsed: RoleplayScenario = JSON.parse(response.choices[0]?.message?.content || '{}');
-    return parsed;
+    return {
+      scenarioTitle: parsed.scenarioTitle || `Roleplay (${cefrLevel})`,
+      aiRole: parsed.aiRole || (cefrLevel.startsWith('A') ? "Cafeteria Staff" : "Tech Interviewer"),
+      userRole: parsed.userRole || (cefrLevel.startsWith('A') ? "Student" : "Applicant"),
+      initialAiMessage: parsed.initialAiMessage || (cefrLevel.startsWith('A') ? "Hello! What drink would you like, and do you need help finding the table?" : "Tell me about your experience with AI technology."),
+      goal: parsed.goal || "Giao tiếp tự nhiên và tự tin hoàn thành tình huống."
+    };
   } catch (error) {
     return {
-      scenarioTitle: `Roleplay (${cefrLevel})`,
-      aiRole: cefrLevel.startsWith('A') ? "Cafe Staff" : "Tech Interviewer",
-      userRole: cefrLevel.startsWith('A') ? "Customer" : "Applicant",
-      initialAiMessage: cefrLevel.startsWith('A') ? "Welcome! What can I get for you today?" : "Tell me about your experience with AI technology.",
-      goal: "Giao tiếp tự nhiên và tự tin hoàn thành tình huống."
+      scenarioTitle: `Ordering at the Cafeteria [${cefrLevel}]`,
+      aiRole: "Cafeteria Staff",
+      userRole: "Student",
+      initialAiMessage: "Hello! What drink would you like to order today, and do you need directions to the dining hall?",
+      goal: "User đặt đồ uống và hỏi đường đi tới khu vực ăn uống."
     };
   }
 }
