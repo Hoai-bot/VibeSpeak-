@@ -41,47 +41,28 @@ export default function CyberArenaScreen({ onBack }: Props) {
 
   const levels: CEFRLevel[] = ['A1', 'A2', 'B1', 'B2', 'C1'];
 
-  // 🔊 TỐI ƯU GIỌNG ĐỌC NATURAL / PREMIUM TRÊN TRÌNH DUYỆT (TTS)
+  // 🎯 HÀM TÍNH THỜI GIAN THEO CẤP ĐỘ CEFR DÀNH CHO ROLEPLAY
+  const getRoleplayDuration = (level: CEFRLevel): number => {
+    if (level === 'A1' || level === 'A2') return 30;
+    if (level === 'B1') return 45;
+    return 60; // B2, C1
+  };
+
   const speakAiMessage = (text: string) => {
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      window.speechSynthesis.cancel(); // Dừng câu thoại cũ
-      
+      window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
-      
-      // Lấy danh sách giọng đọc tích hợp sẵn trên hệ thống/trình duyệt
       const voices = window.speechSynthesis.getVoices();
-      
-      // Ưu tiên chọn giọng Natural / Neural / Google US English để có âm điệu tự nhiên nhất
       const premiumVoice = voices.find(
-        (v) => v.lang.startsWith('en') && (
-          v.name.includes('Natural') || 
-          v.name.includes('Google') || 
-          v.name.includes('Neural') ||
-          v.name.includes('Samantha') || 
-          v.name.includes('Karen')
-        )
+        (v) => v.lang.startsWith('en') && (v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('Neural'))
       ) || voices.find((v) => v.lang.includes('en-US'));
 
-      if (premiumVoice) {
-        utterance.voice = premiumVoice;
-      }
-
+      if (premiumVoice) utterance.voice = premiumVoice;
       utterance.lang = 'en-US';
-      utterance.rate = 0.92; // Tốc độ nói vừa phải, tránh bị dồn chữ
-      utterance.pitch = 1.0; // Giữ tông giọng trầm ấm tự nhiên
-
+      utterance.rate = 0.92;
       window.speechSynthesis.speak(utterance);
     }
   };
-
-  // Lắng nghe sự kiện load giọng đọc từ trình duyệt (Web Speech API async loader)
-  useEffect(() => {
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      window.speechSynthesis.onvoiceschanged = () => {
-        window.speechSynthesis.getVoices();
-      };
-    }
-  }, []);
 
   const loadArenaChallenge = async (tier = arenaTier, level = cefrLevel) => {
     stopTimer();
@@ -103,7 +84,7 @@ export default function CyberArenaScreen({ onBack }: Props) {
       } else {
         const data = await generateRoleplayScenario(level);
         setRoleplayData(data);
-        if (data?.initialAiMessage) {
+        if (opponentType === 'bot' && data?.initialAiMessage) {
           setTimeout(() => speakAiMessage(data.initialAiMessage), 500);
         }
       }
@@ -118,7 +99,7 @@ export default function CyberArenaScreen({ onBack }: Props) {
     loadArenaChallenge(arenaTier, cefrLevel);
   }, [arenaTier]);
 
-  // ⏱️ HÀM ĐẾM NGƯỢC THỜI GIAN
+  // ⏱️ LOGIC ĐẾM NGƯỢC THỜI GIAN THEO CẤP ĐỘ
   const startTimer = () => {
     if (timerRef.current) clearInterval(timerRef.current);
 
@@ -152,7 +133,9 @@ export default function CyberArenaScreen({ onBack }: Props) {
         });
       }, 1000);
     } else if (arenaTier === 3) {
-      setTimeLeft(60);
+      // 🎭 ROLEPLAY: ĐẾM NGƯỢC LINH HOẠT THEO CEFR (30s / 45s / 60s)
+      const duration = getRoleplayDuration(cefrLevel);
+      setTimeLeft(duration);
       timerRef.current = setInterval(() => {
         setTimeLeft((prev) => {
           if (prev <= 1) {
@@ -179,7 +162,6 @@ export default function CyberArenaScreen({ onBack }: Props) {
     }
   };
 
-  // 🎙️ BẮT ĐẦU GHI ÂM MICRO
   const startRecording = async () => {
     stopAudioPlayback();
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
@@ -212,7 +194,6 @@ export default function CyberArenaScreen({ onBack }: Props) {
     }
   };
 
-  // ⏹️ DỪNG GHI ÂM VÀ CHẤM ĐIỂM
   const stopAndGrade = async () => {
     stopTimer();
     const mediaRecorder = mediaRecorderRef.current;
@@ -238,7 +219,7 @@ export default function CyberArenaScreen({ onBack }: Props) {
       setRecordedAudioUri(url);
 
       if (blob.size < 1000) {
-        setResult({ score: 0, phoneticScore: 0, fluencyScore: 0, semanticScore: 0, transcribedText: "(Âm thanh quá ngắn)", feedback: "Hãy nói rõ ràng hơn trong thời lượng quy định!" });
+        setResult({ score: 0, phoneticScore: 0, fluencyScore: 0, semanticScore: 0, transcribedText: "(Âm thanh quá ngắn)", feedback: "Hãy đối thoại tương tác rõ ràng hơn!" });
         setIsAnalyzing(false);
         return;
       }
@@ -246,7 +227,7 @@ export default function CyberArenaScreen({ onBack }: Props) {
       let targetContext = "";
       if (arenaTier === 1) targetContext = soloData?.promptText || "";
       else if (arenaTier === 2) targetContext = `${relayData?.topic}: ${relayData?.context}`;
-      else targetContext = `${roleplayData?.scenarioTitle}: ${roleplayData?.goal}`;
+      else targetContext = `ROLEPLAY CONVERSATION [${cefrLevel}]: ${roleplayData?.scenarioTitle}. Roles: P1 (${roleplayData?.aiRole}) & P2 (${roleplayData?.userRole}). Goal: ${roleplayData?.goal}`;
 
       const res = await gradeFlexibleArenaResponse(blob, targetContext);
       setResult(res);
@@ -325,8 +306,12 @@ export default function CyberArenaScreen({ onBack }: Props) {
           </TouchableOpacity>
 
           <TouchableOpacity style={[styles.tierCard, arenaTier === 3 && styles.activeTier3]} onPress={() => setArenaTier(3)}>
-            <Text style={styles.tierTitle}>🎭 TẦNG 3: ROLEPLAY 60S (NHẬP VAI)</Text>
-            <Text style={styles.tierSub}>Nhập vai xử lý tình huống thực tế 60s (vừa nghe vừa đọc tình huống).</Text>
+            <Text style={styles.tierTitle}>
+              🎭 TẦNG 3: ROLEPLAY ({getRoleplayDuration(cefrLevel)}S NHẬP VAI)
+            </Text>
+            <Text style={styles.tierSub}>
+              Đối thoại nhập vai hai chiều linh hoạt ({getRoleplayDuration(cefrLevel)}s theo CEFR {cefrLevel}).
+            </Text>
           </TouchableOpacity>
         </View>
 
@@ -393,24 +378,29 @@ export default function CyberArenaScreen({ onBack }: Props) {
             {arenaTier === 3 && roleplayData && (
               <>
                 <Text style={styles.cardTitle}>🎭 KỊCH BẢN: {roleplayData.scenarioTitle} [{cefrLevel}]</Text>
-                <Text style={styles.roleText}>
-                  {opponentType === 'bot' 
-                    ? `🤖 AI Bot: ${roleplayData.aiRole}  |  👨‍🎓 Bạn: ${roleplayData.userRole}`
-                    : `👤 Người chơi 1: ${roleplayData.aiRole}  |  👥 Người chơi 2: ${roleplayData.userRole}`}
-                </Text>
                 
-                <View style={styles.speechCardBox}>
-                  <Text style={styles.cardDesc}>
-                    💬 {opponentType === 'bot' ? 'AI Bot đặt câu hỏi:' : 'Gợi ý bắt đầu:'} "{roleplayData.initialAiMessage}"
-                  </Text>
-                  
-                  <TouchableOpacity 
-                    style={styles.speakerBtn} 
-                    onPress={() => speakAiMessage(roleplayData.initialAiMessage)}
-                  >
-                    <Text style={styles.speakerText}>🔊 NÓI LẠI CÂU HỎI TÌNH HUỐNG</Text>
-                  </TouchableOpacity>
+                <View style={styles.roleHeaderBox}>
+                  <Text style={styles.p1RoleText}>👤 P1: {roleplayData.aiRole}</Text>
+                  <Text style={styles.vsText}>⚡ VS ⚡</Text>
+                  <Text style={styles.p2RoleText}>👥 P2: {roleplayData.userRole}</Text>
                 </View>
+
+                <View style={styles.speechCardBox}>
+                  <Text style={styles.cardDesc}>💬 Câu mở đầu kịch bản: "{roleplayData.initialAiMessage}"</Text>
+                  
+                  {opponentType === 'bot' && (
+                    <TouchableOpacity 
+                      style={styles.speakerBtn} 
+                      onPress={() => speakAiMessage(roleplayData.initialAiMessage)}
+                    >
+                      <Text style={styles.speakerText}>🔊 NÓI LẠI CÂU MỞ ĐẦU</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+
+                <Text style={styles.roleInstruction}>
+                  🗣️ QUA LẠI LIÊN TỤC: Hai bạn đối thoại tự nhiên trong {getRoleplayDuration(cefrLevel)}s!
+                </Text>
 
                 <Text style={styles.keyText}>🎯 Mục tiêu giao tiếp: {roleplayData.goal}</Text>
               </>
@@ -426,9 +416,9 @@ export default function CyberArenaScreen({ onBack }: Props) {
         {isRecording && (
           <View style={styles.timerContainer}>
             <Text style={styles.playerTurnText}>
-              {arenaTier === 1 && '🎙️ ĐANG GHI ÂM SOLO (TỰ ĐỘNG DỪNG KHI HẾT 30S)'}
-              {arenaTier === 2 && (activePlayer === 1 ? '👤 DÀNH CHO BẠN 1 (30S ĐẦU)' : '👤 ĐẾN LƯỢT BẠN 2 (30S SAU - SẼ TỰ DỪNG)')}
-              {arenaTier === 3 && '🎭 ĐANG GHI ÂM ROLEPLAY 60S (TỰ ĐỘNG DỪNG KHI HẾT 60S)'}
+              {arenaTier === 1 && '🎙️ GHI ÂM SOLO (TỰ DỪNG KHI HẾT 30S)'}
+              {arenaTier === 2 && (activePlayer === 1 ? '👤 BẠN 1 NÓI (30S ĐẦU)' : '👤 BẠN 2 NÓI (30S SAU)')}
+              {arenaTier === 3 && `🎭 ĐỐI THOẠI ROLEPLAY (${getRoleplayDuration(cefrLevel)}S CEFR ${cefrLevel})`}
             </Text>
             <Text style={[styles.timerNumber, timeLeft <= 5 && { color: '#FF0055' }]}>
               ⏱️ {timeLeft < 10 ? `00:0${timeLeft}` : `00:${timeLeft}`}
@@ -474,7 +464,7 @@ export default function CyberArenaScreen({ onBack }: Props) {
             <Text style={styles.resultScore}>
               📊 ĐIỂM THÁCH ĐẤU: {result.score}/100
             </Text>
-            <Text style={styles.transcribedText}>🗣️ Bài nói nhận diện: "{result.transcribedText}"</Text>
+            <Text style={styles.transcribedText}>🗣️ Đoạn đối thoại ghi nhận: "{result.transcribedText}"</Text>
 
             <View style={styles.breakdownRow}>
               <Text style={styles.breakdownText}>🎯 Phôn âm: {result.phoneticScore}</Text>
@@ -486,7 +476,7 @@ export default function CyberArenaScreen({ onBack }: Props) {
 
             {recordedAudioUri && (
               <TouchableOpacity style={styles.replayBtn} onPress={playRecordedAudio}>
-                <Text style={styles.replayText}>🎧 NGHE LẠI BÀI THI CỦA BẠN</Text>
+                <Text style={styles.replayText}>🎧 NGHE LẠI TOÀN BỘ ĐOẠN ĐỐI THOẠI</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -542,7 +532,13 @@ const styles = StyleSheet.create({
 
   relayBox: { backgroundColor: '#0A0518', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#00FFCC', marginBottom: 8 },
   playerTag: { color: '#00FFCC', fontSize: 9, fontWeight: 'bold', marginBottom: 2 },
-  roleText: { color: '#AAAABB', fontSize: 10, textAlign: 'center', marginBottom: 6 },
+  
+  roleHeaderBox: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', backgroundColor: '#0A0518', padding: 8, borderRadius: 8, marginBottom: 8 },
+  p1RoleText: { color: '#00FFCC', fontSize: 11, fontWeight: 'bold' },
+  vsText: { color: '#FF007F', fontSize: 11, fontWeight: '900' },
+  p2RoleText: { color: '#FFD700', fontSize: 11, fontWeight: 'bold' },
+
+  roleInstruction: { color: '#39FF14', fontSize: 10, fontWeight: 'bold', textAlign: 'center', marginVertical: 4 },
 
   speechCardBox: { backgroundColor: '#0A0518', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#FFD700', alignItems: 'center', marginVertical: 6 },
   speakerBtn: { backgroundColor: '#2A1040', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 20, borderWidth: 1, borderColor: '#00FFCC', marginTop: 4 },
