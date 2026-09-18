@@ -68,7 +68,7 @@ Return ONLY JSON:
       topic: "Startup Idea Relay",
       player1Prompt: "High-level English skills are in high demand for international tech jobs.",
       player2Prompt: "Our platform provides real-time AI voice feedback to bridge that gap.",
-      scoringFocus": "Phối hợp ăn ý và giữ độ mượt mà khi đổi lượt nói."
+      scoringFocus: "Phối hợp ăn ý và giữ độ mượt mà khi đổi lượt nói."
     };
   }
 }
