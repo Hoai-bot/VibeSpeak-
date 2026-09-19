@@ -15,7 +15,14 @@ interface Props {
   onNavigateToOasis?: (sentence: string) => void;
 }
 
-const bossSentenceHistory = new Set<string>();
+// 🎯 Danh sách đề bài dự phòng đa dạng khi API bận
+const FALLBACK_BOSS_SENTENCES = [
+  "Artificial intelligence is rapidly transforming global business strategies.",
+  "Effective communication requires both active listening and speaking accuracy.",
+  "Cybersecurity measures are essential for protecting modern digital infrastructure.",
+  "Data analytics empowers companies to make smarter operational decisions.",
+  "Continuous learning is the key to mastering professional English fluency."
+];
 
 export default function BossRaidScreen({ onBack, onNavigateToOasis }: Props) {
   const [bossSentence, setBossSentence] = useState<string>('');
@@ -31,18 +38,23 @@ export default function BossRaidScreen({ onBack, onNavigateToOasis }: Props) {
   const mediaRecorderRef = useRef<any>(null);
   const audioChunksRef = useRef<any[]>([]);
 
+  // 🎯 HÀM LẤY ĐỀ BÀI MỚI (CHẮC CHẮN ĐỔI CHỦ ĐỀ MỖI LẦN BẤM)
   const fetchNewBossChallenge = async () => {
     setLoadingBoss(true);
     setResult(null);
     setRecordedAudioUri(null);
 
-    const excludeList = Array.from(bossSentenceHistory).join(', ');
+    // Tạo mã ngẫu nhiên chống cache API
+    const randomNonce = Date.now() + Math.floor(Math.random() * 10000);
 
-    const prompt = `
-Generate ONE challenging English sentence for Boss Raid (8-12 words). Topic: Business/Cyberpunk.
-DO NOT use: [${excludeList}].
-Return ONLY JSON: { "sentence": "Text" }
-`;
+    const prompt = `Generate ONE UNIQUE challenging English sentence for Boss Raid (8-12 words).
+- Topics: Business, Technology, Artificial Intelligence, Innovation, Future Skills.
+- Nonce code: ${randomNonce}
+
+Return ONLY a valid JSON object:
+{
+  "sentence": "One English sentence here"
+}`;
 
     try {
       const res = await groq.chat.completions.create({
@@ -53,11 +65,19 @@ Return ONLY JSON: { "sentence": "Text" }
       });
 
       const parsed = JSON.parse(res.choices[0]?.message?.content || '{}');
-      const newSentence = parsed.sentence || "Technology is reshaping the way we communicate every day.";
-      bossSentenceHistory.add(newSentence.toLowerCase());
-      setBossSentence(newSentence);
+      if (parsed.sentence && parsed.sentence.trim() !== bossSentence) {
+        setBossSentence(parsed.sentence.trim());
+      } else {
+        // Nếu AI trả về trùng câu cũ, lấy ngẫu nhiên từ danh sách fallback
+        const filtered = FALLBACK_BOSS_SENTENCES.filter(s => s !== bossSentence);
+        const randomFallback = filtered[Math.floor(Math.random() * filtered.length)];
+        setBossSentence(randomFallback);
+      }
     } catch (e) {
-      setBossSentence(`AI innovation drives natural language fluency`);
+      // Fallback khi mất mạng hoặc lỗi API
+      const filtered = FALLBACK_BOSS_SENTENCES.filter(s => s !== bossSentence);
+      const randomFallback = filtered[Math.floor(Math.random() * filtered.length)];
+      setBossSentence(randomFallback);
     } finally {
       setLoadingBoss(false);
     }
@@ -110,8 +130,7 @@ Return ONLY JSON: { "sentence": "Text" }
       const { blob, url } = await processAudio;
       setRecordedAudioUri(url);
 
-      const cleanTargetSentence = bossSentence.replace(/#\d+/g, '').trim();
-      const res = await gradeFlexibleArenaResponse(blob, cleanTargetSentence);
+      const res = await gradeFlexibleArenaResponse(blob, bossSentence);
 
       if (res.score >= 75) {
         const nextStreak = streak + 1;
@@ -129,7 +148,7 @@ Return ONLY JSON: { "sentence": "Text" }
       } else {
         setStreak(0);
         setResult(res);
-        if (onNavigateToOasis) setTimeout(() => onNavigateToOasis(cleanTargetSentence), 2000);
+        if (onNavigateToOasis) setTimeout(() => onNavigateToOasis(bossSentence), 2000);
       }
 
     } catch (e) {
@@ -161,10 +180,7 @@ Return ONLY JSON: { "sentence": "Text" }
 
             <TouchableOpacity 
               style={styles.speakerBtn} 
-              onPress={() => {
-                const cleanText = bossSentence.replace(/#\d+/g, '').trim();
-                speakNaturalText(cleanText, { voiceName: 'en-US-GuyNeural', style: 'shouting', rate: '+5%' });
-              }}
+              onPress={() => speakNaturalText(bossSentence, { voiceName: 'en-US-GuyNeural', style: 'shouting', rate: '+5%' })}
             >
               <Text style={styles.speakerText}>🔊 NGHE BOSS MẪU</Text>
             </TouchableOpacity>
