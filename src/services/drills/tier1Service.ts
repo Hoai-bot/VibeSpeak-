@@ -34,9 +34,11 @@ export async function generateTier1Drill(cefrLevel: string, topicContext: string
 - CEFR Level: ${cefrLevel}
 - Context: ${topicContext}
 
-STRICT TIER 1 RULES:
-1. "target" MUST be EXACTLY TWO contrasting words separated by slash: "WordA / WordB" (e.g., "Ship / Sheep", "Server / Sever", "Probe / Prove").
-2. "phonetics" MUST strictly follow Cambridge/Oxford IPA rules:
+STRICT TIER 1 RULES FOR PHONETICS (IPA):
+1. "target" MUST be EXACTLY TWO contrasting words separated by slash: "WordA / WordB" (e.g., "Ship / Sheep", "Code / Coed").
+2. "phonetics" MUST strictly follow Cambridge/Oxford IPA standards:
+   * "Code" MUST BE /kəʊd/ or /koʊd/.
+   * "Coed" MUST BE /ˈkəʊ.ed/ or /ˈkoʊ.ed/ (vowel /oʊ.ed/, NEVER /kɔːd/).
    * "Sever" MUST BE /ˈsev.ər/ (vowel /e/, NOT /siːvər/).
    * "Server" MUST BE /ˈsɜː.vər/.
    * "Prove" MUST BE /pruːv/, "Probe" MUST BE /prəʊb/.
@@ -44,11 +46,11 @@ STRICT TIER 1 RULES:
 
 Return ONLY JSON:
 {
-  "target": "Server / Sever",
-  "phonetics": "/ˈsɜː.vər/ - /ˈsev.ər/",
-  "meaning": "Máy chủ / Cắt đứt",
-  "tip": "Server dùng âm /ɜː/ dài, Sever dùng âm /e/ ngắn.",
-  "spokenText": "Server Sever",
+  "target": "Code / Coed",
+  "phonetics": "/kəʊd/ - /ˈkəʊ.ed/",
+  "meaning": "Mật mã / Nam nữ học chung",
+  "tip": "Code dùng âm đơn /əʊd/, Coed có 2 âm tiết /ˈkəʊ.ed/.",
+  "spokenText": "Code Coed",
   "cefrLevel": "${cefrLevel}"
 }`;
 
@@ -56,7 +58,7 @@ Return ONLY JSON:
     const response = await groq.chat.completions.create({
       messages: [{ role: 'user', content: prompt }],
       model: 'openai/gpt-oss-20b',
-      temperature: 0.9,
+      temperature: 0.8,
       response_format: { type: 'json_object' },
     });
 
@@ -65,6 +67,7 @@ Return ONLY JSON:
     return { ...parsed, spokenText: parsed.spokenText || parsed.target };
   } catch (error) {
     const fallbacks = [
+      { target: "Code / Coed", phonetics: "/kəʊd/ - /ˈkəʊ.ed/", meaning: "Mật mã / Nam nữ học chung", tip: "Coed là từ ghép gồm 2 âm tiết /ˈkəʊ.ed/.", spokenText: "Code Coed" },
       { target: "Ship / Sheep", phonetics: "/ʃɪp/ - /ʃiːp/", meaning: "Con tàu / Con cừu", tip: "Âm /ɪ/ ngắn bật nhanh, /iː/ kéo dài.", spokenText: "Ship Sheep" },
       { target: "Light / Night", phonetics: "/laɪt/ - /naɪt/", meaning: "Ánh sáng / Đêm", tip: "Phân biệt âm đầu /l/ và /n/.", spokenText: "Light Night" }
     ];
