@@ -5,7 +5,6 @@ import { speakNaturalText } from '../services/ttsService';
 import { gradeFlexibleArenaResponse, GradeResult } from '../services/groqClient';
 import { Groq } from 'groq-sdk';
 
-// 🎯 ĐÃ XÓA HARDCODED KEY -> ĐỌC AN TOÀN TỪ BIẾN MÔI TRƯỜNG
 const groq = new Groq({
   apiKey: process.env.EXPO_PUBLIC_GROQ_API_KEY || '',
   dangerouslyAllowBrowser: true,
@@ -58,7 +57,7 @@ Return ONLY JSON: { "sentence": "Text" }
       bossSentenceHistory.add(newSentence.toLowerCase());
       setBossSentence(newSentence);
     } catch (e) {
-      setBossSentence(`AI innovation drives natural language fluency #${Math.floor(Math.random() * 1000)}`);
+      setBossSentence(`AI innovation drives natural language fluency`);
     } finally {
       setLoadingBoss(false);
     }
@@ -111,7 +110,8 @@ Return ONLY JSON: { "sentence": "Text" }
       const { blob, url } = await processAudio;
       setRecordedAudioUri(url);
 
-      const res = await gradeFlexibleArenaResponse(blob, bossSentence);
+      const cleanTargetSentence = bossSentence.replace(/#\d+/g, '').trim();
+      const res = await gradeFlexibleArenaResponse(blob, cleanTargetSentence);
 
       if (res.score >= 75) {
         const nextStreak = streak + 1;
@@ -129,7 +129,7 @@ Return ONLY JSON: { "sentence": "Text" }
       } else {
         setStreak(0);
         setResult(res);
-        if (onNavigateToOasis) setTimeout(() => onNavigateToOasis(bossSentence), 2000);
+        if (onNavigateToOasis) setTimeout(() => onNavigateToOasis(cleanTargetSentence), 2000);
       }
 
     } catch (e) {
@@ -161,7 +161,10 @@ Return ONLY JSON: { "sentence": "Text" }
 
             <TouchableOpacity 
               style={styles.speakerBtn} 
-              onPress={() => speakNaturalText(bossSentence, { voiceName: 'en-US-GuyNeural', style: 'shouting', rate: '+5%' })}
+              onPress={() => {
+                const cleanText = bossSentence.replace(/#\d+/g, '').trim();
+                speakNaturalText(cleanText, { voiceName: 'en-US-GuyNeural', style: 'shouting', rate: '+5%' });
+              }}
             >
               <Text style={styles.speakerText}>🔊 NGHE BOSS MẪU</Text>
             </TouchableOpacity>
