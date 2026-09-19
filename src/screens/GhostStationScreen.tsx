@@ -1,29 +1,89 @@
-import React, { useState, useRef } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, Modal } from 'react-native';
-import { transcribeAndGradeAudio } from '../services/groqClient';
+// src/screens/GhostStationScreen.tsx
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, Modal } from 'react-native';
+import { speakNaturalText } from '../services/ttsService';
+import { gradeFlexibleArenaResponse, GradeResult } from '../services/groqClient';
+import { Groq } from 'groq-sdk';
+
+export type CEFRLevel = 'A1' | 'A2' | 'B1' | 'B2' | 'C1';
+
+const groq = new Groq({
+  apiKey: process.env.EXPO_PUBLIC_GROQ_API_KEY || '',
+  dangerouslyAllowBrowser: true,
+});
 
 interface Props {
   onBack: () => void;
-  onNavigateToOasis?: (ghostSentence: string) => void;
+  onNavigateToOasis?: (sentence: string) => void;
 }
 
 export function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
-  const [ghostSentence, setGhostSentence] = useState<string>("Whispers in the dark connected speech");
+  const [cefrLevel, setCefrLevel] = useState<CEFRLevel>('A1');
+  const [ghostSentence, setGhostSentence] = useState<string>('');
+  const [loadingGhost, setLoadingGhost] = useState<boolean>(true);
+
   const [isRecording, setIsRecording] = useState<boolean>(false);
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
-  const [score, setScore] = useState<number | null>(null);
+  const [result, setResult] = useState<GradeResult | null>(null);
 
-  // 🎯 STATE CỨU HỘ OASIS TRẠM BÓNG MA
+  // 🎯 HỆ THỐNG CỨU HỘ OASIS
   const [ghostMissCount, setGhostMissCount] = useState<number>(0);
   const [showOasisModal, setShowOasisModal] = useState<boolean>(false);
 
   const mediaRecorderRef = useRef<any>(null);
   const audioChunksRef = useRef<any[]>([]);
 
+  const levels: CEFRLevel[] = ['A1', 'A2', 'B1', 'B2', 'C1'];
+
+  const fetchGhostSentence = async (level = cefrLevel) => {
+    setLoadingGhost(true);
+    setResult(null);
+
+    let languageInstruction = '';
+    if (level === 'A1' || level === 'A2') {
+      languageInstruction = '100% VIETNAMESE instruction with a very simple 4-6 word English sentence to shadow.';
+    } else if (level === 'B1' || level === 'B2') {
+      languageInstruction = 'BILINGUAL guidance with a moderate 7-10 word English sentence focusing on connected speech.';
+    } else {
+      languageInstruction = '100% ENGLISH guidelines with a complex 10-14 word native-speed sentence.';
+    }
+
+    const prompt = `Generate ONE Shadowing/Connected Speech practice sentence for CEFR Level ${level}.
+RULES: ${languageInstruction}
+Return ONLY JSON: { "sentence": "English text to shadow", "tip": "Vietnamese or English tip on linking sounds" }`;
+
+    try {
+      const res = await groq.chat.completions.create({
+        messages: [{ role: 'user', content: prompt }],
+        model: 'openai/gpt-oss-20b',
+        temperature: 0.8,
+        response_format: { type: 'json_object' },
+      });
+
+      const parsed = JSON.parse(res.choices[0]?.message?.content || '{}');
+      setGhostSentence(parsed.sentence || "Whispers in the dark connected speech.");
+    } catch (e) {
+      setGhostSentence(
+        level.startsWith('A') 
+          ? "How are you doing today?" 
+          : "Natural speech incorporates subtle linking sounds and rhythm."
+      );
+    } finally {
+      setLoadingGhost(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchGhostSentence(cefrLevel);
+  }, [cefrLevel]);
+
   const startRecording = async () => {
     try {
+      if (typeof navigator === 'undefined' || !navigator.mediaDevices) return;
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaRecorderRef.current = new MediaRecorder(stream);
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4';
+
+      mediaRecorderRef.current = new MediaRecorder(stream, { mimeType });
       audioChunksRef.current = [];
 
       mediaRecorderRef.current.ondataavailable = (e: any) => {
@@ -32,6 +92,7 @@ export function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
 
       mediaRecorderRef.current.start(100);
       setIsRecording(true);
+      setResult(null);
     } catch (err) {
       alert('Không thể truy cập Micro!');
     }
@@ -39,33 +100,29 @@ export function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
 
   const stopRecording = async () => {
     const mediaRecorder = mediaRecorderRef.current;
-    if (!mediaRecorder) return;
+    if (!mediaRecorder || mediaRecorder.state === 'inactive') return;
 
     setIsRecording(false);
     setIsAnalyzing(true);
 
     const processAudio = new Promise<Blob>((resolve) => {
       mediaRecorder.onstop = () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: mediaRecorder.mimeType || 'audio/webm' });
-        resolve(audioBlob);
+        const blob = new Blob(audioChunksRef.current, { type: mediaRecorder.mimeType || 'audio/webm' });
+        if (mediaRecorder.stream) mediaRecorder.stream.getTracks().forEach((t: any) => t.stop());
+        resolve(blob);
       };
       mediaRecorder.stop();
     });
 
     try {
-      if (mediaRecorder.stream) mediaRecorder.stream.getTracks().forEach((t: any) => t.stop());
       const audioBlob = await processAudio;
+      const res = await gradeFlexibleArenaResponse(audioBlob, ghostSentence);
+      setResult(res);
 
-      const res = await transcribeAndGradeAudio(audioBlob, ghostSentence);
-      setScore(res.score);
-
-      // 🎯 KÍCH HOẠT POPUP CỨU HỘ KHI ĐIỂM < 50 TRONG 2 LẦN LÊN TIẾP
       if (res.score < 50) {
         setGhostMissCount((prev) => {
           const next = prev + 1;
-          if (next >= 2) {
-            setShowOasisModal(true);
-          }
+          if (next >= 2) setShowOasisModal(true);
           return next;
         });
       } else {
@@ -82,25 +139,84 @@ export function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
     <View style={styles.container}>
       <View style={styles.topBar}>
         <TouchableOpacity onPress={onBack} style={styles.backBtn}>
-          <Text style={styles.backText}>🔙 EXIT</Text>
+          <Text style={styles.backText}>🔙 MAP</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>👻 TRẠM BÓNG MA</Text>
+        <Text style={styles.headerTitle}>👻 TRẠM 3: SHADOW MATRIX (BÓNG MA)</Text>
       </View>
 
-      <View style={styles.card}>
-        <Text style={styles.tag}>[ SHADOWING ECHO MODE ]</Text>
-        <Text style={styles.sentenceText}>"{ghostSentence}"</Text>
+      <ScrollView contentContainerStyle={{ alignItems: 'center', width: '100%' }}>
+        {/* 📊 CHỌN CẤP ĐỘ CEFR */}
+        <View style={styles.sectionBox}>
+          <Text style={styles.sectionLabel}>📊 CHỌN CẤP ĐỘ NHẬP VAI (CEFR):</Text>
+          <View style={styles.levelRow}>
+            {levels.map((lvl) => (
+              <TouchableOpacity
+                key={lvl}
+                style={[styles.levelBtn, cefrLevel === lvl && styles.activeLevelBtn]}
+                onPress={() => setCefrLevel(lvl)}
+              >
+                <Text style={[styles.levelBtnText, cefrLevel === lvl && styles.activeLevelText]}>
+                  {lvl}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
 
-        <TouchableOpacity style={styles.recordBtn} onPress={isRecording ? stopRecording : startRecording}>
-          <Text style={styles.recordText}>
-            {isRecording ? '⏹️ DỪNG THU ÂM' : '🎙️ ĐỌC ĐUỔI THEO BÓNG MA'}
-          </Text>
+        {/* 👻 THẺ THÁCH THỨC BÓNG MA */}
+        {loadingGhost ? (
+          <ActivityIndicator size="large" color="#00FFFF" style={{ marginVertical: 30 }} />
+        ) : (
+          <View style={styles.card}>
+            <Text style={styles.tag}>[ SHADOWING ECHO MODE - {cefrLevel} ]</Text>
+            <Text style={styles.sentenceText}>"{ghostSentence}"</Text>
+
+            <TouchableOpacity 
+              style={styles.speakerBtn} 
+              onPress={() => speakNaturalText(ghostSentence, { voiceName: 'en-US-JennyNeural', style: 'cheerful' })}
+            >
+              <Text style={styles.speakerText}>🔊 NGHE BÓNG MA ĐỌC MẪU</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        <TouchableOpacity style={styles.refreshBtn} onPress={() => fetchGhostSentence(cefrLevel)}>
+          <Text style={styles.refreshText}>🔄 ĐỔI CÂU BÓNG MA MỚI ({cefrLevel})</Text>
         </TouchableOpacity>
 
-        {score !== null && <Text style={styles.scoreText}>SCORE: {score} / 100</Text>}
-      </View>
+        {isAnalyzing ? (
+          <ActivityIndicator size="large" color="#39FF14" style={{ marginVertical: 15 }} />
+        ) : (
+          <TouchableOpacity 
+            style={[styles.recordBtn, isRecording && { backgroundColor: '#FF0055' }]} 
+            onPress={isRecording ? stopRecording : startRecording}
+          >
+            <Text style={styles.recordText}>
+              {isRecording ? '⏹️ DỪNG THU ÂM' : '🎙️ ĐỌC ĐUỔI THEO BÓNG MA'}
+            </Text>
+          </TouchableOpacity>
+        )}
 
-      {/* 🌴 MODAL CỨU HỘ OASIS TRẠM BÓNG MA */}
+        {/* 📊 KẾT QUẢ CHẤM ĐIỂM */}
+        {result && (
+          <View style={styles.resultCard}>
+            <Text style={[styles.resultScore, result.score >= 70 ? { color: '#39FF14' } : { color: '#FF0055' }]}>
+              {result.score}/100 ĐIỂM SHADOWING
+            </Text>
+            <Text style={styles.transcribedText}>🗣️ Bạn đã đọc: "{result.transcribedText}"</Text>
+            
+            <View style={styles.breakdownRow}>
+              <Text style={styles.breakdownText}>🎯 Âm: {result.phoneticScore}</Text>
+              <Text style={styles.breakdownText}>⚡ Nhịp: {result.fluencyScore}</Text>
+              <Text style={styles.breakdownText}>💡 Ý: {result.semanticScore}</Text>
+            </View>
+
+            <Text style={styles.feedbackText}>💡 {result.feedback}</Text>
+          </View>
+        )}
+      </ScrollView>
+
+      {/* 🌴 MODAL CỨU HỘ OASIS */}
       <Modal visible={showOasisModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -138,17 +254,39 @@ export function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#05020D', padding: 20, paddingTop: 40 },
-  topBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-  backBtn: { padding: 8, backgroundColor: '#0D0620', borderRadius: 6, borderWidth: 1, borderColor: '#00FFFF' },
+  container: { flex: 1, backgroundColor: '#05020D', padding: 16, paddingTop: 40 },
+  topBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
+  backBtn: { paddingHorizontal: 10, paddingVertical: 5, backgroundColor: '#0D0620', borderRadius: 6, borderWidth: 1, borderColor: '#00FFFF' },
   backText: { color: '#00FFFF', fontSize: 11, fontWeight: 'bold' },
-  headerTitle: { color: '#00FFFF', fontSize: 16, fontWeight: '900' },
-  card: { backgroundColor: '#0D0620', padding: 20, borderRadius: 16, borderWidth: 2, borderColor: '#00FFFF', alignItems: 'center' },
-  tag: { color: '#FFD700', fontSize: 11, fontWeight: 'bold', marginBottom: 10 },
-  sentenceText: { color: '#FFF', fontSize: 18, fontWeight: 'bold', textAlign: 'center', marginBottom: 20 },
-  recordBtn: { backgroundColor: '#00FFFF', padding: 16, borderRadius: 12, width: '100%', alignItems: 'center' },
-  recordText: { color: '#000', fontWeight: '900' },
-  scoreText: { color: '#39FF14', fontSize: 16, fontWeight: 'bold', marginTop: 15 },
+  headerTitle: { color: '#00FFFF', fontSize: 12, fontWeight: '900' },
+
+  sectionBox: { width: '100%', marginBottom: 15, backgroundColor: '#120826', padding: 10, borderRadius: 12, borderWidth: 1, borderColor: '#2A1040' },
+  sectionLabel: { color: '#00FFCC', fontSize: 11, fontWeight: 'bold', marginBottom: 6 },
+  levelRow: { flexDirection: 'row', justifyContent: 'space-between' },
+  levelBtn: { flex: 1, paddingVertical: 8, marginHorizontal: 2, backgroundColor: '#1A0B36', borderRadius: 8, borderWidth: 1, borderColor: '#3A1559', alignItems: 'center' },
+  activeLevelBtn: { backgroundColor: '#FF007F', borderColor: '#FF007F' },
+  levelBtnText: { color: '#8888CC', fontSize: 11, fontWeight: 'bold' },
+  activeLevelText: { color: '#FFFFFF', fontWeight: '900' },
+
+  card: { backgroundColor: '#0D0620', padding: 18, borderRadius: 16, borderWidth: 2, borderColor: '#00FFFF', alignItems: 'center', width: '100%', marginBottom: 12 },
+  tag: { color: '#FFD700', fontSize: 10, fontWeight: 'bold', marginBottom: 8 },
+  sentenceText: { color: '#FFF', fontSize: 16, fontWeight: 'bold', textAlign: 'center', marginBottom: 12 },
+  speakerBtn: { backgroundColor: '#1A0B2E', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 14, borderWidth: 1, borderColor: '#FF007F' },
+  speakerText: { color: '#FF007F', fontSize: 9, fontWeight: 'bold' },
+
+  refreshBtn: { backgroundColor: '#110022', padding: 8, borderRadius: 8, borderWidth: 1, borderColor: '#FFD700', width: '100%', alignItems: 'center', marginBottom: 12 },
+  refreshText: { color: '#FFD700', fontSize: 10, fontWeight: 'bold' },
+
+  recordBtn: { backgroundColor: '#00FFFF', padding: 13, borderRadius: 12, width: '100%', alignItems: 'center', marginBottom: 12 },
+  recordText: { color: '#000', fontSize: 11, fontWeight: '900' },
+
+  resultCard: { backgroundColor: '#0D0620', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#39FF14', width: '100%', alignItems: 'center', marginBottom: 20 },
+  resultScore: { fontSize: 14, fontWeight: '900', marginBottom: 4 },
+  transcribedText: { color: '#AAAABB', fontSize: 10, textAlign: 'center', marginBottom: 6 },
+  breakdownRow: { flexDirection: 'row', justifyContent: 'space-around', width: '100%', marginBottom: 6, backgroundColor: '#05020D', padding: 6, borderRadius: 6 },
+  breakdownText: { color: '#00FFFF', fontSize: 9, fontWeight: 'bold' },
+  feedbackText: { color: '#39FF14', fontSize: 10, textAlign: 'center' },
+
   modalOverlay: { flex: 1, backgroundColor: 'rgba(5, 2, 13, 0.85)', justifyContent: 'center', alignItems: 'center', padding: 20 },
   modalContent: { backgroundColor: '#052C30', padding: 24, borderRadius: 20, borderWidth: 2, borderColor: '#00FFCC', width: '100%', alignItems: 'center' },
   modalTag: { color: '#FF0055', fontSize: 11, fontWeight: 'bold', marginBottom: 6 },
