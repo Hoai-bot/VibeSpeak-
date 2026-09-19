@@ -12,63 +12,57 @@ export interface RoleplayScenario {
   goal: string;
 }
 
-export async function generateRoleplayScenario(cefrLevel: string = 'B2'): Promise<RoleplayScenario> {
-  let levelRules = '';
+export async function generateRoleplayScenario(cefrLevel: string = 'A1'): Promise<RoleplayScenario> {
+  let languageRule = '';
+
   if (cefrLevel === 'A1' || cefrLevel === 'A2') {
-    levelRules = `
-- CEFR LEVEL: BASIC (${cefrLevel})
-- Make sure initialAiMessage directly triggers ALL parts mentioned in the goal.
-- Example for Cafeteria: "Hello! Welcome to the school campus. What drink would you like to order, and do you need directions to the seating area?"`;
+    languageRule = `- LANGUAGE: 100% VIETNAMESE for scenario description, roles, and goal. Keep initialAiMessage in simple conversational English.
+- Goal Example: "Khách hàng gọi đồ uống và hỏi đường tới khu vực ngồi ăn."`;
   } else if (cefrLevel === 'B1' || cefrLevel === 'B2') {
-    levelRules = `
-- CEFR LEVEL: INTERMEDIATE (${cefrLevel})
-- Situation: Job interview, reporting a problem to customer service, travel booking.
-- AI Initial Message: "Can you tell me about a project you recently completed at work?"`;
+    languageRule = `- LANGUAGE: BILINGUAL for goal and scenario description (English + Vietnamese translation).`;
   } else {
-    levelRules = `
-- CEFR LEVEL: ADVANCED (${cefrLevel})
-- Situation: Pitching to Venture Capitalists, salary negotiation, crisis management in tech.
-- AI Initial Message: "Your startup valuation seems high. Why should our fund invest $1M in your platform?"`;
+    languageRule = `- LANGUAGE: 100% ENGLISH for everything (Professional/Business context).`;
   }
 
   const prompt = `Generate ONE Roleplay Scenario tailored STRICTLY to CEFR Level ${cefrLevel}.
 
-${levelRules}
-
-CRITICAL: The "goal" and the "initialAiMessage" MUST match 100%. If goal requires asking directions, initialAiMessage MUST mention or prompt for directions.
+RULES:
+${languageRule}
 
 Return ONLY JSON:
 {
-  "scenarioTitle": "Scenario Name",
-  "aiRole": "AI Character",
-  "userRole": "User Character",
-  "initialAiMessage": "AI greeting/question matching the goal",
-  "goal": "Vietnamese explanation of user goal"
+  "scenarioTitle": "Scenario Title",
+  "aiRole": "Role 1 Name",
+  "userRole": "Role 2 Name",
+  "initialAiMessage": "Short initial line in English to start conversation",
+  "goal": "Communication Goal matching the language rule"
 }`;
 
   try {
     const response = await groq.chat.completions.create({
       messages: [{ role: 'user', content: prompt }],
       model: 'openai/gpt-oss-20b',
-      temperature: 0.9,
+      temperature: 0.8,
       response_format: { type: 'json_object' },
     });
 
     const parsed: RoleplayScenario = JSON.parse(response.choices[0]?.message?.content || '{}');
     return {
-      scenarioTitle: parsed.scenarioTitle || `Roleplay (${cefrLevel})`,
-      aiRole: parsed.aiRole || (cefrLevel.startsWith('A') ? "Cafeteria Staff" : "Tech Interviewer"),
-      userRole: parsed.userRole || (cefrLevel.startsWith('A') ? "Student" : "Applicant"),
-      initialAiMessage: parsed.initialAiMessage || (cefrLevel.startsWith('A') ? "Hello! What drink would you like, and do you need help finding the table?" : "Tell me about your experience with AI technology."),
-      goal: parsed.goal || "Giao tiếp tự nhiên và tự tin hoàn thành tình huống."
+      scenarioTitle: parsed.scenarioTitle || `Roleplay [${cefrLevel}]`,
+      aiRole: parsed.aiRole || (cefrLevel.startsWith('A') ? "Nhân viên" : "Manager"),
+      userRole: parsed.userRole || (cefrLevel.startsWith('A') ? "Khách hàng" : "Client"),
+      initialAiMessage: parsed.initialAiMessage || "Hello! How can I help you today?",
+      goal: parsed.goal || "Hoàn thành mục tiêu giao tiếp trong tình huống."
     };
   } catch (error) {
     return {
-      scenarioTitle: `Ordering at the Cafeteria [${cefrLevel}]`,
-      aiRole: "Cafeteria Staff",
-      userRole: "Student",
-      initialAiMessage: "Hello! What drink would you like to order today, and do you need directions to the dining hall?",
-      goal: "User đặt đồ uống và hỏi đường đi tới khu vực ăn uống."
+      scenarioTitle: `Nhập vai giao tiếp [${cefrLevel}]`,
+      aiRole: cefrLevel.startsWith('A') ? "Nhân viên quán Cafe" : "Project Lead",
+      userRole: cefrLevel.startsWith('A') ? "Khách hàng" : "Developer",
+      initialAiMessage: "Hello! Welcome to our store. What can I get for you?",
+      goal: cefrLevel.startsWith('A') 
+        ? "Đặt món đồ uống yêu thích và hỏi vị trí chỗ ngồi."
+        : "Discuss project milestones and clarify deadline requirements. / Thảo luận tiến độ dự án và làm rõ thời hạn."
     };
   }
 }

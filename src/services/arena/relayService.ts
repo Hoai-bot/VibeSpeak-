@@ -13,25 +13,29 @@ export interface RelayChallenge {
 }
 
 export async function generateRelayChallenge(cefrLevel: string = 'A1'): Promise<RelayChallenge> {
-  const isBasic = cefrLevel === 'A1' || cefrLevel === 'A2';
+  let languageRule = '';
+
+  if (cefrLevel === 'A1' || cefrLevel === 'A2') {
+    languageRule = `- LANGUAGE: 100% VIETNAMESE for guidelines and context. Provide simple English sentence patterns in brackets.
+- Example player1Guideline: "Trình bày món ăn yêu thích của bạn (Mẫu câu: My favorite food is...)"`;
+  } else if (cefrLevel === 'B1' || cefrLevel === 'B2') {
+    languageRule = `- LANGUAGE: BILINGUAL (English text first, followed by Vietnamese explanation).
+- Example player1Guideline: "State your main perspective on remote work. / Nêu quan điểm chính của bạn về làm việc từ xa."`;
+  } else {
+    languageRule = `- LANGUAGE: 100% ENGLISH. Use advanced professional communication goals and complex guidelines.`;
+  }
 
   const prompt = `Generate a 2-Player Speaking Relay Challenge for CEFR Level ${cefrLevel}.
 
-RULES FOR CEFR LEVEL ${cefrLevel}:
-${
-  isBasic
-    ? `- GUIDELINES MUST BE BILINGUAL (Vietnamese explanation + short English sentence pattern).
-- Keep sentences extremely simple and practical.
-- Example topic: Favorite food, Daily routine, Hobbies.`
-    : `- Guidelines must be fully in English with intermediate/advanced professional communication goals.`
-}
+RULES:
+${languageRule}
 
 Return ONLY a valid JSON object:
 {
   "topic": "Topic Name",
-  "context": "${isBasic ? 'Context in Vietnamese / Bối cảnh ngắn bằng tiếng Việt' : 'Short context in English'}",
-  "player1Guideline": "${isBasic ? 'Hướng dẫn Bạn 1 bằng tiếng Việt + [Mẫu câu TA ngắn]' : 'Player 1 guideline in English'}",
-  "player2Guideline": "${isBasic ? 'Hướng dẫn Bạn 2 bằng tiếng Việt + [Mẫu câu TA ngắn]' : 'Player 2 guideline in English'}",
+  "context": "Context text matching language rule",
+  "player1Guideline": "Player 1 guideline matching language rule",
+  "player2Guideline": "Player 2 guideline matching language rule",
   "keyVocabulary": ["word1", "word2", "word3"]
 }`;
 
@@ -46,22 +50,18 @@ Return ONLY a valid JSON object:
     const parsed: RelayChallenge = JSON.parse(response.choices[0]?.message?.content || '{}');
     return {
       topic: parsed.topic || `Relay Challenge [${cefrLevel}]`,
-      context: parsed.context || (isBasic ? "Nói về sở thích ăn uống hàng ngày." : "Discussing workplace remote policies."),
-      player1Guideline: parsed.player1Guideline || (isBasic ? "Nêu món ăn bạn thích (Mẫu: My favorite food is...)" : "Introduce problem"),
-      player2Guideline: parsed.player2Guideline || (isBasic ? "Nêu lý do vì sao thích (Mẫu: I like it because...)" : "Propose solution"),
-      keyVocabulary: parsed.keyVocabulary || ["delicious", "healthy", "favorite"]
+      context: parsed.context || (cefrLevel.startsWith('A') ? "Bối cảnh: Thảo luận về thói quen hàng ngày." : "Discussing corporate sustainability strategies."),
+      player1Guideline: parsed.player1Guideline || "Nêu ý kiến chính của bạn.",
+      player2Guideline: parsed.player2Guideline || "Bổ sung lập luận hoặc ví dụ.",
+      keyVocabulary: parsed.keyVocabulary || ["topic", "idea", "support"]
     };
   } catch (error) {
     return {
-      topic: `Sở thích hàng ngày [${cefrLevel}]`,
-      context: "Hai bạn cùng chia sẻ về món ăn yêu thích.",
-      player1Guideline: isBasic 
-        ? "Nêu tên món ăn bạn thích nhất (Gợi ý: 'I really like eating pizza/pho.')" 
-        : "State your main viewpoint.",
-      player2Guideline: isBasic 
-        ? "Bổ sung lý do hoặc thời điểm ăn món đó (Gợi ý: 'I eat it on weekends because it is delicious.')" 
-        : "Support the viewpoint with arguments.",
-      keyVocabulary: ["delicious", "favorite", "everyday"]
+      topic: `Chủ đề Relay [${cefrLevel}]`,
+      context: cefrLevel.startsWith('A') ? "Cùng chia sẻ về sở thích cá nhân." : "Discussing workplace communication.",
+      player1Guideline: cefrLevel.startsWith('A') ? "Giới thiệu ý kiến của bạn (Mẫu: I think that...)" : "Introduce your main perspective.",
+      player2Guideline: cefrLevel.startsWith('A') ? "Đưa ra lý do ủng hộ (Mẫu: Because it helps...)" : "Elaborate with supporting arguments.",
+      keyVocabulary: ["communication", "perspective", "solution"]
     };
   }
 }
