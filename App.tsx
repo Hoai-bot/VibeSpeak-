@@ -1,39 +1,34 @@
-import React from 'react';
-import { SafeAreaView, StyleSheet, StatusBar } from 'react-native';
-import AppNavigator from './src/navigation/AppNavigator';
+// App.tsx
+import React, { useState } from 'react';
+import { SafeAreaView, StyleSheet } from 'react-native';
 
-// 🛡️ BỘ LỌC CHẶN WARNING & ERROR 404 CỦA GROQ TRÊN BẢNG CONSOLE WEB
-if (typeof window !== 'undefined') {
-  const originalError = console.error;
-  const originalWarn = console.warn;
-
-  console.error = (...args: any[]) => {
-    if (args[0] && typeof args[0] === 'string' && (args[0].includes('api.groq.com') || args[0].includes('404'))) {
-      return; // Bỏ qua không hiển thị lỗi 404 mạng
-    }
-    originalError.apply(console, args);
-  };
-
-  console.warn = (...args: any[]) => {
-    if (args[0] && typeof args[0] === 'string' && args[0].includes('groq')) {
-      return; // Bỏ qua warning liên quan đến Groq Fallback
-    }
-    originalWarn.apply(console, args);
-  };
-}
+import MainMapScreen from './src/screens/MainMapScreen';
+import CyberArenaScreen from './src/screens/CyberArenaScreen';
+import TeacherDashboardScreen from './src/screens/TeacherDashboardScreen';
 
 export default function App() {
+  const [currentScreen, setCurrentScreen] = useState<'map' | 'arena' | 'teacher'>('map');
+
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#0A051B" />
-      <AppNavigator />
+      {currentScreen === 'map' && (
+        <MainMapScreen 
+          onSelectStation={(id) => id === 2 && setCurrentScreen('arena')}
+          onOpenTeacherDashboard={() => setCurrentScreen('teacher')}
+        />
+      )}
+
+      {currentScreen === 'arena' && (
+        <CyberArenaScreen onBack={() => setCurrentScreen('map')} />
+      )}
+
+      {currentScreen === 'teacher' && (
+        <TeacherDashboardScreen onBack={() => setCurrentScreen('map')} />
+      )}
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#0A051B',
-  },
+  container: { flex: 1, backgroundColor: '#0A0518' },
 });
