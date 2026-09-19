@@ -5,6 +5,8 @@ import { speakNaturalText } from '../services/ttsService';
 import { gradeFlexibleArenaResponse, GradeResult } from '../services/groqClient';
 import { Groq } from 'groq-sdk';
 
+export type CEFRLevel = 'A1' | 'A2' | 'B1' | 'B2' | 'C1';
+
 const groq = new Groq({
   apiKey: process.env.EXPO_PUBLIC_GROQ_API_KEY || '',
   dangerouslyAllowBrowser: true,
@@ -15,16 +17,16 @@ interface Props {
   onNavigateToOasis?: (sentence: string) => void;
 }
 
-// 🎯 Danh sách đề bài dự phòng đa dạng khi API bận
-const FALLBACK_BOSS_SENTENCES = [
-  "Artificial intelligence is rapidly transforming global business strategies.",
-  "Effective communication requires both active listening and speaking accuracy.",
-  "Cybersecurity measures are essential for protecting modern digital infrastructure.",
-  "Data analytics empowers companies to make smarter operational decisions.",
-  "Continuous learning is the key to mastering professional English fluency."
-];
+const FALLBACK_BOSS_SENTENCES: Record<CEFRLevel, string[]> = {
+  A1: ["Practice speaking English every single day.", "Welcome to the Cyberpunk arena today."],
+  A2: ["Future technology is changing how we learn languages.", "Stay focused and repeat after the sound cue."],
+  B1: ["Artificial intelligence is rapidly transforming global business strategies.", "Effective communication requires both active listening and speaking accuracy."],
+  B2: ["Cybersecurity measures are essential for protecting modern digital infrastructure.", "Data analytics empowers companies to make smarter operational decisions."],
+  C1: ["Continuous learning and adaptive feedback mechanisms are key to mastering natural language fluency.", "Navigating complex professional environments demands nuanced communication skills."]
+};
 
 export default function BossRaidScreen({ onBack, onNavigateToOasis }: Props) {
+  const [cefrLevel, setCefrLevel] = useState<CEFRLevel>('B1');
   const [bossSentence, setBossSentence] = useState<string>('');
   const [loadingBoss, setLoadingBoss] = useState<boolean>(true);
 
@@ -38,23 +40,26 @@ export default function BossRaidScreen({ onBack, onNavigateToOasis }: Props) {
   const mediaRecorderRef = useRef<any>(null);
   const audioChunksRef = useRef<any[]>([]);
 
-  // 🎯 HÀM LẤY ĐỀ BÀI MỚI (CHẮC CHẮN ĐỔI CHỦ ĐỀ MỖI LẦN BẤM)
-  const fetchNewBossChallenge = async () => {
+  const levels: CEFRLevel[] = ['A1', 'A2', 'B1', 'B2', 'C1'];
+
+  const fetchNewBossChallenge = async (level = cefrLevel) => {
     setLoadingBoss(true);
     setResult(null);
     setRecordedAudioUri(null);
 
-    // Tạo mã ngẫu nhiên chống cache API
     const randomNonce = Date.now() + Math.floor(Math.random() * 10000);
 
-    const prompt = `Generate ONE UNIQUE challenging English sentence for Boss Raid (8-12 words).
-- Topics: Business, Technology, Artificial Intelligence, Innovation, Future Skills.
+    let wordLimit = '8-12 words';
+    if (level === 'A1' || level === 'A2') wordLimit = '5-7 simple words';
+    else if (level === 'C1') wordLimit = '12-15 complex words';
+
+    const prompt = `Generate ONE UNIQUE challenging English sentence for Boss Raid.
+- CEFR Level: ${level}
+- Sentence Length: ${wordLimit}
+- Topics: Technology, Cyberpunk, Business, Future Skills.
 - Nonce code: ${randomNonce}
 
-Return ONLY a valid JSON object:
-{
-  "sentence": "One English sentence here"
-}`;
+Return ONLY JSON: { "sentence": "Text here" }`;
 
     try {
       const res = await groq.chat.completions.create({
@@ -68,24 +73,20 @@ Return ONLY a valid JSON object:
       if (parsed.sentence && parsed.sentence.trim() !== bossSentence) {
         setBossSentence(parsed.sentence.trim());
       } else {
-        // Nếu AI trả về trùng câu cũ, lấy ngẫu nhiên từ danh sách fallback
-        const filtered = FALLBACK_BOSS_SENTENCES.filter(s => s !== bossSentence);
-        const randomFallback = filtered[Math.floor(Math.random() * filtered.length)];
-        setBossSentence(randomFallback);
+        const list = FALLBACK_BOSS_SENTENCES[level];
+        setBossSentence(list[Math.floor(Math.random() * list.length)]);
       }
     } catch (e) {
-      // Fallback khi mất mạng hoặc lỗi API
-      const filtered = FALLBACK_BOSS_SENTENCES.filter(s => s !== bossSentence);
-      const randomFallback = filtered[Math.floor(Math.random() * filtered.length)];
-      setBossSentence(randomFallback);
+      const list = FALLBACK_BOSS_SENTENCES[level];
+      setBossSentence(list[Math.floor(Math.random() * list.length)]);
     } finally {
       setLoadingBoss(false);
     }
   };
 
   useEffect(() => {
-    fetchNewBossChallenge();
-  }, []);
+    fetchNewBossChallenge(cefrLevel);
+  }, [cefrLevel]);
 
   const startRecording = async () => {
     try {
@@ -142,7 +143,7 @@ Return ONLY a valid JSON object:
         setResult(res);
 
         setTimeout(() => {
-          fetchNewBossChallenge();
+          fetchNewBossChallenge(cefrLevel);
         }, 1500);
 
       } else {
@@ -171,11 +172,29 @@ Return ONLY a valid JSON object:
       </View>
 
       <ScrollView contentContainerStyle={{ alignItems: 'center', width: '100%' }}>
+        {/* 📊 BỘ CHỌN CẤP ĐỘ BOSS (CEFR) */}
+        <View style={styles.sectionBox}>
+          <Text style={styles.sectionLabel}>📊 CHỌN CẤP ĐỘ BOSS (CEFR):</Text>
+          <View style={styles.levelRow}>
+            {levels.map((lvl) => (
+              <TouchableOpacity
+                key={lvl}
+                style={[styles.levelBtn, cefrLevel === lvl && styles.activeLevelBtn]}
+                onPress={() => setCefrLevel(lvl)}
+              >
+                <Text style={[styles.levelBtnText, cefrLevel === lvl && styles.activeLevelText]}>
+                  {lvl}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
         {loadingBoss ? (
           <ActivityIndicator size="large" color="#FF0055" style={{ marginVertical: 40 }} />
         ) : (
           <View style={styles.bossCard}>
-            <Text style={styles.bossTag}>👹 SHADOW BOSS CHALLENGE</Text>
+            <Text style={styles.bossTag}>👹 SHADOW BOSS CHALLENGE [{cefrLevel}]</Text>
             <Text style={styles.targetSentence}>"{bossSentence}"</Text>
 
             <TouchableOpacity 
@@ -187,8 +206,8 @@ Return ONLY a valid JSON object:
           </View>
         )}
 
-        <TouchableOpacity style={styles.refreshBtn} onPress={fetchNewBossChallenge}>
-          <Text style={styles.refreshText}>🔄 ĐỔI THÁCH THỨC BOSS</Text>
+        <TouchableOpacity style={styles.refreshBtn} onPress={() => fetchNewBossChallenge(cefrLevel)}>
+          <Text style={styles.refreshText}>🔄 ĐỔI THÁCH THỨC BOSS MỚI ({cefrLevel})</Text>
         </TouchableOpacity>
 
         {isAnalyzing ? (
@@ -232,7 +251,7 @@ Return ONLY a valid JSON object:
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#05020D', padding: 20, paddingTop: 50 },
+  container: { flex: 1, backgroundColor: '#05020D', padding: 16, paddingTop: 40 },
   topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 15 },
   backBtn: { paddingHorizontal: 8, paddingVertical: 4, backgroundColor: '#0D0620', borderRadius: 6, borderWidth: 1, borderColor: '#FF0055' },
   backText: { color: '#FF0055', fontSize: 10, fontWeight: 'bold' },
@@ -241,9 +260,17 @@ const styles = StyleSheet.create({
   activeStreak: { borderColor: '#39FF14', backgroundColor: '#004411' },
   streakText: { color: '#39FF14', fontSize: 10, fontWeight: 'bold' },
 
-  bossCard: { backgroundColor: '#1A000A', padding: 20, borderRadius: 16, borderWidth: 2, borderColor: '#FF0055', width: '100%', alignItems: 'center', marginBottom: 12 },
+  sectionBox: { width: '100%', marginBottom: 12, backgroundColor: '#120826', padding: 10, borderRadius: 12, borderWidth: 1, borderColor: '#2A1040' },
+  sectionLabel: { color: '#FF0055', fontSize: 11, fontWeight: 'bold', marginBottom: 6 },
+  levelRow: { flexDirection: 'row', justifyContent: 'space-between' },
+  levelBtn: { flex: 1, paddingVertical: 8, marginHorizontal: 2, backgroundColor: '#1A0B36', borderRadius: 8, borderWidth: 1, borderColor: '#3A1559', alignItems: 'center' },
+  activeLevelBtn: { backgroundColor: '#FF0055', borderColor: '#FF0055' },
+  levelBtnText: { color: '#8888CC', fontSize: 11, fontWeight: 'bold' },
+  activeLevelText: { color: '#FFFFFF', fontWeight: '900' },
+
+  bossCard: { backgroundColor: '#1A000A', padding: 18, borderRadius: 16, borderWidth: 2, borderColor: '#FF0055', width: '100%', alignItems: 'center', marginBottom: 12 },
   bossTag: { color: '#FF0055', fontSize: 9, fontWeight: 'bold', marginBottom: 8 },
-  targetSentence: { color: '#FFF', fontSize: 17, fontWeight: '900', textAlign: 'center', marginBottom: 12 },
+  targetSentence: { color: '#FFF', fontSize: 16, fontWeight: '900', textAlign: 'center', marginBottom: 12 },
   speakerBtn: { backgroundColor: '#0D0620', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 16, borderWidth: 1, borderColor: '#00FFFF' },
   speakerText: { color: '#00FFFF', fontSize: 9, fontWeight: 'bold' },
 
@@ -252,7 +279,7 @@ const styles = StyleSheet.create({
   recordBtn: { backgroundColor: '#FF0055', padding: 13, borderRadius: 12, width: '100%', alignItems: 'center', marginBottom: 12 },
   recordText: { color: '#FFF', fontSize: 11, fontWeight: '900' },
 
-  resultCard: { backgroundColor: '#0D0620', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#39FF14', width: '100%', alignItems: 'center' },
+  resultCard: { backgroundColor: '#0D0620', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#39FF14', width: '100%', alignItems: 'center', marginBottom: 20 },
   resultScore: { fontSize: 14, fontWeight: '900', marginBottom: 4 },
   transcribedText: { color: '#AAAABB', fontSize: 10, textAlign: 'center', marginBottom: 6 },
   breakdownRow: { flexDirection: 'row', justifyContent: 'space-around', width: '100%', marginBottom: 6, backgroundColor: '#05020D', padding: 6, borderRadius: 6 },
