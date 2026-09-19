@@ -1,6 +1,6 @@
 // src/screens/TeacherDashboardScreen.tsx
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, Modal, Alert } from 'react-native';
 
 interface Student {
   id: string;
@@ -15,16 +15,21 @@ interface Assignment {
   className: string;
   stationName: string;
   cefrLevel: string;
-  specialtyTopic: string; // 🎯 Chủ đề chuyên ngành
+  specialtyTopic: string;
   targetScore: number;
   deadline: string;
 }
 
 export default function TeacherDashboardScreen({ onBack }: { onBack: () => void }) {
   const [activeTab, setActiveTab] = useState<'students' | 'assignments'>('students');
-  const [selectedClass, setSelectedClass] = useState<string>('Lớp 8A1');
 
-  // 1. STATE QUẢN LÝ HỌC SINH
+  // 1. STATE QUẢN LÝ LỚP HỌC LINH HOẠT
+  const [classList, setClassList] = useState<string[]>(['Lớp 8A1', 'Lớp 10T1', 'Lớp CNTT-K18']);
+  const [selectedClass, setSelectedClass] = useState<string>('Lớp 8A1');
+  const [showAddClassModal, setShowAddClassModal] = useState<boolean>(false);
+  const [newClassNameInput, setNewClassNameInput] = useState<string>('');
+
+  // 2. STATE QUẢN LÝ HỌC SINH
   const [newStudentName, setNewStudentName] = useState<string>('');
   const [students, setStudents] = useState<Student[]>([
     { id: '1', name: 'Nguyễn Văn An', exp: 1250, streak: 5, avgScore: 88 },
@@ -32,11 +37,18 @@ export default function TeacherDashboardScreen({ onBack }: { onBack: () => void 
     { id: '3', name: 'Lê Hoàng Cường', exp: 1420, streak: 7, avgScore: 92 },
   ]);
 
-  // 2. STATE GIAO BÀI TẬP VÀ CHUYÊN NGÀNH
+  // 3. STATE QUẢN LÝ CHỦ ĐỀ CHUYÊN NGÀNH (ESP) LINH HOẠT
+  const [topicList, setTopicList] = useState<string[]>([
+    'CNTT / IT', 'Y Khoa', 'Du lịch - Khách sạn', 'Thương mại', 'Giao tiếp chung'
+  ]);
   const [targetStation, setTargetStation] = useState<string>('Trạm 3: Boss Raid');
   const [targetCEFR, setTargetCEFR] = useState<string>('A2');
-  const [specialtyTopic, setSpecialtyTopic] = useState<string>('CNTT / IT Helpdesk'); // 🎯 State chủ đề chuyên ngành
+  const [specialtyTopic, setSpecialtyTopic] = useState<string>('CNTT / IT');
   const [targetScore, setTargetScore] = useState<string>('80');
+
+  const [showAddTopicModal, setShowAddTopicModal] = useState<boolean>(false);
+  const [newTopicInput, setNewTopicInput] = useState<string>('');
+
   const [assignments, setAssignments] = useState<Assignment[]>([
     { 
       id: '101', 
@@ -48,6 +60,32 @@ export default function TeacherDashboardScreen({ onBack }: { onBack: () => void 
       deadline: '2026-09-25' 
     }
   ]);
+
+  // Thêm Lớp mới linh hoạt
+  const handleCreateNewClass = () => {
+    if (!newClassNameInput.trim()) return;
+    const name = newClassNameInput.trim();
+    if (classList.includes(name)) {
+      alert('Lớp này đã tồn tại trong danh sách!');
+      return;
+    }
+    setClassList([...classList, name]);
+    setSelectedClass(name);
+    setNewClassNameInput('');
+    setShowAddClassModal(false);
+  };
+
+  // Thêm Chủ đề Chuyên ngành mới linh hoạt
+  const handleCreateNewTopic = () => {
+    if (!newTopicInput.trim()) return;
+    const topic = newTopicInput.trim();
+    if (!topicList.includes(topic)) {
+      setTopicList([...topicList, topic]);
+    }
+    setSpecialtyTopic(topic);
+    setNewTopicInput('');
+    setShowAddTopicModal(false);
+  };
 
   // Thêm học sinh mới vào lớp
   const handleAddStudent = () => {
@@ -63,7 +101,7 @@ export default function TeacherDashboardScreen({ onBack }: { onBack: () => void 
     setNewStudentName('');
   };
 
-  // Tải/Xuất danh sách học sinh dạng CSV
+  // Export danh sách học sinh ra CSV
   const handleExportCSV = () => {
     const headers = "ID,Họ và Tên,Điểm EXP,Chuỗi Ngày (Streak),Điểm Trung Bình\n";
     const rows = students.map(s => `${s.id},"${s.name}",${s.exp},${s.streak},${s.avgScore}`).join("\n");
@@ -78,24 +116,24 @@ export default function TeacherDashboardScreen({ onBack }: { onBack: () => void 
     document.body.removeChild(link);
   };
 
-  // Giao bài tập mới kèm chuyên ngành
+  // Giao bài tập chuyên ngành
   const handleCreateAssignment = () => {
     const newAssign: Assignment = {
       id: Date.now().toString(),
       className: selectedClass,
       stationName: targetStation,
       cefrLevel: targetCEFR,
-      specialtyTopic: specialtyTopic.trim() || 'Giao tiếp chung',
+      specialtyTopic: specialtyTopic || 'Giao tiếp chung',
       targetScore: parseInt(targetScore) || 75,
       deadline: '2026-09-30',
     };
     setAssignments([newAssign, ...assignments]);
-    alert(`Đã giao bài tập [${newAssign.specialtyTopic}] cho ${selectedClass}!`);
+    alert(`Đã giao bài tập chuyên ngành [${newAssign.specialtyTopic}] cho ${selectedClass}!`);
   };
 
   return (
     <View style={styles.container}>
-      {/* Thanh điều hướng trên */}
+      {/* Top Bar */}
       <View style={styles.topBar}>
         <TouchableOpacity onPress={onBack} style={styles.backBtn}>
           <Text style={styles.backText}>🔙 BẢN ĐỒ MAP</Text>
@@ -103,18 +141,24 @@ export default function TeacherDashboardScreen({ onBack }: { onBack: () => void 
         <Text style={styles.headerTitle}>🏫 TEACHER DASHBOARD</Text>
       </View>
 
-      {/* Selector chọn lớp học */}
+      {/* Selector chọn Lớp + Nút Nút Thêm Lớp Mới */}
       <View style={styles.classSelectorRow}>
-        <Text style={styles.selectorLabel}>📌 ĐANG QUẢN LÝ:</Text>
-        {['Lớp 8A1', 'Lớp 10T1', 'Lớp CNTT-K18', 'Lớp Y-Dược K20'].map((c) => (
-          <TouchableOpacity
-            key={c}
-            style={[styles.classTab, selectedClass === c && styles.activeClassTab]}
-            onPress={() => setSelectedClass(c)}
-          >
-            <Text style={[styles.classTabText, selectedClass === c && styles.activeClassText]}>{c}</Text>
-          </TouchableOpacity>
-        ))}
+        <Text style={styles.selectorLabel}>📌 QUẢN LÝ LỚP:</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flex: 1 }}>
+          {classList.map((c) => (
+            <TouchableOpacity
+              key={c}
+              style={[styles.classTab, selectedClass === c && styles.activeClassTab]}
+              onPress={() => setSelectedClass(c)}
+            >
+              <Text style={[styles.classTabText, selectedClass === c && styles.activeClassText]}>{c}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+        {/* NÚT THÊM LỚP MỚI LINH HOẠT */}
+        <TouchableOpacity style={styles.addClassBtn} onPress={() => setShowAddClassModal(true)}>
+          <Text style={styles.addClassBtnText}>➕ TẠO LỚP</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Tabs tính năng chính */}
@@ -139,7 +183,7 @@ export default function TeacherDashboardScreen({ onBack }: { onBack: () => void 
       </View>
 
       <ScrollView contentContainerStyle={{ paddingBottom: 30 }}>
-        {/* TÍNH NĂNG 1: QUẢN LÝ DANH SÁCH HỌC SINH */}
+        {/* TAB 1: DANH SÁCH HỌC SINH */}
         {activeTab === 'students' && (
           <View style={styles.sectionContainer}>
             <View style={styles.actionCard}>
@@ -181,7 +225,7 @@ export default function TeacherDashboardScreen({ onBack }: { onBack: () => void 
           </View>
         )}
 
-        {/* TÍNH NĂNG 2: GIAO BÀI TẬP CHUYÊN NGÀNH */}
+        {/* TAB 2: GIAO BÀI TẬP CHUYÊN NGÀNH */}
         {activeTab === 'assignments' && (
           <View style={styles.sectionContainer}>
             <View style={styles.actionCard}>
@@ -213,10 +257,16 @@ export default function TeacherDashboardScreen({ onBack }: { onBack: () => void 
                 ))}
               </View>
 
-              {/* 🎯 TÍNH NĂNG MỚI: CHỌN CHỦ ĐỀ CHUYÊN NGÀNH */}
-              <Text style={styles.fieldLabel}>3. Chủ đề Chuyên ngành / Từ khóa linh hoạt:</Text>
+              {/* 🎯 NÂNG CẤP: CHỌN VÀ THÊM CHỦ ĐỀ CHUYÊN NGÀNH LINH HOẠT */}
+              <View style={styles.labelRow}>
+                <Text style={styles.fieldLabel}>3. Chủ đề Tiếng Anh Chuyên ngành (ESP):</Text>
+                <TouchableOpacity onPress={() => setShowAddTopicModal(true)}>
+                  <Text style={styles.addTopicLink}>➕ Thêm ngành mới</Text>
+                </TouchableOpacity>
+              </View>
+
               <View style={styles.optionRow}>
-                {['CNTT / IT', 'Y Khoa', 'Du lịch - Khách sạn', 'Thương mại', 'Giao tiếp chung'].map((topic) => (
+                {topicList.map((topic) => (
                   <TouchableOpacity
                     key={topic}
                     style={[styles.topicChip, specialtyTopic === topic && styles.activeTopicChip]}
@@ -226,13 +276,6 @@ export default function TeacherDashboardScreen({ onBack }: { onBack: () => void 
                   </TouchableOpacity>
                 ))}
               </View>
-              <TextInput
-                style={[styles.input, { marginTop: 4 }]}
-                value={specialtyTopic}
-                onChangeText={setSpecialtyTopic}
-                placeholder="Hoặc tự gõ chủ đề chuyên ngành riêng..."
-                placeholderTextColor="#8888AA"
-              />
 
               <Text style={styles.fieldLabel}>4. Yêu cầu điểm số tối thiểu:</Text>
               <TextInput
@@ -245,11 +288,11 @@ export default function TeacherDashboardScreen({ onBack }: { onBack: () => void 
               />
 
               <TouchableOpacity style={styles.createAssignBtn} onPress={handleCreateAssignment}>
-                <Text style={styles.createAssignText}>🚀 GIAO BÀI TẬP CHUYÊN NGÀNH CHO CẢ LỚP</Text>
+                <Text style={styles.createAssignText}>🚀 GIAO BÀI TẬP CHUYÊN NGÀNH CHO LỚP</Text>
               </TouchableOpacity>
             </View>
 
-            {/* Danh sách bài tập đã giao */}
+            {/* Danh sách bài tập */}
             <Text style={styles.subTitle}>📋 NHIỆM VỤ ĐÃ GIAO GẦN ĐÂY</Text>
             {assignments.map((a) => (
               <View key={a.id} style={styles.assignmentCard}>
@@ -267,6 +310,56 @@ export default function TeacherDashboardScreen({ onBack }: { onBack: () => void 
           </View>
         )}
       </ScrollView>
+
+      {/* 📌 MODAL THÊM LỚP MỚI LINH HOẠT */}
+      <Modal visible={showAddClassModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>🏫 THÊM LỚP HỌC MỚI</Text>
+            <Text style={styles.modalDesc}>Nhập tên lớp học mới để đưa vào danh sách quản lý:</Text>
+            <TextInput
+              style={styles.modalInput}
+              placeholder="VD: Lớp 11A3, Lớp Y-Khoa K21..."
+              placeholderTextColor="#8888AA"
+              value={newClassNameInput}
+              onChangeText={setNewClassNameInput}
+            />
+            <View style={styles.modalActionRow}>
+              <TouchableOpacity style={styles.modalConfirmBtn} onPress={handleCreateNewClass}>
+                <Text style={styles.modalConfirmText}>TẠO LỚP</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setShowAddClassModal(false)}>
+                <Text style={styles.modalCancelText}>HỦY BỎ</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* 📌 MODAL THÊM CHỦ ĐỀ CHUYÊN NGÀNH MỚI LINH HOẠT */}
+      <Modal visible={showAddTopicModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>💡 THÊM CHỦ ĐỀ CHUYÊN NGÀNH MỚI</Text>
+            <Text style={styles.modalDesc}>Nhập tên ngành học / từ khóa chuyên sâu để lưu vào hệ thống:</Text>
+            <TextInput
+              style={styles.modalInput}
+              placeholder="VD: Ô tô, Logistics, Hàng không, Xây dựng..."
+              placeholderTextColor="#8888AA"
+              value={newTopicInput}
+              onChangeText={setNewTopicInput}
+            />
+            <View style={styles.modalActionRow}>
+              <TouchableOpacity style={styles.modalConfirmBtn} onPress={handleCreateNewTopic}>
+                <Text style={styles.modalConfirmText}>LƯU CHỦ ĐỀ</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setShowAddTopicModal(false)}>
+                <Text style={styles.modalCancelText}>HỦY BỎ</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -284,6 +377,8 @@ const styles = StyleSheet.create({
   activeClassTab: { backgroundColor: '#FF007F' },
   classTabText: { color: '#8888CC', fontSize: 10, fontWeight: 'bold' },
   activeClassText: { color: '#FFF' },
+  addClassBtn: { backgroundColor: '#39FF14', paddingVertical: 5, paddingHorizontal: 10, borderRadius: 6, marginLeft: 6 },
+  addClassBtnText: { color: '#000', fontSize: 10, fontWeight: '900' },
 
   tabContainer: { flexDirection: 'row', marginBottom: 15 },
   tabBtn: { flex: 1, paddingVertical: 10, alignItems: 'center', backgroundColor: '#120826', borderRadius: 8, marginHorizontal: 2, borderWidth: 1, borderColor: '#2A1040' },
@@ -296,7 +391,7 @@ const styles = StyleSheet.create({
   cardTitle: { color: '#00FFCC', fontSize: 12, fontWeight: '900', marginBottom: 12 },
 
   inputRow: { flexDirection: 'row', marginBottom: 10 },
-  input: { backgroundColor: '#120826', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8, color: '#FFF', fontSize: 12, borderWidth: 1, borderColor: '#3A1559' },
+  input: { flex: 1, backgroundColor: '#120826', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8, color: '#FFF', fontSize: 12, borderWidth: 1, borderColor: '#3A1559' },
   addBtn: { backgroundColor: '#FF007F', paddingHorizontal: 16, justifyContent: 'center', borderRadius: 8, marginLeft: 8 },
   addBtnText: { color: '#FFF', fontSize: 11, fontWeight: 'bold' },
 
@@ -313,7 +408,10 @@ const styles = StyleSheet.create({
   scoreText: { color: '#39FF14', fontSize: 11, fontWeight: '900' },
   scoreLabel: { color: '#AAAABB', fontSize: 8 },
 
-  fieldLabel: { color: '#AAAABB', fontSize: 10, fontWeight: 'bold', marginTop: 10, marginBottom: 6 },
+  labelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, marginBottom: 6 },
+  fieldLabel: { color: '#AAAABB', fontSize: 10, fontWeight: 'bold' },
+  addTopicLink: { color: '#39FF14', fontSize: 10, fontWeight: 'bold', textDecorationLine: 'underline' },
+
   optionRow: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 6 },
   optionChip: { backgroundColor: '#120826', paddingVertical: 6, paddingHorizontal: 10, borderRadius: 6, borderWidth: 1, borderColor: '#3A1559', marginRight: 6, marginBottom: 6 },
   activeChip: { backgroundColor: '#00FFCC', borderColor: '#00FFCC' },
@@ -333,5 +431,17 @@ const styles = StyleSheet.create({
   assignTopic: { color: '#FFD700', fontSize: 10, fontWeight: 'bold', marginBottom: 2 },
   assignSub: { color: '#AAAABB', fontSize: 9 },
   statusBadge: { backgroundColor: '#0A1A10', padding: 6, borderRadius: 6, borderWidth: 1, borderColor: '#39FF14' },
-  statusText: { color: '#39FF14', fontSize: 8, fontWeight: 'bold' }
+  statusText: { color: '#39FF14', fontSize: 8, fontWeight: 'bold' },
+
+  // STYLES MODAL
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(5, 2, 13, 0.85)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+  modalCard: { backgroundColor: '#0D0620', padding: 20, borderRadius: 16, borderWidth: 2, borderColor: '#00FFCC', width: '100%', alignItems: 'center' },
+  modalTitle: { color: '#00FFCC', fontSize: 14, fontWeight: '900', marginBottom: 8 },
+  modalDesc: { color: '#AAAABB', fontSize: 11, textAlign: 'center', marginBottom: 15 },
+  modalInput: { backgroundColor: '#120826', width: '100%', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, color: '#FFF', fontSize: 12, borderWidth: 1, borderColor: '#3A1559', marginBottom: 15 },
+  modalActionRow: { flexDirection: 'row', width: '100%', justifyContent: 'space-between' },
+  modalConfirmBtn: { flex: 1, backgroundColor: '#39FF14', paddingVertical: 10, borderRadius: 8, alignItems: 'center', marginRight: 6 },
+  modalConfirmText: { color: '#000', fontSize: 11, fontWeight: '900' },
+  modalCancelBtn: { flex: 1, backgroundColor: '#221133', paddingVertical: 10, borderRadius: 8, alignItems: 'center', marginLeft: 6, borderWidth: 1, borderColor: '#FF0055' },
+  modalCancelText: { color: '#FF0055', fontSize: 11, fontWeight: 'bold' }
 });
