@@ -17,17 +17,15 @@ interface Props {
   onNavigateToOasis?: (sentence: string) => void;
 }
 
-const FALLBACK_BOSS_SENTENCES: Record<CEFRLevel, string[]> = {
-  A1: ["Practice speaking English every single day.", "Welcome to the Cyberpunk arena today."],
-  A2: ["Future technology is changing how we learn languages.", "Stay focused and repeat after the sound cue."],
-  B1: ["Artificial intelligence is rapidly transforming global business strategies.", "Effective communication requires both active listening and speaking accuracy."],
-  B2: ["Cybersecurity measures are essential for protecting modern digital infrastructure.", "Data analytics empowers companies to make smarter operational decisions."],
-  C1: ["Continuous learning and adaptive feedback mechanisms are key to mastering natural language fluency.", "Navigating complex professional environments demands nuanced communication skills."]
-};
+interface BossChallenge {
+  sentence: string;
+  translation: string; // 🎯 Bổ sung bản dịch song ngữ
+  hint: string;
+}
 
 export default function BossRaidScreen({ onBack, onNavigateToOasis }: Props) {
-  const [cefrLevel, setCefrLevel] = useState<CEFRLevel>('B1');
-  const [bossSentence, setBossSentence] = useState<string>('');
+  const [cefrLevel, setCefrLevel] = useState<CEFRLevel>('A1');
+  const [bossChallenge, setBossChallenge] = useState<BossChallenge>({ sentence: '', translation: '', hint: '' });
   const [loadingBoss, setLoadingBoss] = useState<boolean>(true);
 
   const [isRecording, setIsRecording] = useState<boolean>(false);
@@ -49,17 +47,25 @@ export default function BossRaidScreen({ onBack, onNavigateToOasis }: Props) {
 
     const randomNonce = Date.now() + Math.floor(Math.random() * 10000);
 
-    let wordLimit = '8-12 words';
-    if (level === 'A1' || level === 'A2') wordLimit = '5-7 simple words';
-    else if (level === 'C1') wordLimit = '12-15 complex words';
+    let promptRule = '';
+    if (level === 'A1' || level === 'A2') {
+      promptRule = 'Simple 5-7 word sentence. Provide 100% VIETNAMESE translation and pronunciation hint.';
+    } else if (level === 'B1') {
+      promptRule = '8-10 word sentence. Provide BILINGUAL (Vietnamese) translation and linking sound hint.';
+    } else {
+      promptRule = '11-15 word complex native sentence. Provide 100% ENGLISH hint without translation.';
+    }
 
-    const prompt = `Generate ONE UNIQUE challenging English sentence for Boss Raid.
-- CEFR Level: ${level}
-- Sentence Length: ${wordLimit}
-- Topics: Technology, Cyberpunk, Business, Future Skills.
+    const prompt = `Generate ONE UNIQUE Boss Raid English sentence for CEFR ${level}.
+- Rule: ${promptRule}
 - Nonce code: ${randomNonce}
 
-Return ONLY JSON: { "sentence": "Text here" }`;
+Return ONLY JSON format:
+{
+  "sentence": "English sentence here",
+  "translation": "Vietnamese translation (leave empty if level is B2 or C1)",
+  "hint": "Phonetics/linking hint"
+}`;
 
     try {
       const res = await groq.chat.completions.create({
@@ -70,15 +76,17 @@ Return ONLY JSON: { "sentence": "Text here" }`;
       });
 
       const parsed = JSON.parse(res.choices[0]?.message?.content || '{}');
-      if (parsed.sentence && parsed.sentence.trim() !== bossSentence) {
-        setBossSentence(parsed.sentence.trim());
-      } else {
-        const list = FALLBACK_BOSS_SENTENCES[level];
-        setBossSentence(list[Math.floor(Math.random() * list.length)]);
-      }
+      setBossChallenge({
+        sentence: parsed.sentence || "Practice speaking English every single day.",
+        translation: parsed.translation || "Hãy luyện nói Tiếng Anh mỗi ngày.",
+        hint: parsed.hint || "Chú ý nối âm giữa 'speaking' và 'English'."
+      });
     } catch (e) {
-      const list = FALLBACK_BOSS_SENTENCES[level];
-      setBossSentence(list[Math.floor(Math.random() * list.length)]);
+      setBossChallenge({
+        sentence: "Practice speaking English every single day.",
+        translation: "Hãy luyện nói Tiếng Anh mỗi ngày.",
+        hint: "Chú ý đọc rõ âm đuôi /s/ trong từ 'Practice'."
+      });
     } finally {
       setLoadingBoss(false);
     }
@@ -131,7 +139,7 @@ Return ONLY JSON: { "sentence": "Text here" }`;
       const { blob, url } = await processAudio;
       setRecordedAudioUri(url);
 
-      const res = await gradeFlexibleArenaResponse(blob, bossSentence);
+      const res = await gradeFlexibleArenaResponse(blob, bossChallenge.sentence);
 
       if (res.score >= 75) {
         const nextStreak = streak + 1;
@@ -149,7 +157,7 @@ Return ONLY JSON: { "sentence": "Text here" }`;
       } else {
         setStreak(0);
         setResult(res);
-        if (onNavigateToOasis) setTimeout(() => onNavigateToOasis(bossSentence), 2000);
+        if (onNavigateToOasis) setTimeout(() => onNavigateToOasis(bossChallenge.sentence), 2000);
       }
 
     } catch (e) {
@@ -172,7 +180,7 @@ Return ONLY JSON: { "sentence": "Text here" }`;
       </View>
 
       <ScrollView contentContainerStyle={{ alignItems: 'center', width: '100%' }}>
-        {/* 📊 BỘ CHỌN CẤP ĐỘ BOSS (CEFR) */}
+        {/* 📊 CHỌN CẤP ĐỘ CEFR */}
         <View style={styles.sectionBox}>
           <Text style={styles.sectionLabel}>📊 CHỌN CẤP ĐỘ BOSS (CEFR):</Text>
           <View style={styles.levelRow}>
@@ -195,11 +203,20 @@ Return ONLY JSON: { "sentence": "Text here" }`;
         ) : (
           <View style={styles.bossCard}>
             <Text style={styles.bossTag}>👹 SHADOW BOSS CHALLENGE [{cefrLevel}]</Text>
-            <Text style={styles.targetSentence}>"{bossSentence}"</Text>
+            <Text style={styles.targetSentence}>"{bossChallenge.sentence}"</Text>
+
+            {/* 🎯 HIỂN THỊ DỊCH SONG NGỮ CHO A1, A2, B1 */}
+            {(cefrLevel === 'A1' || cefrLevel === 'A2' || cefrLevel === 'B1') && bossChallenge.translation ? (
+              <Text style={styles.translationText}>🇻🇳 Nghĩa: "{bossChallenge.translation}"</Text>
+            ) : null}
+
+            {bossChallenge.hint ? (
+              <Text style={styles.hintText}>💡 Gợi ý: {bossChallenge.hint}</Text>
+            ) : null}
 
             <TouchableOpacity 
               style={styles.speakerBtn} 
-              onPress={() => speakNaturalText(bossSentence, { voiceName: 'en-US-GuyNeural', style: 'shouting', rate: '+5%' })}
+              onPress={() => speakNaturalText(bossChallenge.sentence, { voiceName: 'en-US-GuyNeural', style: 'shouting', rate: '+5%' })}
             >
               <Text style={styles.speakerText}>🔊 NGHE BOSS MẪU</Text>
             </TouchableOpacity>
@@ -269,8 +286,11 @@ const styles = StyleSheet.create({
   activeLevelText: { color: '#FFFFFF', fontWeight: '900' },
 
   bossCard: { backgroundColor: '#1A000A', padding: 18, borderRadius: 16, borderWidth: 2, borderColor: '#FF0055', width: '100%', alignItems: 'center', marginBottom: 12 },
-  bossTag: { color: '#FF0055', fontSize: 9, fontWeight: 'bold', marginBottom: 8 },
-  targetSentence: { color: '#FFF', fontSize: 16, fontWeight: '900', textAlign: 'center', marginBottom: 12 },
+  bossTag: { color: '#FF0055', fontSize: 9, fontWeight: 'bold', marginBottom: 6 },
+  targetSentence: { color: '#FFF', fontSize: 16, fontWeight: '900', textAlign: 'center', marginBottom: 6 },
+  translationText: { color: '#00FFCC', fontSize: 12, fontStyle: 'italic', marginBottom: 6, textAlign: 'center' },
+  hintText: { color: '#FFD700', fontSize: 10, textAlign: 'center', marginBottom: 10 },
+
   speakerBtn: { backgroundColor: '#0D0620', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 16, borderWidth: 1, borderColor: '#00FFFF' },
   speakerText: { color: '#00FFFF', fontSize: 9, fontWeight: 'bold' },
 

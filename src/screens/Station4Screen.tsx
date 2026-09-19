@@ -17,17 +17,15 @@ interface Props {
   onNavigateToOasis?: (sentence: string) => void;
 }
 
-const FALLBACK_LISTEN_SENTENCES = [
-  "Could you please explain how to process this customer request?",
-  "Listening carefully helps you understand subtle emotional tones.",
-  "What are the key advantages of implementing automated AI systems?",
-  "The meeting has been rescheduled to tomorrow morning at ten.",
-  "Effective communication starts with active and patient listening."
-];
+interface ListenChallenge {
+  sentence: string;
+  translation: string; // 🎯 Bản dịch song ngữ cho A1-B1
+  hint: string;
+}
 
 export default function Station4Screen({ onBack, onNavigateToOasis }: Props) {
   const [cefrLevel, setCefrLevel] = useState<CEFRLevel>('A1');
-  const [listenSentence, setListenSentence] = useState<string>('');
+  const [challenge, setChallenge] = useState<ListenChallenge>({ sentence: '', translation: '', hint: '' });
   const [loadingSentence, setLoadingSentence] = useState<boolean>(true);
 
   const [isRecording, setIsRecording] = useState<boolean>(false);
@@ -42,7 +40,6 @@ export default function Station4Screen({ onBack, onNavigateToOasis }: Props) {
 
   const levels: CEFRLevel[] = ['A1', 'A2', 'B1', 'B2', 'C1'];
 
-  // 🎯 HÀM LẤY ĐỀ BÀI MỚI (ĐẢM BẢO ĐỔI CÂU MỖI LẦN BẤM)
   const fetchNewListenSentence = async (level = cefrLevel) => {
     setLoadingSentence(true);
     setResult(null);
@@ -51,11 +48,11 @@ export default function Station4Screen({ onBack, onNavigateToOasis }: Props) {
 
     let languageRule = '';
     if (level === 'A1' || level === 'A2') {
-      languageRule = 'Simple 4-6 word daily conversational sentence.';
-    } else if (level === 'B1' || level === 'B2') {
-      languageRule = '7-10 word workplace or social scenario response.';
+      languageRule = 'Simple 4-6 word daily sentence. Provide 100% VIETNAMESE translation and clear pronunciation hint.';
+    } else if (level === 'B1') {
+      languageRule = '7-10 word workplace/school response. Provide BILINGUAL (Vietnamese) translation and linking sound hint.';
     } else {
-      languageRule = '10-14 word complex academic/professional statement.';
+      languageRule = '10-14 word complex academic statement. Provide 100% ENGLISH hint without translation.';
     }
 
     const prompt = `Generate ONE UNIQUE listening practice sentence for CEFR Level ${level}.
@@ -64,7 +61,9 @@ export default function Station4Screen({ onBack, onNavigateToOasis }: Props) {
 
 Return ONLY JSON:
 {
-  "sentence": "English sentence here"
+  "sentence": "English sentence here",
+  "translation": "Vietnamese translation (leave empty if level is B2 or C1)",
+  "hint": "Listening/Phonetics hint"
 }`;
 
     try {
@@ -76,15 +75,17 @@ Return ONLY JSON:
       });
 
       const parsed = JSON.parse(res.choices[0]?.message?.content || '{}');
-      if (parsed.sentence && parsed.sentence.trim() !== listenSentence) {
-        setListenSentence(parsed.sentence.trim());
-      } else {
-        const filtered = FALLBACK_LISTEN_SENTENCES.filter(s => s !== listenSentence);
-        setListenSentence(filtered[Math.floor(Math.random() * filtered.length)]);
-      }
+      setChallenge({
+        sentence: parsed.sentence || "Could you please explain how to process this request?",
+        translation: parsed.translation || "Bạn có thể giải thích cách xử lý yêu cầu này không?",
+        hint: parsed.hint || "Chú ý ngắt nhịp sau từ 'explain'."
+      });
     } catch (e) {
-      const filtered = FALLBACK_LISTEN_SENTENCES.filter(s => s !== listenSentence);
-      setListenSentence(filtered[Math.floor(Math.random() * filtered.length)]);
+      setChallenge({
+        sentence: "Could you please explain how to process this request?",
+        translation: "Bạn có thể giải thích cách xử lý yêu cầu này không?",
+        hint: "Luyện phát âm rõ từ 'explain' và 'request'."
+      });
     } finally {
       setLoadingSentence(false);
     }
@@ -133,7 +134,7 @@ Return ONLY JSON:
 
     try {
       const audioBlob = await processAudio;
-      const res = await gradeFlexibleArenaResponse(audioBlob, listenSentence);
+      const res = await gradeFlexibleArenaResponse(audioBlob, challenge.sentence);
       setResult(res);
 
       if (res.score < 50) {
@@ -154,7 +155,6 @@ Return ONLY JSON:
 
   return (
     <View style={styles.container}>
-      {/* TOP BAR ĐÃ SỬA CHUẨN TIÊU ĐỀ TRẠM 4 */}
       <View style={styles.topBar}>
         <TouchableOpacity onPress={onBack} style={styles.backBtn}>
           <Text style={styles.backText}>🔙 MAP</Text>
@@ -163,7 +163,7 @@ Return ONLY JSON:
       </View>
 
       <ScrollView contentContainerStyle={{ alignItems: 'center', width: '100%' }}>
-        {/* CEFR LEVEL SELECTOR */}
+        {/* CEFR SELECTOR */}
         <View style={styles.sectionBox}>
           <Text style={styles.sectionLabel}>📊 CẤP ĐỘ NGHE PHẢN XẠ (CEFR):</Text>
           <View style={styles.levelRow}>
@@ -181,17 +181,25 @@ Return ONLY JSON:
           </View>
         </View>
 
-        {/* BÀI TẬP NGHE */}
         {loadingSentence ? (
           <ActivityIndicator size="large" color="#00FFCC" style={{ marginVertical: 30 }} />
         ) : (
           <View style={styles.card}>
             <Text style={styles.tag}>[ LISTENING & REPEAT - {cefrLevel} ]</Text>
-            <Text style={styles.sentenceText}>"{listenSentence}"</Text>
+            <Text style={styles.sentenceText}>"{challenge.sentence}"</Text>
+
+            {/* 🎯 HIỂN THỊ NGHĨA SONG NGỮ CHO A1, A2, B1 */}
+            {(cefrLevel === 'A1' || cefrLevel === 'A2' || cefrLevel === 'B1') && challenge.translation ? (
+              <Text style={styles.translationText}>🇻🇳 Nghĩa: "{challenge.translation}"</Text>
+            ) : null}
+
+            {challenge.hint ? (
+              <Text style={styles.hintText}>💡 Gợi ý: {challenge.hint}</Text>
+            ) : null}
 
             <TouchableOpacity 
               style={styles.speakerBtn} 
-              onPress={() => speakNaturalText(listenSentence, { voiceName: 'en-US-JennyNeural', style: 'cheerful' })}
+              onPress={() => speakNaturalText(challenge.sentence, { voiceName: 'en-US-JennyNeural', style: 'cheerful' })}
             >
               <Text style={styles.speakerText}>🔊 NGHE MẪU TIẾNG ANH</Text>
             </TouchableOpacity>
@@ -215,7 +223,6 @@ Return ONLY JSON:
           </TouchableOpacity>
         )}
 
-        {/* ĐIỂM CHẤM */}
         {result && (
           <View style={styles.resultCard}>
             <Text style={[styles.resultScore, result.score >= 70 ? { color: '#39FF14' } : { color: '#FF0055' }]}>
@@ -249,7 +256,7 @@ Return ONLY JSON:
               onPress={() => {
                 setShowOasisModal(false);
                 setMissCount(0);
-                if (onNavigateToOasis) onNavigateToOasis(`Listen Respond: ${listenSentence}`);
+                if (onNavigateToOasis) onNavigateToOasis(`Listen Respond: ${challenge.sentence}`);
               }}
             >
               <Text style={styles.modalOasisBtnText}>🌴 CHUYỂN SANG OASIS CỨU HỘ</Text>
@@ -278,7 +285,7 @@ const styles = StyleSheet.create({
   backText: { color: '#00FFCC', fontSize: 11, fontWeight: 'bold' },
   headerTitle: { color: '#00FFCC', fontSize: 12, fontWeight: '900' },
 
-  sectionBox: { width: '100%', marginBottom: 15, backgroundColor: '#120826', padding: 10, borderRadius: 12, borderWidth: 1, borderColor: '#2A1040' },
+  sectionBox: { width: '100%', marginBottom: 12, backgroundColor: '#120826', padding: 10, borderRadius: 12, borderWidth: 1, borderColor: '#2A1040' },
   sectionLabel: { color: '#00FFCC', fontSize: 11, fontWeight: 'bold', marginBottom: 6 },
   levelRow: { flexDirection: 'row', justifyContent: 'space-between' },
   levelBtn: { flex: 1, paddingVertical: 8, marginHorizontal: 2, backgroundColor: '#1A0B36', borderRadius: 8, borderWidth: 1, borderColor: '#3A1559', alignItems: 'center' },
@@ -287,8 +294,11 @@ const styles = StyleSheet.create({
   activeLevelText: { color: '#000000', fontWeight: '900' },
 
   card: { backgroundColor: '#0D0620', padding: 18, borderRadius: 16, borderWidth: 2, borderColor: '#00FFCC', alignItems: 'center', width: '100%', marginBottom: 12 },
-  tag: { color: '#FFD700', fontSize: 10, fontWeight: 'bold', marginBottom: 8 },
-  sentenceText: { color: '#FFF', fontSize: 16, fontWeight: 'bold', textAlign: 'center', marginBottom: 12 },
+  tag: { color: '#FFD700', fontSize: 10, fontWeight: 'bold', marginBottom: 6 },
+  sentenceText: { color: '#FFF', fontSize: 16, fontWeight: 'bold', textAlign: 'center', marginBottom: 6 },
+  translationText: { color: '#00FFCC', fontSize: 12, fontStyle: 'italic', marginBottom: 6, textAlign: 'center' },
+  hintText: { color: '#FFD700', fontSize: 10, textAlign: 'center', marginBottom: 10 },
+
   speakerBtn: { backgroundColor: '#1A0B2E', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 14, borderWidth: 1, borderColor: '#FF007F' },
   speakerText: { color: '#FF007F', fontSize: 9, fontWeight: 'bold' },
 
