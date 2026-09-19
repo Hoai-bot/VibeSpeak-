@@ -19,9 +19,36 @@ interface Props {
 
 interface ListenChallenge {
   sentence: string;
-  translation: string; // 🎯 Bản dịch song ngữ cho A1-B1
+  translation: string;
   hint: string;
 }
+
+// 🎯 KHO ĐỀ BÀI DỰ PHÒNG ĐA DẠNG DÀNH CHO CÁC CẤP ĐỘ (ĐẢM BẢO LUÔN ĐỔI CÂU)
+const FALLBACK_LISTEN_POOL: Record<CEFRLevel, ListenChallenge[]> = {
+  A1: [
+    { sentence: "Where is the nearest English classroom?", translation: "Phòng học Tiếng Anh gần nhất ở đâu?", hint: "Chú ý phát âm rõ từ 'classroom'." },
+    { sentence: "I love practicing listening skills every day.", translation: "Tôi thích luyện kỹ năng nghe mỗi ngày.", hint: "Nhấn giọng ở từ 'practicing' và 'listening'." },
+    { sentence: "Can you help me with this exercise?", translation: "Bạn có thể giúp tôi làm bài tập này không?", hint: "Đọc nối âm nhẹ giữa 'help' và 'me'." }
+  ],
+  A2: [
+    { sentence: "We should prepare for the group presentation tomorrow.", translation: "Chúng ta nên chuẩn bị cho bài thuyết trình nhóm vào ngày mai.", hint: "Chú ý trọng âm từ 'presentation'." },
+    { sentence: "What time does the morning English class start?", translation: "Lớp học Tiếng Anh buổi sáng bắt đầu lúc mấy giờ?", hint: "Luyện đọc trôi chảy cụm 'morning English class'." },
+    { sentence: "Please turn to page twenty in your textbook.", translation: "Xin vui lòng mở trang hai mươi trong sách giáo khoa.", hint: "Chú ý âm đuôi /k/ trong từ 'textbook'." }
+  ],
+  B1: [
+    { sentence: "Could you please explain how to process this request?", translation: "Bạn có thể giải thích cách xử lý yêu cầu này không?", hint: "Ngắt nhịp tự nhiên sau từ 'explain'." },
+    { sentence: "Effective teamwork requires clear and open communication.", translation: "Làm việc nhóm hiệu quả đòi hỏi sự giao tiếp rõ ràng và cởi mở.", hint: "Nhấn mạnh từ 'teamwork' và 'communication'." },
+    { sentence: "Technology helps students access educational materials easily.", translation: "Công nghệ giúp học sinh truy cập tài liệu giáo dục dễ dàng.", hint: "Chú ý trọng âm từ 'educational'." }
+  ],
+  B2: [
+    { sentence: "Artificial intelligence is reshaping global business strategies.", translation: "", hint: "Pay attention to connected speech in 'business strategies'." },
+    { sentence: "Analyzing data accurately empowers companies to make better decisions.", translation: "", hint: "Focus on clear pronunciation of 'accurately'." }
+  ],
+  C1: [
+    { sentence: "Continuous professional development is essential for long-term career growth.", translation: "", hint: "Maintain natural rhythm and native intonation." },
+    { sentence: "Navigating complex corporate environments demands strong interpersonal skills.", translation: "", hint: "Focus on stress placement in 'interpersonal'." }
+  ]
+};
 
 export default function Station4Screen({ onBack, onNavigateToOasis }: Props) {
   const [cefrLevel, setCefrLevel] = useState<CEFRLevel>('A1');
@@ -40,52 +67,62 @@ export default function Station4Screen({ onBack, onNavigateToOasis }: Props) {
 
   const levels: CEFRLevel[] = ['A1', 'A2', 'B1', 'B2', 'C1'];
 
+  // 🎯 HÀM ĐỔI CÂU NGHE MỚI (CHẮC CHẮN 100% THAY ĐỔI CÂU)
   const fetchNewListenSentence = async (level = cefrLevel) => {
     setLoadingSentence(true);
     setResult(null);
 
-    const randomNonce = Date.now() + Math.floor(Math.random() * 10000);
+    const randomNonce = Date.now() + Math.floor(Math.random() * 100000);
 
     let languageRule = '';
     if (level === 'A1' || level === 'A2') {
-      languageRule = 'Simple 4-6 word daily sentence. Provide 100% VIETNAMESE translation and clear pronunciation hint.';
+      languageRule = 'Simple 4-6 word sentence. Return 100% VIETNAMESE translation and pronunciation hint.';
     } else if (level === 'B1') {
-      languageRule = '7-10 word workplace/school response. Provide BILINGUAL (Vietnamese) translation and linking sound hint.';
+      languageRule = '7-10 word sentence. Return BILINGUAL (Vietnamese) translation and linking hint.';
     } else {
-      languageRule = '10-14 word complex academic statement. Provide 100% ENGLISH hint without translation.';
+      languageRule = '10-14 word advanced statement. Return 100% ENGLISH hint without translation.';
     }
 
-    const prompt = `Generate ONE UNIQUE listening practice sentence for CEFR Level ${level}.
+    const prompt = `Generate ONE UNIQUE English listening sentence for CEFR Level ${level}.
 - Rule: ${languageRule}
-- Nonce Code: ${randomNonce}
+- Unique Identifier: ${randomNonce}
 
-Return ONLY JSON:
+Return ONLY valid JSON:
 {
-  "sentence": "English sentence here",
-  "translation": "Vietnamese translation (leave empty if level is B2 or C1)",
-  "hint": "Listening/Phonetics hint"
+  "sentence": "English text",
+  "translation": "Vietnamese translation",
+  "hint": "Hint text"
 }`;
 
     try {
       const res = await groq.chat.completions.create({
         messages: [{ role: 'user', content: prompt }],
         model: 'openai/gpt-oss-20b',
-        temperature: 0.95,
+        temperature: 0.98,
         response_format: { type: 'json_object' },
       });
 
       const parsed = JSON.parse(res.choices[0]?.message?.content || '{}');
-      setChallenge({
-        sentence: parsed.sentence || "Could you please explain how to process this request?",
-        translation: parsed.translation || "Bạn có thể giải thích cách xử lý yêu cầu này không?",
-        hint: parsed.hint || "Chú ý ngắt nhịp sau từ 'explain'."
-      });
+      
+      if (parsed.sentence && parsed.sentence.trim() !== challenge.sentence) {
+        setChallenge({
+          sentence: parsed.sentence.trim(),
+          translation: parsed.translation || '',
+          hint: parsed.hint || ''
+        });
+      } else {
+        // Nếu AI sinh câu trùng, lấy ngẫu nhiên câu khác từ kho dự phòng
+        const pool = FALLBACK_LISTEN_POOL[level];
+        const filtered = pool.filter(item => item.sentence !== challenge.sentence);
+        const randomItem = filtered.length > 0 ? filtered[Math.floor(Math.random() * filtered.length)] : pool[0];
+        setChallenge(randomItem);
+      }
     } catch (e) {
-      setChallenge({
-        sentence: "Could you please explain how to process this request?",
-        translation: "Bạn có thể giải thích cách xử lý yêu cầu này không?",
-        hint: "Luyện phát âm rõ từ 'explain' và 'request'."
-      });
+      // Khi mất mạng hoặc API lỗi, lấy ngẫu nhiên từ kho dự phòng
+      const pool = FALLBACK_LISTEN_POOL[level];
+      const filtered = pool.filter(item => item.sentence !== challenge.sentence);
+      const randomItem = filtered.length > 0 ? filtered[Math.floor(Math.random() * filtered.length)] : pool[0];
+      setChallenge(randomItem);
     } finally {
       setLoadingSentence(false);
     }
@@ -163,7 +200,7 @@ Return ONLY JSON:
       </View>
 
       <ScrollView contentContainerStyle={{ alignItems: 'center', width: '100%' }}>
-        {/* CEFR SELECTOR */}
+        {/* CHỌN CẤP ĐỘ CEFR */}
         <View style={styles.sectionBox}>
           <Text style={styles.sectionLabel}>📊 CẤP ĐỘ NGHE PHẢN XẠ (CEFR):</Text>
           <View style={styles.levelRow}>
@@ -188,7 +225,7 @@ Return ONLY JSON:
             <Text style={styles.tag}>[ LISTENING & REPEAT - {cefrLevel} ]</Text>
             <Text style={styles.sentenceText}>"{challenge.sentence}"</Text>
 
-            {/* 🎯 HIỂN THỊ NGHĨA SONG NGỮ CHO A1, A2, B1 */}
+            {/* SONG NGỮ CHO A1, A2, B1 */}
             {(cefrLevel === 'A1' || cefrLevel === 'A2' || cefrLevel === 'B1') && challenge.translation ? (
               <Text style={styles.translationText}>🇻🇳 Nghĩa: "{challenge.translation}"</Text>
             ) : null}
@@ -206,6 +243,7 @@ Return ONLY JSON:
           </View>
         )}
 
+        {/* NÚT ĐỔI CÂU BẤM LÀ ĐỔI CÂU MỚI */}
         <TouchableOpacity style={styles.refreshBtn} onPress={() => fetchNewListenSentence(cefrLevel)}>
           <Text style={styles.refreshText}>🔄 ĐỔI CÂU NGHE MỚI ({cefrLevel})</Text>
         </TouchableOpacity>
@@ -241,7 +279,6 @@ Return ONLY JSON:
         )}
       </ScrollView>
 
-      {/* MODAL OASIS */}
       <Modal visible={showOasisModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
