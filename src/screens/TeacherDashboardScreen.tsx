@@ -15,6 +15,7 @@ interface Assignment {
   className: string;
   stationName: string;
   cefrLevel: string;
+  specialtyTopic: string; // 🎯 Chủ đề chuyên ngành
   targetScore: number;
   deadline: string;
 }
@@ -31,12 +32,21 @@ export default function TeacherDashboardScreen({ onBack }: { onBack: () => void 
     { id: '3', name: 'Lê Hoàng Cường', exp: 1420, streak: 7, avgScore: 92 },
   ]);
 
-  // 2. STATE GIAO BÀI TẬP
+  // 2. STATE GIAO BÀI TẬP VÀ CHUYÊN NGÀNH
   const [targetStation, setTargetStation] = useState<string>('Trạm 3: Boss Raid');
   const [targetCEFR, setTargetCEFR] = useState<string>('A2');
+  const [specialtyTopic, setSpecialtyTopic] = useState<string>('CNTT / IT Helpdesk'); // 🎯 State chủ đề chuyên ngành
   const [targetScore, setTargetScore] = useState<string>('80');
   const [assignments, setAssignments] = useState<Assignment[]>([
-    { id: '101', className: 'Lớp 8A1', stationName: 'Trạm 3: Boss Raid', cefrLevel: 'A2', targetScore: 80, deadline: '2026-09-25' }
+    { 
+      id: '101', 
+      className: 'Lớp 8A1', 
+      stationName: 'Trạm 3: Boss Raid', 
+      cefrLevel: 'A2', 
+      specialtyTopic: 'Giao tiếp hằng ngày', 
+      targetScore: 80, 
+      deadline: '2026-09-25' 
+    }
   ]);
 
   // Thêm học sinh mới vào lớp
@@ -68,18 +78,19 @@ export default function TeacherDashboardScreen({ onBack }: { onBack: () => void 
     document.body.removeChild(link);
   };
 
-  // Giao bài tập mới
+  // Giao bài tập mới kèm chuyên ngành
   const handleCreateAssignment = () => {
     const newAssign: Assignment = {
       id: Date.now().toString(),
       className: selectedClass,
       stationName: targetStation,
       cefrLevel: targetCEFR,
+      specialtyTopic: specialtyTopic.trim() || 'Giao tiếp chung',
       targetScore: parseInt(targetScore) || 75,
       deadline: '2026-09-30',
     };
     setAssignments([newAssign, ...assignments]);
-    alert(`Đã giao bài tập thành công cho ${selectedClass}!`);
+    alert(`Đã giao bài tập [${newAssign.specialtyTopic}] cho ${selectedClass}!`);
   };
 
   return (
@@ -95,7 +106,7 @@ export default function TeacherDashboardScreen({ onBack }: { onBack: () => void 
       {/* Selector chọn lớp học */}
       <View style={styles.classSelectorRow}>
         <Text style={styles.selectorLabel}>📌 ĐANG QUẢN LÝ:</Text>
-        {['Lớp 8A1', 'Lớp 8A2', 'Lớp 10T1'].map((c) => (
+        {['Lớp 8A1', 'Lớp 10T1', 'Lớp CNTT-K18', 'Lớp Y-Dược K20'].map((c) => (
           <TouchableOpacity
             key={c}
             style={[styles.classTab, selectedClass === c && styles.activeClassTab]}
@@ -131,7 +142,6 @@ export default function TeacherDashboardScreen({ onBack }: { onBack: () => void 
         {/* TÍNH NĂNG 1: QUẢN LÝ DANH SÁCH HỌC SINH */}
         {activeTab === 'students' && (
           <View style={styles.sectionContainer}>
-            {/* Nhập học sinh mới & Tải danh sách */}
             <View style={styles.actionCard}>
               <Text style={styles.cardTitle}>➕ THÊM HỌC SINH VÀO {selectedClass.toUpperCase()}</Text>
               <View style={styles.inputRow}>
@@ -152,7 +162,6 @@ export default function TeacherDashboardScreen({ onBack }: { onBack: () => void 
               </TouchableOpacity>
             </View>
 
-            {/* Bảng danh sách học sinh */}
             <Text style={styles.subTitle}>📊 BẢNG THEO DÕI NĂNG LỰC HỌC SINH</Text>
             {students.map((s, index) => (
               <View key={s.id} style={styles.studentCard}>
@@ -172,12 +181,11 @@ export default function TeacherDashboardScreen({ onBack }: { onBack: () => void 
           </View>
         )}
 
-        {/* TÍNH NĂNG 2: GIAO BÀI TẬP BẮT BUỘC THEO LỚP */}
+        {/* TÍNH NĂNG 2: GIAO BÀI TẬP CHUYÊN NGÀNH */}
         {activeTab === 'assignments' && (
           <View style={styles.sectionContainer}>
-            {/* Form Tạo Bài Tập */}
             <View style={styles.actionCard}>
-              <Text style={styles.cardTitle}>📝 GIAO NHIỆM VỤ MỚI CHO {selectedClass.toUpperCase()}</Text>
+              <Text style={styles.cardTitle}>📝 GIAO NHIỆM VỤ CHO {selectedClass.toUpperCase()}</Text>
 
               <Text style={styles.fieldLabel}>1. Chọn Trạm bài tập:</Text>
               <View style={styles.optionRow}>
@@ -205,7 +213,28 @@ export default function TeacherDashboardScreen({ onBack }: { onBack: () => void 
                 ))}
               </View>
 
-              <Text style={styles.fieldLabel}>3. Yêu cầu điểm số tối thiểu:</Text>
+              {/* 🎯 TÍNH NĂNG MỚI: CHỌN CHỦ ĐỀ CHUYÊN NGÀNH */}
+              <Text style={styles.fieldLabel}>3. Chủ đề Chuyên ngành / Từ khóa linh hoạt:</Text>
+              <View style={styles.optionRow}>
+                {['CNTT / IT', 'Y Khoa', 'Du lịch - Khách sạn', 'Thương mại', 'Giao tiếp chung'].map((topic) => (
+                  <TouchableOpacity
+                    key={topic}
+                    style={[styles.topicChip, specialtyTopic === topic && styles.activeTopicChip]}
+                    onPress={() => setSpecialtyTopic(topic)}
+                  >
+                    <Text style={[styles.chipText, specialtyTopic === topic && styles.activeChipText]}>{topic}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <TextInput
+                style={[styles.input, { marginTop: 4 }]}
+                value={specialtyTopic}
+                onChangeText={setSpecialtyTopic}
+                placeholder="Hoặc tự gõ chủ đề chuyên ngành riêng..."
+                placeholderTextColor="#8888AA"
+              />
+
+              <Text style={styles.fieldLabel}>4. Yêu cầu điểm số tối thiểu:</Text>
               <TextInput
                 style={styles.input}
                 keyboardType="numeric"
@@ -216,7 +245,7 @@ export default function TeacherDashboardScreen({ onBack }: { onBack: () => void 
               />
 
               <TouchableOpacity style={styles.createAssignBtn} onPress={handleCreateAssignment}>
-                <Text style={styles.createAssignText}>🚀 GIAO BÀI TẬP CHO CẢ LỚP</Text>
+                <Text style={styles.createAssignText}>🚀 GIAO BÀI TẬP CHUYÊN NGÀNH CHO CẢ LỚP</Text>
               </TouchableOpacity>
             </View>
 
@@ -224,13 +253,14 @@ export default function TeacherDashboardScreen({ onBack }: { onBack: () => void 
             <Text style={styles.subTitle}>📋 NHIỆM VỤ ĐÃ GIAO GẦN ĐÂY</Text>
             {assignments.map((a) => (
               <View key={a.id} style={styles.assignmentCard}>
-                <View>
-                  <Text style={styles.assignTag}>[{a.className}] - CEFR {a.cefrLevel}</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.assignTag}>[{a.className}] • CEFR {a.cefrLevel}</Text>
                   <Text style={styles.assignTitle}>{a.stationName}</Text>
-                  <Text style={styles.assignSub}>Mục tiêu: Đạt $\ge$ {a.targetScore} điểm | Hạn: {a.deadline}</Text>
+                  <Text style={styles.assignTopic}>🏷️ Chuyên ngành: {a.specialtyTopic}</Text>
+                  <Text style={styles.assignSub}>Mục tiêu: Đạt ≥ {a.targetScore} điểm | Hạn: {a.deadline}</Text>
                 </View>
                 <View style={styles.statusBadge}>
-                  <Text style={styles.statusText}>ĐANG CHỜ HỌC SINH NỘP</Text>
+                  <Text style={styles.statusText}>ĐANG MỞ</Text>
                 </View>
               </View>
             ))}
@@ -266,7 +296,7 @@ const styles = StyleSheet.create({
   cardTitle: { color: '#00FFCC', fontSize: 12, fontWeight: '900', marginBottom: 12 },
 
   inputRow: { flexDirection: 'row', marginBottom: 10 },
-  input: { flex: 1, backgroundColor: '#120826', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8, color: '#FFF', fontSize: 12, borderWidth: 1, borderColor: '#3A1559' },
+  input: { backgroundColor: '#120826', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8, color: '#FFF', fontSize: 12, borderWidth: 1, borderColor: '#3A1559' },
   addBtn: { backgroundColor: '#FF007F', paddingHorizontal: 16, justifyContent: 'center', borderRadius: 8, marginLeft: 8 },
   addBtnText: { color: '#FFF', fontSize: 11, fontWeight: 'bold' },
 
@@ -284,11 +314,13 @@ const styles = StyleSheet.create({
   scoreLabel: { color: '#AAAABB', fontSize: 8 },
 
   fieldLabel: { color: '#AAAABB', fontSize: 10, fontWeight: 'bold', marginTop: 10, marginBottom: 6 },
-  optionRow: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 8 },
+  optionRow: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 6 },
   optionChip: { backgroundColor: '#120826', paddingVertical: 6, paddingHorizontal: 10, borderRadius: 6, borderWidth: 1, borderColor: '#3A1559', marginRight: 6, marginBottom: 6 },
   activeChip: { backgroundColor: '#00FFCC', borderColor: '#00FFCC' },
-  levelChip: { backgroundColor: '#120826', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 6, borderWidth: 1, borderColor: '#3A1559', marginRight: 6 },
+  levelChip: { backgroundColor: '#120826', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 6, borderWidth: 1, borderColor: '#3A1559', marginRight: 6, marginBottom: 6 },
   activeLevelChip: { backgroundColor: '#FF007F', borderColor: '#FF007F' },
+  topicChip: { backgroundColor: '#120826', paddingVertical: 6, paddingHorizontal: 10, borderRadius: 6, borderWidth: 1, borderColor: '#FFD700', marginRight: 6, marginBottom: 6 },
+  activeTopicChip: { backgroundColor: '#FFD700', borderColor: '#FFD700' },
   chipText: { color: '#8888CC', fontSize: 10, fontWeight: 'bold' },
   activeChipText: { color: '#000', fontWeight: '900' },
 
@@ -298,7 +330,8 @@ const styles = StyleSheet.create({
   assignmentCard: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#120826', padding: 12, borderRadius: 10, marginBottom: 8, borderWidth: 1, borderColor: '#2A1040' },
   assignTag: { color: '#00FFCC', fontSize: 9, fontWeight: 'bold' },
   assignTitle: { color: '#FFF', fontSize: 12, fontWeight: 'bold', marginVertical: 2 },
+  assignTopic: { color: '#FFD700', fontSize: 10, fontWeight: 'bold', marginBottom: 2 },
   assignSub: { color: '#AAAABB', fontSize: 9 },
-  statusBadge: { backgroundColor: '#221133', padding: 6, borderRadius: 6, borderWidth: 1, borderColor: '#FF007F' },
-  statusText: { color: '#FF007F', fontSize: 8, fontWeight: 'bold' }
+  statusBadge: { backgroundColor: '#0A1A10', padding: 6, borderRadius: 6, borderWidth: 1, borderColor: '#39FF14' },
+  statusText: { color: '#39FF14', fontSize: 8, fontWeight: 'bold' }
 });
