@@ -19,9 +19,36 @@ interface Props {
 
 interface BossChallenge {
   sentence: string;
-  translation: string; // 🎯 Bổ sung bản dịch song ngữ
+  translation: string;
   hint: string;
 }
+
+// 🎯 KHO ĐỀ BÀI DỰ PHÒNG ĐA DẠNG CHO TRẠM 3 (ĐẢM BẢO LUÔN ĐỔI CHỦ ĐỀ)
+const FALLBACK_BOSS_POOL: Record<CEFRLevel, BossChallenge[]> = {
+  A1: [
+    { sentence: "Practice speaking English every single day.", translation: "Hãy luyện nói Tiếng Anh mỗi ngày.", hint: "Chú ý đọc rõ âm /s/ trong 'Practice'." },
+    { sentence: "Welcome to the Cyberpunk language arena.", translation: "Chào mừng bạn đến với đấu trường ngôn ngữ Cyberpunk.", hint: "Nhấn giọng ở từ 'Cyberpunk'." },
+    { sentence: "Listen carefully and repeat after the sound cue.", translation: "Nghe kỹ và nhắc lại theo tín hiệu âm thanh.", hint: "Đọc nối âm nhẹ giữa 'Listen' và 'carefully'." }
+  ],
+  A2: [
+    { sentence: "Future technology is changing how we learn languages.", translation: "Công nghệ tương lai đang thay đổi cách chúng ta học ngôn ngữ.", hint: "Chú ý trọng âm từ 'technology'." },
+    { sentence: "Stay focused and try to pronounce each word clearly.", translation: "Hãy tập trung và cố gắng phát âm rõ từng từ.", hint: "Nhấn mạnh từ 'focused' và 'clearly'." },
+    { sentence: "Teamwork and practice lead to incredible progress.", translation: "Làm việc nhóm và luyện tập sẽ đem lại tiến bộ kinh ngạc.", hint: "Phát âm chuẩn âm đuôi /s/ trong 'progress'." }
+  ],
+  B1: [
+    { sentence: "Artificial intelligence is rapidly transforming global business strategies.", translation: "Trí tuệ nhân tạo đang nhanh chóng thay đổi chiến lược kinh doanh toàn cầu.", hint: "Chú ý nối âm giữa 'business' và 'strategies'." },
+    { sentence: "Effective communication requires both active listening and speaking accuracy.", translation: "Giao tiếp hiệu quả đòi hỏi cả kỹ năng nghe chủ động và độ chính xác khi nói.", hint: "Ngắt nhịp tự nhiên sau cụm 'Effective communication'." },
+    { sentence: "Adapting to new digital tools helps students achieve higher performance.", translation: "Thích ứng với các công cụ kỹ thuật số mới giúp học sinh đạt hiệu suất cao hơn.", hint: "Nhấn trọng âm ở 'digital' và 'performance'." }
+  ],
+  B2: [
+    { sentence: "Cybersecurity measures are essential for protecting modern digital infrastructure.", translation: "", hint: "Maintain steady rhythm and intonation." },
+    { sentence: "Data analytics empowers companies to make smarter operational decisions.", translation: "", hint: "Focus on clear stress placement in 'operational'." }
+  ],
+  C1: [
+    { sentence: "Continuous learning and adaptive feedback mechanisms are key to mastering natural language fluency.", translation: "", hint: "Pay attention to connected speech and elision." },
+    { sentence: "Navigating complex professional environments demands nuanced communication skills.", translation: "", hint: "Focus on natural sentence rhythm and speed." }
+  ]
+};
 
 export default function BossRaidScreen({ onBack, onNavigateToOasis }: Props) {
   const [cefrLevel, setCefrLevel] = useState<CEFRLevel>('A1');
@@ -40,30 +67,31 @@ export default function BossRaidScreen({ onBack, onNavigateToOasis }: Props) {
 
   const levels: CEFRLevel[] = ['A1', 'A2', 'B1', 'B2', 'C1'];
 
+  // 🎯 HÀM LẤY ĐỀ BÀI MỚI (CHẮC CHẮN 100% THAY ĐỔI CÂU/CHỦ ĐỀ)
   const fetchNewBossChallenge = async (level = cefrLevel) => {
     setLoadingBoss(true);
     setResult(null);
     setRecordedAudioUri(null);
 
-    const randomNonce = Date.now() + Math.floor(Math.random() * 10000);
+    const randomNonce = Date.now() + Math.floor(Math.random() * 100000);
 
     let promptRule = '';
     if (level === 'A1' || level === 'A2') {
-      promptRule = 'Simple 5-7 word sentence. Provide 100% VIETNAMESE translation and pronunciation hint.';
+      promptRule = 'Simple 5-7 word sentence. Return 100% VIETNAMESE translation and clear pronunciation hint.';
     } else if (level === 'B1') {
-      promptRule = '8-10 word sentence. Provide BILINGUAL (Vietnamese) translation and linking sound hint.';
+      promptRule = '8-10 word sentence. Return BILINGUAL (Vietnamese) translation and linking sound hint.';
     } else {
-      promptRule = '11-15 word complex native sentence. Provide 100% ENGLISH hint without translation.';
+      promptRule = '11-15 word complex native sentence. Return 100% ENGLISH hint without translation.';
     }
 
-    const prompt = `Generate ONE UNIQUE Boss Raid English sentence for CEFR ${level}.
+    const prompt = `Generate ONE UNIQUE Boss Raid English sentence for CEFR Level ${level}.
 - Rule: ${promptRule}
-- Nonce code: ${randomNonce}
+- Unique Identifier: ${randomNonce}
 
-Return ONLY JSON format:
+Return ONLY valid JSON format:
 {
   "sentence": "English sentence here",
-  "translation": "Vietnamese translation (leave empty if level is B2 or C1)",
+  "translation": "Vietnamese translation",
   "hint": "Phonetics/linking hint"
 }`;
 
@@ -71,22 +99,31 @@ Return ONLY JSON format:
       const res = await groq.chat.completions.create({
         messages: [{ role: 'user', content: prompt }],
         model: 'openai/gpt-oss-20b',
-        temperature: 0.95,
+        temperature: 0.98,
         response_format: { type: 'json_object' },
       });
 
       const parsed = JSON.parse(res.choices[0]?.message?.content || '{}');
-      setBossChallenge({
-        sentence: parsed.sentence || "Practice speaking English every single day.",
-        translation: parsed.translation || "Hãy luyện nói Tiếng Anh mỗi ngày.",
-        hint: parsed.hint || "Chú ý nối âm giữa 'speaking' và 'English'."
-      });
+      
+      if (parsed.sentence && parsed.sentence.trim() !== bossChallenge.sentence) {
+        setBossChallenge({
+          sentence: parsed.sentence.trim(),
+          translation: parsed.translation || '',
+          hint: parsed.hint || ''
+        });
+      } else {
+        // Lọc lấy câu ngẫu nhiên khác câu hiện tại từ kho dự phòng
+        const pool = FALLBACK_BOSS_POOL[level];
+        const filtered = pool.filter(item => item.sentence !== bossChallenge.sentence);
+        const randomItem = filtered.length > 0 ? filtered[Math.floor(Math.random() * filtered.length)] : pool[0];
+        setBossChallenge(randomItem);
+      }
     } catch (e) {
-      setBossChallenge({
-        sentence: "Practice speaking English every single day.",
-        translation: "Hãy luyện nói Tiếng Anh mỗi ngày.",
-        hint: "Chú ý đọc rõ âm đuôi /s/ trong từ 'Practice'."
-      });
+      // Khi gặp lỗi API, tự động rút ngẫu nhiên từ kho dự phòng
+      const pool = FALLBACK_BOSS_POOL[level];
+      const filtered = pool.filter(item => item.sentence !== bossChallenge.sentence);
+      const randomItem = filtered.length > 0 ? filtered[Math.floor(Math.random() * filtered.length)] : pool[0];
+      setBossChallenge(randomItem);
     } finally {
       setLoadingBoss(false);
     }
@@ -205,7 +242,7 @@ Return ONLY JSON format:
             <Text style={styles.bossTag}>👹 SHADOW BOSS CHALLENGE [{cefrLevel}]</Text>
             <Text style={styles.targetSentence}>"{bossChallenge.sentence}"</Text>
 
-            {/* 🎯 HIỂN THỊ DỊCH SONG NGỮ CHO A1, A2, B1 */}
+            {/* SONG NGỮ CHO A1, A2, B1 */}
             {(cefrLevel === 'A1' || cefrLevel === 'A2' || cefrLevel === 'B1') && bossChallenge.translation ? (
               <Text style={styles.translationText}>🇻🇳 Nghĩa: "{bossChallenge.translation}"</Text>
             ) : null}
