@@ -1,10 +1,8 @@
 // src/services/arena/relayService.ts
 import { Groq } from 'groq-sdk';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const ACTIVE_GROQ_KEY = process.env.EXPO_PUBLIC_GROQ_API_KEY || '';
 const groq = new Groq({ apiKey: ACTIVE_GROQ_KEY, dangerouslyAllowBrowser: true });
-const STORAGE_KEY_RELAY = '@vibespeak_history_arena_tier2_relay_v1';
 
 export interface RelayChallenge {
   topic: string;
@@ -14,27 +12,26 @@ export interface RelayChallenge {
   keyVocabulary: string[];
 }
 
-export async function generateRelayChallenge(cefrLevel: string = 'B2'): Promise<RelayChallenge> {
-  let levelRules = '';
-  if (cefrLevel === 'A1' || cefrLevel === 'A2') {
-    levelRules = `- Level EASY (${cefrLevel}): Everyday topics (hobbies, food, daily plans). Simple guidelines.`;
-  } else if (cefrLevel === 'B1' || cefrLevel === 'B2') {
-    levelRules = `- Level INTERMEDIATE (${cefrLevel}): Education, technology, workplace issues. Business-lite guidelines.`;
-  } else {
-    levelRules = `- Level ADVANCED (${cefrLevel}/C2): Executive pitches, AI startup strategies, global market trends. Complex guidelines.`;
-  }
+export async function generateRelayChallenge(cefrLevel: string = 'A1'): Promise<RelayChallenge> {
+  const isBasic = cefrLevel === 'A1' || cefrLevel === 'A2';
 
-  const prompt = `You are a 2-Player Open Speaking Relay Challenge Generator for CEFR ${cefrLevel}.
-Create ONE unified topic where 2 players collaborate to complete a 60-second discussion/pitch (~30s each).
+  const prompt = `Generate a 2-Player Speaking Relay Challenge for CEFR Level ${cefrLevel}.
 
-${levelRules}
+RULES FOR CEFR LEVEL ${cefrLevel}:
+${
+  isBasic
+    ? `- GUIDELINES MUST BE BILINGUAL (Vietnamese explanation + short English sentence pattern).
+- Keep sentences extremely simple and practical.
+- Example topic: Favorite food, Daily routine, Hobbies.`
+    : `- Guidelines must be fully in English with intermediate/advanced professional communication goals.`
+}
 
-Return ONLY JSON:
+Return ONLY a valid JSON object:
 {
   "topic": "Topic Name",
-  "context": "Brief context or problem statement",
-  "player1Guideline": "What Player 1 should discuss in 30s",
-  "player2Guideline": "What Player 2 should discuss in 30s",
+  "context": "${isBasic ? 'Context in Vietnamese / Bối cảnh ngắn bằng tiếng Việt' : 'Short context in English'}",
+  "player1Guideline": "${isBasic ? 'Hướng dẫn Bạn 1 bằng tiếng Việt + [Mẫu câu TA ngắn]' : 'Player 1 guideline in English'}",
+  "player2Guideline": "${isBasic ? 'Hướng dẫn Bạn 2 bằng tiếng Việt + [Mẫu câu TA ngắn]' : 'Player 2 guideline in English'}",
   "keyVocabulary": ["word1", "word2", "word3"]
 }`;
 
@@ -42,27 +39,29 @@ Return ONLY JSON:
     const response = await groq.chat.completions.create({
       messages: [{ role: 'user', content: prompt }],
       model: 'openai/gpt-oss-20b',
-      temperature: 0.9,
+      temperature: 0.7,
       response_format: { type: 'json_object' },
     });
 
     const parsed: RelayChallenge = JSON.parse(response.choices[0]?.message?.content || '{}');
-    
-    // Bọc dữ liệu mặc định tránh undefined gây văng app
     return {
-      topic: parsed.topic || `Green Energy Transition [${cefrLevel}]`,
-      context: parsed.context || "Discussing how small businesses can adopt sustainable energy solutions.",
-      player1Guideline: parsed.player1Guideline || "Player 1 (30s): Explain why traditional energy is getting too expensive.",
-      player2Guideline: parsed.player2Guideline || "Player 2 (30s): Propose switching to solar power and highlight benefits.",
-      keyVocabulary: parsed.keyVocabulary || ["sustainability", "renewable energy", "cost-effective"]
+      topic: parsed.topic || `Relay Challenge [${cefrLevel}]`,
+      context: parsed.context || (isBasic ? "Nói về sở thích ăn uống hàng ngày." : "Discussing workplace remote policies."),
+      player1Guideline: parsed.player1Guideline || (isBasic ? "Nêu món ăn bạn thích (Mẫu: My favorite food is...)" : "Introduce problem"),
+      player2Guideline: parsed.player2Guideline || (isBasic ? "Nêu lý do vì sao thích (Mẫu: I like it because...)" : "Propose solution"),
+      keyVocabulary: parsed.keyVocabulary || ["delicious", "healthy", "favorite"]
     };
   } catch (error) {
     return {
-      topic: `Green Energy Transition [${cefrLevel}]`,
-      context: "Discussing how small businesses can adopt sustainable energy solutions.",
-      player1Guideline: "Player 1 (30s): Explain why traditional energy is getting too expensive and harmful.",
-      player2Guideline: "Player 2 (30s): Propose switching to solar power and highlight the long-term financial benefits.",
-      keyVocabulary: ["sustainability", "renewable energy", "cost-effective"]
+      topic: `Sở thích hàng ngày [${cefrLevel}]`,
+      context: "Hai bạn cùng chia sẻ về món ăn yêu thích.",
+      player1Guideline: isBasic 
+        ? "Nêu tên món ăn bạn thích nhất (Gợi ý: 'I really like eating pizza/pho.')" 
+        : "State your main viewpoint.",
+      player2Guideline: isBasic 
+        ? "Bổ sung lý do hoặc thời điểm ăn món đó (Gợi ý: 'I eat it on weekends because it is delicious.')" 
+        : "Support the viewpoint with arguments.",
+      keyVocabulary: ["delicious", "favorite", "everyday"]
     };
   }
 }
