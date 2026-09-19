@@ -14,8 +14,8 @@ interface Props {
 
 export default function CyberArenaScreen({ onBack }: Props) {
   const [arenaTier, setArenaTier] = useState<1 | 2 | 3>(1);
-  const [opponentType, setOpponentType] = useState<'bot' | 'human'>('human');
-  const [roomId, setRoomId] = useState<string>('MATCH_2V2_8888');
+  const [opponentType, setOpponentType] = useState<'bot' | 'human'>('bot');
+  const [roomId, setRoomId] = useState<string>('ROOM_1V1_8888');
   
   const [cefrLevel, setCefrLevel] = useState<CEFRLevel>('B2');
 
@@ -41,7 +41,7 @@ export default function CyberArenaScreen({ onBack }: Props) {
 
   const levels: CEFRLevel[] = ['A1', 'A2', 'B1', 'B2', 'C1'];
 
-  // 🎯 CẤU HÌNH THỜI GIAN CHUẨN (TẦNG 1 SOLO B2/C1 LÊN ĐÚNG 60S)
+  // 🎯 CẤU HÌNH THỜI GIAN CHUẨN
   const getArenaDuration = (tier: number, level: CEFRLevel): number => {
     if (tier === 1) {
       if (level === 'A1' || level === 'A2') return 20;
@@ -210,7 +210,7 @@ export default function CyberArenaScreen({ onBack }: Props) {
       }
 
       let targetContext = "";
-      if (arenaTier === 1) targetContext = soloData?.promptText || "";
+      if (arenaTier === 1) targetContext = `SOLO 1V1 MATCH [${cefrLevel}]: ${soloData?.promptText || ""}`;
       else if (arenaTier === 2) targetContext = `SIMULTANEOUS 2V2 RELAY MATCH: ${relayData?.topic}: ${relayData?.context}`;
       else targetContext = `REAL-LIFE ROLEPLAY MATCH [${cefrLevel}]: ${roleplayData?.scenarioTitle}. Roles: P1 (${roleplayData?.aiRole}) vs P2 (${roleplayData?.userRole}). Goal: ${roleplayData?.goal}`;
 
@@ -238,7 +238,7 @@ export default function CyberArenaScreen({ onBack }: Props) {
         <TouchableOpacity onPress={onBack} style={styles.backBtn}>
           <Text style={styles.backText}>🔙 MAP</Text>
         </TouchableOpacity>
-        <Text style={styles.title}>⚔️ TRẠM 2: ĐẤU TRƯỜNG ĐỐI KHÁNG</Text>
+        <Text style={styles.title}>⚔️ TRẠM 2: ĐẤU TRƯỜNG TẤT TAY</Text>
       </View>
 
       <ScrollView contentContainerStyle={{ alignItems: 'center', width: '100%' }}>
@@ -248,9 +248,11 @@ export default function CyberArenaScreen({ onBack }: Props) {
           <Text style={styles.bannerSub}>Chọn đối thủ, chế độ và cấp độ thi đấu phù hợp để chinh phục trận đấu!</Text>
         </View>
 
-        {/* 1. CHỌN ĐỐI THỦ THI ĐẤU */}
+        {/* 1. CHỌN ĐỐI THỦ THI ĐẤU (TỰ ĐỘNG THÍCH ỨNG 1V1 CHO TẦNG 1 VÀ 2V2 CHO TẦNG 2-3) */}
         <View style={styles.sectionBox}>
-          <Text style={styles.sectionLabel}>👥 1. CHẾ ĐỘ THI ĐẤU:</Text>
+          <Text style={styles.sectionLabel}>
+            👥 1. CHỌN ĐỐI THỦ ({arenaTier === 1 ? 'ĐẤU ĐƠN 1V1' : 'ĐẤU NHÓM 2V2'}):
+          </Text>
           <View style={styles.rowSelector}>
             <TouchableOpacity 
               style={[styles.selectBtn, opponentType === 'bot' && styles.activeBot]}
@@ -262,27 +264,32 @@ export default function CyberArenaScreen({ onBack }: Props) {
               style={[styles.selectBtn, opponentType === 'human' && styles.activeHuman]}
               onPress={() => setOpponentType('human')}
             >
-              <Text style={[styles.btnText, opponentType === 'human' && styles.activeText]}>👥 ĐẤU 2V2 NGƯỜI THẬT</Text>
+              <Text style={[styles.btnText, opponentType === 'human' && styles.activeText]}>
+                {arenaTier === 1 ? '👤 ĐẤU 1V1 NGƯỜI THẬT' : '👥 ĐẤU 2V2 NGƯỜI THẬT'}
+              </Text>
             </TouchableOpacity>
           </View>
 
           {opponentType === 'human' && (
             <View style={styles.roomBox}>
-              <Text style={styles.roomLabel}>🔑 Mã phòng thi đấu 2v2:</Text>
+              <Text style={styles.roomLabel}>🔑 Mã phòng ghép cặp thi đấu:</Text>
               <TextInput style={styles.roomInput} value={roomId} onChangeText={setRoomId} />
 
-              <View style={styles.lobbyGrid}>
-                <View style={[styles.lobbyCard, { borderColor: '#FF007F' }]}>
-                  <Text style={[styles.lobbyTeamTitle, { color: '#FF007F' }]}>🔴 CẶP A (ĐỘI ĐỎ)</Text>
-                  <Text style={styles.slotText}>👤 P1: Người chơi A1 (Lên sóng)</Text>
-                  <Text style={styles.slotText}>👤 P2: Người chơi A2 (Lên sóng)</Text>
+              {/* CHỈ HIỂN THỊ LOBBY 2V2 KHI Ở TẦNG 2 HOẶC TẦNG 3 */}
+              {arenaTier !== 1 && (
+                <View style={styles.lobbyGrid}>
+                  <View style={[styles.lobbyCard, { borderColor: '#FF007F' }]}>
+                    <Text style={[styles.lobbyTeamTitle, { color: '#FF007F' }]}>🔴 CẶP A (ĐỘI ĐỎ)</Text>
+                    <Text style={styles.slotText}>👤 P1: Người chơi A1 (Lên sóng)</Text>
+                    <Text style={styles.slotText}>👤 P2: Người chơi A2 (Lên sóng)</Text>
+                  </View>
+                  <View style={[styles.lobbyCard, { borderColor: '#00FFCC' }]}>
+                    <Text style={[styles.lobbyTeamTitle, { color: '#00FFCC' }]}>🔵 CẶP B (ĐỘI XANH)</Text>
+                    <Text style={styles.slotText}>👤 P3: Người chơi B1 (Lên sóng)</Text>
+                    <Text style={styles.slotText}>👤 P4: Người chơi B2 (Lên sóng)</Text>
+                  </View>
                 </View>
-                <View style={[styles.lobbyCard, { borderColor: '#00FFCC' }]}>
-                  <Text style={[styles.lobbyTeamTitle, { color: '#00FFCC' }]}>🔵 CẶP B (ĐỘI XANH)</Text>
-                  <Text style={styles.slotText}>👤 P3: Người chơi B1 (Lên sóng)</Text>
-                  <Text style={styles.slotText}>👤 P4: Người chơi B2 (Lên sóng)</Text>
-                </View>
-              </View>
+              )}
             </View>
           )}
         </View>
@@ -292,21 +299,21 @@ export default function CyberArenaScreen({ onBack }: Props) {
           <Text style={styles.sectionLabel}>🎯 2. CHỌN CHẾ ĐỘ THI ĐẤU:</Text>
           
           <TouchableOpacity style={[styles.tierCard, arenaTier === 1 && styles.activeTier1]} onPress={() => setArenaTier(1)}>
-            <Text style={styles.tierTitle}>⚡ TẦNG 1: SOLO PULSE ({getArenaDuration(1, cefrLevel)}S)</Text>
-            <Text style={styles.tierSub}>Độc thoại phản xạ nhanh ({getArenaDuration(1, cefrLevel)}s cho CEFR {cefrLevel}).</Text>
+            <Text style={styles.tierTitle}>⚡ TẦNG 1: SOLO PULSE 1V1 ({getArenaDuration(1, cefrLevel)}S)</Text>
+            <Text style={styles.tierSub}>Độc thoại phản xạ 1v1 ({getArenaDuration(1, cefrLevel)}s cho CEFR {cefrLevel}).</Text>
           </TouchableOpacity>
 
           <TouchableOpacity style={[styles.tierCard, arenaTier === 2 && styles.activeTier2]} onPress={() => setArenaTier(2)}>
-            <Text style={styles.tierTitle}>⚔️ TẦNG 2: DUEL RELAY ({getArenaDuration(2, cefrLevel)}S/BẠN)</Text>
-            <Text style={styles.tierSub}>Thuyết trình tiếp sức cùng chủ đề trên 2 thiết bị.</Text>
+            <Text style={styles.tierTitle}>⚔️ TẦNG 2: DUEL RELAY 2V2 ({getArenaDuration(2, cefrLevel)}S/BẠN)</Text>
+            <Text style={styles.tierSub}>Thuyết trình tiếp sức 2v2 cùng chủ đề trên 2 thiết bị.</Text>
           </TouchableOpacity>
 
           <TouchableOpacity style={[styles.tierCard, arenaTier === 3 && styles.activeTier3]} onPress={() => setArenaTier(3)}>
             <Text style={styles.tierTitle}>
-              🎭 TẦNG 3: ROLEPLAY SIMULATION ({getArenaDuration(3, cefrLevel)}S)
+              🎭 TẦNG 3: ROLEPLAY SIMULATION 2V2 ({getArenaDuration(3, cefrLevel)}S)
             </Text>
             <Text style={styles.tierSub}>
-              Nhập vai đối thoại thực tế tự do ({getArenaDuration(3, cefrLevel)}s cho CEFR {cefrLevel}).
+              Nhập vai đối thoại 2v2 thực tế ({getArenaDuration(3, cefrLevel)}s cho CEFR {cefrLevel}).
             </Text>
           </TouchableOpacity>
         </View>
@@ -337,19 +344,19 @@ export default function CyberArenaScreen({ onBack }: Props) {
           <ActivityIndicator size="large" color="#FF007F" style={{ marginVertical: 20 }} />
         ) : (
           <View style={styles.card}>
-            {/* TẦNG 1: SOLO PULSE */}
+            {/* TẦNG 1: SOLO PULSE (1V1) */}
             {arenaTier === 1 && soloData && (
               <>
-                <Text style={styles.cardTitle}>🎙️ CHỦ ĐỀ: {soloData.title || 'Solo Challenge'} [{cefrLevel}]</Text>
+                <Text style={styles.cardTitle}>🎙️ CHỦ ĐỀ SOLO 1V1: {soloData.title || 'Solo Challenge'} [{cefrLevel}]</Text>
                 <Text style={styles.cardDesc}>"{soloData.promptText}"</Text>
                 <Text style={styles.keyText}>🔑 Gợi ý từ khóa: {soloData.keywords?.join(', ')}</Text>
               </>
             )}
 
-            {/* TẦNG 2: RELAY CO-OP */}
+            {/* TẦNG 2: RELAY CO-OP (2V2) */}
             {arenaTier === 2 && relayData && (
               <>
-                <Text style={styles.cardTitle}>🎯 ĐỀ BÀI RELAY: {relayData.topic} [{cefrLevel}]</Text>
+                <Text style={styles.cardTitle}>🎯 ĐỀ BÀI RELAY 2V2: {relayData.topic} [{cefrLevel}]</Text>
                 <Text style={styles.cardDesc}>📌 Bối cảnh chung: "{relayData.context}"</Text>
                 
                 <View style={[styles.relayBox, activePlayer === 1 && isRecording && { borderColor: '#39FF14', borderWidth: 2 }]}>
@@ -370,10 +377,10 @@ export default function CyberArenaScreen({ onBack }: Props) {
               </>
             )}
 
-            {/* TẦNG 3: ROLEPLAY SIMULATION */}
+            {/* TẦNG 3: ROLEPLAY SIMULATION (2V2) */}
             {arenaTier === 3 && roleplayData && (
               <>
-                <Text style={styles.cardTitle}>🎭 BỐI CẢNH NHẬP VAI: {roleplayData.scenarioTitle} [{cefrLevel}]</Text>
+                <Text style={styles.cardTitle}>🎭 BỐI CẢNH NHẬP VAI 2V2: {roleplayData.scenarioTitle} [{cefrLevel}]</Text>
                 
                 <View style={styles.roleHeaderBox}>
                   <Text style={styles.p1RoleText}>🔴 VAI 1: {roleplayData.aiRole}</Text>
@@ -406,9 +413,9 @@ export default function CyberArenaScreen({ onBack }: Props) {
         {isRecording && (
           <View style={styles.timerContainer}>
             <Text style={styles.playerTurnText}>
-              {arenaTier === 1 && `🎙️ GHI ÂM SOLO (${getArenaDuration(1, cefrLevel)}S)`}
+              {arenaTier === 1 && `🎙️ GHI ÂM SOLO 1V1 (${getArenaDuration(1, cefrLevel)}S)`}
               {arenaTier === 2 && (activePlayer === 1 ? `⚡ ĐANG NÓI LƯỢT 1 (${getArenaDuration(2, cefrLevel)}S)` : `⚡ ĐANG NÓI LƯỢT 2 (${getArenaDuration(2, cefrLevel)}S)`)}
-              {arenaTier === 3 && `🎭 THU ÂM HỘI THOẠI ROLEPLAY (${getArenaDuration(3, cefrLevel)}S)`}
+              {arenaTier === 3 && `🎭 THU ÂM HỘI THOẠI ROLEPLAY 2V2 (${getArenaDuration(3, cefrLevel)}S)`}
             </Text>
             <Text style={[styles.timerNumber, timeLeft <= 5 && { color: '#FF0055' }]}>
               ⏱️ {timeLeft < 10 ? `00:0${timeLeft}` : `00:${timeLeft}`}
