@@ -3,23 +3,19 @@ import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
 import { speakNaturalText } from '../services/ttsService';
 import { gradeFlexibleArenaResponse, GradeResult } from '../services/groqClient';
-import { Groq } from 'groq-sdk';
-
-// 🎯 ĐÃ XÓA HARDCODED KEY -> ĐỌC AN TOÀN TỪ BIẾN MÔI TRƯỜNG
-const groq = new Groq({
-  apiKey: process.env.EXPO_PUBLIC_GROQ_API_KEY || '',
-  dangerouslyAllowBrowser: true,
-});
+import { callGroqAI } from '../services/aiService';
 
 interface Props {
   onBack: () => void;
   onNavigateToOasis?: (text: string) => void;
 }
 
-const shadowTopicHistory = new Set<string>();
+const SPECIALTIES = ['IT & Cloud', 'Medical Consultation', 'Business Pitch', 'Hotel Service', 'Financial Report'];
+const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1'];
 
-export default function ShadowBossScreen({ onBack, onNavigateToOasis }: Props) {
-  const [shadowTopic, setShadowTopic] = useState<{ targetText: string; context: string } | null>(null);
+export default function ShadowBossScreen({ onBack }: Props) {
+  const [cefrLevel, setCefrLevel] = useState<string>('B2');
+  const [shadowTopic, setShadowTopic] = useState<{ targetText: string; specialty: string } | null>(null);
   const [loadingTopic, setLoadingTopic] = useState<boolean>(true);
 
   const [isPlayingBoss, setIsPlayingBoss] = useState<boolean>(false);
@@ -33,33 +29,44 @@ export default function ShadowBossScreen({ onBack, onNavigateToOasis }: Props) {
   const mediaRecorderRef = useRef<any>(null);
   const audioChunksRef = useRef<any[]>([]);
 
+  // 🎯 GỌI AI SINH BÀI SHADOWING ĐỘNG
   const fetchNewShadowChallenge = async () => {
     setLoadingTopic(true);
     setResult(null);
     setRecordedAudioUri(null);
 
-    const excludeList = Array.from(shadowTopicHistory).join(', ');
+    const randomSpecialty = SPECIALTIES[Math.floor(Math.random() * SPECIALTIES.length)];
+    const randomSeed = Math.floor(Math.random() * 1000000);
 
     const prompt = `
-Generate ONE natural passage for Shadowing (10-15 words).
-DO NOT use: [${excludeList}].
-Return ONLY JSON: { "targetText": "Passage", "context": "Tone" }
+Generate ONE natural English passage (10-15 words) for Shadowing practice.
+Target CEFR Level: [${cefrLevel}].
+Specialty Focus: [${randomSpecialty}]. Seed: ${randomSeed}.
+Return ONLY JSON:
+{
+  "targetText": "Passage text here",
+  "specialty": "${randomSpecialty}"
+}
 `;
 
     try {
-      const res = await groq.chat.completions.create({
-        messages: [{ role: 'user', content: prompt }],
-        model: 'openai/gpt-oss-20b',
-        temperature: 0.95,
-        response_format: { type: 'json_object' },
-      });
-
-      const parsed = JSON.parse(res.choices[0]?.message?.content || '{}');
-      const newText = parsed.targetText || "Consistency is the secret key to mastering natural English speaking.";
-      shadowTopicHistory.add(newText.toLowerCase());
-      setShadowTopic({ targetText: newText, context: parsed.context || "Natural Fluency" });
+      const aiRes = await callGroqAI(prompt, '');
+      const jsonStart = aiRes.indexOf('{');
+      const jsonEnd = aiRes.lastIndexOf('}');
+      if (jsonStart !== -1 && jsonEnd !== -1) {
+        const parsed = JSON.parse(aiRes.substring(jsonStart, jsonEnd + 1));
+        setShadowTopic({
+          targetText: parsed.targetText || 'Our cloud deployment strategy ensures zero downtime.',
+          specialty: parsed.specialty || randomSpecialty
+        });
+      } else {
+        throw new Error('Invalid JSON');
+      }
     } catch (e) {
-      setShadowTopic({ targetText: "Mastering shadowing requires consistent daily listening.", context: "Daily Practice" });
+      setShadowTopic({
+        targetText: 'Effective communication requires both active listening and correct pronunciation.',
+        specialty: randomSpecialty
+      });
     } finally {
       setLoadingTopic(false);
     }
@@ -67,23 +74,18 @@ Return ONLY JSON: { "targetText": "Passage", "context": "Tone" }
 
   useEffect(() => {
     fetchNewShadowChallenge();
-  }, []);
+  }, [cefrLevel]);
 
   const handlePlayBossVoice = () => {
     if (!shadowTopic?.targetText) return;
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) window.speechSynthesis.cancel();
     setIsPlayingBoss(true);
-
-    speakNaturalText(shadowTopic.targetText, { voiceName: 'en-US-AriaNeural', style: 'empathetic' });
-
+    speakNaturalText(shadowTopic.targetText, { voiceName: 'en-US-AriaNeural' });
     setTimeout(() => setIsPlayingBoss(false), 3500);
   };
 
   const startRecording = async () => {
     try {
       if (typeof navigator === 'undefined' || !navigator.mediaDevices) return;
-      if (typeof window !== 'undefined' && 'speechSynthesis' in window) window.speechSynthesis.cancel();
-
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4';
 
@@ -103,6 +105,7 @@ Return ONLY JSON: { "targetText": "Passage", "context": "Tone" }
     }
   };
 
+  // 🎯 TÍCH HỢP HÀM XỬ LÝ ÂM THANH & KIỂM TRA CHỐNG ĐIỂM ẢO
   const stopAndGrade = async () => {
     const mediaRecorder = mediaRecorderRef.current;
     if (!mediaRecorder || mediaRecorder.state === 'inactive') return;
@@ -124,6 +127,23 @@ Return ONLY JSON: { "targetText": "Passage", "context": "Tone" }
       const { blob, url } = await processAudio;
       setRecordedAudioUri(url);
 
+      // 🎯 CHẶN NGAY TẠI ĐÂY NẾU KHÔNG CÓ DỮ LIỆU ÂM THANH (< 1000 bytes)
+      if (!blob || blob.size < 1000) {
+        setStreak(0);
+        setResult({
+          score: 0,
+          phoneticScore: 0,
+          fluencyScore: 0,
+          semanticScore: 0,
+          transcribedText: "(Chưa có âm thanh)",
+          feedback: "⚠️ Không phát hiện giọng nói! Hãy bấm mic và nói rõ ràng theo câu mẫu.",
+          wordAnalysis: []
+        });
+        setIsAnalyzing(false);
+        return;
+      }
+
+      // Chấm điểm bình thường nếu file ghi âm có đủ dữ liệu
       const res = await gradeFlexibleArenaResponse(blob, shadowTopic?.targetText || '');
 
       if (res.score >= 75) {
@@ -134,15 +154,9 @@ Return ONLY JSON: { "targetText": "Passage", "context": "Tone" }
           res.isStreaking = true;
         }
         setResult(res);
-
-        setTimeout(() => {
-          fetchNewShadowChallenge();
-        }, 1500);
-
       } else {
         setStreak(0);
         setResult(res);
-        if (onNavigateToOasis && shadowTopic) setTimeout(() => onNavigateToOasis(shadowTopic.targetText), 2000);
       }
 
     } catch (e) {
@@ -158,10 +172,23 @@ Return ONLY JSON: { "targetText": "Passage", "context": "Tone" }
         <TouchableOpacity onPress={onBack} style={styles.backBtn}>
           <Text style={styles.backText}>🔙 MAP</Text>
         </TouchableOpacity>
-        <Text style={styles.title}>👤 TRẠM 4: SHADOW ARENA</Text>
+        <Text style={styles.title}>👹 TRẠM 3: BOSS RAID</Text>
         <View style={[styles.streakBadge, streak >= 3 && styles.activeStreak]}>
           <Text style={styles.streakText}>🔥 STREAK: {streak} {streak >= 3 ? '(x2)' : ''}</Text>
         </View>
+      </View>
+
+      {/* THANH CHỌN TRÌNH ĐỘ CEFR */}
+      <View style={styles.cefrBar}>
+        {CEFR_LEVELS.map((lvl) => (
+          <TouchableOpacity
+            key={lvl}
+            style={[styles.cefrBtn, cefrLevel === lvl && styles.activeCefr]}
+            onPress={() => setCefrLevel(lvl)}
+          >
+            <Text style={[styles.cefrText, cefrLevel === lvl && styles.activeCefrText]}>{lvl}</Text>
+          </TouchableOpacity>
+        ))}
       </View>
 
       <ScrollView contentContainerStyle={{ alignItems: 'center', width: '100%' }}>
@@ -169,7 +196,7 @@ Return ONLY JSON: { "targetText": "Passage", "context": "Tone" }
           <ActivityIndicator size="large" color="#FFD700" style={{ marginVertical: 40 }} />
         ) : (
           <View style={styles.shadowCard}>
-            <Text style={styles.cardTag}>[ SHADOWING • {shadowTopic.context.toUpperCase()} ]</Text>
+            <Text style={styles.cardTag}>[ CEFR {cefrLevel} • {shadowTopic.specialty.toUpperCase()} ]</Text>
             <Text style={styles.targetText}>"{shadowTopic.targetText}"</Text>
 
             <TouchableOpacity style={[styles.speakerBtn, isPlayingBoss && { backgroundColor: '#FFD700' }]} onPress={handlePlayBossVoice}>
@@ -181,7 +208,7 @@ Return ONLY JSON: { "targetText": "Passage", "context": "Tone" }
         )}
 
         <TouchableOpacity style={styles.refreshBtn} onPress={fetchNewShadowChallenge}>
-          <Text style={styles.refreshText}>🔄 TẠO BÀI SHADOWING MỚI</Text>
+          <Text style={styles.refreshText}>🔄 TẠO BÀI SHADOWING MỚI ({cefrLevel})</Text>
         </TouchableOpacity>
 
         {isAnalyzing ? (
@@ -197,6 +224,7 @@ Return ONLY JSON: { "targetText": "Passage", "context": "Tone" }
           </TouchableOpacity>
         )}
 
+        {/* BẢNG KẾT QUẢ VÀ NÚT THỬ LẠI TẠI TRẠM 3 */}
         {result && (
           <View style={styles.resultCard}>
             <Text style={[styles.resultScore, result.score >= 75 ? { color: '#39FF14' } : { color: '#FF0055' }]}>
@@ -205,7 +233,7 @@ Return ONLY JSON: { "targetText": "Passage", "context": "Tone" }
             <Text style={styles.transcribedText}>🗣️ Giọng bạn: "{result.transcribedText}"</Text>
             
             <View style={styles.breakdownRow}>
-              <Text style={styles.breakdownText}>🎯 Phôn âm: {result.phoneticScore}</Text>
+              <Text style={styles.breakdownText}>🎯 Âm: {result.phoneticScore}</Text>
               <Text style={styles.breakdownText}>⚡ Độ mượt: {result.fluencyScore}</Text>
               <Text style={styles.breakdownText}>💡 Ngữ nghĩa: {result.semanticScore}</Text>
             </View>
@@ -217,6 +245,15 @@ Return ONLY JSON: { "targetText": "Passage", "context": "Tone" }
                 <Text style={styles.replayText}>🎧 NGHE LẠI BẢN GHI ÂM CỦA BẠN</Text>
               </TouchableOpacity>
             )}
+
+            <TouchableOpacity 
+              style={styles.retryBtn} 
+              onPress={() => {
+                setResult(null);
+              }}
+            >
+              <Text style={styles.retryText}>🔄 THỬ LẠI PHÁT ÂM CÂU NÀY (TRẠM 3)</Text>
+            </TouchableOpacity>
           </View>
         )}
       </ScrollView>
@@ -226,7 +263,7 @@ Return ONLY JSON: { "targetText": "Passage", "context": "Tone" }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#05020D', padding: 20, paddingTop: 50 },
-  topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 15 },
+  topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
   backBtn: { paddingHorizontal: 8, paddingVertical: 4, backgroundColor: '#0D0620', borderRadius: 6, borderWidth: 1, borderColor: '#FFD700' },
   backText: { color: '#FFD700', fontSize: 10, fontWeight: 'bold' },
   title: { color: '#FFD700', fontSize: 12, fontWeight: '900' },
@@ -234,23 +271,32 @@ const styles = StyleSheet.create({
   activeStreak: { borderColor: '#39FF14', backgroundColor: '#004411' },
   streakText: { color: '#39FF14', fontSize: 10, fontWeight: 'bold' },
 
+  cefrBar: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginBottom: 15 },
+  cefrBtn: { flex: 1, paddingVertical: 6, marginHorizontal: 2, backgroundColor: '#120826', borderRadius: 6, alignItems: 'center', borderWidth: 1, borderColor: '#3A1559' },
+  activeCefr: { backgroundColor: '#FFD700', borderColor: '#FFD700' },
+  cefrText: { color: '#888', fontSize: 10, fontWeight: 'bold' },
+  activeCefrText: { color: '#000' },
+
   shadowCard: { backgroundColor: '#1A1500', padding: 20, borderRadius: 16, borderWidth: 2, borderColor: '#FFD700', width: '100%', alignItems: 'center', marginBottom: 12 },
   cardTag: { color: '#FFD700', fontSize: 9, fontWeight: 'bold', marginBottom: 8 },
   targetText: { color: '#FFF', fontSize: 16, fontWeight: '900', textAlign: 'center', marginBottom: 12 },
   speakerBtn: { backgroundColor: '#0D0620', paddingVertical: 8, paddingHorizontal: 14, borderRadius: 16, borderWidth: 1, borderColor: '#FFD700' },
   speakerText: { color: '#FFD700', fontSize: 9, fontWeight: 'bold' },
 
-  refreshBtn: { backgroundColor: '#110022', padding: 8, borderRadius: 8, borderWidth: 1, borderColor: '#00FFFF', width: '100%', alignItems: 'center', marginBottom: 12 },
-  refreshText: { color: '#00FFFF', fontSize: 10, fontWeight: 'bold' },
+  refreshBtn: { backgroundColor: '#110022', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#00FFFF', width: '100%', alignItems: 'center', marginBottom: 12 },
+  refreshText: { color: '#00FFFF', fontSize: 11, fontWeight: 'bold' },
   recordBtn: { backgroundColor: '#39FF14', padding: 13, borderRadius: 12, width: '100%', alignItems: 'center', marginBottom: 12 },
   recordText: { color: '#000', fontSize: 11, fontWeight: '900' },
 
-  resultCard: { backgroundColor: '#0D0620', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#39FF14', width: '100%', alignItems: 'center' },
+  resultCard: { backgroundColor: '#0D0620', padding: 14, borderRadius: 12, borderWidth: 1, borderColor: '#39FF14', width: '100%', alignItems: 'center', marginBottom: 20 },
   resultScore: { fontSize: 14, fontWeight: '900', marginBottom: 4 },
   transcribedText: { color: '#AAAABB', fontSize: 10, textAlign: 'center', marginBottom: 6 },
   breakdownRow: { flexDirection: 'row', justifyContent: 'space-around', width: '100%', marginBottom: 6, backgroundColor: '#05020D', padding: 6, borderRadius: 6 },
   breakdownText: { color: '#FFD700', fontSize: 9, fontWeight: 'bold' },
   feedbackText: { color: '#39FF14', fontSize: 10, textAlign: 'center', marginBottom: 8 },
-  replayBtn: { backgroundColor: '#FFD700', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 8 },
-  replayText: { color: '#000', fontSize: 9, fontWeight: 'bold' }
+  replayBtn: { backgroundColor: '#FFD700', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 8, marginBottom: 8 },
+  replayText: { color: '#000', fontSize: 9, fontWeight: 'bold' },
+
+  retryBtn: { backgroundColor: '#FF007F', paddingVertical: 10, paddingHorizontal: 16, borderRadius: 8, width: '100%', alignItems: 'center', marginTop: 6 },
+  retryText: { color: '#FFF', fontSize: 11, fontWeight: '900' }
 });
