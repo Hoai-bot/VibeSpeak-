@@ -62,12 +62,12 @@ export default function AppNavigator() {
         <AllInArenaScreen onBack={() => setCurrentScreen('map')} />
       )}
 
-      {/* 6. TRẠM 3: SHADOW BOSS / BOSS RAID (ĐÃ SỬA CỐ ĐỊNH Ở LẠI STATION 3) */}
+      {/* 6. TRẠM 3: SHADOW BOSS / BOSS RAID (LOẠI BỎ CHUYỂN HƯỚNG OASIS, GIỮ NGUYÊN STATION 3) */}
       {currentScreen === 'station3' && (
         <ShadowBossScreen 
           onBack={() => setCurrentScreen('map')} 
-          onNavigateToOasis={(text) => {
-            // 🎯 SỬA TẠI ĐÂY: Đảm bảo giữ người dùng ở lại station3 khi phát âm chưa chuẩn
+          onNavigateToOasis={() => {
+            // 🎯 Bỏ chuyển hướng Oasis, giữ người dùng cố định ở station3
             setCurrentScreen('station3'); 
           }}
         />
