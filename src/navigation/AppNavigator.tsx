@@ -8,9 +8,6 @@ import ProfileScreen from '../screens/ProfileScreen';
 
 import DrillScreen from '../screens/DrillScreen';
 import AllInArenaScreen from '../screens/AllInArenaScreen';
-import BossRaidScreen from '../screens/BossRaidScreen';
-import ShadowBossScreen from '../screens/ShadowBossScreen';
-import Station4Screen from '../screens/Station4Screen';
 
 export default function AppNavigator() {
   const [currentScreen, setCurrentScreen] = useState<string>('map');
@@ -22,10 +19,6 @@ export default function AppNavigator() {
       setCurrentScreen('station1');
     } else if (idStr === '2' || idStr.includes('station2') || idStr.includes('arena')) {
       setCurrentScreen('station2');
-    } else if (idStr === '3' || idStr.includes('station3') || idStr.includes('boss')) {
-      setCurrentScreen('station3');
-    } else if (idStr === '4' || idStr.includes('station4')) {
-      setCurrentScreen('station4');
     }
   };
 
@@ -60,22 +53,6 @@ export default function AppNavigator() {
       {/* 5. TRẠM 2: ALL-IN ARENA */}
       {currentScreen === 'station2' && (
         <AllInArenaScreen onBack={() => setCurrentScreen('map')} />
-      )}
-
-      {/* 6. TRẠM 3: SHADOW BOSS / BOSS RAID (LOẠI BỎ CHUYỂN HƯỚNG OASIS, GIỮ NGUYÊN STATION 3) */}
-      {currentScreen === 'station3' && (
-        <ShadowBossScreen 
-          onBack={() => setCurrentScreen('map')} 
-          onNavigateToOasis={() => {
-            // 🎯 Bỏ chuyển hướng Oasis, giữ người dùng cố định ở station3
-            setCurrentScreen('station3'); 
-          }}
-        />
-      )}
-
-      {/* 7. TRẠM 4: LISTEN & RESPOND */}
-      {currentScreen === 'station4' && (
-        <Station4Screen onBack={() => setCurrentScreen('map')} />
       )}
     </View>
   );
