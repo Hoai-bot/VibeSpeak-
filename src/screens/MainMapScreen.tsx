@@ -7,6 +7,7 @@ interface Props {
   onOpenProfile: () => void;
 }
 
+// 🎯 CHỈ GIỮ LẠI TRẠM 1 VÀ TRẠM 2
 const STATIONS = [
   {
     id: 'station1',
@@ -61,7 +62,7 @@ export default function MainMapScreen({ onSelectStation, onOpenProfile }: Props)
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#05020D', padding: 20, paddingTop: 50 },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-  logoText: { color: '#00FFFF', fontSize: 16, fontWeight: '900', fontFamily: 'Courier New' },
+  logoText: { color: '#00FFFF', fontSize: 16, fontWeight: '900' },
   profileBtn: { backgroundColor: '#1A0B2E', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: '#FF007F' },
   profileText: { color: '#FF007F', fontSize: 11, fontWeight: 'bold' },
   subtitle: { color: '#FFD700', fontSize: 11, fontWeight: 'bold', marginBottom: 15, alignSelf: 'flex-start' },
