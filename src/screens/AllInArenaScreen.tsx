@@ -48,13 +48,13 @@ export default function AllInArenaScreen({ onBack }: Props) {
     <View style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack} style={styles.backBtn}>
-          <Text style={styles.backText}>🔙 MAP</Text>
+          <Text style={styles.backText}>🔙 QUAY LẠI MAP</Text>
         </TouchableOpacity>
         <Text style={styles.title}>⚔️ TRẠM 2: ALL-IN ARENA</Text>
       </View>
 
       <ScrollView contentContainerStyle={{ alignItems: 'center', width: '100%', paddingBottom: 30 }}>
-        {/* thanh CHỌN CẤP ĐỘ THI ĐẤU CEFR (A1 - C2) */}
+        {/* THANH CHỌN CẤP ĐỘ CEFR TỪ A1 TỚI C2 */}
         <Text style={styles.sectionLabel}>CHỌN CẤP ĐỘ ĐẤU TRƯỜNG (CEFR):</Text>
         <View style={styles.levelRow}>
           {CEFR_LEVELS.map((lvl) => (

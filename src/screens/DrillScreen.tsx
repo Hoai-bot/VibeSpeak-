@@ -39,7 +39,7 @@ export default function DrillScreen({ onBack }: Props) {
     <View style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack} style={styles.backBtn}>
-          <Text style={styles.backText}>🔙 MAP</Text>
+          <Text style={styles.backText}>🔙 QUAY LẠI MAP</Text>
         </TouchableOpacity>
         <Text style={styles.title}>🎯 TRẠM 1: DRILL ARENA</Text>
       </View>
