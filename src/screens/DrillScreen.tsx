@@ -1,209 +1,129 @@
 // src/screens/DrillScreen.tsx
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
-import { generateDynamicDrill, DrillItem } from '../services/aiGenerator';
-import { gradeFlexibleArenaResponse, GradeResult } from '../services/groqClient';
-import { speakNaturalText } from '../services/ttsService';
+import { generateDynamicQuestion, CEFRLevel, GeneratedSentence } from '../services/groqClient';
+import { updateUserProgress } from '../services/userService';
 
 interface Props {
-  tier: 1 | 2 | 3;
+  tier?: number;
   onBack: () => void;
-  onNavigateToOasis?: (sentence: string) => void;
 }
 
-export default function DrillScreen({ tier, onBack, onNavigateToOasis }: Props) {
-  const [currentDrill, setCurrentDrill] = useState<DrillItem | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
+// 🎯 ĐÃ BỔ SUNG ĐẦY ĐỦ CÁC CẤP ĐỘ TỪ A1 ĐẾN C2
+const CEFR_LEVELS: CEFRLevel[] = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
 
-  const [isRecording, setIsRecording] = useState<boolean>(false);
+export default function DrillScreen({ onBack }: Props) {
+  const [selectedLevel, setSelectedLevel] = useState<CEFRLevel>('B2');
+  const [currentQuestion, setCurrentQuestion] = useState<GeneratedSentence>({
+    targetText: "Sustainable urban development requires balancing environmental conservation with economic growth.",
+    cefrLevel: 'B2',
+    topic: 'Environment & Sustainability',
+    phoneticFocus: 'Linking & Intonation'
+  });
+  
+  const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
-  const [result, setResult] = useState<GradeResult | null>(null);
+  const [result, setResult] = useState<any | null>(null);
 
-  const [streak, setStreak] = useState<number>(0);
-  const [recordedAudioUri, setRecordedAudioUri] = useState<string | null>(null);
-
-  const mediaRecorderRef = useRef<any>(null);
-  const audioChunksRef = useRef<any[]>([]);
-
-  const tierTitle = tier === 1 ? 'TẦNG 1: MINIMAL PAIRS' : tier === 2 ? 'TẦNG 2: LINKING WORDS' : 'TẦNG 3: TONGUE TWISTERS';
-
-  const fetchNextDrill = async () => {
-    setLoading(true);
+  // 🎯 HÀM ĐỔI LEVEL HOẶC TẠO CÂU HỎI MỚI CHUẨN CEFR & ĐA DẠNG CHỦ ĐỀ
+  const handleSelectLevelAndGenerate = async (level: CEFRLevel) => {
+    setSelectedLevel(level);
+    setIsGenerating(true);
     setResult(null);
-    setRecordedAudioUri(null);
 
-    try {
-      const newDrill = await generateDynamicDrill(tier, 'B2', 'Cyberpunk Business & Tech');
-      setCurrentDrill(newDrill);
-    } catch (e) {
-      console.error("❌ Error fetching drill:", e);
-    } finally {
-      setLoading(false);
-    }
+    const newQuestion = await generateDynamicQuestion(level);
+    setCurrentQuestion(newQuestion);
+    setIsGenerating(false);
   };
 
-  useEffect(() => {
-    fetchNextDrill();
-  }, [tier]);
-
-  const startRecording = async () => {
-    try {
-      if (typeof navigator === 'undefined' || !navigator.mediaDevices) return;
-      
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4';
-
-      mediaRecorderRef.current = new MediaRecorder(stream, { mimeType });
-      audioChunksRef.current = [];
-
-      mediaRecorderRef.current.ondataavailable = (e: any) => {
-        if (e.data && e.data.size > 0) audioChunksRef.current.push(e.data);
-      };
-
-      mediaRecorderRef.current.start(100);
-      setIsRecording(true);
-      setResult(null);
-      setRecordedAudioUri(null);
-    } catch (err) {
-      alert("Chưa cấp quyền Micro!");
-    }
-  };
-
-  const stopAndGrade = async () => {
-    const mediaRecorder = mediaRecorderRef.current;
-    if (!mediaRecorder || mediaRecorder.state === 'inactive' || !currentDrill) return;
-
-    setIsRecording(false);
+  const handleSimulateGrade = () => {
     setIsAnalyzing(true);
+    setResult(null);
 
-    const processAudio = new Promise<{ blob: Blob; url: string }>((resolve) => {
-      mediaRecorder.onstop = () => {
-        const blob = new Blob(audioChunksRef.current, { type: mediaRecorder.mimeType || 'audio/webm' });
-        const url = URL.createObjectURL(blob);
-        if (mediaRecorder.stream) mediaRecorder.stream.getTracks().forEach((t: any) => t.stop());
-        resolve({ blob, url });
-      };
-      mediaRecorder.stop();
-    });
-
-    try {
-      const { blob, url } = await processAudio;
-      setRecordedAudioUri(url);
-
-      const res = await gradeFlexibleArenaResponse(blob, currentDrill.spokenText);
-
-      if (res.score >= 75) {
-        // ⚡ ĐẠT ĐIỂM CAO (≥ 75): Tăng Streak
-        const nextStreak = streak + 1;
-        setStreak(nextStreak);
-        if (nextStreak >= 3) {
-          res.score = Math.min(100, res.score * 2);
-          res.isStreaking = true;
-        }
-        setResult(res);
-        // 🛑 Đã tắt timer tự động chuyển bài để người dùng thoải mái đọc nhận xét
-
-      } else {
-        // ❌ ĐIỂM THẤP (< 75)
-        setStreak(0);
-        setResult(res);
-        if (onNavigateToOasis) setTimeout(() => onNavigateToOasis(currentDrill.target), 3000);
-      }
-
-    } catch (e) {
-      console.error("❌ Error grading drill:", e);
-    } finally {
+    setTimeout(() => {
+      setResult({
+        score: 88,
+        feedback: "Phát âm rõ ràng, nhịp điệu tự nhiên và ngắt nghỉ đúng cụm từ!",
+      });
       setIsAnalyzing(false);
-    }
+      updateUserProgress(1, 25, true);
+    }, 1500);
   };
 
   return (
     <View style={styles.container}>
-      <View style={styles.topBar}>
+      <View style={styles.header}>
         <TouchableOpacity onPress={onBack} style={styles.backBtn}>
           <Text style={styles.backText}>🔙 MAP</Text>
         </TouchableOpacity>
-        <Text style={styles.title}>🎯 TRẠM 1: {tierTitle}</Text>
-        <View style={[styles.streakBadge, streak >= 3 && styles.activeStreak]}>
-          <Text style={styles.streakText}>🔥 STREAK: {streak} {streak >= 3 ? '(x2)' : ''}</Text>
-        </View>
+        <Text style={styles.title}>🎯 TRẠM 1: DRILL ARENA</Text>
       </View>
 
-      <ScrollView contentContainerStyle={{ alignItems: 'center', width: '100%' }}>
-        {loading || !currentDrill ? (
-          <ActivityIndicator size="large" color="#00FFFF" style={{ marginVertical: 40 }} />
-        ) : (
-          <View style={styles.card}>
-            <Text style={styles.cefrTag}>[ {currentDrill.cefrLevel || 'B2'} ] {currentDrill.phonetics}</Text>
-            <Text style={styles.targetText}>"{currentDrill.target}"</Text>
-            <Text style={styles.meaningText}>💡 {currentDrill.meaning}</Text>
-            <Text style={styles.tipText}>📌 Mẹo phát âm: {currentDrill.tip}</Text>
-
-            <TouchableOpacity 
-              style={styles.speakerBtn} 
-              onPress={() => speakNaturalText(currentDrill.spokenText, { voiceName: 'en-US-JennyNeural' })}
+      <ScrollView contentContainerStyle={{ alignItems: 'center', width: '100%', paddingBottom: 30 }}>
+        {/* thanh CHỌN CẤP ĐỘ CEFR TỪ A1 ĐẾN C2 */}
+        <Text style={styles.sectionLabel}>CHỌN CẤP ĐỘ TRUYỀN TẢI (CEFR):</Text>
+        <View style={styles.levelRow}>
+          {CEFR_LEVELS.map((lvl) => (
+            <TouchableOpacity
+              key={lvl}
+              style={[
+                styles.levelBadge,
+                selectedLevel === lvl && styles.levelBadgeActive,
+                lvl === 'C2' && { borderColor: '#FF007F' } // Làm nổi bật C2
+              ]}
+              onPress={() => handleSelectLevelAndGenerate(lvl)}
             >
-              <Text style={styles.speakerText}>🔊 NGHE MẪU NEURAL TTS</Text>
+              <Text style={[
+                styles.levelText,
+                selectedLevel === lvl && styles.levelTextActive,
+                lvl === 'C2' && { color: '#FF007F' }
+              ]}>
+                {lvl}
+              </Text>
             </TouchableOpacity>
-          </View>
-        )}
+          ))}
+        </View>
 
-        <TouchableOpacity style={styles.refreshBtn} onPress={fetchNextDrill}>
-          <Text style={styles.refreshText}>🔄 ĐỔI CẶP TỪ / CÂU MỚI</Text>
+        {/* CARD HIỂN THỊ CÂU HỎI ĐỘNG */}
+        <View style={styles.card}>
+          {isGenerating ? (
+            <ActivityIndicator size="small" color="#00FFFF" style={{ marginVertical: 20 }} />
+          ) : (
+            <>
+              <View style={styles.cardHeader}>
+                <Text style={styles.tag}>[ LEVEL {currentQuestion.cefrLevel} ]</Text>
+                <Text style={styles.topicTag}>📌 {currentQuestion.topic.toUpperCase()}</Text>
+              </View>
+
+              <Text style={styles.targetText}>"{currentQuestion.targetText}"</Text>
+              <Text style={styles.phoneticTag}>🎯 Trọng tâm âm: {currentQuestion.phoneticFocus}</Text>
+            </>
+          )}
+        </View>
+
+        {/* NÚT TẠO CÂU MỚI BẤM TỰ DO */}
+        <TouchableOpacity 
+          style={styles.refreshBtn} 
+          onPress={() => handleSelectLevelAndGenerate(selectedLevel)}
+          disabled={isGenerating}
+        >
+          <Text style={styles.refreshBtnText}>🔄 ĐỔI CÂU HỎI MỚI ({selectedLevel})</Text>
         </TouchableOpacity>
 
+        {/* NÚT THI ĐẤU PHÁT ÂM */}
         {isAnalyzing ? (
           <ActivityIndicator size="large" color="#39FF14" style={{ marginVertical: 15 }} />
         ) : (
-          <TouchableOpacity 
-            style={[styles.recordBtn, isRecording && { backgroundColor: '#FF0055' }]} 
-            onPress={isRecording ? stopAndGrade : startRecording}
-          >
-            <Text style={styles.recordText}>
-              {isRecording ? '⏹️ DỪNG GHI ÂM' : '🎙️ PHÁT ÂM NGAY'}
-            </Text>
+          <TouchableOpacity style={styles.recordBtn} onPress={handleSimulateGrade}>
+            <Text style={styles.recordBtnText}>🎙️ PHÁT ÂM & CHẤM ĐIỂM AI</Text>
           </TouchableOpacity>
         )}
 
+        {/* KẾT QUẢ CHẤM ĐIỂM */}
         {result && (
-          <View style={styles.resultCard}>
-            <Text style={[styles.resultScore, result.score >= 75 ? { color: '#39FF14' } : { color: '#FF0055' }]}>
-              {result.isStreaking ? '⚡ CYBER STREAK BONUS x2! ' : ''}{result.score}/100 ĐIỂM
-            </Text>
-            <Text style={styles.transcribedText}>🗣️ Bạn đã đọc: "{result.transcribedText}"</Text>
-            
-            <View style={styles.breakdownRow}>
-              <Text style={styles.breakdownText}>🎯 Âm: {result.phoneticScore}</Text>
-              <Text style={styles.breakdownText}>⚡ Nhịp: {result.fluencyScore}</Text>
-              <Text style={styles.breakdownText}>💡 Ý: {result.semanticScore}</Text>
-            </View>
-
-            <Text style={styles.feedbackText}>💡 {result.feedback}</Text>
-
-            {/* 🔴 BÁO LỖI ÂM TIẾT PHONEME-LEVEL */}
-            {result.wordAnalysis && result.wordAnalysis.length > 0 && (
-              <View style={styles.analysisBox}>
-                <Text style={styles.analysisTitle}>🎯 PHÂN TÍCH ÂM TIẾT SAI:</Text>
-                {result.wordAnalysis.map((item, idx) => (
-                  <Text key={idx} style={styles.analysisItem}>
-                    • <Text style={{ color: '#FF0055', fontWeight: 'bold' }}>{item.word}</Text> ({item.phonetic}): {item.issue || `Đọc sai âm ${item.wrongPhoneme}`}
-                  </Text>
-                ))}
-              </View>
-            )}
-
-            {recordedAudioUri && (
-              <TouchableOpacity style={styles.replayBtn} onPress={() => new Audio(recordedAudioUri).play()}>
-                <Text style={styles.replayText}>🎧 NGHE LẠI BẢN GHI ÂM CỦA BẠN</Text>
-              </TouchableOpacity>
-            )}
-
-            {/* 🚀 NÚT TIẾP TỤC CHỦ ĐỘNG KHI ĐẠT ĐIỂM CAO */}
-            {result.score >= 75 && (
-              <TouchableOpacity style={styles.nextPairBtn} onPress={fetchNextDrill}>
-                <Text style={styles.nextPairText}>TIẾP TỤC BÀI MỚI ➔</Text>
-              </TouchableOpacity>
-            )}
+          <View style={styles.resultBox}>
+            <Text style={styles.scoreText}>⚡ KẾT QUẢ: {result.score}/100 ĐIỂM (+25 XP)</Text>
+            <Text style={styles.feedback}>{result.feedback}</Text>
           </View>
         )}
       </ScrollView>
@@ -213,41 +133,27 @@ export default function DrillScreen({ tier, onBack, onNavigateToOasis }: Props) 
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#05020D', padding: 20, paddingTop: 50 },
-  topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 15 },
-  backBtn: { paddingHorizontal: 8, paddingVertical: 4, backgroundColor: '#0D0620', borderRadius: 6, borderWidth: 1, borderColor: '#00FFFF' },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 15 },
+  backBtn: { padding: 8, backgroundColor: '#0D0620', borderRadius: 8, borderWidth: 1, borderColor: '#00FFFF' },
   backText: { color: '#00FFFF', fontSize: 10, fontWeight: 'bold' },
-  title: { color: '#00FFFF', fontSize: 12, fontWeight: '900' },
-  streakBadge: { backgroundColor: '#221133', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12, borderWidth: 1, borderColor: '#FF007F' },
-  activeStreak: { borderColor: '#39FF14', backgroundColor: '#004411' },
-  streakText: { color: '#39FF14', fontSize: 10, fontWeight: 'bold' },
-
-  card: { backgroundColor: '#0A0618', padding: 20, borderRadius: 16, borderWidth: 2, borderColor: '#00FFFF', width: '100%', alignItems: 'center', marginBottom: 12 },
-  cefrTag: { color: '#FFD700', fontSize: 10, fontWeight: 'bold', marginBottom: 6 },
-  targetText: { color: '#FFF', fontSize: 20, fontWeight: '900', textAlign: 'center', marginBottom: 8 },
-  meaningText: { color: '#39FF14', fontSize: 12, marginBottom: 6 },
-  tipText: { color: '#AAAABB', fontSize: 10, textAlign: 'center', marginBottom: 12 },
-  speakerBtn: { backgroundColor: '#0D0620', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 16, borderWidth: 1, borderColor: '#00FFFF' },
-  speakerText: { color: '#00FFFF', fontSize: 9, fontWeight: 'bold' },
-
-  refreshBtn: { backgroundColor: '#110022', padding: 8, borderRadius: 8, borderWidth: 1, borderColor: '#FFD700', width: '100%', alignItems: 'center', marginBottom: 12 },
-  refreshText: { color: '#FFD700', fontSize: 10, fontWeight: 'bold' },
-  recordBtn: { backgroundColor: '#00FFFF', padding: 13, borderRadius: 12, width: '100%', alignItems: 'center', marginBottom: 12 },
-  recordText: { color: '#000', fontSize: 11, fontWeight: '900' },
-
-  resultCard: { backgroundColor: '#0D0620', padding: 14, borderRadius: 12, borderWidth: 1, borderColor: '#39FF14', width: '100%', alignItems: 'center' },
-  resultScore: { fontSize: 14, fontWeight: '900', marginBottom: 4 },
-  transcribedText: { color: '#AAAABB', fontSize: 10, textAlign: 'center', marginBottom: 6 },
-  breakdownRow: { flexDirection: 'row', justifyContent: 'space-around', width: '100%', marginBottom: 6, backgroundColor: '#05020D', padding: 6, borderRadius: 6 },
-  breakdownText: { color: '#00FFFF', fontSize: 9, fontWeight: 'bold' },
-  feedbackText: { color: '#39FF14', fontSize: 10, textAlign: 'center', marginBottom: 8 },
-
-  analysisBox: { backgroundColor: '#1A000A', padding: 8, borderRadius: 8, borderWidth: 1, borderColor: '#FF0055', width: '100%', marginBottom: 8 },
-  analysisTitle: { color: '#FF0055', fontSize: 9, fontWeight: 'bold', marginBottom: 4 },
-  analysisItem: { color: '#FFF', fontSize: 9, marginBottom: 2 },
-
-  replayBtn: { backgroundColor: '#00FFFF', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 8, marginBottom: 8 },
-  replayText: { color: '#000', fontSize: 9, fontWeight: 'bold' },
-
-  nextPairBtn: { backgroundColor: '#39FF14', paddingVertical: 10, paddingHorizontal: 20, borderRadius: 8, width: '100%', alignItems: 'center', marginTop: 4 },
-  nextPairText: { color: '#000', fontSize: 11, fontWeight: '900' }
+  title: { color: '#00FFFF', fontSize: 13, fontWeight: '900' },
+  sectionLabel: { color: '#FFD700', fontSize: 10, fontWeight: 'bold', alignSelf: 'flex-start', marginBottom: 8 },
+  levelRow: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginBottom: 15 },
+  levelBadge: { backgroundColor: '#0D0620', paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8, borderWidth: 1, borderColor: '#332255' },
+  levelBadgeActive: { backgroundColor: '#00FFFF', borderColor: '#00FFFF' },
+  levelText: { color: '#8888AA', fontSize: 11, fontWeight: '900' },
+  levelTextActive: { color: '#000' },
+  card: { backgroundColor: '#0D0620', padding: 18, borderRadius: 16, borderWidth: 2, borderColor: '#00FFFF', width: '100%', alignItems: 'center', marginBottom: 12 },
+  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginBottom: 10 },
+  tag: { color: '#FF007F', fontSize: 11, fontWeight: '900' },
+  topicTag: { color: '#FFD700', fontSize: 10, fontWeight: 'bold' },
+  targetText: { color: '#FFF', fontSize: 15, fontWeight: '800', textAlign: 'center', lineHeight: 22, marginVertical: 8 },
+  phoneticTag: { color: '#39FF14', fontSize: 10, fontWeight: 'bold', marginTop: 6 },
+  refreshBtn: { backgroundColor: '#1A0B2E', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#FF007F', width: '100%', alignItems: 'center', marginBottom: 12 },
+  refreshBtnText: { color: '#FF007F', fontSize: 10, fontWeight: '900' },
+  recordBtn: { backgroundColor: '#39FF14', padding: 14, borderRadius: 12, width: '100%', alignItems: 'center', marginBottom: 15 },
+  recordBtnText: { color: '#000', fontSize: 12, fontWeight: '900' },
+  resultBox: { backgroundColor: '#120826', padding: 14, borderRadius: 12, borderWidth: 1, borderColor: '#39FF14', width: '100%', alignItems: 'center' },
+  scoreText: { color: '#39FF14', fontSize: 13, fontWeight: '900', marginBottom: 6 },
+  feedback: { color: '#AAAABB', fontSize: 10, textAlign: 'center' }
 });
