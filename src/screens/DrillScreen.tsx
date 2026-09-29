@@ -1,7 +1,7 @@
 // src/screens/DrillScreen.tsx
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
-import { generateDynamicQuestion, CEFRLevel, GeneratedSentence } from '../services/groqClient';
+import { generateDynamicQuestion, CEFRLevel, GeneratedSentence, GradeResult } from '../services/groqClient';
 import { updateUserProgress } from '../services/userService';
 
 interface Props {
@@ -22,7 +22,7 @@ export default function DrillScreen({ onBack }: Props) {
   
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
-  const [result, setResult] = useState<{ score: number; feedback: string } | null>(null);
+  const [result, setResult] = useState<GradeResult | null>(null);
 
   const handleSelectLevelAndGenerate = async (level: CEFRLevel) => {
     setSelectedLevel(level);
