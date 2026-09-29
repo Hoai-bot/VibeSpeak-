@@ -3,12 +3,6 @@ import { callGroqAI } from './aiService';
 
 export type CEFRLevel = 'A1' | 'A2' | 'B1' | 'B2' | 'C1' | 'C2';
 
-const TOPIC_POOL = [
-  'Business & Economy', 'Arts & Culture', 'Psychology & Society', 
-  'Environment & Sustainability', 'Science & Innovation', 'Philosophy & Ethics',
-  'Global Travel & Culinary', 'Education & Future Skills'
-];
-
 export interface GeneratedSentence {
   targetText: string;
   cefrLevel: CEFRLevel;
@@ -16,28 +10,29 @@ export interface GeneratedSentence {
   phoneticFocus: string;
 }
 
-// 🎯 HÀM TỰ ĐỘNG SINH CÂU HỎI THEO CHUẨN CEFR VÀ DIVERSE TOPIC
+const TOPIC_POOL = [
+  'Business & Economy', 'Arts & Culture', 'Psychology & Society', 
+  'Environment & Sustainability', 'Science & Innovation', 'Philosophy & Ethics',
+  'Global Travel & Culinary', 'Education & Future Skills'
+];
+
 export const generateDynamicQuestion = async (level: CEFRLevel): Promise<GeneratedSentence> => {
-  // Chọn ngẫu nhiên 1 chủ đề từ Topic Pool
   const randomTopic = TOPIC_POOL[Math.floor(Math.random() * TOPIC_POOL.length)];
   
   const prompt = `
-You are a Cambridge CEFR Examiner creating an English speaking prompt.
-Generate 1 sentence strictly adhering to CEFR Level: "${level}" on the topic: "${randomTopic}".
+Generate 1 English sentence strictly for CEFR Level: "${level}" on Topic: "${randomTopic}".
+Criteria:
+- B1: Clear standard input on familiar matters.
+- B2: Complex sentences, abstract topics, expressing advantages/disadvantages.
+- C1: Extended complex structures, academic vocabulary, subtle nuances.
+- C2: Native-like proficiency, idiomatic expressions, sophisticated metaphors.
 
-CEFR Level Criteria:
-- B1: Clear standard input on familiar matters (work, school, leisure). Simple connected text.
-- B2: Complex sentences, abstract topics, expressing advantages/disadvantages with fluency.
-- C1: Extended complex structures, academic vocabulary, subtle nuances, inverted sentences.
-- C2: Native-like proficiency, idiomatic expressions, sophisticated metaphors, highly nuanced context.
-
-IMPORTANT: Do NOT use "Artificial Intelligence" unless topic is Science.
 Return ONLY a valid JSON object matching this schema:
 {
   "targetText": "The exact English sentence",
   "cefrLevel": "${level}",
   "topic": "${randomTopic}",
-  "phoneticFocus": "Key sound or rhythm focus (e.g. Linking /r/, Stress on 3rd syllable)"
+  "phoneticFocus": "Key sound focus"
 }
 `;
 
@@ -49,21 +44,20 @@ Return ONLY a valid JSON object matching this schema:
       if (start !== -1 && end !== -1) {
         const parsed = JSON.parse(raw.substring(start, end + 1));
         return {
-          targetText: parsed.targetText,
+          targetText: parsed.targetText || "Sustainable development requires balancing environment with growth.",
           cefrLevel: level,
           topic: parsed.topic || randomTopic,
-          phoneticFocus: parsed.phoneticFocus || 'General Fluency'
+          phoneticFocus: parsed.phoneticFocus || 'General Intonation'
         };
       }
     }
   } catch (e) {
-    console.warn('Fallback due to Groq API error:', e);
+    console.warn('Groq API fallback:', e);
   }
 
-  // Dự phòng nếu mất kết nối API
   return {
     targetText: level === 'C2' 
-      ? "Had the government anticipated the economic backlash, such stringent fiscal policies would never have been enacted."
+      ? "Had the board anticipated the economic backlash, such stringent fiscal policies would never have been enacted."
       : "Sustainable urban development requires balancing environmental conservation with economic growth.",
     cefrLevel: level,
     topic: randomTopic,

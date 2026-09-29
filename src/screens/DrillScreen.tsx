@@ -9,7 +9,6 @@ interface Props {
   onBack: () => void;
 }
 
-// 🎯 ĐÃ BỔ SUNG ĐẦY ĐỦ CÁC CẤP ĐỘ TỪ A1 ĐẾN C2
 const CEFR_LEVELS: CEFRLevel[] = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
 
 export default function DrillScreen({ onBack }: Props) {
@@ -23,9 +22,8 @@ export default function DrillScreen({ onBack }: Props) {
   
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
-  const [result, setResult] = useState<any | null>(null);
+  const [result, setResult] = useState<{ score: number; feedback: string } | null>(null);
 
-  // 🎯 HÀM ĐỔI LEVEL HOẶC TẠO CÂU HỎI MỚI CHUẨN CEFR & ĐA DẠNG CHỦ ĐỀ
   const handleSelectLevelAndGenerate = async (level: CEFRLevel) => {
     setSelectedLevel(level);
     setIsGenerating(true);
@@ -60,7 +58,6 @@ export default function DrillScreen({ onBack }: Props) {
       </View>
 
       <ScrollView contentContainerStyle={{ alignItems: 'center', width: '100%', paddingBottom: 30 }}>
-        {/* thanh CHỌN CẤP ĐỘ CEFR TỪ A1 ĐẾN C2 */}
         <Text style={styles.sectionLabel}>CHỌN CẤP ĐỘ TRUYỀN TẢI (CEFR):</Text>
         <View style={styles.levelRow}>
           {CEFR_LEVELS.map((lvl) => (
@@ -69,7 +66,7 @@ export default function DrillScreen({ onBack }: Props) {
               style={[
                 styles.levelBadge,
                 selectedLevel === lvl && styles.levelBadgeActive,
-                lvl === 'C2' && { borderColor: '#FF007F' } // Làm nổi bật C2
+                lvl === 'C2' && { borderColor: '#FF007F' }
               ]}
               onPress={() => handleSelectLevelAndGenerate(lvl)}
             >
@@ -84,7 +81,6 @@ export default function DrillScreen({ onBack }: Props) {
           ))}
         </View>
 
-        {/* CARD HIỂN THỊ CÂU HỎI ĐỘNG */}
         <View style={styles.card}>
           {isGenerating ? (
             <ActivityIndicator size="small" color="#00FFFF" style={{ marginVertical: 20 }} />
@@ -101,7 +97,6 @@ export default function DrillScreen({ onBack }: Props) {
           )}
         </View>
 
-        {/* NÚT TẠO CÂU MỚI BẤM TỰ DO */}
         <TouchableOpacity 
           style={styles.refreshBtn} 
           onPress={() => handleSelectLevelAndGenerate(selectedLevel)}
@@ -110,7 +105,6 @@ export default function DrillScreen({ onBack }: Props) {
           <Text style={styles.refreshBtnText}>🔄 ĐỔI CÂU HỎI MỚI ({selectedLevel})</Text>
         </TouchableOpacity>
 
-        {/* NÚT THI ĐẤU PHÁT ÂM */}
         {isAnalyzing ? (
           <ActivityIndicator size="large" color="#39FF14" style={{ marginVertical: 15 }} />
         ) : (
@@ -119,7 +113,6 @@ export default function DrillScreen({ onBack }: Props) {
           </TouchableOpacity>
         )}
 
-        {/* KẾT QUẢ CHẤM ĐIỂM */}
         {result && (
           <View style={styles.resultBox}>
             <Text style={styles.scoreText}>⚡ KẾT QUẢ: {result.score}/100 ĐIỂM (+25 XP)</Text>
@@ -139,7 +132,7 @@ const styles = StyleSheet.create({
   title: { color: '#00FFFF', fontSize: 13, fontWeight: '900' },
   sectionLabel: { color: '#FFD700', fontSize: 10, fontWeight: 'bold', alignSelf: 'flex-start', marginBottom: 8 },
   levelRow: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginBottom: 15 },
-  levelBadge: { backgroundColor: '#0D0620', paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8, borderWidth: 1, borderColor: '#332255' },
+  levelBadge: { backgroundColor: '#0D0620', paddingVertical: 8, paddingHorizontal: 10, borderRadius: 8, borderWidth: 1, borderColor: '#332255' },
   levelBadgeActive: { backgroundColor: '#00FFFF', borderColor: '#00FFFF' },
   levelText: { color: '#8888AA', fontSize: 11, fontWeight: '900' },
   levelTextActive: { color: '#000' },
