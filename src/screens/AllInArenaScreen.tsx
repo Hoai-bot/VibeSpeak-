@@ -54,7 +54,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
       </View>
 
       <ScrollView contentContainerStyle={{ alignItems: 'center', width: '100%', paddingBottom: 30 }}>
-        {/* THANH CHỌN CẤP ĐỘ CEFR TỪ A1 TỚI C2 */}
+        {/* THANH CHỌN TẦNG TRÌNH ĐỘ CEFR TỪ A1 TỚI C2 */}
         <Text style={styles.sectionLabel}>CHỌN CẤP ĐỘ ĐẤU TRƯỜNG (CEFR):</Text>
         <View style={styles.levelRow}>
           {CEFR_LEVELS.map((lvl) => (

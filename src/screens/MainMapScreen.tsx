@@ -7,21 +7,34 @@ interface Props {
   onOpenProfile: () => void;
 }
 
-// 🎯 CHỈ GIỮ LẠI TRẠM 1 VÀ TRẠM 2
 const STATIONS = [
   {
     id: 'station1',
     title: '🎯 TRẠM 1: PHẢN XẠ ÂM (DRILL ARENA)',
-    desc: 'Luyện Minimal Pairs, Linking Sounds & Tongue Twisters chuẩn CEFR A1-C1',
+    desc: 'Luyện Minimal Pairs, Linking Sounds & Tongue Twisters chuẩn nhịp điệu',
     color: '#00FFFF',
-    badge: 'LUYỆN CÁ NHÂN'
+    badge: 'SOLO PULSE'
   },
   {
     id: 'station2',
     title: '⚔️ TRẠM 2: THI ĐẤU ĐỐI KHÁNG (ALL-IN ARENA)',
-    desc: 'Thi đấu phản xạ nói 1v1 Realtime hoặc Đấu trí cùng Cyber Bot AI',
+    desc: 'Thi đấu phản xạ 1v1 Realtime tích hợp chuẩn CEFR từ A1 đến C2',
     color: '#FF007F',
-    badge: 'PVP REALTIME'
+    badge: 'PVP 1V1 • A1-C2'
+  },
+  {
+    id: 'station3',
+    title: '👹 TRẠM 3: SHADOW BOSS (BOSS RAID)',
+    desc: 'Luyện Shadowing phát âm nhịp điệu cùng Cyber Boss chuyên ngành',
+    color: '#FFD700',
+    badge: 'SHADOWING'
+  },
+  {
+    id: 'station4',
+    title: '🎧 TRẠM 4: TRUYỀN TÍN HIỆU (GHOST TRANSMISSION)',
+    desc: 'Luyện nghe phản xạ tình huống thực tế và đưa ra câu trả lời bằng giọng nói',
+    color: '#39FF14',
+    badge: 'LISTEN & RESPOND'
   }
 ];
 
@@ -36,7 +49,7 @@ export default function MainMapScreen({ onSelectStation, onOpenProfile }: Props)
       </View>
 
       <ScrollView contentContainerStyle={{ alignItems: 'center', width: '100%', paddingBottom: 30 }}>
-        <Text style={styles.subtitle}>CHỌN ĐẤU TRƯỜNG PHẢN XẠ PHÁT ÂM</Text>
+        <Text style={styles.subtitle}>BẢN ĐỒ ĐẤU TRƯỜNG PHẢN XẠ PHÁT ÂM (4 TRẠM)</Text>
 
         {STATIONS.map((st) => (
           <TouchableOpacity
@@ -68,7 +81,7 @@ const styles = StyleSheet.create({
   subtitle: { color: '#FFD700', fontSize: 11, fontWeight: 'bold', marginBottom: 15, alignSelf: 'flex-start' },
   stationCard: { backgroundColor: '#0D0620', padding: 18, borderRadius: 16, borderWidth: 2, width: '100%', marginBottom: 15 },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  cardTitle: { fontSize: 13, fontWeight: '900' },
+  cardTitle: { fontSize: 12, fontWeight: '900' },
   badge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
   badgeText: { color: '#000', fontSize: 8, fontWeight: '900' },
   cardDesc: { color: '#AAAABB', fontSize: 11, lineHeight: 16, marginBottom: 12 },
