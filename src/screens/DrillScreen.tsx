@@ -1,7 +1,6 @@
 // src/screens/DrillScreen.tsx
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
-import { generateDynamicQuestion, CEFRLevel, GeneratedSentence, GradeResult } from '../services/groqClient';
 import { updateUserProgress } from '../services/userService';
 
 interface Props {
@@ -9,30 +8,18 @@ interface Props {
   onBack: () => void;
 }
 
-const CEFR_LEVELS: CEFRLevel[] = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
+const DRILL_SAMPLES = [
+  { target: "Corporate drones broker encrypted contracts while the city burns neon.", topic: "Business" },
+  { target: "Minimal pairs demand precise tongue positioning and vocal cord control.", topic: "Phonetics" },
+  { target: "Artificial intelligence optimizes cloud infrastructure for scalable services.", topic: "Tech" }
+];
 
 export default function DrillScreen({ onBack }: Props) {
-  const [selectedLevel, setSelectedLevel] = useState<CEFRLevel>('B2');
-  const [currentQuestion, setCurrentQuestion] = useState<GeneratedSentence>({
-    targetText: "Sustainable urban development requires balancing environmental conservation with economic growth.",
-    cefrLevel: 'B2',
-    topic: 'Environment & Sustainability',
-    phoneticFocus: 'Linking & Intonation'
-  });
-  
-  const [isGenerating, setIsGenerating] = useState<boolean>(false);
+  const [currentIndex, setCurrentIndex] = useState<number>(0);
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
-  const [result, setResult] = useState<GradeResult | null>(null);
+  const [result, setResult] = useState<{ score: number; feedback: string } | null>(null);
 
-  const handleSelectLevelAndGenerate = async (level: CEFRLevel) => {
-    setSelectedLevel(level);
-    setIsGenerating(true);
-    setResult(null);
-
-    const newQuestion = await generateDynamicQuestion(level);
-    setCurrentQuestion(newQuestion);
-    setIsGenerating(false);
-  };
+  const currentSample = DRILL_SAMPLES[currentIndex];
 
   const handleSimulateGrade = () => {
     setIsAnalyzing(true);
@@ -40,11 +27,11 @@ export default function DrillScreen({ onBack }: Props) {
 
     setTimeout(() => {
       setResult({
-        score: 88,
-        feedback: "Phát âm rõ ràng, nhịp điệu tự nhiên và ngắt nghỉ đúng cụm từ!",
+        score: 85,
+        feedback: "Phát âm rõ ràng, ngắt nghỉ câu hợp lý! Giữ vững phong độ.",
       });
       setIsAnalyzing(false);
-      updateUserProgress(1, 25, true);
+      updateUserProgress(1, 20, true);
     }, 1500);
   };
 
@@ -57,66 +44,33 @@ export default function DrillScreen({ onBack }: Props) {
         <Text style={styles.title}>🎯 TRẠM 1: DRILL ARENA</Text>
       </View>
 
-      <ScrollView contentContainerStyle={{ alignItems: 'center', width: '100%', paddingBottom: 30 }}>
-        <Text style={styles.sectionLabel}>CHỌN CẤP ĐỘ TRUYỀN TẢI (CEFR):</Text>
-        <View style={styles.levelRow}>
-          {CEFR_LEVELS.map((lvl) => (
-            <TouchableOpacity
-              key={lvl}
-              style={[
-                styles.levelBadge,
-                selectedLevel === lvl && styles.levelBadgeActive,
-                lvl === 'C2' && { borderColor: '#FF007F' }
-              ]}
-              onPress={() => handleSelectLevelAndGenerate(lvl)}
-            >
-              <Text style={[
-                styles.levelText,
-                selectedLevel === lvl && styles.levelTextActive,
-                lvl === 'C2' && { color: '#FF007F' }
-              ]}>
-                {lvl}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
+      <ScrollView contentContainerStyle={{ alignItems: 'center', width: '100%' }}>
         <View style={styles.card}>
-          {isGenerating ? (
-            <ActivityIndicator size="small" color="#00FFFF" style={{ marginVertical: 20 }} />
-          ) : (
-            <>
-              <View style={styles.cardHeader}>
-                <Text style={styles.tag}>[ LEVEL {currentQuestion.cefrLevel} ]</Text>
-                <Text style={styles.topicTag}>📌 {currentQuestion.topic.toUpperCase()}</Text>
-              </View>
-
-              <Text style={styles.targetText}>"{currentQuestion.targetText}"</Text>
-              <Text style={styles.phoneticTag}>🎯 Trọng tâm âm: {currentQuestion.phoneticFocus}</Text>
-            </>
-          )}
+          <Text style={styles.tag}>[ {currentSample.topic.toUpperCase()} ]</Text>
+          <Text style={styles.targetText}>"{currentSample.target}"</Text>
         </View>
-
-        <TouchableOpacity 
-          style={styles.refreshBtn} 
-          onPress={() => handleSelectLevelAndGenerate(selectedLevel)}
-          disabled={isGenerating}
-        >
-          <Text style={styles.refreshBtnText}>🔄 ĐỔI CÂU HỎI MỚI ({selectedLevel})</Text>
-        </TouchableOpacity>
 
         {isAnalyzing ? (
-          <ActivityIndicator size="large" color="#39FF14" style={{ marginVertical: 15 }} />
+          <ActivityIndicator size="large" color="#00FFFF" style={{ marginVertical: 20 }} />
         ) : (
           <TouchableOpacity style={styles.recordBtn} onPress={handleSimulateGrade}>
-            <Text style={styles.recordBtnText}>🎙️ PHÁT ÂM & CHẤM ĐIỂM AI</Text>
+            <Text style={styles.recordBtnText}>🎙️ BẤM ĐỂ PHÁT ÂM & CHẤM ĐIỂM</Text>
           </TouchableOpacity>
         )}
 
         {result && (
           <View style={styles.resultBox}>
-            <Text style={styles.scoreText}>⚡ KẾT QUẢ: {result.score}/100 ĐIỂM (+25 XP)</Text>
+            <Text style={styles.scoreText}>⚡ KẾT QUẢ: {result.score}/100 ĐIỂM (+20 XP)</Text>
             <Text style={styles.feedback}>{result.feedback}</Text>
+            <TouchableOpacity 
+              style={styles.nextBtn} 
+              onPress={() => {
+                setResult(null);
+                setCurrentIndex((prev) => (prev + 1) % DRILL_SAMPLES.length);
+              }}
+            >
+              <Text style={styles.nextBtnText}>➡️ BÀI TIẾP THEO</Text>
+            </TouchableOpacity>
           </View>
         )}
       </ScrollView>
@@ -126,27 +80,18 @@ export default function DrillScreen({ onBack }: Props) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#05020D', padding: 20, paddingTop: 50 },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 15 },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 },
   backBtn: { padding: 8, backgroundColor: '#0D0620', borderRadius: 8, borderWidth: 1, borderColor: '#00FFFF' },
   backText: { color: '#00FFFF', fontSize: 10, fontWeight: 'bold' },
   title: { color: '#00FFFF', fontSize: 13, fontWeight: '900' },
-  sectionLabel: { color: '#FFD700', fontSize: 10, fontWeight: 'bold', alignSelf: 'flex-start', marginBottom: 8 },
-  levelRow: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginBottom: 15 },
-  levelBadge: { backgroundColor: '#0D0620', paddingVertical: 8, paddingHorizontal: 10, borderRadius: 8, borderWidth: 1, borderColor: '#332255' },
-  levelBadgeActive: { backgroundColor: '#00FFFF', borderColor: '#00FFFF' },
-  levelText: { color: '#8888AA', fontSize: 11, fontWeight: '900' },
-  levelTextActive: { color: '#000' },
-  card: { backgroundColor: '#0D0620', padding: 18, borderRadius: 16, borderWidth: 2, borderColor: '#00FFFF', width: '100%', alignItems: 'center', marginBottom: 12 },
-  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginBottom: 10 },
-  tag: { color: '#FF007F', fontSize: 11, fontWeight: '900' },
-  topicTag: { color: '#FFD700', fontSize: 10, fontWeight: 'bold' },
-  targetText: { color: '#FFF', fontSize: 15, fontWeight: '800', textAlign: 'center', lineHeight: 22, marginVertical: 8 },
-  phoneticTag: { color: '#39FF14', fontSize: 10, fontWeight: 'bold', marginTop: 6 },
-  refreshBtn: { backgroundColor: '#1A0B2E', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#FF007F', width: '100%', alignItems: 'center', marginBottom: 12 },
-  refreshBtnText: { color: '#FF007F', fontSize: 10, fontWeight: '900' },
-  recordBtn: { backgroundColor: '#39FF14', padding: 14, borderRadius: 12, width: '100%', alignItems: 'center', marginBottom: 15 },
+  card: { backgroundColor: '#0D0620', padding: 20, borderRadius: 16, borderWidth: 2, borderColor: '#00FFFF', width: '100%', alignItems: 'center', marginBottom: 20 },
+  tag: { color: '#FFD700', fontSize: 10, fontWeight: 'bold', marginBottom: 10 },
+  targetText: { color: '#FFF', fontSize: 16, fontWeight: '900', textAlign: 'center', lineHeight: 24 },
+  recordBtn: { backgroundColor: '#39FF14', padding: 16, borderRadius: 12, width: '100%', alignItems: 'center', marginBottom: 20 },
   recordBtnText: { color: '#000', fontSize: 12, fontWeight: '900' },
-  resultBox: { backgroundColor: '#120826', padding: 14, borderRadius: 12, borderWidth: 1, borderColor: '#39FF14', width: '100%', alignItems: 'center' },
-  scoreText: { color: '#39FF14', fontSize: 13, fontWeight: '900', marginBottom: 6 },
-  feedback: { color: '#AAAABB', fontSize: 10, textAlign: 'center' }
+  resultBox: { backgroundColor: '#120826', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#FF007F', width: '100%', alignItems: 'center' },
+  scoreText: { color: '#39FF14', fontSize: 14, fontWeight: '900', marginBottom: 8 },
+  feedback: { color: '#AAAABB', fontSize: 11, textAlign: 'center', marginBottom: 12 },
+  nextBtn: { backgroundColor: '#FF007F', padding: 12, borderRadius: 8, width: '100%', alignItems: 'center' },
+  nextBtnText: { color: '#FFF', fontSize: 11, fontWeight: '900' }
 });
