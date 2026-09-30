@@ -4,26 +4,11 @@ import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator
 import { generateSoloTopic, SoloTopic } from '../services/arena/soloService';
 import { generateRelayChallenge, RelayChallenge } from '../services/arena/relayService';
 import { generateRoleplayScenario, RoleplayScenario } from '../services/arena/roleplayService';
+import { evaluateSpeaking, AssessmentResult } from '../services/arena/assessmentService';
 import { updateUserProgress } from '../services/userService';
 
 interface Props {
   onBack: () => void;
-}
-
-interface Detailed6CriteriaResult {
-  score: number;
-  isWin: boolean;
-  transcript: string;
-  wordCount: number;
-  // 6 Tiêu chí đánh giá chuyên sâu
-  pronunciation: number; // Phát âm
-  grammar: number;       // Ngữ pháp
-  vocabulary: number;    // Từ vựng
-  reflexes: number;      // Phản xạ
-  content: number;       // Nội dung
-  fluency: number;       // Độ trôi chảy
-  detailedFeedback: string;
-  audioUrl: string | null;
 }
 
 export default function AllInArenaScreen({ onBack }: Props) {
@@ -32,33 +17,27 @@ export default function AllInArenaScreen({ onBack }: Props) {
   const [opponentType, setOpponentType] = useState<'bot' | 'pvp'>('bot');
   const [loading, setLoading] = useState<boolean>(false);
 
-  // DỮ LIỆU ĐỀ THÁCH ĐẤU
   const [soloTopic, setSoloTopic] = useState<SoloTopic | null>(null);
   const [relayChallenge, setRelayChallenge] = useState<RelayChallenge | null>(null);
   const [roleplayScenario, setRoleplayScenario] = useState<RoleplayScenario | null>(null);
 
-  // TRẠNG THÁI TRẬN ĐẤU & LƯỢT CHƠI
   const [battleState, setBattleState] = useState<'idle' | 'searching' | 'battling' | 'analyzing' | 'ended'>('idle');
   const [currentTurn, setCurrentTurn] = useState<1 | 2>(1);
   const [matchedOpponent, setMatchedOpponent] = useState<string>('');
   const [timeLeft, setTimeLeft] = useState<number>(30);
   const [isTimerRunning, setIsTimerRunning] = useState<boolean>(false);
   
-  // MICRO & RECORDING THỰC TẾ
   const [isRecording, setIsRecording] = useState<boolean>(false);
   const [recordedTurn1, setRecordedTurn1] = useState<Blob | null>(null);
   const [recordedTurn2, setRecordedTurn2] = useState<Blob | null>(null);
   const [hasRecordedTurn1, setHasRecordedTurn1] = useState<boolean>(false);
   const [hasRecordedTurn2, setHasRecordedTurn2] = useState<boolean>(false);
-  
-  // KẾT QUẢ ĐÁNH GIÁ 6 TIÊU CHÍ
-  const [result, setResult] = useState<Detailed6CriteriaResult | null>(null);
-  const [isPlayingRecordedAudio, setIsPlayingRecordedAudio] = useState<boolean>(false);
+
+  const [result, setResult] = useState<AssessmentResult | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
-  const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
 
   const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
 
@@ -79,10 +58,6 @@ export default function AllInArenaScreen({ onBack }: Props) {
       try { mediaRecorderRef.current.stop(); } catch (e) {}
     }
     if (timerRef.current) clearInterval(timerRef.current);
-    if (audioPlayerRef.current) {
-      audioPlayerRef.current.pause();
-      audioPlayerRef.current = null;
-    }
     
     setBattleState('idle');
     setCurrentTurn(1);
@@ -93,7 +68,6 @@ export default function AllInArenaScreen({ onBack }: Props) {
     setHasRecordedTurn1(false);
     setHasRecordedTurn2(false);
     setResult(null);
-    setIsPlayingRecordedAudio(false);
     audioChunksRef.current = [];
   };
 
@@ -102,14 +76,11 @@ export default function AllInArenaScreen({ onBack }: Props) {
     resetBattleState();
 
     if (selectedMode === 'solo') {
-      const data = await generateSoloTopic(level);
-      setSoloTopic(data);
+      setSoloTopic(await generateSoloTopic(level));
     } else if (selectedMode === 'relay') {
-      const data = await generateRelayChallenge(level);
-      setRelayChallenge(data);
+      setRelayChallenge(await generateRelayChallenge(level));
     } else {
-      const data = await generateRoleplayScenario(level);
-      setRoleplayScenario(data);
+      setRoleplayScenario(await generateRoleplayScenario(level));
     }
     setLoading(false);
   };
@@ -154,8 +125,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
         setMatchedOpponent('🤖 CYBER BOT [' + cefrLevel + ']');
       } else {
         const fakeUsernames = ['CyberKnight99', 'NeonSpeaker', 'VibeMaster', 'EchoRider'];
-        const randomUser = fakeUsernames[Math.floor(Math.random() * fakeUsernames.length)];
-        setMatchedOpponent('👤 ' + randomUser + ' [' + cefrLevel + ']');
+        setMatchedOpponent('👤 ' + fakeUsernames[Math.floor(Math.random() * fakeUsernames.length)] + ' [' + cefrLevel + ']');
       }
       
       setCurrentTurn(1);
@@ -165,7 +135,6 @@ export default function AllInArenaScreen({ onBack }: Props) {
     }, 1500);
   };
 
-  // 🎙️️ THU ÂM VỚI DUNG LƯỢNG NGHIÊM NGẶT (> 5000 BYTES)
   const handleToggleRecord = async () => {
     if (!isRecording) {
       try {
@@ -194,30 +163,24 @@ export default function AllInArenaScreen({ onBack }: Props) {
               }
             } else {
               if (mode === 'solo' || currentTurn === 1) {
-                setRecordedTurn1(null);
-                setHasRecordedTurn1(false);
+                setRecordedTurn1(null); setHasRecordedTurn1(false);
               } else {
-                setRecordedTurn2(null);
-                setHasRecordedTurn2(false);
+                setRecordedTurn2(null); setHasRecordedTurn2(false);
               }
-              if (typeof window !== 'undefined') {
-                alert("⚠️️ Bản thu âm quá ngắn hoặc chỉ mới phát biểu 1-2 từ ngắn! Vui lòng trả lời trọn vẹn câu.");
-              }
+              alert("⚠️ Bấm giữ nút và trả lời rõ ràng vào micro!");
             }
             stream.getTracks().forEach(track => track.stop());
           };
 
-          mediaRecorder.start();
+          mediaRecorder.start(200);
           setIsRecording(true);
 
           if (!isTimerRunning) {
             startTurnTimer(timeLeft > 0 ? timeLeft : getTimeForCurrentMode(cefrLevel, mode));
           }
-        } else {
-          alert("Trình duyệt không hỗ trợ micro thu âm!");
         }
       } catch (err) {
-        alert("🔒 Lỗi: Hãy cấp quyền Microphone trên trình duyệt để thu âm!");
+        alert("🔒 Cấp quyền Microphone để thu âm!");
       }
     } else {
       setIsRecording(false);
@@ -230,30 +193,21 @@ export default function AllInArenaScreen({ onBack }: Props) {
   };
 
   const handleNextTurnManual = () => {
-    if (!hasRecordedTurn1 || !recordedTurn1 || recordedTurn1.size <= 5000) {
-      alert("🔒 CHƯA CÓ BẢN THU ÂM LƯỢT 1: Hãy ghi âm câu trả lời hoàn chỉnh trước khi chuyển lượt!");
+    if (!hasRecordedTurn1 || !recordedTurn1) {
+      alert("🔒 Vui lòng ghi âm lượt 1 trước!");
       return;
     }
     if (timerRef.current) clearInterval(timerRef.current);
     setIsTimerRunning(false);
     setIsRecording(false);
-    
     setCurrentTurn(2);
     setTimeLeft(getTimeForCurrentMode(cefrLevel, mode));
   };
 
-  // 📊 CHẤM ĐIỂM CHUYÊN SÂU 6 TIÊU CHÍ
-  const handleSubmitBattleAnswer = () => {
-    if (mode === 'solo') {
-      if (!hasRecordedTurn1 || !recordedTurn1 || recordedTurn1.size <= 5000) {
-        alert("🔒 KHÔNG THỂ CHẤM ĐIỂM: Hãy ghi âm câu trả lời hoàn chỉnh trước khi nộp bài!");
-        return;
-      }
-    } else {
-      if (!hasRecordedTurn1 || !recordedTurn1 || !hasRecordedTurn2 || !recordedTurn2 || recordedTurn1.size <= 5000 || recordedTurn2.size <= 5000) {
-        alert("🔒 CẦN ĐỦ 2 LƯỢT THU ÂM: Cả 2 bạn phải ghi âm câu trả lời trọn vẹn trước khi nộp bài!");
-        return;
-      }
+  const handleSubmitBattleAnswer = async () => {
+    if (!hasRecordedTurn1 || !recordedTurn1) {
+      alert("🔒 Vui lòng thực hiện ghi âm trước!");
+      return;
     }
 
     if (timerRef.current) clearInterval(timerRef.current);
@@ -261,76 +215,17 @@ export default function AllInArenaScreen({ onBack }: Props) {
 
     setBattleState('analyzing');
 
-    setTimeout(() => {
-      const targetBlob = recordedTurn1!;
-      const audioUrl = URL.createObjectURL(targetBlob);
-      const estimatedWords = Math.floor(targetBlob.size / 550); // Ước tính số từ dựa trên dung lượng file
+    // Gọi Dịch vụ Đánh giá Độc lập
+    const evalData = await evaluateSpeaking(recordedTurn1, cefrLevel);
+    setResult(evalData);
 
-      let p = 0, g = 0, v = 0, r = 0, c = 0, f = 0;
-      let generatedScript = "";
-      let feedbackMsg = "";
-
-      if (estimatedWords < 5) {
-        // Chỉ nói cụm 1-3 từ ngắn (Như "Hello", "Yes okay")
-        p = 45; g = 30; v = 25; r = 35; c = 20; f = 30;
-        generatedScript = "Hello. (Cần triển khai câu dài hơn)";
-        feedbackMsg = "❌ THẤT BẠI: Bạn nói quá ngắn (chỉ 1-3 từ). Các chỉ số Độ trôi chảy, Phản xạ và Nội dung không đạt tiêu chuẩn CEFR " + cefrLevel + ".";
-      } else if (estimatedWords < 12) {
-        p = 75; g = 70; v = 68; r = 72; c = 70; f = 65;
-        generatedScript = "I think this topic is quite relevant and we should analyze the options carefully.";
-        feedbackMsg = "⚠️ ĐẠT KHÁ: Phản xạ và Ngữ pháp ở mức ổn. Cần tăng độ trôi chảy và phát triển thêm chi tiết cho Nội dung.";
-      } else {
-        p = 88; g = 85; v = 86; r = 90; c = 92; f = 89;
-        generatedScript = "From my perspective, addressing this situation effectively requires a strategic framework and continuous communication.";
-        feedbackMsg = "🎉 CHIẾN THẮNG XUẤT SẮC: Đáp ứng hoàn hảo cả 6 tiêu chí! Phát âm chuẩn, nội dung phong phú và phản xạ cực kỳ tự nhiên!";
-      }
-
-      const totalScore = Math.floor((p + g + v + r + c + f) / 6);
-      const isWinMatch = totalScore >= 75;
-
-      setResult({
-        score: totalScore,
-        isWin: isWinMatch,
-        transcript: generatedScript,
-        wordCount: estimatedWords,
-        pronunciation: p,
-        grammar: g,
-        vocabulary: v,
-        reflexes: r,
-        content: c,
-        fluency: f,
-        detailedFeedback: feedbackMsg,
-        audioUrl: audioUrl
-      });
-
-      setBattleState('ended');
-      updateUserProgress(2, isWinMatch ? 50 : 15, isWinMatch);
-    }, 2000);
-  };
-
-  // 🎧 PHÁT LẠI GIỌNG NÓI CỦA HỌC VIÊN
-  const handlePlayUserVoice = () => {
-    if (!result || !result.audioUrl) return;
-
-    if (isPlayingRecordedAudio) {
-      if (audioPlayerRef.current) {
-        audioPlayerRef.current.pause();
-      }
-      setIsPlayingRecordedAudio(false);
-    } else {
-      const audio = new Audio(result.audioUrl);
-      audioPlayerRef.current = audio;
-      audio.play();
-      setIsPlayingRecordedAudio(true);
-
-      audio.onended = () => setIsPlayingRecordedAudio(false);
-      audio.onerror = () => setIsPlayingRecordedAudio(false);
-    }
+    setBattleState('ended');
+    updateUserProgress(2, evalData.isWin ? 50 : 10, evalData.isWin);
   };
 
   const isSubmitDisabled = mode === 'solo' 
-    ? (!hasRecordedTurn1 || !recordedTurn1 || recordedTurn1.size <= 5000)
-    : (!hasRecordedTurn1 || !recordedTurn1 || !hasRecordedTurn2 || !recordedTurn2 || recordedTurn1.size <= 5000 || recordedTurn2.size <= 5000);
+    ? (!hasRecordedTurn1 || !recordedTurn1)
+    : (!hasRecordedTurn1 || !recordedTurn1 || !hasRecordedTurn2 || !recordedTurn2);
 
   return (
     <View style={styles.container}>
@@ -345,22 +240,13 @@ export default function AllInArenaScreen({ onBack }: Props) {
         {/* CHỌN CHẾ ĐỘ THI ĐẤU */}
         <Text style={styles.sectionLabel}>1. CHỌN DẠNG BÀI ĐẤU TRƯỜNG:</Text>
         <View style={styles.tabRow}>
-          <TouchableOpacity 
-            style={[styles.modeTab, mode === 'solo' && styles.modeTabActive]} 
-            onPress={() => setMode('solo')}
-          >
+          <TouchableOpacity style={[styles.modeTab, mode === 'solo' && styles.modeTabActive]} onPress={() => setMode('solo')}>
             <Text style={[styles.modeTabText, mode === 'solo' && styles.modeTextActive]}>🔥 SOLO PULSE</Text>
           </TouchableOpacity>
-          <TouchableOpacity 
-            style={[styles.modeTab, mode === 'relay' && styles.modeTabActive]} 
-            onPress={() => setMode('relay')}
-          >
+          <TouchableOpacity style={[styles.modeTab, mode === 'relay' && styles.modeTabActive]} onPress={() => setMode('relay')}>
             <Text style={[styles.modeTabText, mode === 'relay' && styles.modeTextActive]}>🤝 RELAY 2P</Text>
           </TouchableOpacity>
-          <TouchableOpacity 
-            style={[styles.modeTab, mode === 'roleplay' && styles.modeTabActive]} 
-            onPress={() => setMode('roleplay')}
-          >
+          <TouchableOpacity style={[styles.modeTab, mode === 'roleplay' && styles.modeTabActive]} onPress={() => setMode('roleplay')}>
             <Text style={[styles.modeTabText, mode === 'roleplay' && styles.modeTextActive]}>🎭 ROLEPLAY</Text>
           </TouchableOpacity>
         </View>
@@ -368,52 +254,28 @@ export default function AllInArenaScreen({ onBack }: Props) {
         {/* CHỌN ĐỐI THỦ */}
         <Text style={styles.sectionLabel}>2. CHỌN ĐỐI THỦ THÁCH ĐẤU:</Text>
         <View style={styles.opponentRow}>
-          <TouchableOpacity 
-            style={[styles.opponentBtn, opponentType === 'bot' && styles.opponentBtnActive]} 
-            onPress={() => setOpponentType('bot')}
-          >
+          <TouchableOpacity style={[styles.opponentBtn, opponentType === 'bot' && styles.opponentBtnActive]} onPress={() => setOpponentType('bot')}>
             <Text style={[styles.opponentText, opponentType === 'bot' && styles.opponentTextActive]}>🤖 ĐẤU BOT AI</Text>
           </TouchableOpacity>
-
-          <TouchableOpacity 
-            style={[styles.opponentBtn, opponentType === 'pvp' && styles.opponentBtnActivePvP]} 
-            onPress={() => setOpponentType('pvp')}
-          >
+          <TouchableOpacity style={[styles.opponentBtn, opponentType === 'pvp' && styles.opponentBtnActivePvP]} onPress={() => setOpponentType('pvp')}>
             <Text style={[styles.opponentText, opponentType === 'pvp' && styles.opponentTextActive]}>👥 ĐẤU NGƯỜI THẬT</Text>
           </TouchableOpacity>
         </View>
 
-        {/* CHỌN CẤP ĐỘ CEFR */}
-        <Text style={styles.sectionLabel}>
-          3. CHỌN LEVEL ({mode === 'solo' ? `Solo ${getFullTimeForLevel(cefrLevel)}s` : `Mỗi lượt ${getTimeForCurrentMode(cefrLevel, mode)}s`}):
-        </Text>
+        {/* CHỌN LEVEL */}
+        <Text style={styles.sectionLabel}>3. CHỌN LEVEL:</Text>
         <View style={styles.cefrRow}>
           {CEFR_LEVELS.map((lvl) => (
-            <TouchableOpacity
-              key={lvl}
-              style={[
-                styles.cefrBadge,
-                cefrLevel === lvl && styles.cefrBadgeActive,
-                lvl === 'C2' && { borderColor: '#FF007F' }
-              ]}
-              onPress={() => setCefrLevel(lvl)}
-            >
-              <Text style={[
-                styles.cefrText, 
-                cefrLevel === lvl && styles.cefrTextActive,
-                lvl === 'C2' && { color: '#FF007F' }
-              ]}>{lvl}</Text>
+            <TouchableOpacity key={lvl} style={[styles.cefrBadge, cefrLevel === lvl && styles.cefrBadgeActive]} onPress={() => setCefrLevel(lvl)}>
+              <Text style={[styles.cefrText, cefrLevel === lvl && styles.cefrTextActive]}>{lvl}</Text>
             </TouchableOpacity>
           ))}
         </View>
 
-        {/* TRẠNG THÁI CHỜ VÀO TRẬN */}
+        {/* CHỜ TRẬN */}
         {battleState === 'idle' && (
           <View style={styles.box}>
-            <Text style={styles.boxTitle}>
-              ⚡ {mode.toUpperCase()} • {opponentType === 'bot' ? '🤖 BOT' : '👥 PVP'} [{cefrLevel} - {mode === 'solo' ? `${getFullTimeForLevel(cefrLevel)}s` : `2x${getTimeForCurrentMode(cefrLevel, mode)}s`}]
-            </Text>
-            
+            <Text style={styles.boxTitle}>⚡ {mode.toUpperCase()} [{cefrLevel}]</Text>
             {loading ? (
               <ActivityIndicator size="small" color="#FF007F" style={{ marginVertical: 15 }} />
             ) : (
@@ -424,124 +286,74 @@ export default function AllInArenaScreen({ onBack }: Props) {
                     <Text style={styles.promptText}>"{soloTopic.promptText}"</Text>
                   </>
                 )}
-
                 {mode === 'relay' && relayChallenge && (
                   <>
                     <Text style={styles.topicTitle}>📌 {relayChallenge.topic}</Text>
                     <Text style={styles.promptText}>💡 Bối cảnh: {relayChallenge.context}</Text>
-                    <Text style={styles.subText}>👤 Lượt 1 ({getTimeForCurrentMode(cefrLevel, mode)}s): {relayChallenge.player1Guideline}</Text>
-                    <Text style={styles.subText}>👥 Lượt 2 ({getTimeForCurrentMode(cefrLevel, mode)}s): {relayChallenge.player2Guideline}</Text>
                   </>
                 )}
-
                 {mode === 'roleplay' && roleplayScenario && (
                   <>
                     <Text style={styles.topicTitle}>🎭 {roleplayScenario.scenarioTitle}</Text>
                     <Text style={styles.promptText}>💬 Mở đầu: "{roleplayScenario.initialAiMessage}"</Text>
-                    <Text style={styles.subText}>👤 Bạn ({getTimeForCurrentMode(cefrLevel, mode)}s) • 👥 Đối thủ ({getTimeForCurrentMode(cefrLevel, mode)}s)</Text>
                   </>
                 )}
               </View>
             )}
 
-            <TouchableOpacity 
-              style={styles.refreshBtn} 
-              onPress={() => loadModeData(mode, cefrLevel)}
-              disabled={loading}
-            >
+            <TouchableOpacity style={styles.refreshBtn} onPress={() => loadModeData(mode, cefrLevel)} disabled={loading}>
               <Text style={styles.refreshBtnText}>🔄 ĐỔI ĐỀ MỚI KHÔNG LẶP</Text>
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.startBtn} onPress={startMatch}>
-              <Text style={styles.startBtnText}>
-                {mode === 'solo' ? '⚔️ BẮT ĐẦU ĐẤU SOLO' : '🤝 BẮT ĐẦU ĐẤU TIẾP SỨC'}
-              </Text>
+              <Text style={styles.startBtnText}>⚔️ BẮT ĐẦU ĐẤU</Text>
             </TouchableOpacity>
           </View>
         )}
 
-        {/* TRẠNG THÁI 1: GHÉP CẶP */}
+        {/* GHÉP CẶP */}
         {battleState === 'searching' && (
           <View style={styles.box}>
             <ActivityIndicator size="large" color="#FF007F" style={{ marginBottom: 15 }} />
-            <Text style={styles.searchingText}>
-              {opponentType === 'bot' 
-                ? `🤖 CHUẨN BỊ BOT AI CHO LƯỢT ĐẤU [${cefrLevel}]...` 
-                : `🔍 ĐANG KẾT NỐI ĐỐI THỦ NGƯỜI THẬT [${cefrLevel}]...`}
-            </Text>
+            <Text style={styles.searchingText}>🔍 ĐANG KẾT NỐI ĐỐI THỦ [{cefrLevel}]...</Text>
           </View>
         )}
 
-        {/* TRẠNG THÁI 2: ĐANG THI ĐẤU */}
+        {/* THI ĐẤU */}
         {battleState === 'battling' && (
           <View style={styles.box}>
             <View style={styles.battleHeader}>
-              <Text style={styles.opponentName}>
-                {mode === 'solo' 
-                  ? `⚔️ SOLO VS ${matchedOpponent}` 
-                  : `🤝 TIẾP SỨC (LƯỢT ${currentTurn}/2)`}
-              </Text>
-              <Text style={[styles.timerText, timeLeft <= 5 && { color: '#FF0055' }]}>
-                ⏱ {isTimerRunning ? `ĐANG CHẠY: ${timeLeft}s` : `THỜI GIAN: ${timeLeft}s (CHỜ BẤM THU ÂM)`}
-              </Text>
+              <Text style={styles.opponentName}>⚔️ VS {matchedOpponent}</Text>
+              <Text style={styles.timerText}>⏱ {timeLeft}s</Text>
             </View>
 
-            {mode !== 'solo' && (
-              <View style={styles.turnBadgeBox}>
-                <Text style={styles.turnBadgeText}>
-                  {currentTurn === 1 
-                    ? `👤 LƯỢT 1 OF 2 (${getTimeForCurrentMode(cefrLevel, mode)}s): Bấm nút Micro bên dưới để bắt đầu tính giờ & thu âm` 
-                    : `👥 LƯỢT 2 OF 2 (${getTimeForCurrentMode(cefrLevel, mode)}s): ${matchedOpponent} bấm nút Micro để bắt đầu thu âm`}
-                </Text>
-              </View>
-            )}
-
-            <TouchableOpacity 
-              style={[styles.recordToggleBtn, isRecording && styles.recordToggleBtnActive]} 
-              onPress={handleToggleRecord}
-            >
+            <TouchableOpacity style={[styles.recordToggleBtn, isRecording && styles.recordToggleBtnActive]} onPress={handleToggleRecord}>
               <Text style={styles.recordToggleText}>
-                {isRecording 
-                  ? `🔴 ĐANG GHI ÂM & TÍNH GIỜ ${mode === 'solo' ? 'SOLO' : `LƯỢT ${currentTurn}`}... (BẤM ĐỂ DỪNG)` 
-                  : (mode === 'solo' ? hasRecordedTurn1 : (currentTurn === 1 ? hasRecordedTurn1 : hasRecordedTurn2))
-                  ? `✅ ĐÃ CÓ BẢN THU ${mode === 'solo' ? 'SOLO' : `LƯỢT ${currentTurn}`} (BẤM ĐỂ THU LẠI)` 
-                  : `🎙️ BẤM ĐỂ BẮT ĐẦU NÓI & TÍNH GIỜ ${mode === 'solo' ? 'SOLO' : `LƯỢT ${currentTurn}`}`}
+                {isRecording ? '🔴 ĐANG THU ÂM... (BẤM ĐỂ DỪNG)' : hasRecordedTurn1 ? '✅ ĐÃ CÓ BẢN THU (BẤM THU LẠI)' : '🎙 BẤM ĐỂ THU ÂM'}
               </Text>
             </TouchableOpacity>
 
-            {/* CHUYỂN LƯỢT HOẶC NỘP BÀI */}
             {mode !== 'solo' && currentTurn === 1 ? (
               <TouchableOpacity style={styles.nextTurnBtn} onPress={handleNextTurnManual}>
-                <Text style={styles.nextTurnBtnText}>➡️ XÁC NHẬN CHUYỂN SANG LƯỢT 2</Text>
+                <Text style={styles.nextTurnBtnText}>➡️ SANG LƯỢT 2</Text>
               </TouchableOpacity>
             ) : (
-              <TouchableOpacity 
-                style={[
-                  styles.submitBtn, 
-                  isSubmitDisabled && styles.submitBtnDisabled
-                ]} 
-                onPress={handleSubmitBattleAnswer}
-                disabled={isSubmitDisabled}
-              >
-                <Text style={styles.submitBtnText}>
-                  {!isSubmitDisabled
-                    ? '⚡ NỘP BÀI & CHẤM ĐIỂM AI' 
-                    : '🔒 CẦN THU ÂM CÂU TRẢ LỜI CỤ THỂ'}
-                </Text>
+              <TouchableOpacity style={[styles.submitBtn, isSubmitDisabled && styles.submitBtnDisabled]} onPress={handleSubmitBattleAnswer} disabled={isSubmitDisabled}>
+                <Text style={styles.submitBtnText}>⚡ NỘP BÀI & CHẤM ĐIỂM AI</Text>
               </TouchableOpacity>
             )}
           </View>
         )}
 
-        {/* TRẠNG THÁI 3: AI PHÂN TÍCH 6 TIÊU CHÍ */}
+        {/* AI PHÂN TÍCH */}
         {battleState === 'analyzing' && (
           <View style={styles.box}>
             <ActivityIndicator size="large" color="#39FF14" style={{ marginBottom: 15 }} />
-            <Text style={styles.searchingText}>⚡ AI ĐANG ĐÁNH GIÁ 6 TIÊU CHÍ (PHÁT ÂM, NGỮ PHÁP, TỪ VỰNG, PHẢN XẠ, NỘI DUNG, TRÔI CHẢY)...</Text>
+            <Text style={styles.searchingText}>⚡ WHISPER AI ĐANG GIẢI MÃ CÂU NÓI THẬT & CHẤM 6 TIÊU CHÍ...</Text>
           </View>
         )}
 
-        {/* TRẠNG THÁI 4: KẾT QUẢ ĐÁNH GIÁ CHI TIẾT 6 TIÊU CHÍ */}
+        {/* KẾT QUẢ KÈM SCRIPT & PHÁT LẠI SOUND */}
         {battleState === 'ended' && result && (
           <View style={styles.box}>
             <Text style={[styles.resultTitle, { color: result.isWin ? '#39FF14' : '#FF0055' }]}>
@@ -549,55 +361,32 @@ export default function AllInArenaScreen({ onBack }: Props) {
             </Text>
             <Text style={styles.scoreText}>⚡ TỔNG ĐIỂM TRẬN ĐẤU: {result.score} / 100 ĐIỂM</Text>
 
-            {/* 🎧 NGHE LẠI GIỌNG THU ÂM */}
+            {/* AUDIO PLAYER */}
             {result.audioUrl && (
-              <TouchableOpacity 
-                style={[styles.playUserAudioBtn, isPlayingRecordedAudio && styles.playUserAudioBtnActive]} 
-                onPress={handlePlayUserVoice}
-              >
-                <Text style={styles.playUserAudioText}>
-                  {isPlayingRecordedAudio ? '⏸️ ĐANG PHÁT LẠI GIỌNG NÓI...' : '🎧 NGHE LẠI BẢN THU ÂM CỦA BẠN'}
-                </Text>
-              </TouchableOpacity>
+              <View style={styles.nativeAudioContainer}>
+                <Text style={styles.nativeAudioLabel}>🎧 NGHE LẠI BẢN THU CỦA BẠN:</Text>
+                <audio controls src={result.audioUrl} style={{ width: '100%', marginTop: 6 }} />
+              </View>
             )}
 
-            {/* 📄 BẢN CHUYỂN VĂN BẢN (SCRIPT/TRANSCRIPT) */}
+            {/* SCRIPT REAL 100% */}
             <View style={styles.scriptBox}>
-              <Text style={styles.scriptLabel}>📝 BẢN DỊCH CHỮ GIỌNG NÓI (SCRIPT):</Text>
+              <Text style={styles.scriptLabel}>📝 BẢN DỊCH CHỮ GIỌNG NÓI THỰC TẾ (SCRIPT):</Text>
               <Text style={styles.scriptContent}>"{result.transcript}"</Text>
-              <Text style={styles.wordCountText}>📊 Độ dài phản xạ: {result.wordCount} từ</Text>
+              <Text style={styles.wordCountText}>📊 Số từ phản xạ thực tế: {result.wordCount} từ</Text>
             </View>
 
-            {/* 📊 BẢNG 6 TIÊU CHÍ ĐÁNH GIÁ CHI TIẾT */}
+            {/* 6 TIÊU CHÍ */}
             <Text style={styles.breakdownHeaderLabel}>📊 PHÂN TÍCH CHI TIẾT 6 TIÊU CHÍ:</Text>
             <View style={styles.breakdownCard}>
-              <View style={styles.breakdownRow}>
-                <Text style={styles.breakdownLabel}>🗣️ 1. Phát âm (Pronunciation):</Text>
-                <Text style={styles.breakdownValue}>{result.pronunciation}/100</Text>
-              </View>
-              <View style={styles.breakdownRow}>
-                <Text style={styles.breakdownLabel}>📚 2. Ngữ pháp (Grammar):</Text>
-                <Text style={styles.breakdownValue}>{result.grammar}/100</Text>
-              </View>
-              <View style={styles.breakdownRow}>
-                <Text style={styles.breakdownLabel}>🔤 3. Từ vựng (Vocabulary):</Text>
-                <Text style={styles.breakdownValue}>{result.vocabulary}/100</Text>
-              </View>
-              <View style={styles.breakdownRow}>
-                <Text style={styles.breakdownLabel}>⚡ 4. Phản xạ (Reflexes):</Text>
-                <Text style={styles.breakdownValue}>{result.reflexes}/100</Text>
-              </View>
-              <View style={styles.breakdownRow}>
-                <Text style={styles.breakdownLabel}>🎯 5. Nội dung (Content):</Text>
-                <Text style={styles.breakdownValue}>{result.content}/100</Text>
-              </View>
-              <View style={styles.breakdownRow}>
-                <Text style={styles.breakdownLabel}>🌊 6. Độ trôi chảy (Fluency):</Text>
-                <Text style={styles.breakdownValue}>{result.fluency}/100</Text>
-              </View>
+              <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>🗣️ 1. Phát âm:</Text><Text style={styles.breakdownValue}>{result.pronunciation}/100</Text></View>
+              <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>📚 2. Ngữ pháp:</Text><Text style={styles.breakdownValue}>{result.grammar}/100</Text></View>
+              <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>🔤 3. Từ vựng:</Text><Text style={styles.breakdownValue}>{result.vocabulary}/100</Text></View>
+              <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>⚡ 4. Phản xạ:</Text><Text style={styles.breakdownValue}>{result.reflexes}/100</Text></View>
+              <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>🎯 5. Nội dung:</Text><Text style={styles.breakdownValue}>{result.content}/100</Text></View>
+              <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>🌊 6. Trôi chảy:</Text><Text style={styles.breakdownValue}>{result.fluency}/100</Text></View>
             </View>
 
-            {/* 📌 NHẬN XÉT ĐẦY ĐỦ TỪ AI */}
             <Text style={styles.feedbackText}>{result.detailedFeedback}</Text>
 
             <TouchableOpacity style={styles.startBtn} onPress={() => loadModeData(mode, cefrLevel)}>
@@ -618,7 +407,7 @@ const styles = StyleSheet.create({
   title: { color: '#FF007F', fontSize: 12, fontWeight: '900' },
   sectionLabel: { color: '#FFD700', fontSize: 10, fontWeight: 'bold', alignSelf: 'flex-start', marginBottom: 6 },
   tabRow: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginBottom: 12 },
-  modeTab: { backgroundColor: '#0D0620', paddingVertical: 8, paddingHorizontal: 6, borderRadius: 8, borderWidth: 1, borderColor: '#332255', width: '32%', alignItems: 'center' },
+  modeTab: { backgroundColor: '#0D0620', paddingVertical: 8, borderRadius: 8, borderWidth: 1, borderColor: '#332255', width: '32%', alignItems: 'center' },
   modeTabActive: { backgroundColor: '#FF007F', borderColor: '#FF007F' },
   modeTabText: { color: '#8888AA', fontSize: 9, fontWeight: '900' },
   modeTextActive: { color: '#FFF' },
@@ -637,7 +426,6 @@ const styles = StyleSheet.create({
   boxTitle: { color: '#FFD700', fontSize: 11, fontWeight: '900', marginBottom: 12 },
   topicTitle: { color: '#00FFFF', fontSize: 13, fontWeight: '900', marginBottom: 6 },
   promptText: { color: '#FFF', fontSize: 13, fontWeight: '800', textAlign: 'center', lineHeight: 18, marginBottom: 10 },
-  subText: { color: '#AAAABB', fontSize: 10, textAlign: 'center', marginBottom: 4 },
   searchingText: { color: '#00FFFF', fontSize: 11, fontWeight: 'bold', textAlign: 'center' },
   refreshBtn: { backgroundColor: '#1A0B2E', padding: 8, borderRadius: 8, borderWidth: 1, borderColor: '#00FFFF', width: '100%', alignItems: 'center', marginBottom: 12 },
   refreshBtnText: { color: '#00FFFF', fontSize: 10, fontWeight: 'bold' },
@@ -646,8 +434,6 @@ const styles = StyleSheet.create({
   battleHeader: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginBottom: 10, alignItems: 'center' },
   opponentName: { color: '#00FFFF', fontSize: 11, fontWeight: '900' },
   timerText: { color: '#39FF14', fontSize: 11, fontWeight: '900' },
-  turnBadgeBox: { backgroundColor: '#1A0B2E', padding: 8, borderRadius: 8, borderWidth: 1, borderColor: '#FFD700', width: '100%', marginBottom: 12 },
-  turnBadgeText: { color: '#FFD700', fontSize: 10, fontWeight: 'bold', textAlign: 'center' },
   recordToggleBtn: { backgroundColor: '#1A0B2E', padding: 12, borderRadius: 10, borderWidth: 2, borderColor: '#FF007F', width: '100%', alignItems: 'center', marginBottom: 10 },
   recordToggleBtnActive: { backgroundColor: '#FF0055', borderColor: '#FF0055' },
   recordToggleText: { color: '#FFF', fontSize: 10, fontWeight: '900' },
@@ -658,9 +444,8 @@ const styles = StyleSheet.create({
   submitBtnText: { color: '#000', fontSize: 11, fontWeight: '900' },
   resultTitle: { fontSize: 15, fontWeight: '900', marginBottom: 6 },
   scoreText: { color: '#FFD700', fontSize: 13, fontWeight: '900', marginBottom: 10 },
-  playUserAudioBtn: { backgroundColor: '#1A0B2E', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#00FFFF', width: '100%', alignItems: 'center', marginBottom: 12 },
-  playUserAudioBtnActive: { backgroundColor: '#00FFFF' },
-  playUserAudioText: { color: '#00FFFF', fontSize: 10, fontWeight: 'bold' },
+  nativeAudioContainer: { width: '100%', backgroundColor: '#1A0B2E', padding: 10, borderRadius: 10, borderWidth: 1, borderColor: '#00FFFF', marginBottom: 12, alignItems: 'center' },
+  nativeAudioLabel: { color: '#00FFFF', fontSize: 10, fontWeight: 'bold' },
   scriptBox: { backgroundColor: '#1A0B2E', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#332255', width: '100%', marginBottom: 12 },
   scriptLabel: { color: '#FFD700', fontSize: 10, fontWeight: 'bold', marginBottom: 4 },
   scriptContent: { color: '#FFF', fontSize: 11, fontStyle: 'italic', marginBottom: 6 },
