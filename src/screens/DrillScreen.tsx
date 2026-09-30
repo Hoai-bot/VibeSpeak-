@@ -17,6 +17,7 @@ export default function DrillScreen({ onBack }: Props) {
   const [cefrLevel, setCefrLevel] = useState<string>('B2');
   const [drillData, setDrillData] = useState<DrillItem | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
+  const [isPlayingAudio, setIsPlayingAudio] = useState<boolean>(false);
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
   const [result, setResult] = useState<{ score: number; feedback: string } | null>(null);
 
@@ -41,6 +42,34 @@ export default function DrillScreen({ onBack }: Props) {
     loadDrill(activeTier, cefrLevel);
   }, [activeTier, cefrLevel]);
 
+  // 🔊 HÀM PHÁT ÂM MẪU AI TỰ NHIÊN (NATURAL TTS)
+  const handlePlaySampleAudio = () => {
+    if (!drillData) return;
+    setIsPlayingAudio(true);
+
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel(); // Xóa luồng cũ
+
+      const textToSpeak = drillData.spokenText || drillData.target;
+      const utterance = new SpeechSynthesisUtterance(textToSpeak);
+      utterance.lang = 'en-US';
+      utterance.rate = 0.9; // Tốc độ vừa phải, tự nhiên
+      utterance.pitch = 1.0;
+
+      // Tìm giọng Mỹ/Anh tự nhiên (Natural Voice) nếu trình duyệt hỗ trợ
+      const voices = window.speechSynthesis.getVoices();
+      const naturalVoice = voices.find(v => v.lang.startsWith('en') && (v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('Samantha')));
+      if (naturalVoice) utterance.voice = naturalVoice;
+
+      utterance.onend = () => setIsPlayingAudio(false);
+      utterance.onerror = () => setIsPlayingAudio(false);
+
+      window.speechSynthesis.speak(utterance);
+    } else {
+      setTimeout(() => setIsPlayingAudio(false), 1200);
+    }
+  };
+
   const handleSimulateGrade = () => {
     setIsAnalyzing(true);
     setResult(null);
@@ -50,7 +79,7 @@ export default function DrillScreen({ onBack }: Props) {
         feedback: "Phát âm chuẩn IPA, ngắt nghỉ câu tự nhiên! Giữ vững phong độ.",
       });
       setIsAnalyzing(false);
-      updateUserProgress(1, 25, true);
+      updateUserProgress(1, 20, true);
     }, 1500);
   };
 
@@ -60,12 +89,12 @@ export default function DrillScreen({ onBack }: Props) {
         <TouchableOpacity onPress={onBack} style={styles.backBtn}>
           <Text style={styles.backText}>🔙 QUAY LẠI MAP</Text>
         </TouchableOpacity>
-        <Text style={styles.title}>🎯 TRẠM 1: PHẢN XẠ ÂM (DRILL ARENA)</Text>
+        <Text style={styles.title}>🎯 TRẠM 1: DRILL ARENA (LUYỆN PHẢN XẠ ÂM)</Text>
       </View>
 
       <ScrollView contentContainerStyle={{ alignItems: 'center', width: '100%', paddingBottom: 30 }}>
-        {/* THANH CHỌN TẦNG (3 TIERS) */}
-        <Text style={styles.sectionLabel}>CHỌN TẦNG THỬ THÁCH (TIER 1 - 3):</Text>
+        {/* CHỌN TẦNG TỰ HỌC (TIER 1 - 3) */}
+        <Text style={styles.sectionLabel}>CHỌN DẠNG BÀI DRILL (TIER 1 - 3):</Text>
         <View style={styles.tabRow}>
           <TouchableOpacity 
             style={[styles.tierTab, activeTier === 1 && styles.tierTabActive]} 
@@ -87,7 +116,7 @@ export default function DrillScreen({ onBack }: Props) {
           </TouchableOpacity>
         </View>
 
-        {/* THANH CHỌN CẤP ĐỘ CEFR TỪ A1 ĐẾN C2 */}
+        {/* CHỌN TRÌNH ĐỘ TỪ A1 TỚI C2 */}
         <View style={styles.cefrRow}>
           {CEFR_LEVELS.map((lvl) => (
             <TouchableOpacity
@@ -108,17 +137,28 @@ export default function DrillScreen({ onBack }: Props) {
           ))}
         </View>
 
-        {/* CARD BÀI TẬP PHÂN LOẠI */}
+        {/* CARD HIỂN THỊ CÂU DRILL */}
         <View style={styles.card}>
           {loading ? (
             <ActivityIndicator size="small" color="#00FFFF" style={{ marginVertical: 20 }} />
           ) : drillData ? (
             <>
-              <Text style={styles.tag}>[ LEVEL {cefrLevel} • TIER {activeTier} ]</Text>
+              <Text style={styles.tag}>[ TIER {activeTier} • LEVEL {cefrLevel} ]</Text>
               <Text style={styles.targetText}>"{drillData.target}"</Text>
               <Text style={styles.ipaText}>🔊 IPA: {drillData.phonetics}</Text>
               <Text style={styles.meaningText}>💡 Nghĩa: {drillData.meaning}</Text>
-              <Text style={styles.tipText}>📌 Mẹo: {drillData.tip}</Text>
+              <Text style={styles.tipText}>📌 Mẹo âm: {drillData.tip}</Text>
+
+              {/* NÚT PHÁT ÂM MẪU BẰNG GIỌNG AI TỰ NHIÊN */}
+              <TouchableOpacity 
+                style={[styles.audioBtn, isPlayingAudio && styles.audioBtnPlaying]} 
+                onPress={handlePlaySampleAudio}
+                disabled={isPlayingAudio}
+              >
+                <Text style={styles.audioBtnText}>
+                  {isPlayingAudio ? '🔊 ĐANG PHÁT ÂM MẪU...' : '📢 NGHE GIỌNG ĐỌC MẪU AI'}
+                </Text>
+              </TouchableOpacity>
             </>
           ) : null}
         </View>
@@ -128,20 +168,21 @@ export default function DrillScreen({ onBack }: Props) {
           onPress={() => loadDrill(activeTier, cefrLevel)}
           disabled={loading}
         >
-          <Text style={styles.refreshBtnText}>🔄 ĐỔI CÂU HỎI MỚI ({cefrLevel})</Text>
+          <Text style={styles.refreshBtnText}>🔄 ĐỔI BÀI TẬP MỚI ({cefrLevel})</Text>
         </TouchableOpacity>
 
+        {/* THU ÂM HỌC VIÊN */}
         {isAnalyzing ? (
           <ActivityIndicator size="large" color="#39FF14" style={{ marginVertical: 15 }} />
         ) : (
           <TouchableOpacity style={styles.recordBtn} onPress={handleSimulateGrade}>
-            <Text style={styles.recordBtnText}>🎙️ PHÁT ÂM & CHẤM ĐIỂM AI CHẶT CHẼ</Text>
+            <Text style={styles.recordBtnText}>🎙️ THU ÂM PHÁT ÂM & CHẤM ĐIỂM IPA</Text>
           </TouchableOpacity>
         )}
 
         {result && (
           <View style={styles.resultBox}>
-            <Text style={styles.scoreText}>⚡ KẾT QUẢ: {result.score}/100 ĐIỂM (+25 XP)</Text>
+            <Text style={styles.scoreText}>⚡ KẾT QUẢ DRILL: {result.score}/100 ĐIỂM (+20 XP)</Text>
             <Text style={styles.feedback}>{result.feedback}</Text>
           </View>
         )}
@@ -155,7 +196,7 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 15 },
   backBtn: { padding: 8, backgroundColor: '#0D0620', borderRadius: 8, borderWidth: 1, borderColor: '#00FFFF' },
   backText: { color: '#00FFFF', fontSize: 10, fontWeight: 'bold' },
-  title: { color: '#00FFFF', fontSize: 12, fontWeight: '900' },
+  title: { color: '#00FFFF', fontSize: 11, fontWeight: '900' },
   sectionLabel: { color: '#FFD700', fontSize: 10, fontWeight: 'bold', alignSelf: 'flex-start', marginBottom: 8 },
   tabRow: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginBottom: 12 },
   tierTab: { backgroundColor: '#0D0620', paddingVertical: 8, paddingHorizontal: 6, borderRadius: 8, borderWidth: 1, borderColor: '#332255', width: '32%', alignItems: 'center' },
@@ -172,7 +213,10 @@ const styles = StyleSheet.create({
   targetText: { color: '#FFF', fontSize: 16, fontWeight: '800', textAlign: 'center', lineHeight: 22, marginBottom: 8 },
   ipaText: { color: '#39FF14', fontSize: 11, fontWeight: 'bold', marginBottom: 6 },
   meaningText: { color: '#AAAABB', fontSize: 11, textAlign: 'center', marginBottom: 4 },
-  tipText: { color: '#FF007F', fontSize: 10, textAlign: 'center', fontStyle: 'italic' },
+  tipText: { color: '#FF007F', fontSize: 10, textAlign: 'center', fontStyle: 'italic', marginBottom: 12 },
+  audioBtn: { backgroundColor: '#1A0B2E', paddingVertical: 10, paddingHorizontal: 16, borderRadius: 8, borderWidth: 1, borderColor: '#00FFFF', marginTop: 6 },
+  audioBtnPlaying: { backgroundColor: '#00FFFF' },
+  audioBtnText: { color: '#00FFFF', fontSize: 10, fontWeight: '900' },
   refreshBtn: { backgroundColor: '#1A0B2E', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#FF007F', width: '100%', alignItems: 'center', marginBottom: 12 },
   refreshBtnText: { color: '#FF007F', fontSize: 10, fontWeight: '900' },
   recordBtn: { backgroundColor: '#39FF14', padding: 14, borderRadius: 12, width: '100%', alignItems: 'center', marginBottom: 15 },
