@@ -13,6 +13,7 @@ interface Props {
 export default function AllInArenaScreen({ onBack }: Props) {
   const [mode, setMode] = useState<'solo' | 'relay' | 'roleplay'>('solo');
   const [cefrLevel, setCefrLevel] = useState<string>('B2');
+  const [opponentType, setOpponentType] = useState<'bot' | 'pvp'>('bot'); // 🤖 BOT vs 👥 NGƯỜI THẬT
   const [loading, setLoading] = useState<boolean>(false);
 
   const [soloTopic, setSoloTopic] = useState<SoloTopic | null>(null);
@@ -20,6 +21,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
   const [roleplayScenario, setRoleplayScenario] = useState<RoleplayScenario | null>(null);
 
   const [battleState, setBattleState] = useState<'idle' | 'searching' | 'battling' | 'ended'>('idle');
+  const [matchedOpponent, setMatchedOpponent] = useState<string>('');
   const [winner, setWinner] = useState<string | null>(null);
 
   const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
@@ -45,15 +47,23 @@ export default function AllInArenaScreen({ onBack }: Props) {
 
   const startMatch = () => {
     setBattleState('searching');
+    
     setTimeout(() => {
+      if (opponentType === 'bot') {
+        setMatchedOpponent('🤖 CYBER BOT [LEVEL ' + cefrLevel + ']');
+      } else {
+        const fakeUsernames = ['CyberKnight99', 'NeonSpeaker', 'VibeMaster', 'EchoRider'];
+        const randomUser = fakeUsernames[Math.floor(Math.random() * fakeUsernames.length)];
+        setMatchedOpponent('👤 ' + randomUser + ' [LEVEL ' + cefrLevel + ']');
+      }
       setBattleState('battling');
-    }, 1500);
+    }, 2000);
   };
 
   const endMatch = (isWin: boolean) => {
-    setWinner(isWin ? 'YOU' : 'CYBER_BOT');
+    setWinner(isWin ? 'YOU' : matchedOpponent);
     setBattleState('ended');
-    updateUserProgress(2, isWin ? 50 : 10, isWin);
+    updateUserProgress(2, isWin ? 50 : 15, isWin);
   };
 
   return (
@@ -67,7 +77,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
 
       <ScrollView contentContainerStyle={{ alignItems: 'center', width: '100%', paddingBottom: 30 }}>
         {/* CHỌN CHẾ ĐỘ THI ĐẤU (SOLO, RELAY, ROLEPLAY) */}
-        <Text style={styles.sectionLabel}>CHỌN CHẾ ĐỘ ĐẤU TRƯỜNG:</Text>
+        <Text style={styles.sectionLabel}>1. CHỌN DẠNG BÀI ĐẤU TRƯỜNG:</Text>
         <View style={styles.tabRow}>
           <TouchableOpacity 
             style={[styles.modeTab, mode === 'solo' && styles.modeTabActive]} 
@@ -89,7 +99,30 @@ export default function AllInArenaScreen({ onBack }: Props) {
           </TouchableOpacity>
         </View>
 
-        {/* CHỌN LEVEL TỪ A1 ĐẾN C2 */}
+        {/* CHỌN LỰA ĐỐI THỦ: BOT VS NGƯỜI THẬT */}
+        <Text style={styles.sectionLabel}>2. CHỌN ĐỐI THỦ THÁCH ĐẤU:</Text>
+        <View style={styles.opponentRow}>
+          <TouchableOpacity 
+            style={[styles.opponentBtn, opponentType === 'bot' && styles.opponentBtnActive]} 
+            onPress={() => setOpponentType('bot')}
+          >
+            <Text style={[styles.opponentText, opponentType === 'bot' && styles.opponentTextActive]}>
+              🤖 ĐẤU VỚI BOT AI
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={[styles.opponentBtn, opponentType === 'pvp' && styles.opponentBtnActivePvP]} 
+            onPress={() => setOpponentType('pvp')}
+          >
+            <Text style={[styles.opponentText, opponentType === 'pvp' && styles.opponentTextActive]}>
+              👥 ĐẤU VỚI NGƯỜI THẬT
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* CHỌN LEVEL CEFR */}
+        <Text style={styles.sectionLabel}>3. CHỌN CẤP ĐỘ CEFR:</Text>
         <View style={styles.cefrRow}>
           {CEFR_LEVELS.map((lvl) => (
             <TouchableOpacity
@@ -112,7 +145,9 @@ export default function AllInArenaScreen({ onBack }: Props) {
 
         {battleState === 'idle' && (
           <View style={styles.box}>
-            <Text style={styles.boxTitle}>⚡ THÁCH ĐẤU [{mode.toUpperCase()}] • LEVEL {cefrLevel}</Text>
+            <Text style={styles.boxTitle}>
+              ⚡ {mode.toUpperCase()} • {opponentType === 'bot' ? '🤖 CHẾ ĐỘ BOT' : '👥 MATCHING PVP'} [{cefrLevel}]
+            </Text>
             
             {loading ? (
               <ActivityIndicator size="small" color="#FF007F" style={{ marginVertical: 15 }} />
@@ -129,16 +164,20 @@ export default function AllInArenaScreen({ onBack }: Props) {
                   <>
                     <Text style={styles.topicTitle}>📌 {relayChallenge.topic}</Text>
                     <Text style={styles.promptText}>💡 Context: {relayChallenge.context}</Text>
-                    <Text style={styles.subText}>👤 Player 1: {relayChallenge.player1Guideline}</Text>
-                    <Text style={styles.subText}>👥 Player 2: {relayChallenge.player2Guideline}</Text>
+                    <Text style={styles.subText}>👤 Bạn: {relayChallenge.player1Guideline}</Text>
+                    <Text style={styles.subText}>
+                      {opponentType === 'bot' ? '🤖 Bot AI: ' : '👥 Đối thủ: '}{relayChallenge.player2Guideline}
+                    </Text>
                   </>
                 )}
 
                 {mode === 'roleplay' && roleplayScenario && (
                   <>
                     <Text style={styles.topicTitle}>🎭 {roleplayScenario.scenarioTitle}</Text>
-                    <Text style={styles.promptText}>🤖 AI Bot: "{roleplayScenario.initialAiMessage}"</Text>
-                    <Text style={styles.subText}>🎯 Goal: {roleplayScenario.goal}</Text>
+                    <Text style={styles.promptText}>
+                      {opponentType === 'bot' ? '🤖 Bot AI: ' : '👥 Khách hàng: '}"{roleplayScenario.initialAiMessage}"
+                    </Text>
+                    <Text style={styles.subText}>🎯 Mục tiêu: {roleplayScenario.goal}</Text>
                   </>
                 )}
               </View>
@@ -149,11 +188,13 @@ export default function AllInArenaScreen({ onBack }: Props) {
               onPress={() => loadModeData(mode, cefrLevel)}
               disabled={loading}
             >
-              <Text style={styles.refreshBtnText}>🔄 TẠO ĐỀ THÁCH ĐẤU MỚI</Text>
+              <Text style={styles.refreshBtnText}>🔄 ĐỔI ĐỀ THÁCH ĐẤU MỚI</Text>
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.startBtn} onPress={startMatch}>
-              <Text style={styles.startBtnText}>⚔️ BẮT ĐẦU VÀO TRẬN ĐẤU</Text>
+              <Text style={styles.startBtnText}>
+                {opponentType === 'bot' ? '🤖 KHỞI CHẠY TRẬN ĐẤU VỚI BOT' : '🔍 THUẬT TOÁN TÌM NGƯỜI THẬT'}
+              </Text>
             </TouchableOpacity>
           </View>
         )}
@@ -161,20 +202,24 @@ export default function AllInArenaScreen({ onBack }: Props) {
         {battleState === 'searching' && (
           <View style={styles.box}>
             <ActivityIndicator size="large" color="#FF007F" style={{ marginBottom: 15 }} />
-            <Text style={styles.searchingText}>🔍 ĐANG KẾT NỐI ĐỐI THỦ CHUẨN LEVEL {cefrLevel}...</Text>
+            <Text style={styles.searchingText}>
+              {opponentType === 'bot' 
+                ? `🤖 ĐANG KHỞI TẠO BOT AI LEVEL ${cefrLevel}...` 
+                : `🔍 ĐANG GHÉP CẶP ĐỐI THỦ NGƯỜI THẬT LEVEL ${cefrLevel}...`}
+            </Text>
           </View>
         )}
 
         {battleState === 'battling' && (
           <View style={styles.box}>
-            <Text style={styles.boxTitle}>⚡ TRẬN ĐẤU ĐANG DIỄN RA ({cefrLevel})</Text>
-            <Text style={styles.promptText}>Ghi âm câu trả lời phản xạ bằng giọng nói của bạn...</Text>
+            <Text style={styles.boxTitle}>⚔️ ĐANG THI ĐẤU CÙNG: {matchedOpponent}</Text>
+            <Text style={styles.promptText}>Ghi âm phản xạ đáp trả đối thủ bằng giọng nói của bạn...</Text>
             <View style={styles.btnRow}>
               <TouchableOpacity style={styles.winBtn} onPress={() => endMatch(true)}>
                 <Text style={styles.btnText}>🏆 CHIẾN THẮNG (+50 XP)</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.loseBtn} onPress={() => endMatch(false)}>
-                <Text style={styles.btnText}>💀 THẤT BẠI (+10 XP)</Text>
+                <Text style={styles.btnText}>💀 THẤT BẠI (+15 XP)</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -183,7 +228,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
         {battleState === 'ended' && (
           <View style={styles.box}>
             <Text style={styles.resultTitle}>
-              {winner === 'YOU' ? '🎉 BẠN ĐÃ CHIẾN THẮNG!' : '💀 BẠN ĐÃ THẤT BẠI!'}
+              {winner === 'YOU' ? '🎉 BẠN ĐÃ CHIẾN THẮNG!' : `💀 THẤT BẠI TRƯỚC ${winner}`}
             </Text>
             <TouchableOpacity style={styles.startBtn} onPress={() => setBattleState('idle')}>
               <Text style={styles.startBtnText}>🔄 THI ĐẤU TRẬN MỚI</Text>
@@ -201,19 +246,25 @@ const styles = StyleSheet.create({
   backBtn: { padding: 8, backgroundColor: '#0D0620', borderRadius: 8, borderWidth: 1, borderColor: '#FF007F' },
   backText: { color: '#FF007F', fontSize: 10, fontWeight: 'bold' },
   title: { color: '#FF007F', fontSize: 12, fontWeight: '900' },
-  sectionLabel: { color: '#FFD700', fontSize: 10, fontWeight: 'bold', alignSelf: 'flex-start', marginBottom: 8 },
+  sectionLabel: { color: '#FFD700', fontSize: 10, fontWeight: 'bold', alignSelf: 'flex-start', marginBottom: 6 },
   tabRow: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginBottom: 12 },
   modeTab: { backgroundColor: '#0D0620', paddingVertical: 8, paddingHorizontal: 6, borderRadius: 8, borderWidth: 1, borderColor: '#332255', width: '32%', alignItems: 'center' },
   modeTabActive: { backgroundColor: '#FF007F', borderColor: '#FF007F' },
   modeTabText: { color: '#8888AA', fontSize: 9, fontWeight: '900' },
   modeTextActive: { color: '#FFF' },
+  opponentRow: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginBottom: 12 },
+  opponentBtn: { backgroundColor: '#0D0620', paddingVertical: 10, borderRadius: 8, borderWidth: 1, borderColor: '#332255', width: '48%', alignItems: 'center' },
+  opponentBtnActive: { backgroundColor: '#00FFFF', borderColor: '#00FFFF' },
+  opponentBtnActivePvP: { backgroundColor: '#FF007F', borderColor: '#FF007F' },
+  opponentText: { color: '#AAAABB', fontSize: 10, fontWeight: '900' },
+  opponentTextActive: { color: '#000' },
   cefrRow: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginBottom: 15 },
   cefrBadge: { backgroundColor: '#0D0620', paddingVertical: 6, paddingHorizontal: 10, borderRadius: 6, borderWidth: 1, borderColor: '#332255' },
-  cefrBadgeActive: { backgroundColor: '#00FFFF', borderColor: '#00FFFF' },
+  cefrBadgeActive: { backgroundColor: '#39FF14', borderColor: '#39FF14' },
   cefrText: { color: '#8888AA', fontSize: 10, fontWeight: 'bold' },
   cefrTextActive: { color: '#000' },
   box: { backgroundColor: '#0D0620', padding: 18, borderRadius: 16, borderWidth: 2, borderColor: '#FF007F', width: '100%', alignItems: 'center', marginBottom: 20 },
-  boxTitle: { color: '#FFD700', fontSize: 12, fontWeight: '900', marginBottom: 12 },
+  boxTitle: { color: '#FFD700', fontSize: 11, fontWeight: '900', marginBottom: 12 },
   topicTitle: { color: '#00FFFF', fontSize: 13, fontWeight: '900', marginBottom: 6 },
   promptText: { color: '#FFF', fontSize: 13, fontWeight: '800', textAlign: 'center', lineHeight: 18, marginBottom: 10 },
   subText: { color: '#AAAABB', fontSize: 10, textAlign: 'center', marginBottom: 4 },
@@ -226,5 +277,5 @@ const styles = StyleSheet.create({
   winBtn: { backgroundColor: '#39FF14', padding: 12, borderRadius: 8, width: '48%', alignItems: 'center' },
   loseBtn: { backgroundColor: '#FF0055', padding: 12, borderRadius: 8, width: '48%', alignItems: 'center' },
   btnText: { color: '#000', fontSize: 10, fontWeight: '900' },
-  resultTitle: { color: '#39FF14', fontSize: 15, fontWeight: '900', marginBottom: 15 }
+  resultTitle: { color: '#39FF14', fontSize: 14, fontWeight: '900', marginBottom: 15 }
 });
