@@ -30,17 +30,18 @@ export async function generateTier2Drill(cefrLevel: string, topicContext: string
   const history = await getTier2History();
   const excludeList = history.join(', ');
 
-  const prompt = `You are an ELT Materials Designer & Phonetician. Generate ONE UNIQUE Consonant-to-Vowel Linking phrase for Tier 2.
+  const prompt = `You are an ELT Materials Designer & Senior Phonetician. Generate ONE UNIQUE Consonant-to-Vowel Linking phrase for Tier 2.
 - CEFR Level: ${cefrLevel}
 - Context: ${topicContext}
 
-STRICT TIER 2 RULES:
-1. "target" MUST be a natural, meaningful spoken phrase of 3-5 words (e.g., "Check it out", "Hold on a second", "Clean it up", "Turn off the engine").
-2. NEVER generate nonsensical combinations (e.g., "Hold on a data date").
-3. "phonetics" MUST follow strict Cambridge IPA rules:
+STRICT TIER 2 PHONETIC RULES (CAMBRIDGE IPA):
+1. "target" MUST be a natural spoken phrase of 3-5 words (e.g., "Check it out", "Hold on a second", "Clean it up").
+2. "phonetics" MUST FOLLOW STRICT ACCURATE IPA:
+   * "minute" (time noun) MUST BE /ˈmɪn.ɪt/ (NEVER /maɪ.nɪt/).
+   * "second" (time noun) MUST BE /ˈsek.ənd/.
    * "date" MUST BE /deɪt/ (NEVER /dæt/).
    * "data" MUST BE /ˈdeɪ.tə/.
-4. ABSOLUTELY FORBIDDEN PHRASES (DO NOT REPEAT): [${excludeList}].
+3. ABSOLUTELY FORBIDDEN PHRASES (DO NOT REPEAT): [${excludeList}].
 
 Return ONLY JSON:
 {
@@ -56,7 +57,7 @@ Return ONLY JSON:
     const response = await groq.chat.completions.create({
       messages: [{ role: 'user', content: prompt }],
       model: 'openai/gpt-oss-20b',
-      temperature: 0.85,
+      temperature: 0.8,
       response_format: { type: 'json_object' },
     });
 
@@ -66,6 +67,7 @@ Return ONLY JSON:
   } catch (error) {
     const fallbacks = [
       { target: "Check it out", phonetics: "/tʃek ɪt aʊt/", meaning: "Kiểm tra nó xem", tip: "Nối /k/ sang /ɪ/ (Check-it) và /t/ sang /aʊ/ (it-out).", spokenText: "Check it out" },
+      { target: "Hold on a second", phonetics: "/həʊld ɒn ə ˈsek.ənd/", meaning: "Chờ một chút nhé", tip: "Nối âm /d/ trong 'Hold' sang nguyên âm /ɒ/ trong 'on' (Hold-on).", spokenText: "Hold on a second" },
       { target: "Turn off the lights", phonetics: "/tɜːn ɒf ðə laɪts/", meaning: "Tắt đèn đi", tip: "Nối âm /n/ trong 'Turn' sang /ɒ/ trong 'off' (Turn-off).", spokenText: "Turn off the lights" }
     ];
     return { ...fallbacks[Math.floor(Math.random() * fallbacks.length)], cefrLevel };
