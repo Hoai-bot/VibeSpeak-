@@ -1,6 +1,6 @@
 // src/screens/AllInArenaScreen.tsx
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, Alert } from 'react-native';
 import { generateSoloTopic, SoloTopic } from '../services/arena/soloService';
 import { generateRelayChallenge, RelayChallenge } from '../services/arena/relayService';
 import { generateRoleplayScenario, RoleplayScenario } from '../services/arena/roleplayService';
@@ -28,10 +28,12 @@ export default function AllInArenaScreen({ onBack }: Props) {
   const [timeLeft, setTimeLeft] = useState<number>(30);
   const [isTimerRunning, setIsTimerRunning] = useState<boolean>(false);
   
-  // MICRO & RECORDING THỰC TẾ
+  // MICRO & RECORDING THỰC TẾ + CỜ XÁC NHẬN THU ÂM TRONG PHIÊN HIỆN TẠI
   const [isRecording, setIsRecording] = useState<boolean>(false);
   const [recordedTurn1, setRecordedTurn1] = useState<Blob | null>(null);
   const [recordedTurn2, setRecordedTurn2] = useState<Blob | null>(null);
+  const [hasRecordedTurn1, setHasRecordedTurn1] = useState<boolean>(false); // CỜ BẢO VỆ LƯỢT 1
+  const [hasRecordedTurn2, setHasRecordedTurn2] = useState<boolean>(false); // CỜ BẢO VỆ LƯỢT 2
   const [result, setResult] = useState<{ score: number; isWin: boolean; feedback: string } | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -52,6 +54,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
     return Math.floor(total / 2);
   };
 
+  // RESET SẠCH TOÀN BỘ TRẠNG THÁI & DỮ LIỆU THU ÂM CỦA CÁC TRẬN CŨ
   const resetBattleState = () => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
       try { mediaRecorderRef.current.stop(); } catch (e) {}
@@ -64,6 +67,8 @@ export default function AllInArenaScreen({ onBack }: Props) {
     setIsTimerRunning(false);
     setRecordedTurn1(null);
     setRecordedTurn2(null);
+    setHasRecordedTurn1(false); // XÓA CỜ XÁC NHẬN
+    setHasRecordedTurn2(false); // XÓA CỜ XÁC NHẬN
     setResult(null);
     audioChunksRef.current = [];
   };
@@ -102,7 +107,6 @@ export default function AllInArenaScreen({ onBack }: Props) {
           clearInterval(timerRef.current!);
           setIsTimerRunning(false);
 
-          // Tự động dừng thu âm nếu hết giờ
           if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
             try { mediaRecorderRef.current.stop(); } catch (e) {}
           }
@@ -118,8 +122,9 @@ export default function AllInArenaScreen({ onBack }: Props) {
     }, 1000);
   };
 
-  // ⚔️ BẮT ĐẦU TRẬN ĐẤU (CHƯA CHẠY ĐỒNG HỒ)
+  // ⚔️ BẮT ĐẦU TRẬN ĐẤU (XÓA SẠCH BẢN THU ÂM CŨ TRƯỚC VÀO TRẬN)
   const startMatch = () => {
+    resetBattleState(); // XÓA TRẠNG THÁI VÀ BẢN THU CŨ NGAY LẬP TỨC
     setBattleState('searching');
     
     setTimeout(() => {
@@ -132,15 +137,13 @@ export default function AllInArenaScreen({ onBack }: Props) {
       }
       
       setCurrentTurn(1);
-      setRecordedTurn1(null);
-      setRecordedTurn2(null);
       setBattleState('battling');
-      setTimeLeft(getTimeForCurrentMode(cefrLevel, mode)); // Hiển thị thời gian chuẩn bị nhưng chưa đếm ngược
+      setTimeLeft(getTimeForCurrentMode(cefrLevel, mode));
       setIsTimerRunning(false);
     }, 1500);
   };
 
-  // 🎙️ QUẢN LÝ THU ÂM (KÍCH HOẠT ĐỒNG HỒ TẠI ĐÂY)
+  // 🎙️ QUẢN LÝ THU ÂM THỰC TẾ
   const handleToggleRecord = async () => {
     if (!isRecording) {
       try {
@@ -163,10 +166,17 @@ export default function AllInArenaScreen({ onBack }: Props) {
             if (recordedBlob.size > 3000) {
               if (mode === 'solo' || currentTurn === 1) {
                 setRecordedTurn1(recordedBlob);
+                setHasRecordedTurn1(true); // KÍCH HOẠT CỜ LƯỢT 1
               } else {
                 setRecordedTurn2(recordedBlob);
+                setHasRecordedTurn2(true); // KÍCH HOẠT CỜ LƯỢT 2
               }
             } else {
+              if (mode === 'solo' || currentTurn === 1) {
+                setHasRecordedTurn1(false);
+              } else {
+                setHasRecordedTurn2(false);
+              }
               if (typeof window !== 'undefined') {
                 alert("⚠️ Thu âm quá ngắn hoặc chưa phát ra tiếng! Vui lòng thu âm lại.");
               }
@@ -177,7 +187,6 @@ export default function AllInArenaScreen({ onBack }: Props) {
           mediaRecorder.start();
           setIsRecording(true);
 
-          // ⏱️ KÍCH HOẠT ĐỒNG HỒ ĐẾM NGƯỢC NGAY KHI BẤM NÚT GHI ÂM
           if (!isTimerRunning) {
             startTurnTimer(timeLeft > 0 ? timeLeft : getTimeForCurrentMode(cefrLevel, mode));
           }
@@ -198,7 +207,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
   };
 
   const handleNextTurnManual = () => {
-    if (!recordedTurn1 || recordedTurn1.size <= 3000) {
+    if (!hasRecordedTurn1 || !recordedTurn1 || recordedTurn1.size <= 3000) {
       alert("🔒 CHƯA CÓ BẢN THU ÂM LƯỢT 1: Bạn phải ghi âm câu trả lời Lượt 1 trước khi chuyển lượt!");
       return;
     }
@@ -210,18 +219,22 @@ export default function AllInArenaScreen({ onBack }: Props) {
     setTimeLeft(getTimeForCurrentMode(cefrLevel, mode));
   };
 
-  // 📊 CHẤM ĐIỂM CHẶT CHẼ BẮT BỘC CÓ BẢN THU
+  // 📊 CHẤM ĐIỂM CHẶT CHẼ BẮT BỘC CÓ BẢN THU CỦA TRẬN HIỆN TẠI
   const handleSubmitBattleAnswer = () => {
-    // 🛑 RÀO CẢN KHÓA TUYỆT ĐỐI
+    // 🛑 RÀO CẢN BẢO VỆ TUYỆT ĐỐI BẰNG CỜ XÁC NHẬN
     if (mode === 'solo') {
-      if (!recordedTurn1 || recordedTurn1.size <= 3000) {
-        alert("🔒 CHƯA THU ÂM SOLO: Bạn không thể nộp bài khi chưa thu âm giọng nói!");
-        return; // DỪNG HÀM NGAY LẬP TỨC
+      if (!hasRecordedTurn1 || !recordedTurn1 || recordedTurn1.size <= 3000) {
+        if (typeof window !== 'undefined') {
+          alert("🔒 KHÔNG THỂ CHẤM ĐIỂM: Bạn chưa thực hiện ghi âm cho câu hỏi Solo hiện tại!");
+        }
+        return; // NGẮT LẬP TỨC
       }
     } else {
-      if (!recordedTurn1 || recordedTurn1.size <= 3000 || !recordedTurn2 || recordedTurn2.size <= 3000) {
-        alert("🔒 CHƯA ĐỦ BẢN THU 2 LƯỢT: Chế độ tiếp sức bắt buộc phải ghi âm đầy đủ cả 2 lượt!");
-        return; // DỪNG HÀM NGAY LẬP TỨC
+      if (!hasRecordedTurn1 || !recordedTurn1 || recordedTurn1.size <= 3000 || !hasRecordedTurn2 || !recordedTurn2 || recordedTurn2.size <= 3000) {
+        if (typeof window !== 'undefined') {
+          alert("🔒 CHƯA ĐỦ BẢN THU 2 LƯỢT: Chế độ tiếp sức bắt buộc phải ghi âm đầy đủ cả 2 lượt trước khi nộp bài!");
+        }
+        return; // NGẮT LẬP TỨC
       }
     }
 
@@ -247,9 +260,10 @@ export default function AllInArenaScreen({ onBack }: Props) {
     }, 2000);
   };
 
+  // ĐIỀU KIỆN KHÓA NÚT CHẤM ĐIỂM TRÊN GIAO DIỆN UI
   const isSubmitDisabled = mode === 'solo' 
-    ? (!recordedTurn1 || recordedTurn1.size <= 3000)
-    : (!recordedTurn1 || recordedTurn1.size <= 3000 || !recordedTurn2 || recordedTurn2.size <= 3000);
+    ? (!hasRecordedTurn1 || !recordedTurn1 || recordedTurn1.size <= 3000)
+    : (!hasRecordedTurn1 || !recordedTurn1 || !hasRecordedTurn2 || !recordedTurn2 || recordedTurn1.size <= 3000 || recordedTurn2.size <= 3000);
 
   return (
     <View style={styles.container}>
@@ -391,7 +405,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
           </View>
         )}
 
-        {/* TRẠNG THÁI 2: ĐANG THI ĐẤU (ĐỒNG HỒ CHỈ CHẠY KHI BẤM GHI ÂM) */}
+        {/* TRẠNG THÁI 2: ĐANG THI ĐẤU (BẮT BỘC GHI ÂM) */}
         {battleState === 'battling' && (
           <View style={styles.box}>
             <View style={styles.battleHeader}>
@@ -422,7 +436,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
               <Text style={styles.recordToggleText}>
                 {isRecording 
                   ? `🔴 ĐANG GHI ÂM & TÍNH GIỜ ${mode === 'solo' ? 'SOLO' : `LƯỢT ${currentTurn}`}... (BẤM ĐỂ DỪNG)` 
-                  : (mode === 'solo' ? recordedTurn1 : (currentTurn === 1 ? recordedTurn1 : recordedTurn2))
+                  : (mode === 'solo' ? hasRecordedTurn1 : (currentTurn === 1 ? hasRecordedTurn1 : hasRecordedTurn2))
                   ? `✅ ĐÃ CÓ BẢN THU ${mode === 'solo' ? 'SOLO' : `LƯỢT ${currentTurn}`} (BẤM ĐỂ THU LẠI)` 
                   : `🎙️ BẤM ĐỂ BẮT ĐẦU NÓI & TÍNH GIỜ ${mode === 'solo' ? 'SOLO' : `LƯỢT ${currentTurn}`}`}
               </Text>
@@ -445,7 +459,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
                 <Text style={styles.submitBtnText}>
                   {!isSubmitDisabled
                     ? '⚡ NỘP BÀI & CHẤM ĐIỂM AI' 
-                    : '🔒 CẦN THU ÂM ĐẦY ĐỦ TRƯỚC KHI NỘP BÀI'}
+                    : '🔒 HÃY THU ÂM TRƯỚC KHI NỘP BÀI'}
                 </Text>
               </TouchableOpacity>
             )}
