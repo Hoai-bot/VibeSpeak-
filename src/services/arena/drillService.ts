@@ -1,6 +1,6 @@
 // src/services/arena/drillService.ts
 
-export interface MinimalPair {
+export interface Tier1Pair {
   id: string;
   word1: string;
   word2: string;
@@ -8,137 +8,184 @@ export interface MinimalPair {
   ipa: string;
   meaning: string;
   tip: string;
-  ttsText1: string; 
-  ttsText2: string; 
-  ttsAudioText: string; 
+  ttsAudioText: string;
 }
 
-// BẢNG DỮ LIỆU ĐẦY ĐỦ TẦNG 1 (MINIMAL PAIRS)
-export const TIER_1_MINIMAL_PAIRS: MinimalPair[] = [
+export interface Tier2Linking {
+  id: string;
+  phrase: string;
+  ipa: string;
+  meaning: string;
+  linkingTip: string;
+  ttsAudioText: string;
+}
+
+export interface Tier3Twister {
+  id: string;
+  sentence: string;
+  targetSound: string;
+  tip: string;
+  ttsAudioText: string;
+}
+
+// -------------------------------------------------------------
+// KHO DỮ LIỆU TẦNG 1: MINIMAL PAIRS (CẶP ÂM DỄ NHẦM)
+// -------------------------------------------------------------
+export const TIER_1_DATA: Tier1Pair[] = [
   {
-    id: 'mp_read_reed',
+    id: 't1_read_reed',
     word1: 'Read (past)',
     word2: 'Reed',
     displayTitle: '"Read / Reed"',
     ipa: '/rɛd/ - /riːd/',
-    meaning: 'đã đọc (quá khứ) / cây lau',
+    meaning: 'đã đọc / cây lau',
     tip: 'Read (quá khứ) dùng âm /ɛ/ ngắn (giống Red), Reed dùng âm /iː/ dài.',
-    ttsText1: 'red',
-    ttsText2: 'reed',
-    ttsAudioText: 'red . . . reed' // Dấu chấm tạo khoảng ngắt giúp máy phát rõ từng âm
+    ttsAudioText: 'red . . . reed'
   },
   {
-    id: 'mp_lead_led',
+    id: 't1_lead_led',
     word1: 'Lead (verb)',
     word2: 'Led',
     displayTitle: '"Lead / Led"',
     ipa: '/liːd/ - /lɛd/',
     meaning: 'dẫn dắt / đã dẫn dắt',
     tip: 'Lead (động từ) dùng âm /iː/ dài, Led dùng âm /ɛ/ ngắn.',
-    ttsText1: 'leed',
-    ttsText2: 'led',
     ttsAudioText: 'leed . . . led'
   },
   {
-    id: 'mp_ship_sheep',
+    id: 't1_ship_sheep',
     word1: 'Ship',
     word2: 'Sheep',
     displayTitle: '"Ship / Sheep"',
     ipa: '/ʃɪp/ - /ʃiːp/',
     meaning: 'con tàu / con cừu',
-    tip: 'Ship dùng âm /ɪ/ thả lỏng môi, Sheep kéo dài âm /iː/ như đang mỉm cười.',
-    ttsText1: 'ship',
-    ttsText2: 'sheep',
+    tip: 'Ship âm /ɪ/ ngắn, Sheep kéo dài âm /iː/ mỉm cười.',
     ttsAudioText: 'ship . . . sheep'
   },
   {
-    id: 'mp_pen_pan',
+    id: 't1_pen_pan',
     word1: 'Pen',
     word2: 'Pan',
     displayTitle: '"Pen / Pan"',
     ipa: '/pɛn/ - /pæn/',
     meaning: 'cây bút / cái chảo',
-    tip: 'Pen dùng âm /ɛ/ mở vừa, Pan dùng âm /æ/ mở rộng miệng.',
-    ttsText1: 'pen',
-    ttsText2: 'pan',
+    tip: 'Pen dùng âm /ɛ/, Pan dùng âm /æ/ hạ hàm rộng.',
     ttsAudioText: 'pen . . . pan'
   },
   {
-    id: 'mp_bit_beat',
-    word1: 'Bit',
-    word2: 'Beat',
-    displayTitle: '"Bit / Beat"',
-    ipa: '/bɪt/ - /biːt/',
-    meaning: 'mảnh nhỏ / đánh, nhịp',
-    tip: 'Bit dùng âm /ɪ/ ngắn bật nhanh, Beat kéo dài nguyên âm /iː/.',
-    ttsText1: 'bit',
-    ttsText2: 'beet',
-    ttsAudioText: 'bit . . . beet'
-  },
-  {
-    id: 'mp_sit_seat',
+    id: 't1_sit_seat',
     word1: 'Sit',
     word2: 'Seat',
     displayTitle: '"Sit / Seat"',
     ipa: '/sɪt/ - /siːt/',
     meaning: 'ngồi / chỗ ngồi',
-    tip: 'Sit dùng âm /ɪ/ dứt khoát, Seat kéo dài âm /iː/.',
-    ttsText1: 'sit',
-    ttsText2: 'seet',
+    tip: 'Sit âm /ɪ/ dứt khoát, Seat kéo dài âm /iː/.',
     ttsAudioText: 'sit . . . seet'
   },
   {
-    id: 'mp_bad_bed',
+    id: 't1_bad_bed',
     word1: 'Bad',
     word2: 'Bed',
     displayTitle: '"Bad / Bed"',
     ipa: '/bæd/ - /bɛd/',
     meaning: 'tệ / cái giường',
-    tip: 'Bad dùng âm /æ/ hạ hàm sâu, Bed dùng âm /ɛ/ mở miệng tự nhiên.',
-    ttsText1: 'bad',
-    ttsText2: 'bed',
+    tip: 'Bad âm /æ/ hạ hàm sâu, Bed âm /ɛ/ thả lỏng.',
     ttsAudioText: 'bad . . . bed'
-  },
-  {
-    id: 'mp_cat_cut',
-    word1: 'Cat',
-    word2: 'Cut',
-    displayTitle: '"Cat / Cut"',
-    ipa: '/kæt/ - /kʌt/',
-    meaning: 'con mèo / cắt',
-    tip: 'Cat dùng âm /æ/, Cut dùng âm /ʌ/ bật ngắn từ cổ họng.',
-    ttsText1: 'cat',
-    ttsText2: 'cut',
-    ttsAudioText: 'cat . . . cut'
   }
 ];
 
-// MẸO TRÁNH LẶP BÀI TẬP: Lưu danh sách các ID đã xuất hiện
-let usedPairIds: string[] = [];
-
-/**
- * Lấy bài tập Minimal Pair tiếp theo KHÔNG LẶP LẠI
- */
-export function getNextMinimalPair(currentId?: string): MinimalPair {
-  // Nếu đã học hết tất cả các cặp, reset lại danh sách trừ bài hiện tại
-  if (usedPairIds.length >= TIER_1_MINIMAL_PAIRS.length) {
-    usedPairIds = currentId ? [currentId] : [];
+// -------------------------------------------------------------
+// KHO DỮ LIỆU TẦNG 2: LINKING SOUNDS (NỐI ÂM TỰ NHIÊN)
+// -------------------------------------------------------------
+export const TIER_2_DATA: Tier2Linking[] = [
+  {
+    id: 't2_pick_it_up',
+    phrase: 'Pick it up',
+    ipa: '/pɪk kɪ tʌp/',
+    meaning: 'nhặt nó lên',
+    tip: 'Nối phụ âm /k/ sang /ɪ/ và /t/ biến âm nhẹ sang /ʌp/.',
+    ttsAudioText: 'pick it up'
+  },
+  {
+    id: 't2_check_it_out',
+    phrase: 'Check it out',
+    ipa: '/tʃɛ kɪ taʊt/',
+    meaning: 'kiểm tra xem sao',
+    tip: 'Nối /k/ từ Check sang /ɪt/ và /t/ mượt sang /aʊt/.',
+    ttsAudioText: 'check it out'
+  },
+  {
+    id: 't2_turn_it_off',
+    phrase: 'Turn it off',
+    ipa: '/tɜː nɪ tɒf/',
+    meaning: 'tắt nó đi',
+    tip: 'Nối phụ âm /n/ từ Turn sang /ɪt/ và /t/ sang /ɒf/.',
+    ttsAudioText: 'turn it off'
+  },
+  {
+    id: 't2_hold_on',
+    phrase: 'Hold on',
+    ipa: '/hoʊl dɒn/',
+    meaning: 'chờ một chút',
+    tip: 'Nối âm /d/ cuối từ Hold sang nguyên âm /ɒn/.',
+    ttsAudioText: 'hold on'
   }
+];
 
-  // Lọc ra các bài chưa xuất hiện
-  const availablePairs = TIER_1_MINIMAL_PAIRS.filter(
-    (pair) => !usedPairIds.includes(pair.id) && pair.id !== currentId
-  );
-
-  if (availablePairs.length === 0) {
-    return TIER_1_MINIMAL_PAIRS[0];
+// -------------------------------------------------------------
+// KHO DỮ LIỆU TẦNG 3: TONGUE TWISTERS (LÍU LỠI TRỰC DIỆN)
+// -------------------------------------------------------------
+export const TIER_3_DATA: Tier3Twister[] = [
+  {
+    id: 't3_she_sells',
+    sentence: 'She sells seashells by the seashore',
+    targetSound: 'Âm /ʃ/ vs /s/',
+    tip: 'Chú ý phân biệt âm uốn lưỡi /ʃ/ (She, seashells) và âm răng /s/ (sells, seashore).',
+    ttsAudioText: 'She sells seashells by the seashore'
+  },
+  {
+    id: 't3_red_lorry',
+    sentence: 'Red lorry, yellow lorry',
+    targetSound: 'Âm /r/ vs /l/',
+    tip: 'Tập trung phản xạ chuyển đổi nhanh giữa âm cuộn lưỡi /r/ và âm đầu lưỡi /l/.',
+    ttsAudioText: 'Red lorry, yellow lorry'
+  },
+  {
+    id: 't3_fresh_fish',
+    sentence: 'Fresh fried fish, fish fresh fried',
+    targetSound: 'Âm /f/ & /ʃ/',
+    tip: 'Bật hơi rõ phụ âm /f/ và kết thúc dứt khoát với âm /ʃ/.',
+    ttsAudioText: 'Fresh fried fish, fish fresh fried'
   }
+];
 
-  const randomIndex = Math.floor(Math.random() * availablePairs.length);
-  const selectedPair = availablePairs[randomIndex];
+// -------------------------------------------------------------
+// QUẢN LÝ BỘ NHỚ LỊCH SỬ TRÁNH LẶP TỪ BẢN GHI ĐÃ CHƠI
+// -------------------------------------------------------------
+let usedTier1Ids: string[] = [];
+let usedTier2Ids: string[] = [];
+let usedTier3Ids: string[] = [];
 
-  // Đánh dấu đã dùng
-  usedPairIds.push(selectedPair.id);
+export function getNextTier1(currentId?: string): Tier1Pair {
+  if (usedTier1Ids.length >= TIER_1_DATA.length) usedTier1Ids = currentId ? [currentId] : [];
+  const available = TIER_1_DATA.filter(item => !usedTier1Ids.includes(item.id) && item.id !== currentId);
+  const selected = available[Math.floor(Math.random() * available.length)] || TIER_1_DATA[0];
+  usedTier1Ids.push(selected.id);
+  return selected;
+}
 
-  return selectedPair;
+export function getNextTier2(currentId?: string): Tier2Linking {
+  if (usedTier2Ids.length >= TIER_2_DATA.length) usedTier2Ids = currentId ? [currentId] : [];
+  const available = TIER_2_DATA.filter(item => !usedTier2Ids.includes(item.id) && item.id !== currentId);
+  const selected = available[Math.floor(Math.random() * available.length)] || TIER_2_DATA[0];
+  usedTier2Ids.push(selected.id);
+  return selected;
+}
+
+export function getNextTier3(currentId?: string): Tier3Twister {
+  if (usedTier3Ids.length >= TIER_3_DATA.length) usedTier3Ids = currentId ? [currentId] : [];
+  const available = TIER_3_DATA.filter(item => !usedTier3Ids.includes(item.id) && item.id !== currentId);
+  const selected = available[Math.floor(Math.random() * available.length)] || TIER_3_DATA[0];
+  usedTier3Ids.push(selected.id);
+  return selected;
 }
