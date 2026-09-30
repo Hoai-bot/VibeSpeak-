@@ -1,7 +1,8 @@
 // src/screens/Station4Screen.tsx
-import React, { useState, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
 import { evaluateSpeaking, AssessmentResult } from '../services/arena/assessmentService';
+import { generateRoleplayScenario, RoleplayScenario } from '../services/arena/roleplayService';
 import { updateUserProgress } from '../services/userService';
 
 interface Props {
@@ -10,9 +11,13 @@ interface Props {
 
 export default function Station4Screen({ onBack }: Props) {
   const [cefrLevel, setCefrLevel] = useState<string>('B2');
+  const [loading, setLoading] = useState<boolean>(false);
+  
+  // KỊCH BẢN YÊU CẦU PHẢN HỒI THỰC TẾ
+  const [scenario, setScenario] = useState<RoleplayScenario | null>(null);
   const [battleState, setBattleState] = useState<'idle' | 'battling' | 'analyzing' | 'ended'>('idle');
   
-  // MICRO & BẢN THU ÂM THỰC TẾ
+  // MICRO & RECORDING
   const [isRecording, setIsRecording] = useState<boolean>(false);
   const [recordedAudio, setRecordedAudio] = useState<Blob | null>(null);
   const [hasRecorded, setHasRecorded] = useState<boolean>(false);
@@ -22,6 +27,19 @@ export default function Station4Screen({ onBack }: Props) {
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+
+  // TẢI TÌNH HUỐNG YÊU CẦU PHẢN HỒI DỘNG
+  const loadScenario = async (level: string) => {
+    setLoading(true);
+    resetState();
+    const data = await generateRoleplayScenario(level);
+    setScenario(data);
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    loadScenario(cefrLevel);
+  }, [cefrLevel]);
 
   const resetState = () => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
@@ -35,7 +53,7 @@ export default function Station4Screen({ onBack }: Props) {
     audioChunksRef.current = [];
   };
 
-  // 🎙 THU ÂM VỚI KHÓA SIẾT DUNG LƯỢNG NGHIÊM NGẶT (> 8000 BYTES)
+  // 🎙 THU ÂM CÓ KHÓA DUNG LƯỢNG NGHIÊM NGẶT (> 8000 BYTES)
   const handleToggleRecord = async () => {
     if (!isRecording) {
       try {
@@ -53,15 +71,13 @@ export default function Station4Screen({ onBack }: Props) {
 
           mediaRecorder.onstop = () => {
             const recordedBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-            
-            // SIẾT CHẶT: BẮT BỘC > 8000 BYTES MỚI TÍNH LÀ CÓ NÓI
             if (recordedBlob.size > 8000) {
               setRecordedAudio(recordedBlob);
               setHasRecorded(true);
             } else {
               setRecordedAudio(null);
               setHasRecorded(false);
-              alert("⚠️ Thu âm quá ngắn hoặc im lặng! Vui lòng bấm giữ nút và trả lời rõ ràng.");
+              alert("⚠️ Chưa ghi nhận giọng nói! Bấm giữ nút và đưa ra phản hồi rõ ràng.");
             }
             stream.getTracks().forEach(track => track.stop());
           };
@@ -83,17 +99,16 @@ export default function Station4Screen({ onBack }: Props) {
     }
   };
 
-  // 📊 CHẤM ĐIỂM THỰC TẾ QUA ASSESSMENTS ERVICE (GROQ WHISPER)
+  // 📊 CHẤM ĐIỂM BẰNG ASSESSMENTS ERVICE (GROQ WHISPER STT)
   const handleSubmitAnswer = async () => {
     if (!hasRecorded || !recordedAudio || recordedAudio.size <= 8000) {
-      alert("🔒 BẠN CHƯA THU ÂM: Vui lòng ghi âm câu trả lời trước khi nộp bài!");
+      alert("🔒 Vui lòng ghi âm phản hồi của bạn trước khi nộp bài!");
       return;
     }
 
     if (isRecording) setIsRecording(false);
     setBattleState('analyzing');
 
-    // Gọi dịch vụ chấm điểm tập trung
     const evalData = await evaluateSpeaking(recordedAudio, cefrLevel);
     setResult(evalData);
 
@@ -112,8 +127,21 @@ export default function Station4Screen({ onBack }: Props) {
 
       <ScrollView contentContainerStyle={{ alignItems: 'center', width: '100%', paddingBottom: 30 }}>
         <View style={styles.box}>
-          <Text style={styles.boxTitle}>📌 THỬ THÁCH NÓI TRẠM 4 [{cefrLevel}]</Text>
-          <Text style={styles.promptText}>"Describe a challenging situation you faced recently and how you resolved it."</Text>
+          <Text style={styles.boxTitle}>📌 BỐI CẢNH YÊU CẦU PHẢN HỒI [{cefrLevel}]</Text>
+          
+          {loading ? (
+            <ActivityIndicator size="small" color="#FF007F" style={{ marginVertical: 15 }} />
+          ) : scenario ? (
+            <View style={{ width: '100%', alignItems: 'center' }}>
+              <Text style={styles.scenarioTitle}>🎭 {scenario.scenarioTitle}</Text>
+              <Text style={styles.promptText}>🎯 Tình huống: "{scenario.initialAiMessage}"</Text>
+              <Text style={styles.requirementText}>⚡ YÊU CẦU: Hãy phản hồi lại tình huống trên bằng tiếng Anh chuẩn CEFR {cefrLevel}.</Text>
+            </View>
+          ) : null}
+
+          <TouchableOpacity style={styles.refreshBtn} onPress={() => loadScenario(cefrLevel)} disabled={loading}>
+            <Text style={styles.refreshBtnText}>🔄 ĐỔI BỐI CẢNH PHẢN HỒI MỚI</Text>
+          </TouchableOpacity>
 
           {/* NÚT THU ÂM */}
           {battleState !== 'ended' && (
@@ -122,12 +150,12 @@ export default function Station4Screen({ onBack }: Props) {
               onPress={handleToggleRecord}
             >
               <Text style={styles.recordBtnText}>
-                {isRecording ? '🔴 ĐANG THU ÂM... (BẤM ĐỂ DỪNG)' : hasRecorded ? '✅ ĐÃ CÓ BẢN THU (BẤM THU LẠI)' : '🎙 BẤM ĐỂ BẮT ĐẦU NÓI'}
+                {isRecording ? '🔴 ĐANG THU ÂM PHẢN HỒI... (BẤM ĐỂ DỪNG)' : hasRecorded ? '✅ ĐÃ CÓ BẢN THU (BẤM THU LẠI)' : '🎙 BẤM ĐỂ ĐƯA RA PHẢN HỒI'}
               </Text>
             </TouchableOpacity>
           )}
 
-          {/* NÚT NỘP BÀI - KHÓA NẾU CHƯA THU ÂM HỢP LỆ */}
+          {/* NÚT NỘP BÀI */}
           {battleState !== 'ended' && (
             <TouchableOpacity 
               style={[styles.submitBtn, (!hasRecorded || !recordedAudio) && styles.submitBtnDisabled]} 
@@ -141,33 +169,33 @@ export default function Station4Screen({ onBack }: Props) {
           )}
         </View>
 
-        {/* TRẠNG THÁI AI ĐANG PHÂN TÍCH */}
+        {/* AI GROQ WHISPER PHÂN TÍCH */}
         {battleState === 'analyzing' && (
           <View style={styles.box}>
             <ActivityIndicator size="large" color="#39FF14" style={{ marginBottom: 15 }} />
-            <Text style={styles.searchingText}>⚡ GROQ WHISPER AI ĐANG BÓC TÁCH GIỌNG NÓI & CHẤM 6 TIÊU CHÍ...</Text>
+            <Text style={styles.searchingText}>⚡ GROQ WHISPER AI ĐANG BÓC TÁCH PHẢN HỒI CỦA BẠN & CHẤM 6 TIÊU CHÍ...</Text>
           </View>
         )}
 
-        {/* MÀN HÌNH KẾT QUẢ THỰC TẾ TRẠM 4 */}
+        {/* KẾT QUẢ PHẢN HỒI THỰC TẾ */}
         {battleState === 'ended' && result && (
           <View style={styles.box}>
             <Text style={[styles.resultTitle, { color: result.isWin ? '#39FF14' : '#FF0055' }]}>
-              {result.isWin ? '🎉 BẠN ĐÃ CHIẾN THẮNG!' : '💀 CHƯA ĐẠT YÊU CẦU TRẠM 4'}
+              {result.isWin ? '🎉 PHẢN HỒI XUẤT SẮC!' : '💀 PHẢN HỒI CHƯA ĐẠT YÊU CẦU'}
             </Text>
             <Text style={styles.scoreText}>⚡ TỔNG ĐIỂM TRẠM 4: {result.score} / 100 ĐIỂM</Text>
 
-            {/* PHÁT LẠI GIỌNG NÓI */}
+            {/* AUDIO PLAYER */}
             {result.audioUrl && (
               <View style={styles.nativeAudioContainer}>
-                <Text style={styles.nativeAudioLabel}>🎧 NGHE LẠI BẢN THU CỦA BẠN:</Text>
+                <Text style={styles.nativeAudioLabel}>🎧 NGHE LẠI BẢN THU PHẢN HỒI CỦA BẠN:</Text>
                 <audio controls src={result.audioUrl} style={{ width: '100%', marginTop: 6 }} />
               </View>
             )}
 
-            {/* SCRIPT BÓC TÁCH THỰC TẾ */}
+            {/* SCRIPT REAL */}
             <View style={styles.scriptBox}>
-              <Text style={styles.scriptLabel}>📝 BẢN DỊCH CHỮ GIỌNG NÓI THỰC TẾ (SCRIPT):</Text>
+              <Text style={styles.scriptLabel}>📝 BẢN DỊCH CHỮ PHẢN HỒI THỰC TẾ (SCRIPT):</Text>
               <Text style={styles.scriptContent}>"{result.transcript}"</Text>
               <Text style={styles.wordCountText}>📊 Số từ phát âm thực tế: {result.wordCount} từ</Text>
             </View>
@@ -185,8 +213,8 @@ export default function Station4Screen({ onBack }: Props) {
 
             <Text style={styles.feedbackText}>{result.detailedFeedback}</Text>
 
-            <TouchableOpacity style={styles.refreshBtn} onPress={resetState}>
-              <Text style={styles.refreshBtnText}>🔄 THỬ LẠI LẦN NỮA</Text>
+            <TouchableOpacity style={styles.refreshBtn} onPress={() => loadScenario(cefrLevel)}>
+              <Text style={styles.refreshBtnText}>🔄 THỬ BỐI CẢNH PHẢN HỒI MỚI</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -203,8 +231,12 @@ const styles = StyleSheet.create({
   title: { color: '#FF007F', fontSize: 12, fontWeight: '900' },
   box: { backgroundColor: '#0D0620', padding: 18, borderRadius: 16, borderWidth: 2, borderColor: '#FF007F', width: '100%', alignItems: 'center', marginBottom: 20 },
   boxTitle: { color: '#FFD700', fontSize: 11, fontWeight: '900', marginBottom: 12 },
-  promptText: { color: '#FFF', fontSize: 13, fontWeight: '800', textAlign: 'center', lineHeight: 18, marginBottom: 15 },
+  scenarioTitle: { color: '#00FFFF', fontSize: 13, fontWeight: '900', marginBottom: 6 },
+  promptText: { color: '#FFF', fontSize: 13, fontWeight: '800', textAlign: 'center', lineHeight: 18, marginBottom: 8 },
+  requirementText: { color: '#FFD700', fontSize: 10, fontWeight: 'bold', textAlign: 'center', marginBottom: 12 },
   searchingText: { color: '#00FFFF', fontSize: 11, fontWeight: 'bold', textAlign: 'center' },
+  refreshBtn: { backgroundColor: '#1A0B2E', padding: 8, borderRadius: 8, borderWidth: 1, borderColor: '#00FFFF', width: '100%', alignItems: 'center', marginBottom: 12 },
+  refreshBtnText: { color: '#00FFFF', fontSize: 10, fontWeight: 'bold' },
   recordBtn: { backgroundColor: '#1A0B2E', padding: 12, borderRadius: 10, borderWidth: 2, borderColor: '#FF007F', width: '100%', alignItems: 'center', marginBottom: 10 },
   recordBtnActive: { backgroundColor: '#FF0055', borderColor: '#FF0055' },
   recordBtnText: { color: '#FFF', fontSize: 10, fontWeight: '900' },
@@ -224,7 +256,5 @@ const styles = StyleSheet.create({
   breakdownRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4, borderBottomWidth: 1, borderBottomColor: '#221133' },
   breakdownLabel: { color: '#AAAABB', fontSize: 10 },
   breakdownValue: { color: '#39FF14', fontSize: 10, fontWeight: 'bold' },
-  feedbackText: { color: '#FFF', fontSize: 11, textAlign: 'center', lineHeight: 16, marginBottom: 15 },
-  refreshBtn: { backgroundColor: '#1A0B2E', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#00FFFF', width: '100%', alignItems: 'center' },
-  refreshBtnText: { color: '#00FFFF', fontSize: 10, fontWeight: 'bold' }
+  feedbackText: { color: '#FFF', fontSize: 11, textAlign: 'center', lineHeight: 16, marginBottom: 15 }
 });
