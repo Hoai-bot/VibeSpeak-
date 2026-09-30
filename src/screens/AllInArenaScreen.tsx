@@ -1,6 +1,6 @@
 // src/screens/AllInArenaScreen.tsx
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, Alert } from 'react-native';
 import { generateSoloTopic, SoloTopic } from '../services/arena/soloService';
 import { generateRelayChallenge, RelayChallenge } from '../services/arena/relayService';
 import { generateRoleplayScenario, RoleplayScenario } from '../services/arena/roleplayService';
@@ -23,11 +23,11 @@ export default function AllInArenaScreen({ onBack }: Props) {
 
   // TRẠNG THÁI TRẬN ĐẤU & LƯỢT CHƠI
   const [battleState, setBattleState] = useState<'idle' | 'searching' | 'battling' | 'analyzing' | 'ended'>('idle');
-  const [currentTurn, setCurrentTurn] = useState<1 | 2>(1); // Lượt 1 hoặc Lượt 2
+  const [currentTurn, setCurrentTurn] = useState<1 | 2>(1); // Chỉ dùng cho Relay/Roleplay
   const [matchedOpponent, setMatchedOpponent] = useState<string>('');
   const [timeLeft, setTimeLeft] = useState<number>(30);
   
-  // MICRO & RECORDING
+  // MICRO & RECORDING THỰC TẾ
   const [isRecording, setIsRecording] = useState<boolean>(false);
   const [recordedTurn1, setRecordedTurn1] = useState<Blob | null>(null);
   const [recordedTurn2, setRecordedTurn2] = useState<Blob | null>(null);
@@ -39,16 +39,21 @@ export default function AllInArenaScreen({ onBack }: Props) {
 
   const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
 
-  // ⏱️ THỜI GIAN CHO TỔNG TRẬN ĐẤU (SOLO CHIẾM 100%, RELAY/ROLEPLAY CHIA ĐÔI MỖI LƯỢT)
-  const getTotalTimeForLevel = (level: string) => {
-    if (level === 'A1' || level === 'A2') return 20; // 20s tổng (mỗi bạn 10s)
-    if (level === 'B1' || level === 'B2') return 30; // 30s tổng (mỗi bạn 15s)
-    return 60; // 60s tổng (mỗi bạn 30s)
+  // ⏱️ QUỸ THỜI GIAN
+  // Solo: Trọn vẹn 100% thời gian (20s / 30s / 60s)
+  // Relay / Roleplay: Chia 50% thời gian cho mỗi lượt
+  const getFullTimeForLevel = (level: string) => {
+    if (level === 'A1' || level === 'A2') return 20;
+    if (level === 'B1' || level === 'B2') return 30;
+    return 60;
   };
 
-  const getTimePerTurn = (level: string, currentMode: string) => {
-    const total = getTotalTimeForLevel(level);
-    return currentMode === 'solo' ? total : Math.floor(total / 2);
+  const getTimeForCurrentMode = (level: string, currentMode: string) => {
+    const total = getFullTimeForLevel(level);
+    if (currentMode === 'solo') {
+      return total; // FULL THỜI GIAN CHO SOLO
+    }
+    return Math.floor(total / 2); // 50% MỖI LƯỢT CHO RELAY/ROLEPLAY
   };
 
   const resetBattleState = () => {
@@ -88,17 +93,20 @@ export default function AllInArenaScreen({ onBack }: Props) {
     return () => resetBattleState();
   }, [mode, cefrLevel]);
 
-  // KÍCH HOẠT ĐỒNG HỒ ĐẾM NGƯỢC CHO LƯỢT HIỆN TẠI
-  const startTurnTimer = (turnTime: number) => {
+  // ĐẾM NGƯỢC THỜI GIAN TRẬN ĐẤU / LƯỢT
+  const startTurnTimer = (allocatedTime: number) => {
     if (timerRef.current) clearInterval(timerRef.current);
-    setTimeLeft(turnTime);
+    setTimeLeft(allocatedTime);
 
     timerRef.current = setInterval(() => {
       setTimeLeft((prev) => {
         if (prev <= 1) {
           clearInterval(timerRef.current!);
-          // Hết giờ -> Tự động chuyển lượt nếu ở chế độ Relay/Roleplay
-          handleAutoSwitchTurn();
+          if (mode !== 'solo' && currentTurn === 1) {
+            // Relay/Roleplay hết giờ lượt 1 -> Tự chuyển sang lượt 2
+            setCurrentTurn(2);
+            startTurnTimer(getTimeForCurrentMode(cefrLevel, mode));
+          }
           return 0;
         }
         return prev - 1;
@@ -106,15 +114,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
     }, 1000);
   };
 
-  const handleAutoSwitchTurn = () => {
-    if (mode !== 'solo' && currentTurn === 1) {
-      setCurrentTurn(2);
-      const turn2Time = getTimePerTurn(cefrLevel, mode);
-      startTurnTimer(turn2Time);
-    }
-  };
-
-  // ⚔️ BẮT ĐẦU VÀO TRẬN
+  // ⚔️ BẮT ĐẦU VÀO TRẬN ĐẤU
   const startMatch = () => {
     setBattleState('searching');
     
@@ -129,12 +129,12 @@ export default function AllInArenaScreen({ onBack }: Props) {
       
       setCurrentTurn(1);
       setBattleState('battling');
-      const turnTime = getTimePerTurn(cefrLevel, mode);
-      startTurnTimer(turnTime);
+      const timeToRun = getTimeForCurrentMode(cefrLevel, mode);
+      startTurnTimer(timeToRun);
     }, 1500);
   };
 
-  // 🎙️ QUẢN LÝ MICRO THU ÂM THỰC TẾ
+  // 🎙️ QUẢN LÝ MICRO THU ÂM WEBRTC
   const handleToggleRecord = async () => {
     if (!isRecording) {
       try {
@@ -152,15 +152,17 @@ export default function AllInArenaScreen({ onBack }: Props) {
 
           mediaRecorder.onstop = () => {
             const recordedBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-            if (recordedBlob.size > 2000) {
-              if (currentTurn === 1) {
+            
+            // XÁC MINH FILE ÂM THANH THẬT (> 3000 BYTES)
+            if (recordedBlob.size > 3000) {
+              if (mode === 'solo' || currentTurn === 1) {
                 setRecordedTurn1(recordedBlob);
               } else {
                 setRecordedTurn2(recordedBlob);
               }
             } else {
               if (typeof window !== 'undefined') {
-                alert("⚠️ Thu âm không có tiếng hoặc quá ngắn! Vui lòng đọc lại.");
+                alert("⚠️ Thu âm không có tiếng hoặc quá ngắn! Vui lòng đọc rõ ràng hơn.");
               }
             }
             stream.getTracks().forEach(track => track.stop());
@@ -172,7 +174,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
           alert("Trình duyệt không hỗ trợ micro thu âm!");
         }
       } catch (err) {
-        alert("🔒 Lỗi: Vui lòng cấp quyền Microphone trên trình duyệt!");
+        alert("🔒 Lỗi: Vui lòng cấp quyền Microphone trên trình duyệt để thi đấu!");
       }
     } else {
       setIsRecording(false);
@@ -182,27 +184,30 @@ export default function AllInArenaScreen({ onBack }: Props) {
     }
   };
 
-  // NÚT CHUYỂN BẰNG TAY SANG LƯỢT 2 (DÀNH CHO RELAY / ROLEPLAY)
+  // CHUYỂN LƯỢT THỦ CÔNG CHO RELAY / ROLEPLAY
   const handleNextTurnManual = () => {
-    if (!recordedTurn1) {
-      alert("🔒 LƯỢT 1 CHƯA THU ÂM: Vui lòng ghi âm phần nói của Lượt 1 trước khi chuyển lượt tiếp sức!");
+    if (!recordedTurn1 || recordedTurn1.size <= 3000) {
+      alert("🔒 BẠN CHƯA THU ÂM LƯỢT 1: Vui lòng thu âm phần nói trước khi chuyển giao tiếp sức!");
       return;
     }
     setCurrentTurn(2);
-    const turn2Time = getTimePerTurn(cefrLevel, mode);
+    const turn2Time = getTimeForCurrentMode(cefrLevel, mode);
     startTurnTimer(turn2Time);
   };
 
-  // 📊 NỘP BÀI VÀ CHẤM ĐIỂM
+  // 📊 HÀM CHẤM ĐIỂM NGHIÊM NGẶT (KHÓA TUYỆT ĐỐI NẾU THIẾU BẢN THU)
   const handleSubmitBattleAnswer = () => {
-    const isMultiTurn = mode !== 'solo';
-    const isMissingRecord = isMultiTurn ? (!recordedTurn1 || !recordedTurn2) : !recordedTurn1;
-
-    if (isMissingRecord) {
-      alert(isMultiTurn 
-        ? "🔒 CHƯA HOÀN THÀNH ĐỦ 2 LƯỢT THU ÂM: Cần thu âm lượt tiếp sức của cả 2 bạn trước khi nộp bài!" 
-        : "🔒 CHƯA THU ÂM: Hãy bấm Micro để thu âm phản xạ trước khi nộp bài!");
-      return;
+    // 🛑 KIỂM TRA ĐIỀU KIỆN RECORDING BẮT BỘC
+    if (mode === 'solo') {
+      if (!recordedTurn1 || recordedTurn1.size <= 3000) {
+        alert("🔒 KHÔNG THỂ CHẤM ĐIỂM: Bạn chưa thực hiện thu âm câu trả lời Solo! Hãy bấm Micro để nói.");
+        return; // DỪNG LẬP TỨC
+      }
+    } else {
+      if (!recordedTurn1 || recordedTurn1.size <= 3000 || !recordedTurn2 || recordedTurn2.size <= 3000) {
+        alert("🔒 CHƯA ĐỦ BẢN THU ÂM: Chế độ tiếp sức bắt buộc phải ghi âm đầy đủ cả 2 lượt mới được chấm điểm!");
+        return; // DỪNG LẬP TỨC
+      }
     }
 
     if (timerRef.current) clearInterval(timerRef.current);
@@ -211,15 +216,15 @@ export default function AllInArenaScreen({ onBack }: Props) {
     setBattleState('analyzing');
 
     setTimeout(() => {
-      const randomScore = Math.floor(Math.random() * 25) + 72;
-      const isWin = randomScore >= 75;
+      const randomScore = Math.floor(Math.random() * 20) + 75;
+      const isWin = randomScore >= 78;
 
       setResult({
         score: randomScore,
         isWin: isWin,
         feedback: isWin 
-          ? `Phối hợp xuất sắc trong ${mode.toUpperCase()}! Cả 2 lượt phản xạ đều đúng ngữ điệu và nhịp độ.`
-          : "Độ liên kết câu giữa 2 lượt chưa mượt. Cần chú ý ngắt nghỉ và luyến âm nối tiếp."
+          ? `Thi đấu ${mode.toUpperCase()} xuất sắc! Phản xạ giọng nói chuẩn ngữ điệu level ${cefrLevel}.`
+          : "Phản xạ câu trả lời chưa thực sự mượt mà. Hãy tập trung nối âm rõ ràng hơn."
       });
 
       setBattleState('ended');
@@ -278,9 +283,9 @@ export default function AllInArenaScreen({ onBack }: Props) {
           </TouchableOpacity>
         </View>
 
-        {/* CHỌN CẤP ĐỘ CEFR */}
+        {/* CHỌN CẤP ĐỘ CEFR & HIỂN THỊ THỜI GIAN RÕ RÀNG */}
         <Text style={styles.sectionLabel}>
-          3. CHỌN LEVEL ({mode === 'solo' ? `${getTotalTimeForLevel(cefrLevel)}s` : `Mỗi lượt ${getTimePerTurn(cefrLevel, mode)}s`}):
+          3. CHỌN LEVEL ({mode === 'solo' ? `Solo trọn vẹn ${getFullTimeForLevel(cefrLevel)}s` : `Mỗi lượt ${getTimeForCurrentMode(cefrLevel, mode)}s`}):
         </Text>
         <View style={styles.cefrRow}>
           {CEFR_LEVELS.map((lvl) => (
@@ -302,11 +307,11 @@ export default function AllInArenaScreen({ onBack }: Props) {
           ))}
         </View>
 
-        {/* CHỜ VÀO TRẬN */}
+        {/* TRẠNG THÁI CHỜ VÀO TRẬN */}
         {battleState === 'idle' && (
           <View style={styles.box}>
             <Text style={styles.boxTitle}>
-              ⚡ {mode.toUpperCase()} • {opponentType === 'bot' ? '🤖 BOT' : '👥 PVP'} [{cefrLevel}]
+              ⚡ {mode.toUpperCase()} • {opponentType === 'bot' ? '🤖 BOT' : '👥 PVP'} [{cefrLevel} - {mode === 'solo' ? `${getFullTimeForLevel(cefrLevel)}s` : `2x${getTimeForCurrentMode(cefrLevel, mode)}s`}]
             </Text>
             
             {loading ? (
@@ -324,8 +329,8 @@ export default function AllInArenaScreen({ onBack }: Props) {
                   <>
                     <Text style={styles.topicTitle}>📌 {relayChallenge.topic}</Text>
                     <Text style={styles.promptText}>💡 Bối cảnh: {relayChallenge.context}</Text>
-                    <Text style={styles.subText}>👤 Lượt 1 ({getTimePerTurn(cefrLevel, mode)}s): {relayChallenge.player1Guideline}</Text>
-                    <Text style={styles.subText}>👥 Lượt 2 ({getTimePerTurn(cefrLevel, mode)}s): {relayChallenge.player2Guideline}</Text>
+                    <Text style={styles.subText}>👤 Lượt 1 ({getTimeForCurrentMode(cefrLevel, mode)}s): {relayChallenge.player1Guideline}</Text>
+                    <Text style={styles.subText}>👥 Lượt 2 ({getTimeForCurrentMode(cefrLevel, mode)}s): {relayChallenge.player2Guideline}</Text>
                   </>
                 )}
 
@@ -333,7 +338,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
                   <>
                     <Text style={styles.topicTitle}>🎭 {roleplayScenario.scenarioTitle}</Text>
                     <Text style={styles.promptText}>💬 Mở đầu: "{roleplayScenario.initialAiMessage}"</Text>
-                    <Text style={styles.subText}>👤 Bạn ({getTimePerTurn(cefrLevel, mode)}s) • 👥 {opponentType === 'bot' ? 'Bot' : 'Đối thủ'} ({getTimePerTurn(cefrLevel, mode)}s)</Text>
+                    <Text style={styles.subText}>👤 Bạn ({getTimeForCurrentMode(cefrLevel, mode)}s) • 👥 Đối thủ ({getTimeForCurrentMode(cefrLevel, mode)}s)</Text>
                   </>
                 )}
               </View>
@@ -348,7 +353,9 @@ export default function AllInArenaScreen({ onBack }: Props) {
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.startBtn} onPress={startMatch}>
-              <Text style={styles.startBtnText}>⚔️ BẮT ĐẦU TIẾP SỨC ĐẤU TRƯỜNG</Text>
+              <Text style={styles.startBtnText}>
+                {mode === 'solo' ? '⚔️ BẮT ĐẦU ĐẤU SOLO' : '🤝 BẮT ĐẦU ĐẤU TIẾP SỨC'}
+              </Text>
             </TouchableOpacity>
           </View>
         )}
@@ -360,22 +367,22 @@ export default function AllInArenaScreen({ onBack }: Props) {
             <Text style={styles.searchingText}>
               {opponentType === 'bot' 
                 ? `🤖 CHUẨN BỊ BOT AI CHO LƯỢT ĐẤU [${cefrLevel}]...` 
-                : `🔍 ĐANG KẾT NỐI ĐỒNG ĐỘI TIẾP SỨC [${cefrLevel}]...`}
+                : `🔍 ĐANG KẾT NỐI ĐỐI THỦ NGƯỜI THẬT [${cefrLevel}]...`}
             </Text>
           </View>
         )}
 
-        {/* TRẠNG THÁI 2: ĐANG THI ĐẤU (CÓ CHIA THỜI GIAN MỖI BẠN MỘT NỬA) */}
+        {/* TRẠNG THÁI 2: ĐANG THI ĐẤU (SOLO TRỌN VẸN THỜI GIAN, RELAY/ROLEPLAY CHIA ĐÔI) */}
         {battleState === 'battling' && (
           <View style={styles.box}>
             <View style={styles.battleHeader}>
               <Text style={styles.opponentName}>
                 {mode === 'solo' 
-                  ? `⚔️ ĐỐI THỦ: ${matchedOpponent}` 
-                  : `🤝 ${mode.toUpperCase()} (ĐANG Ở LƯỢT ${currentTurn}/2)`}
+                  ? `⚔️ SOLO TRẬN ĐẤU VS ${matchedOpponent}` 
+                  : `🤝 TIẾP SỨC (ĐANG Ở LƯỢT ${currentTurn}/2)`}
               </Text>
               <Text style={[styles.timerText, timeLeft <= 5 && { color: '#FF0055' }]}>
-                ⏱ LƯỢT {currentTurn}: {timeLeft}s
+                ⏱ {mode === 'solo' ? `THỜI GIAN: ${timeLeft}s` : `LƯỢT ${currentTurn}: ${timeLeft}s`}
               </Text>
             </View>
 
@@ -383,8 +390,8 @@ export default function AllInArenaScreen({ onBack }: Props) {
               <View style={styles.turnBadgeBox}>
                 <Text style={styles.turnBadgeText}>
                   {currentTurn === 1 
-                    ? `👤 LƯỢT 1 OF 2 (${getTimePerTurn(cefrLevel, mode)}s): Bạn hãy thực hiện phần tiếp sức đầu tiên` 
-                    : `👥 LƯỢT 2 OF 2 (${getTimePerTurn(cefrLevel, mode)}s): ${matchedOpponent} thực hiện phần tiếp nối`}
+                    ? `👤 LƯỢT 1 OF 2 (${getTimeForCurrentMode(cefrLevel, mode)}s): Bạn thực hiện phần đầu` 
+                    : `👥 LƯỢT 2 OF 2 (${getTimeForCurrentMode(cefrLevel, mode)}s): ${matchedOpponent} thực hiện phần tiếp nối`}
                 </Text>
               </View>
             )}
@@ -395,17 +402,17 @@ export default function AllInArenaScreen({ onBack }: Props) {
             >
               <Text style={styles.recordToggleText}>
                 {isRecording 
-                  ? `🔴 ĐANG THU ÂM LƯỢT ${currentTurn}... (BẤM ĐỂ DỪNG)` 
-                  : (currentTurn === 1 ? recordedTurn1 : recordedTurn2)
-                  ? `✅ ĐÃ THU ÂM LƯỢT ${currentTurn} (BẤM ĐỂ THU LẠI)` 
-                  : `🎙️ BẤM ĐỂ THU ÂM LƯỢT ${currentTurn}`}
+                  ? `🔴 ĐANG THU ÂM ${mode === 'solo' ? 'SOLO' : `LƯỢT ${currentTurn}`}... (BẤM ĐỂ DỪNG)` 
+                  : (mode === 'solo' ? recordedTurn1 : (currentTurn === 1 ? recordedTurn1 : recordedTurn2))
+                  ? `✅ ĐÃ THU ÂM ${mode === 'solo' ? 'SOLO' : `LƯỢT ${currentTurn}`} (BẤM ĐỂ THU LẠI)` 
+                  : `🎙️ BẤM ĐỂ THU ÂM ${mode === 'solo' ? 'SOLO' : `LƯỢT ${currentTurn}`}`}
               </Text>
             </TouchableOpacity>
 
             {/* CHUYỂN LƯỢT HOẶC NỘP BÀI */}
             {mode !== 'solo' && currentTurn === 1 ? (
               <TouchableOpacity style={styles.nextTurnBtn} onPress={handleNextTurnManual}>
-                <Text style={styles.nextTurnBtnText}>➡️ CHUYỂN SANG LƯỢT 2 ({getTimePerTurn(cefrLevel, mode)}s)</Text>
+                <Text style={styles.nextTurnBtnText}>➡️ CHUYỂN SANG LƯỢT 2 ({getTimeForCurrentMode(cefrLevel, mode)}s)</Text>
               </TouchableOpacity>
             ) : (
               <TouchableOpacity 
@@ -414,11 +421,12 @@ export default function AllInArenaScreen({ onBack }: Props) {
                   (mode === 'solo' ? !recordedTurn1 : (!recordedTurn1 || !recordedTurn2)) && styles.submitBtnDisabled
                 ]} 
                 onPress={handleSubmitBattleAnswer}
+                disabled={mode === 'solo' ? !recordedTurn1 : (!recordedTurn1 || !recordedTurn2)}
               >
                 <Text style={styles.submitBtnText}>
                   {(mode === 'solo' ? recordedTurn1 : (recordedTurn1 && recordedTurn2))
-                    ? '⚡ NỘP BÀI & AI CHẤM ĐIỂM CẢ 2 LƯỢT' 
-                    : '🔒 CẦN HOÀN THÀNH ĐỦ THU ÂM CÁC LƯỢT'}
+                    ? '⚡ NỘP BÀI & CHẤM ĐIỂM AI' 
+                    : '🔒 HÃY THU ÂM TRƯỚC KHI NỘP BÀI'}
                 </Text>
               </TouchableOpacity>
             )}
@@ -429,7 +437,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
         {battleState === 'analyzing' && (
           <View style={styles.box}>
             <ActivityIndicator size="large" color="#39FF14" style={{ marginBottom: 15 }} />
-            <Text style={styles.searchingText}>⚡ AI ĐANG PHÂN TÍCH CẢ 2 LƯỢT TIẾP SỨC...</Text>
+            <Text style={styles.searchingText}>⚡ AI ĐANG PHÂN TÍCH BẢN THU ÂM CỦA BẠN...</Text>
           </View>
         )}
 
@@ -437,13 +445,13 @@ export default function AllInArenaScreen({ onBack }: Props) {
         {battleState === 'ended' && result && (
           <View style={styles.box}>
             <Text style={[styles.resultTitle, { color: result.isWin ? '#39FF14' : '#FF0055' }]}>
-              {result.isWin ? '🎉 CHIẾN THẮNG TIẾP SỨC xuất sắc!' : '💀 ĐỘI TIẾP SỨC CHƯA ĐẠT CHUẨN'}
+              {result.isWin ? '🎉 BẠN ĐÃ CHIẾN THẮNG!' : '💀 BẠN ĐÃ THẤT BẠI TRONG TRẬN ĐẤU'}
             </Text>
-            <Text style={styles.scoreText}>⚡ ĐIỂM TỔNG HỢP 2 LƯỢT: {result.score} / 100 ĐIỂM</Text>
+            <Text style={styles.scoreText}>⚡ ĐIỂM THI ĐẤU: {result.score} / 100 ĐIỂM</Text>
             <Text style={styles.feedbackText}>{result.feedback}</Text>
 
             <TouchableOpacity style={styles.startBtn} onPress={() => loadModeData(mode, cefrLevel)}>
-              <Text style={styles.startBtnText}>🔄 THI ĐẤU TRẬN MỚI</Text>
+              <Text style={styles.startBtnText}>🔄 TÌM TRẬN ĐẤU MỚI</Text>
             </TouchableOpacity>
           </View>
         )}
