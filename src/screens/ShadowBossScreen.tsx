@@ -1,6 +1,6 @@
 // src/screens/ShadowBossScreen.tsx
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, Alert } from 'react-native';
 import { generateShadowBoss, ShadowBossItem } from '../services/drills/station3Service';
 import { updateUserProgress } from '../services/userService';
 
@@ -14,20 +14,31 @@ export default function ShadowBossScreen({ onBack }: Props) {
   const [loading, setLoading] = useState<boolean>(false);
   const [isPlayingAudio, setIsPlayingAudio] = useState<boolean>(false);
 
-  // MICRO & RECORDING THỰC TẾ
+  // QUẢN LÝ MICRO & CỜ BẢO VỆ GHI ÂM TẠI TRẬN HIỆN TẠI
   const [isRecording, setIsRecording] = useState<boolean>(false);
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
+  const [hasRecordedCurrentSession, setHasRecordedCurrentSession] = useState<boolean>(false); // CỜ BẢO VỆ CHẶT CHẼ
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
   const [lastDamage, setLastDamage] = useState<number | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
 
+  // RESET SẠCH DỮ LIỆU KHI TẢI BOSS MỚI
+  const resetBossSession = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      try { mediaRecorderRef.current.stop(); } catch (e) {}
+    }
+    setIsRecording(false);
+    setAudioBlob(null);
+    setHasRecordedCurrentSession(false); // HUỶ CỜ BẢN THU
+    setLastDamage(null);
+    audioChunksRef.current = [];
+  };
+
   const loadBoss = async () => {
     setLoading(true);
-    setAudioBlob(null);
-    setIsRecording(false);
-    setLastDamage(null);
+    resetBossSession();
     const data = await generateShadowBoss('B2');
     setBossData(data);
     setCurrentHp(data.bossHp || 100);
@@ -36,17 +47,35 @@ export default function ShadowBossScreen({ onBack }: Props) {
 
   useEffect(() => {
     loadBoss();
+    return () => resetBossSession();
   }, []);
 
-  // 🔊 PHÁT ÂM MẪU AI SHADOWING
+  // 🔊 PHÁT ÂM MẪU AI TỰ NHIÊN (LỌC GIỌNG HIGH-QUALITY & TỐC ĐỘ 0.8)
   const handlePlaySample = () => {
     if (!bossData) return;
     setIsPlayingAudio(true);
+
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       window.speechSynthesis.cancel();
+      const voices = window.speechSynthesis.getVoices();
+
+      // Lọc giọng tiếng Anh chuẩn tự nhiên
+      const selectedVoice = voices.find(v => 
+        v.lang.startsWith('en') && (
+          v.name.includes('Natural') || 
+          v.name.includes('Google US English') || 
+          v.name.includes('Jenny') || 
+          v.name.includes('Samantha') || 
+          v.name.includes('Ava')
+        )
+      ) || voices.find(v => v.lang === 'en-US' || v.lang === 'en-GB') || voices[0];
+
       const utt = new SpeechSynthesisUtterance(bossData.phrase);
       utt.lang = 'en-US';
-      utt.rate = 0.85;
+      utt.rate = 0.82; // Tốc độ tự nhiên cho bài Shadowing
+      utt.pitch = 1.0;
+      if (selectedVoice) utt.voice = selectedVoice;
+
       utt.onend = () => setIsPlayingAudio(false);
       utt.onerror = () => setIsPlayingAudio(false);
       window.speechSynthesis.speak(utt);
@@ -55,7 +84,7 @@ export default function ShadowBossScreen({ onBack }: Props) {
     }
   };
 
-  // 🎙️ THU ÂM SHADOWING
+  // 🎙️ QUẢN LÝ MICRO THU ÂM THỰC TẾ
   const handleToggleRecord = async () => {
     if (!isRecording) {
       try {
@@ -71,11 +100,17 @@ export default function ShadowBossScreen({ onBack }: Props) {
 
           mediaRecorder.onstop = () => {
             const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-            if (blob.size > 3000) {
+            
+            // BẮT BỘC DUNG LƯỢNG FILE ÂM THANH THẬT > 4000 BYTES
+            if (blob.size > 4000) {
               setAudioBlob(blob);
+              setHasRecordedCurrentSession(true); // BẬT CỜ BẢN THU HỢP LỆ
             } else {
               setAudioBlob(null);
-              alert("⚠️ Thu âm quá ngắn! Vui lòng Shadowing nói đuổi theo rõ ràng hơn.");
+              setHasRecordedCurrentSession(false);
+              if (typeof window !== 'undefined') {
+                alert("⚠️ Bản thu âm quá ngắn hoặc chưa phát ra tiếng! Vui lòng Shadowing rõ ràng hơn.");
+              }
             }
             stream.getTracks().forEach(t => t.stop());
           };
@@ -83,9 +118,10 @@ export default function ShadowBossScreen({ onBack }: Props) {
           mediaRecorder.start();
           setIsRecording(true);
           setAudioBlob(null);
+          setHasRecordedCurrentSession(false);
         }
       } catch {
-        alert("🔒 Lỗi Micro: Vui lòng cấp quyền Microphone trên trình duyệt!");
+        alert("🔒 Lỗi Micro: Hãy cấp quyền Microphone trên trình duyệt để Shadowing!");
       }
     } else {
       setIsRecording(false);
@@ -95,21 +131,27 @@ export default function ShadowBossScreen({ onBack }: Props) {
     }
   };
 
-  // ⚔️️ TẤN CÔNG BOSS BẰNG BẢN THU ÂM SHADOWING
+  // ⚔️ TẤN CÔNG BOSS (BẢO VỆ BẰNG CỜ XÁC NHẬN)
   const handleAttackBoss = () => {
-    if (!audioBlob || audioBlob.size <= 3000) {
-      alert("🔒 BẠN CHƯA SHADOWING: Bấm nút Micro để nói đuổi theo trước khi tấn công Boss!");
-      return;
+    // 🛑 KHÓA TUYỆT ĐỐI NẾU CHƯA CÓ BẢN THU THỰC TẾ
+    if (!hasRecordedCurrentSession || !audioBlob || audioBlob.size <= 4000) {
+      if (typeof window !== 'undefined') {
+        alert("🔒 KHÔNG THỂ TẤN CÔNG: Bạn chưa thực hiện thu âm Shadowing! Hãy bấm nút Micro để nói đuổi theo trước.");
+      }
+      return; // NGẮT LẬP TỨC
     }
 
     setIsAnalyzing(true);
     setTimeout(() => {
-      const damage = Math.floor(Math.random() * 25) + 25; // 25 - 50 Dame
+      const damage = Math.floor(Math.random() * 25) + 25;
       const newHp = Math.max(0, currentHp - damage);
       setCurrentHp(newHp);
       setLastDamage(damage);
       setIsAnalyzing(false);
+      
+      // Xóa cờ bản thu cũ sau lượt tấn công để bắt buộc thu lượt mới
       setAudioBlob(null);
+      setHasRecordedCurrentSession(false);
 
       if (newHp === 0) {
         updateUserProgress(3, 100, true);
@@ -139,7 +181,7 @@ export default function ShadowBossScreen({ onBack }: Props) {
               </View>
 
               <Text style={styles.hpText}>
-                {currentHp > 0 ? `HP: ${currentHp} / 100` : '☠️ BOSS ĐÃ BỊ HẠ GỤC! (+100 XP)'}
+                {currentHp > 0 ? `HP: ${currentHp} / 100` : '☠️️ BOSS ĐÃ BỊ HẠ GỤC! (+100 XP)'}
               </Text>
             </View>
 
@@ -155,7 +197,7 @@ export default function ShadowBossScreen({ onBack }: Props) {
                 disabled={isPlayingAudio}
               >
                 <Text style={styles.audioBtnText}>
-                  {isPlayingAudio ? '🔊 AI ĐANG ĐỌC MẪU...' : '📢 NGHE ÂM MẪU SHADOWING'}
+                  {isPlayingAudio ? '🔊 AI ĐANG ĐỌC MẪU...' : '📢 NGHE GIỌNG MẪU CHUẨN AI'}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -167,7 +209,11 @@ export default function ShadowBossScreen({ onBack }: Props) {
                   onPress={handleToggleRecord}
                 >
                   <Text style={styles.recordText}>
-                    {isRecording ? '🔴 ĐANG SHADOWING... (BẤM DỪNG)' : audioBlob ? '✅ ĐÃ CÓ BẢN SHADOWING (BẤM THU LẠI)' : '🎙️️ BẤM THU ÂM SHADOWING'}
+                    {isRecording 
+                      ? '🔴 ĐANG SHADOWING... (BẤM DỪNG)' 
+                      : hasRecordedCurrentSession 
+                      ? '✅ ĐÃ CÓ BẢN SHADOWING (BẤM THU LẠI)' 
+                      : '🎙️ BẤM THU ÂM SHADOWING'}
                   </Text>
                 </TouchableOpacity>
 
@@ -175,12 +221,12 @@ export default function ShadowBossScreen({ onBack }: Props) {
                   <ActivityIndicator size="large" color="#39FF14" style={{ marginVertical: 10 }} />
                 ) : (
                   <TouchableOpacity 
-                    style={[styles.attackBtn, !audioBlob && styles.attackBtnDisabled]} 
+                    style={[styles.attackBtn, (!hasRecordedCurrentSession || isRecording) && styles.attackBtnDisabled]} 
                     onPress={handleAttackBoss}
-                    disabled={!audioBlob}
+                    disabled={!hasRecordedCurrentSession || isRecording}
                   >
                     <Text style={styles.attackBtnText}>
-                      {audioBlob ? '⚔️ TẤN CÔNG BOSS AI' : '🔒 THU ÂM ĐỂ TẤN CÔNG'}
+                      {hasRecordedCurrentSession ? '⚔️ TẤN CÔNG BOSS AI' : '🔒 THU ÂM ĐỂ TẤN CÔNG'}
                     </Text>
                   </TouchableOpacity>
                 )}
@@ -223,7 +269,7 @@ const styles = StyleSheet.create({
   recordBtnActive: { backgroundColor: '#FF0055' },
   recordText: { color: '#FFF', fontSize: 10, fontWeight: '900' },
   attackBtn: { backgroundColor: '#FF007F', padding: 14, borderRadius: 12, width: '100%', alignItems: 'center' },
-  attackBtnDisabled: { backgroundColor: '#331122', opacity: 0.3 },
+  attackBtnDisabled: { backgroundColor: '#331122', opacity: 0.2 },
   attackBtnText: { color: '#FFF', fontSize: 11, fontWeight: '900' },
   damageText: { color: '#FFD700', fontSize: 12, fontWeight: '900', marginTop: 10, textAlign: 'center' },
   refreshBtn: { backgroundColor: '#39FF14', padding: 14, borderRadius: 12, width: '100%', alignItems: 'center' },

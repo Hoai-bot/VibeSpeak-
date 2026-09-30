@@ -1,6 +1,6 @@
 // src/screens/Station4Screen.tsx
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, Alert } from 'react-native';
 import { generateGhostTransmission, GhostTransmissionItem } from '../services/drills/station4Service';
 import { updateUserProgress } from '../services/userService';
 
@@ -13,20 +13,30 @@ export default function Station4Screen({ onBack }: Props) {
   const [loading, setLoading] = useState<boolean>(false);
   const [isPlayingIncoming, setIsPlayingIncoming] = useState<boolean>(false);
 
-  // MICRO & RECORDING THỰC TẾ
+  // MICRO & RECORDING THỰC TẾ + CỜ BẢO VỆ
   const [isRecording, setIsRecording] = useState<boolean>(false);
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
+  const [hasRecordedCurrentSession, setHasRecordedCurrentSession] = useState<boolean>(false);
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
   const [result, setResult] = useState<{ score: number; feedback: string } | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
 
+  const resetSignalSession = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      try { mediaRecorderRef.current.stop(); } catch (e) {}
+    }
+    setIsRecording(false);
+    setAudioBlob(null);
+    setHasRecordedCurrentSession(false);
+    setResult(null);
+    audioChunksRef.current = [];
+  };
+
   const loadSignal = async () => {
     setLoading(true);
-    setAudioBlob(null);
-    setIsRecording(false);
-    setResult(null);
+    resetSignalSession();
     const data = await generateGhostTransmission('B2');
     setGhostData(data);
     setLoading(false);
@@ -34,18 +44,33 @@ export default function Station4Screen({ onBack }: Props) {
 
   useEffect(() => {
     loadSignal();
+    return () => resetSignalSession();
   }, []);
 
-  // 🔊 PHÁT TÍN HIỆU ÂM THANH ĐẾN
+  // 🔊 PHÁT TÍN HIỆU ÂM THANH ĐẾN TỰ NHIÊN
   const handlePlayIncoming = () => {
     if (!ghostData) return;
     setIsPlayingIncoming(true);
+
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       window.speechSynthesis.cancel();
+      const voices = window.speechSynthesis.getVoices();
+
+      const selectedVoice = voices.find(v => 
+        v.lang.startsWith('en') && (
+          v.name.includes('Natural') || 
+          v.name.includes('Google US English') || 
+          v.name.includes('Jenny') || 
+          v.name.includes('Samantha')
+        )
+      ) || voices.find(v => v.lang === 'en-US' || v.lang === 'en-GB') || voices[0];
+
       const utt = new SpeechSynthesisUtterance(ghostData.incomingAudioText);
       utt.lang = 'en-US';
-      utt.rate = 0.9;
-      utt.pitch = 0.8;
+      utt.rate = 0.85; // Nhịp độ truyền tin vừa phải, dễ nghe
+      utt.pitch = 0.95;
+      if (selectedVoice) utt.voice = selectedVoice;
+
       utt.onend = () => setIsPlayingIncoming(false);
       utt.onerror = () => setIsPlayingIncoming(false);
       window.speechSynthesis.speak(utt);
@@ -54,7 +79,7 @@ export default function Station4Screen({ onBack }: Props) {
     }
   };
 
-  // 🎙️ THU ÂM PHÁT TÍN HIỆU PHẢN HỒI
+  // 🎙️ THU ÂM TÍN HIỆU PHẢN HỒI
   const handleToggleRecord = async () => {
     if (!isRecording) {
       try {
@@ -70,11 +95,17 @@ export default function Station4Screen({ onBack }: Props) {
 
           mediaRecorder.onstop = () => {
             const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-            if (blob.size > 3000) {
+            
+            // DUNG LƯỢNG FILE ÂM THANH > 4000 BYTES
+            if (blob.size > 4000) {
               setAudioBlob(blob);
+              setHasRecordedCurrentSession(true); // BẬT CỜ BẢN THU HỢP LỆ
             } else {
               setAudioBlob(null);
-              alert("⚠️ Tín hiệu thu âm quá yếu! Hãy thu âm lại câu trả lời.");
+              setHasRecordedCurrentSession(false);
+              if (typeof window !== 'undefined') {
+                alert("⚠️ Tín hiệu thu âm quá yếu hoặc quá ngắn! Hãy bấm thu âm lại.");
+              }
             }
             stream.getTracks().forEach(t => t.stop());
           };
@@ -82,6 +113,7 @@ export default function Station4Screen({ onBack }: Props) {
           mediaRecorder.start();
           setIsRecording(true);
           setAudioBlob(null);
+          setHasRecordedCurrentSession(false);
         }
       } catch {
         alert("🔒 Lỗi Micro: Hãy cấp quyền Microphone trên trình duyệt!");
@@ -94,11 +126,14 @@ export default function Station4Screen({ onBack }: Props) {
     }
   };
 
-  // ⚡ TRUYỀN PHẢN HỒI VÀ GIẢI MÃ TÍN HIỆU
+  // ⚡ TRUYỀN TÍN HIỆU (BẢO VỆ BẰNG CỜ XÁC NHẬN)
   const handleSendTransmission = () => {
-    if (!audioBlob || audioBlob.size <= 3000) {
-      alert("🔒 CHƯA CÓ TÍN HIỆU PHẢN HỒI: Hãy thu âm câu trả lời bằng giọng nói trước khi truyền tín hiệu!");
-      return;
+    // 🛑 KHÓA TUYỆT ĐỐI NẾU CHƯA CÓ BẢN THU THỰC TẾ
+    if (!hasRecordedCurrentSession || !audioBlob || audioBlob.size <= 4000) {
+      if (typeof window !== 'undefined') {
+        alert("🔒 CHƯA CÓ TÍN HIỆU PHẢN HỒI: Hãy bấm nút thu âm và phát biểu câu trả lời trước khi truyền tín hiệu!");
+      }
+      return; // NGẮT LẬP TỨC
     }
 
     setIsAnalyzing(true);
@@ -153,7 +188,11 @@ export default function Station4Screen({ onBack }: Props) {
                 onPress={handleToggleRecord}
               >
                 <Text style={styles.recordText}>
-                  {isRecording ? '🔴 ĐANG THU TÍN HIỆU... (BẤM DỪNG)' : audioBlob ? '✅ ĐÃ CÓ TÍN HIỆU PHẢN HỒI' : '🎙️ BẤM THU ÂM TÍN HIỆU PHẢN HỒI'}
+                  {isRecording 
+                    ? '🔴 ĐANG THU TÍN HIỆU... (BẤM DỪNG)' 
+                    : hasRecordedCurrentSession 
+                    ? '✅ ĐÃ CÓ TÍN HIỆU PHẢN HỒI (BẤM THU LẠI)' 
+                    : '🎙️ BẤM THU ÂM TÍN HIỆU PHẢN HỒI'}
                 </Text>
               </TouchableOpacity>
 
@@ -161,12 +200,12 @@ export default function Station4Screen({ onBack }: Props) {
                 <ActivityIndicator size="large" color="#39FF14" style={{ marginVertical: 10 }} />
               ) : (
                 <TouchableOpacity 
-                  style={[styles.sendBtn, !audioBlob && styles.sendBtnDisabled]} 
+                  style={[styles.sendBtn, (!hasRecordedCurrentSession || isRecording) && styles.sendBtnDisabled]} 
                   onPress={handleSendTransmission}
-                  disabled={!audioBlob}
+                  disabled={!hasRecordedCurrentSession || isRecording}
                 >
                   <Text style={styles.sendBtnText}>
-                    {audioBlob ? '⚡ TRUYỀN TÍN HIỆU & GIẢI MÃ AI' : '🔒 THU ÂM ĐỂ TRUYỀN TÍN HIỆU'}
+                    {hasRecordedCurrentSession ? '⚡ TRUYỀN TÍN HIỆU & GIẢI MÃ AI' : '🔒 THU ÂM ĐỂ TRUYỀN TÍN HIỆU'}
                   </Text>
                 </TouchableOpacity>
               )}
@@ -208,7 +247,7 @@ const styles = StyleSheet.create({
   recordBtnActive: { backgroundColor: '#FF0055' },
   recordText: { color: '#FFF', fontSize: 10, fontWeight: '900' },
   sendBtn: { backgroundColor: '#39FF14', padding: 14, borderRadius: 12, width: '100%', alignItems: 'center' },
-  sendBtnDisabled: { backgroundColor: '#224422', opacity: 0.3 },
+  sendBtnDisabled: { backgroundColor: '#224422', opacity: 0.2 },
   sendBtnText: { color: '#000', fontSize: 11, fontWeight: '900' },
   resultBox: { backgroundColor: '#120826', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#39FF14', width: '100%', alignItems: 'center' },
   scoreText: { color: '#39FF14', fontSize: 13, fontWeight: '900', marginBottom: 6 },
