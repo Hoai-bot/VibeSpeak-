@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
 import { evaluateSpeaking, AssessmentResult } from '../services/arena/assessmentService';
-import { generateExpressChallenge, ExpressChallenge } from '../services/arena/station4Service';
+import { generateStation4Scenario, Station4Scenario } from '../services/arena/station4Service';
 import { updateUserProgress } from '../services/userService';
 
 interface Props {
@@ -13,29 +13,34 @@ export default function Station4Screen({ onBack }: Props) {
   const [cefrLevel, setCefrLevel] = useState<string>('B2');
   const [loading, setLoading] = useState<boolean>(false);
   
-  // FIX: Sửa lại cú pháp Generics TypeScript chuẩn (ExpressChallenge | null)
-  const [challenge, setChallenge] = useState<ExpressChallenge | null>(null);
+  // TÌNH HUỐNG PHẢN HỒI ĐỘC LẬP TRẠM 4
+  const [scenario, setScenario] = useState<Station4Scenario | null>(null);
   const [battleState, setBattleState] = useState<'idle' | 'battling' | 'analyzing' | 'ended'>('idle');
   
+  // TRẠNG THÁI RECORDING THỰC TẾ
   const [isRecording, setIsRecording] = useState<boolean>(false);
   const [recordedAudio, setRecordedAudio] = useState<Blob | null>(null);
   const [hasRecorded, setHasRecorded] = useState<boolean>(false);
 
+  // KẾT QUẢ ĐÁNH GIÁ 6 TIÊU CHÍ
   const [result, setResult] = useState<AssessmentResult | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
 
-  const loadChallenge = async (level: string) => {
+  const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
+
+  // TẢI KỊCH BẢN RIÊNG CHO TRẠM 4
+  const loadScenario = async (level: string) => {
     setLoading(true);
     resetState();
-    const data = await generateExpressChallenge(level);
-    setChallenge(data);
+    const data = await generateStation4Scenario(level);
+    setScenario(data);
     setLoading(false);
   };
 
   useEffect(() => {
-    loadChallenge(cefrLevel);
+    loadScenario(cefrLevel);
   }, [cefrLevel]);
 
   const resetState = () => {
@@ -50,12 +55,21 @@ export default function Station4Screen({ onBack }: Props) {
     audioChunksRef.current = [];
   };
 
+  // 🎙 THU ÂM CÓ KHÓA DUNG LƯỢNG NGHIÊM NGẶT (> 8000 BYTES)
   const handleToggleRecord = async () => {
     if (!isRecording) {
       try {
         if (typeof navigator !== 'undefined' && navigator.mediaDevices) {
           const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-          const mediaRecorder = new MediaRecorder(stream);
+          
+          let options = {};
+          if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+            options = { mimeType: 'audio/webm;codecs=opus' };
+          } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+            options = { mimeType: 'audio/mp4' };
+          }
+
+          const mediaRecorder = new MediaRecorder(stream, options);
           mediaRecorderRef.current = mediaRecorder;
           audioChunksRef.current = [];
 
@@ -66,14 +80,17 @@ export default function Station4Screen({ onBack }: Props) {
           };
 
           mediaRecorder.onstop = () => {
-            const recordedBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+            const mimeType = mediaRecorder.mimeType || 'audio/webm';
+            const recordedBlob = new Blob(audioChunksRef.current, { type: mimeType });
+            
+            // BẮT BỘC > 8000 BYTES (~1.5s NÓI) MỚI TÍNH LÀ CÓ BẢN THU
             if (recordedBlob.size > 8000) {
               setRecordedAudio(recordedBlob);
               setHasRecorded(true);
             } else {
               setRecordedAudio(null);
               setHasRecorded(false);
-              alert("⚠️ Chưa ghi nhận giọng nói! Bấm giữ nút và đưa ra phản hồi rõ ràng.");
+              alert("⚠️ Chưa ghi nhận giọng nói rõ ràng! Vui lòng bấm giữ nút và đưa ra phản hồi.");
             }
             stream.getTracks().forEach(track => track.stop());
           };
@@ -95,6 +112,7 @@ export default function Station4Screen({ onBack }: Props) {
     }
   };
 
+  // 📊 NỘP BÀI VÀ CHẤM ĐIỂM
   const handleSubmitAnswer = async () => {
     if (!hasRecorded || !recordedAudio || recordedAudio.size <= 8000) {
       alert("🔒 Vui lòng ghi âm phản hồi của bạn trước khi nộp bài!");
@@ -121,34 +139,55 @@ export default function Station4Screen({ onBack }: Props) {
       </View>
 
       <ScrollView contentContainerStyle={{ alignItems: 'center', width: '100%', paddingBottom: 30 }}>
+        {/* CHỌN CẤP ĐỘ CEFR */}
+        <Text style={styles.sectionLabel}>CHỌN LEVEL CẤP ĐỘ:</Text>
+        <View style={styles.cefrRow}>
+          {CEFR_LEVELS.map((lvl) => (
+            <TouchableOpacity
+              key={lvl}
+              style={[styles.cefrBadge, cefrLevel === lvl && styles.cefrBadgeActive]}
+              onPress={() => setCefrLevel(lvl)}
+            >
+              <Text style={[styles.cefrText, cefrLevel === lvl && styles.cefrTextActive]}>{lvl}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {/* THỬ THÁCH PHẢN ỨNG NHANH */}
         <View style={styles.box}>
           <Text style={styles.boxTitle}>📌 THỬ THÁCH PHẢN ỨNG NHANH [{cefrLevel}]</Text>
           
           {loading ? (
             <ActivityIndicator size="small" color="#FF007F" style={{ marginVertical: 15 }} />
-          ) : challenge ? (
+          ) : scenario ? (
             <View style={{ width: '100%', alignItems: 'center' }}>
-              <Text style={styles.scenarioTitle}>{challenge.title}</Text>
-              <Text style={styles.promptText}>🎯 Tình huống: "{challenge.context}"</Text>
-              <Text style={styles.requirementText}>⚡ YÊU CẦU: {challenge.requirement}</Text>
+              <Text style={styles.scenarioTitle}>{scenario.title}</Text>
+              <Text style={styles.promptText}>🎯 Tình huống: "{scenario.context}"</Text>
+              <Text style={styles.requirementText}>⚡ YÊU CẦU: {scenario.requirement}</Text>
             </View>
           ) : null}
 
-          <TouchableOpacity style={styles.refreshBtn} onPress={() => loadChallenge(cefrLevel)} disabled={loading}>
+          <TouchableOpacity style={styles.refreshBtn} onPress={() => loadScenario(cefrLevel)} disabled={loading}>
             <Text style={styles.refreshBtnText}>🔄 ĐỔI THỬ THÁCH MỚI</Text>
           </TouchableOpacity>
 
+          {/* NÚT THU ÂM */}
           {battleState !== 'ended' && (
             <TouchableOpacity 
               style={[styles.recordBtn, isRecording && styles.recordBtnActive]} 
               onPress={handleToggleRecord}
             >
               <Text style={styles.recordBtnText}>
-                {isRecording ? '🔴 ĐANG THU ÂM PHẢN HỒI... (BẤM ĐỂ DỪNG)' : hasRecorded ? '✅ ĐÃ CÓ BẢN THU (BẤM THU LẠI)' : '🎙 BẤM ĐỂ BẮT ĐẦU NÓI'}
+                {isRecording 
+                  ? '🔴 ĐANG THU ÂM PHẢN HỒI... (BẤM ĐỂ DỪNG)' 
+                  : hasRecorded 
+                  ? '✅ ĐÃ CÓ BẢN THU (BẤM THU LẠI)' 
+                  : '🎙 BẤM ĐỂ BẮT ĐẦU NÓI'}
               </Text>
             </TouchableOpacity>
           )}
 
+          {/* NÚT NỘP BÀI */}
           {battleState !== 'ended' && (
             <TouchableOpacity 
               style={[styles.submitBtn, (!hasRecorded || !recordedAudio) && styles.submitBtnDisabled]} 
@@ -162,6 +201,7 @@ export default function Station4Screen({ onBack }: Props) {
           )}
         </View>
 
+        {/* AI GROQ WHISPER DỊCH VÀ CHẤM MẠNH */}
         {battleState === 'analyzing' && (
           <View style={styles.box}>
             <ActivityIndicator size="large" color="#39FF14" style={{ marginBottom: 15 }} />
@@ -169,6 +209,7 @@ export default function Station4Screen({ onBack }: Props) {
           </View>
         )}
 
+        {/* MÀN HÌNH KẾT QUẢ */}
         {battleState === 'ended' && result && (
           <View style={styles.box}>
             <Text style={[styles.resultTitle, { color: result.isWin ? '#39FF14' : '#FF0055' }]}>
@@ -176,6 +217,7 @@ export default function Station4Screen({ onBack }: Props) {
             </Text>
             <Text style={styles.scoreText}>⚡ TỔNG ĐIỂM TRẠM 4: {result.score} / 100 ĐIỂM</Text>
 
+            {/* TRÌNH PHÁT BẢN THU */}
             {result.audioUrl && (
               <View style={styles.nativeAudioContainer}>
                 <Text style={styles.nativeAudioLabel}>🎧 NGHE LẠI BẢN THU PHẢN HỒI CỦA BẠN:</Text>
@@ -183,12 +225,14 @@ export default function Station4Screen({ onBack }: Props) {
               </View>
             )}
 
+            {/* SCRIPT REAL 100% */}
             <View style={styles.scriptBox}>
               <Text style={styles.scriptLabel}>📝 BẢN DỊCH CHỮ PHẢN HỒI THỰC TẾ (SCRIPT):</Text>
               <Text style={styles.scriptContent}>"{result.transcript}"</Text>
               <Text style={styles.wordCountText}>📊 Số từ phát âm thực tế: {result.wordCount} từ</Text>
             </View>
 
+            {/* BẢNG 6 TIÊU CHÍ */}
             <Text style={styles.breakdownHeaderLabel}>📊 PHÂN TÍCH CHI TIẾT 6 TIÊU CHÍ:</Text>
             <View style={styles.breakdownCard}>
               <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>🗣️ 1. Phát âm:</Text><Text style={styles.breakdownValue}>{result.pronunciation}/100</Text></View>
@@ -201,7 +245,7 @@ export default function Station4Screen({ onBack }: Props) {
 
             <Text style={styles.feedbackText}>{result.detailedFeedback}</Text>
 
-            <TouchableOpacity style={styles.refreshBtn} onPress={() => loadChallenge(cefrLevel)}>
+            <TouchableOpacity style={styles.refreshBtn} onPress={() => loadScenario(cefrLevel)}>
               <Text style={styles.refreshBtnText}>🔄 THỬ BỐI CẢNH PHẢN HỒI MỚI</Text>
             </TouchableOpacity>
           </View>
@@ -217,6 +261,12 @@ const styles = StyleSheet.create({
   backBtn: { padding: 8, backgroundColor: '#0D0620', borderRadius: 8, borderWidth: 1, borderColor: '#FF007F' },
   backText: { color: '#FF007F', fontSize: 10, fontWeight: 'bold' },
   title: { color: '#FF007F', fontSize: 12, fontWeight: '900' },
+  sectionLabel: { color: '#FFD700', fontSize: 10, fontWeight: 'bold', alignSelf: 'flex-start', marginBottom: 6 },
+  cefrRow: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginBottom: 15 },
+  cefrBadge: { backgroundColor: '#0D0620', paddingVertical: 6, paddingHorizontal: 10, borderRadius: 6, borderWidth: 1, borderColor: '#332255' },
+  cefrBadgeActive: { backgroundColor: '#39FF14', borderColor: '#39FF14' },
+  cefrText: { color: '#8888AA', fontSize: 10, fontWeight: 'bold' },
+  cefrTextActive: { color: '#000' },
   box: { backgroundColor: '#0D0620', padding: 18, borderRadius: 16, borderWidth: 2, borderColor: '#FF007F', width: '100%', alignItems: 'center', marginBottom: 20 },
   boxTitle: { color: '#FFD700', fontSize: 11, fontWeight: '900', marginBottom: 12 },
   scenarioTitle: { color: '#00FFFF', fontSize: 13, fontWeight: '900', marginBottom: 6 },
