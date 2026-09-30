@@ -12,6 +12,7 @@ interface Props {
 export default function Station4Screen({ onBack }: Props) {
   const [cefrLevel, setCefrLevel] = useState<string>('B2');
   const [loading, setLoading] = useState<boolean>(false);
+  const [isPlayingTTS, setIsPlayingTTS] = useState<boolean>(false);
   
   // TÌNH HUỐNG PHẢN HỒI ĐỘC LẬP TRẠM 4
   const [scenario, setScenario] = useState<Station4Scenario | null>(null);
@@ -30,25 +31,60 @@ export default function Station4Screen({ onBack }: Props) {
 
   const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
 
-  // TẢI KỊCH BẢN RIÊNG CHO TRẠM 4
+  // 🔊 HÀM PHÁT TÍN HIỆU GIỌNG NÓI TÌNH HUỐNG (TEXT-TO-SPEECH)
+  const playPromptTTS = (textToSpeak: string) => {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel(); // Tắt audio cũ nếu đang phát
+      
+      const utterance = new SpeechSynthesisUtterance(textToSpeak);
+      utterance.lang = 'en-US';
+      utterance.rate = 0.95; // Tốc độ nói tự nhiên
+
+      utterance.onstart = () => setIsPlayingTTS(true);
+      utterance.onend = () => setIsPlayingTTS(false);
+      utterance.onerror = () => setIsPlayingTTS(false);
+
+      window.speechSynthesis.speak(utterance);
+    } else {
+      console.warn('Trình duyệt không hỗ trợ Web Speech Synthesis API');
+    }
+  };
+
+  // TẢI KỊCH BẢN RIÊNG VÀ TỰ ĐỘNG PHÁT GIỌNG NÓI TÌNH HUỐNG
   const loadScenario = async (level: string) => {
     setLoading(true);
     resetState();
     const data = await generateStation4Scenario(level);
     setScenario(data);
     setLoading(false);
+
+    // Tự động phát tín hiệu giọng nói tình huống tiếng Anh
+    if (data && data.context) {
+      setTimeout(() => {
+        playPromptTTS(data.context);
+      }, 300);
+    }
   };
 
   useEffect(() => {
     loadScenario(cefrLevel);
+    return () => {
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
+    };
   }, [cefrLevel]);
 
   const resetState = () => {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
       try { mediaRecorderRef.current.stop(); } catch (e) {}
     }
     setBattleState('idle');
     setIsRecording(false);
+    setIsPlayingTTS(false);
     setRecordedAudio(null);
     setHasRecorded(false);
     setResult(null);
@@ -57,6 +93,12 @@ export default function Station4Screen({ onBack }: Props) {
 
   // 🎙 THU ÂM CÓ KHÓA DUNG LƯỢNG NGHIÊM NGẶT (> 8000 BYTES)
   const handleToggleRecord = async () => {
+    // Tắt giọng đọc TTS khi người dùng bấm thu âm
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+      setIsPlayingTTS(false);
+    }
+
     if (!isRecording) {
       try {
         if (typeof navigator !== 'undefined' && navigator.mediaDevices) {
@@ -83,7 +125,6 @@ export default function Station4Screen({ onBack }: Props) {
             const mimeType = mediaRecorder.mimeType || 'audio/webm';
             const recordedBlob = new Blob(audioChunksRef.current, { type: mimeType });
             
-            // BẮT BỘC > 8000 BYTES (~1.5s NÓI) MỚI TÍNH LÀ CÓ BẢN THU
             if (recordedBlob.size > 8000) {
               setRecordedAudio(recordedBlob);
               setHasRecorded(true);
@@ -163,6 +204,17 @@ export default function Station4Screen({ onBack }: Props) {
             <View style={{ width: '100%', alignItems: 'center' }}>
               <Text style={styles.scenarioTitle}>{scenario.title}</Text>
               <Text style={styles.promptText}>🎯 Tình huống: "{scenario.context}"</Text>
+              
+              {/* NÚT NGHE LẠI GIỌNG NÓI TÌNH HUỐNG */}
+              <TouchableOpacity 
+                style={[styles.ttsBtn, isPlayingTTS && styles.ttsBtnActive]} 
+                onPress={() => playPromptTTS(scenario.context)}
+              >
+                <Text style={styles.ttsBtnText}>
+                  {isPlayingTTS ? '🔊 ĐANG PHÁT TÍN HIỆU GIỌNG NÓI...' : '🔊 NGHE LẠI TÌNH HUỐNG (AUDIO)'}
+                </Text>
+              </TouchableOpacity>
+
               <Text style={styles.requirementText}>⚡ YÊU CẦU: {scenario.requirement}</Text>
             </View>
           ) : null}
@@ -271,6 +323,9 @@ const styles = StyleSheet.create({
   boxTitle: { color: '#FFD700', fontSize: 11, fontWeight: '900', marginBottom: 12 },
   scenarioTitle: { color: '#00FFFF', fontSize: 13, fontWeight: '900', marginBottom: 6 },
   promptText: { color: '#FFF', fontSize: 13, fontWeight: '800', textAlign: 'center', lineHeight: 18, marginBottom: 8 },
+  ttsBtn: { backgroundColor: '#1A0B2E', paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8, borderWidth: 1, borderColor: '#00FFFF', marginBottom: 10, alignItems: 'center', width: '100%' },
+  ttsBtnActive: { backgroundColor: '#00FFFF' },
+  ttsBtnText: { color: '#00FFFF', fontSize: 10, fontWeight: 'bold' },
   requirementText: { color: '#FFD700', fontSize: 10, fontWeight: 'bold', textAlign: 'center', marginBottom: 12 },
   searchingText: { color: '#00FFFF', fontSize: 11, fontWeight: 'bold', textAlign: 'center' },
   refreshBtn: { backgroundColor: '#1A0B2E', padding: 8, borderRadius: 8, borderWidth: 1, borderColor: '#00FFFF', width: '100%', alignItems: 'center', marginBottom: 12 },
@@ -283,8 +338,8 @@ const styles = StyleSheet.create({
   submitBtnText: { color: '#000', fontSize: 11, fontWeight: '900' },
   resultTitle: { fontSize: 15, fontWeight: '900', marginBottom: 6 },
   scoreText: { color: '#FFD700', fontSize: 13, fontWeight: '900', marginBottom: 10 },
-  nativeAudioContainer: { width: '100%', backgroundColor: '#1A0B2E', padding: 10, borderRadius: 10, borderWidth: 1, borderColor: '#00FFFF', marginBottom: 12, alignItems: 'center' },
   nativeAudioLabel: { color: '#00FFFF', fontSize: 10, fontWeight: 'bold' },
+  nativeAudioContainer: { width: '100%', backgroundColor: '#1A0B2E', padding: 10, borderRadius: 10, borderWidth: 1, borderColor: '#00FFFF', marginBottom: 12, alignItems: 'center' },
   scriptBox: { backgroundColor: '#1A0B2E', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#332255', width: '100%', marginBottom: 12 },
   scriptLabel: { color: '#FFD700', fontSize: 10, fontWeight: 'bold', marginBottom: 4 },
   scriptContent: { color: '#FFF', fontSize: 11, fontStyle: 'italic', marginBottom: 6 },
