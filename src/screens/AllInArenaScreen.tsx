@@ -135,12 +135,21 @@ export default function AllInArenaScreen({ onBack }: Props) {
     }, 1500);
   };
 
+  // 🎙 THU ÂM SIẾT CHẶT DUNG LƯỢNG KÍCH THƯỚC (> 8000 BYTES)
   const handleToggleRecord = async () => {
     if (!isRecording) {
       try {
         if (typeof navigator !== 'undefined' && navigator.mediaDevices) {
           const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-          const mediaRecorder = new MediaRecorder(stream);
+          
+          let options = {};
+          if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+            options = { mimeType: 'audio/webm;codecs=opus' };
+          } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+            options = { mimeType: 'audio/mp4' };
+          }
+
+          const mediaRecorder = new MediaRecorder(stream, options);
           mediaRecorderRef.current = mediaRecorder;
           audioChunksRef.current = [];
 
@@ -151,9 +160,11 @@ export default function AllInArenaScreen({ onBack }: Props) {
           };
 
           mediaRecorder.onstop = () => {
-            const recordedBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+            const mimeType = mediaRecorder.mimeType || 'audio/webm';
+            const recordedBlob = new Blob(audioChunksRef.current, { type: mimeType });
             
-            if (recordedBlob.size > 5000) {
+            // SIẾT CHẶT: BẮT BỘC > 8000 BYTES MỚI TÍNH LÀ CÓ BẢN THU LƯỢT ĐẤU
+            if (recordedBlob.size > 8000) {
               if (mode === 'solo' || currentTurn === 1) {
                 setRecordedTurn1(recordedBlob);
                 setHasRecordedTurn1(true);
@@ -167,7 +178,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
               } else {
                 setRecordedTurn2(null); setHasRecordedTurn2(false);
               }
-              alert("⚠️ Bấm giữ nút và trả lời rõ ràng vào micro!");
+              alert("⚠️ Chưa ghi nhận giọng nói rõ ràng! Vui lòng giữ nút và phát âm rõ ràng vào micro.");
             }
             stream.getTracks().forEach(track => track.stop());
           };
@@ -180,7 +191,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
           }
         }
       } catch (err) {
-        alert("🔒 Cấp quyền Microphone để thu âm!");
+        alert("🔒 Lỗi: Hãy cấp quyền Microphone trên trình duyệt để thu âm!");
       }
     } else {
       setIsRecording(false);
@@ -194,7 +205,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
 
   const handleNextTurnManual = () => {
     if (!hasRecordedTurn1 || !recordedTurn1) {
-      alert("🔒 Vui lòng ghi âm lượt 1 trước!");
+      alert("🔒 Vui lòng ghi âm câu trả lời cho Lượt 1 trước!");
       return;
     }
     if (timerRef.current) clearInterval(timerRef.current);
@@ -206,7 +217,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
 
   const handleSubmitBattleAnswer = async () => {
     if (!hasRecordedTurn1 || !recordedTurn1) {
-      alert("🔒 Vui lòng thực hiện ghi âm trước!");
+      alert("🔒 Vui lòng thực hiện ghi âm trước khi nộp bài!");
       return;
     }
 
@@ -215,7 +226,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
 
     setBattleState('analyzing');
 
-    // Gọi Dịch vụ Đánh giá Độc lập
+    // Gọi Dịch vụ Đánh giá Độc lập với bản ghi âm thật
     const evalData = await evaluateSpeaking(recordedTurn1, cefrLevel);
     setResult(evalData);
 
