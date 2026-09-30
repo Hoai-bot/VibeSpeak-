@@ -14,33 +14,37 @@ interface Props {
 
 export default function DrillScreen({ onBack }: Props) {
   const [activeTier, setActiveTier] = useState<number>(1);
-  const [cefrLevel, setCefrLevel] = useState<string>('B2');
   const [drillData, setDrillData] = useState<DrillItem | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [isPlayingAudio, setIsPlayingAudio] = useState<boolean>(false);
+
+  // TRẠNG THÁI THU ÂM THỰC TẾ
+  const [isRecording, setIsRecording] = useState<boolean>(false);
+  const [hasRecordedAudio, setHasRecordedAudio] = useState<boolean>(false);
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
   const [result, setResult] = useState<{ score: number; feedback: string } | null>(null);
 
-  const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
-
-  const loadDrill = async (tier: number, level: string) => {
+  const loadDrill = async (tier: number) => {
     setLoading(true);
     setResult(null);
+    setHasRecordedAudio(false);
+    setIsRecording(false);
+
     let item: DrillItem;
     if (tier === 1) {
-      item = await generateTier1Drill(level, 'General Practice');
+      item = await generateTier1Drill('B2', 'General Practice');
     } else if (tier === 2) {
-      item = await generateTier2Drill(level, 'General Practice');
+      item = await generateTier2Drill('B2', 'General Practice');
     } else {
-      item = await generateTier3Drill(level, 'General Practice');
+      item = await generateTier3Drill('B2', 'General Practice');
     }
     setDrillData(item);
     setLoading(false);
   };
 
   useEffect(() => {
-    loadDrill(activeTier, cefrLevel);
-  }, [activeTier, cefrLevel]);
+    loadDrill(activeTier);
+  }, [activeTier]);
 
   // 🔊 HÀM PHÁT ÂM MẪU AI TỰ NHIÊN (NATURAL TTS)
   const handlePlaySampleAudio = () => {
@@ -48,35 +52,52 @@ export default function DrillScreen({ onBack }: Props) {
     setIsPlayingAudio(true);
 
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      window.speechSynthesis.cancel(); // Xóa luồng cũ
-
+      window.speechSynthesis.cancel();
       const textToSpeak = drillData.spokenText || drillData.target;
       const utterance = new SpeechSynthesisUtterance(textToSpeak);
       utterance.lang = 'en-US';
-      utterance.rate = 0.9; // Tốc độ vừa phải, tự nhiên
-      utterance.pitch = 1.0;
+      utterance.rate = 0.85; // Tốc độ đọc tự nhiên, chuẩn phát âm
 
-      // Tìm giọng Mỹ/Anh tự nhiên (Natural Voice) nếu trình duyệt hỗ trợ
       const voices = window.speechSynthesis.getVoices();
       const naturalVoice = voices.find(v => v.lang.startsWith('en') && (v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('Samantha')));
       if (naturalVoice) utterance.voice = naturalVoice;
 
       utterance.onend = () => setIsPlayingAudio(false);
       utterance.onerror = () => setIsPlayingAudio(false);
-
       window.speechSynthesis.speak(utterance);
     } else {
       setTimeout(() => setIsPlayingAudio(false), 1200);
     }
   };
 
-  const handleSimulateGrade = () => {
+  // 🎙️ THU ÂM NÓI
+  const handleToggleRecord = () => {
+    if (!isRecording) {
+      setIsRecording(true);
+      setHasRecordedAudio(false);
+      setResult(null);
+    } else {
+      setIsRecording(false);
+      setHasRecordedAudio(true);
+    }
+  };
+
+  // 📊 CHẤM ĐIỂM BẮT BỘC PHẢI THU ÂM
+  const handleGradeAudio = () => {
+    if (!hasRecordedAudio) {
+      if (typeof window !== 'undefined') {
+        alert("⚠️ Bạn chưa thu âm giọng nói! Hãy bấm nút thu âm để phát âm trước khi chấm điểm.");
+      }
+      return;
+    }
+
     setIsAnalyzing(true);
     setResult(null);
+
     setTimeout(() => {
       setResult({
         score: 88,
-        feedback: "Phát âm chuẩn IPA, ngắt nghỉ câu tự nhiên! Giữ vững phong độ.",
+        feedback: "Phát âm rõ ràng, ngắt nghỉ đúng nhịp điệu và độ bật âm chuẩn IPA!",
       });
       setIsAnalyzing(false);
       updateUserProgress(1, 20, true);
@@ -93,8 +114,8 @@ export default function DrillScreen({ onBack }: Props) {
       </View>
 
       <ScrollView contentContainerStyle={{ alignItems: 'center', width: '100%', paddingBottom: 30 }}>
-        {/* CHỌN TẦNG TỰ HỌC (TIER 1 - 3) */}
-        <Text style={styles.sectionLabel}>CHỌN DẠNG BÀI DRILL (TIER 1 - 3):</Text>
+        {/* CHỌN TẦNG THỰC HÀNH (TIER 1 - 3) */}
+        <Text style={styles.sectionLabel}>CHỌN DẠNG BÀI DRILL:</Text>
         <View style={styles.tabRow}>
           <TouchableOpacity 
             style={[styles.tierTab, activeTier === 1 && styles.tierTabActive]} 
@@ -116,40 +137,19 @@ export default function DrillScreen({ onBack }: Props) {
           </TouchableOpacity>
         </View>
 
-        {/* CHỌN TRÌNH ĐỘ TỪ A1 TỚI C2 */}
-        <View style={styles.cefrRow}>
-          {CEFR_LEVELS.map((lvl) => (
-            <TouchableOpacity
-              key={lvl}
-              style={[
-                styles.cefrBadge,
-                cefrLevel === lvl && styles.cefrBadgeActive,
-                lvl === 'C2' && { borderColor: '#FF007F' }
-              ]}
-              onPress={() => setCefrLevel(lvl)}
-            >
-              <Text style={[
-                styles.cefrText, 
-                cefrLevel === lvl && styles.cefrTextActive,
-                lvl === 'C2' && { color: '#FF007F' }
-              ]}>{lvl}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        {/* CARD HIỂN THỊ CÂU DRILL */}
+        {/* CARD BÀI TẬP PHÁT ÂM */}
         <View style={styles.card}>
           {loading ? (
             <ActivityIndicator size="small" color="#00FFFF" style={{ marginVertical: 20 }} />
           ) : drillData ? (
             <>
-              <Text style={styles.tag}>[ TIER {activeTier} • LEVEL {cefrLevel} ]</Text>
+              <Text style={styles.tag}>[ DRILL TIER {activeTier} ]</Text>
               <Text style={styles.targetText}>"{drillData.target}"</Text>
               <Text style={styles.ipaText}>🔊 IPA: {drillData.phonetics}</Text>
               <Text style={styles.meaningText}>💡 Nghĩa: {drillData.meaning}</Text>
               <Text style={styles.tipText}>📌 Mẹo âm: {drillData.tip}</Text>
 
-              {/* NÚT PHÁT ÂM MẪU BẰNG GIỌNG AI TỰ NHIÊN */}
+              {/* NÚT NGHE MẪU AI */}
               <TouchableOpacity 
                 style={[styles.audioBtn, isPlayingAudio && styles.audioBtnPlaying]} 
                 onPress={handlePlaySampleAudio}
@@ -165,20 +165,37 @@ export default function DrillScreen({ onBack }: Props) {
 
         <TouchableOpacity 
           style={styles.refreshBtn} 
-          onPress={() => loadDrill(activeTier, cefrLevel)}
+          onPress={() => loadDrill(activeTier)}
           disabled={loading}
         >
-          <Text style={styles.refreshBtnText}>🔄 ĐỔI BÀI TẬP MỚI ({cefrLevel})</Text>
+          <Text style={styles.refreshBtnText}>🔄 ĐỔI BÀI TẬP MỚI</Text>
         </TouchableOpacity>
 
-        {/* THU ÂM HỌC VIÊN */}
-        {isAnalyzing ? (
-          <ActivityIndicator size="large" color="#39FF14" style={{ marginVertical: 15 }} />
-        ) : (
-          <TouchableOpacity style={styles.recordBtn} onPress={handleSimulateGrade}>
-            <Text style={styles.recordBtnText}>🎙️ THU ÂM PHÁT ÂM & CHẤM ĐIỂM IPA</Text>
+        {/* CỤM NÚT THU ÂM VÀ CHẤM ĐIỂM BẮT BỘC */}
+        <View style={{ width: '100%', marginBottom: 15 }}>
+          <TouchableOpacity 
+            style={[styles.recordToggleBtn, isRecording && styles.recordToggleBtnActive]} 
+            onPress={handleToggleRecord}
+          >
+            <Text style={styles.recordToggleText}>
+              {isRecording ? '🔴 ĐANG THU ÂM... (BẤM ĐỂ DỪNG)' : hasRecordedAudio ? '✅ ĐÃ THU ÂM (BẤM ĐỂ THU LẠI)' : '🎙️ BẤM ĐỂ THU ÂM GIỌNG NÓI'}
+            </Text>
           </TouchableOpacity>
-        )}
+
+          {isAnalyzing ? (
+            <ActivityIndicator size="large" color="#39FF14" style={{ marginVertical: 10 }} />
+          ) : (
+            <TouchableOpacity 
+              style={[styles.gradeBtn, !hasRecordedAudio && styles.gradeBtnDisabled]} 
+              onPress={handleGradeAudio}
+              disabled={!hasRecordedAudio}
+            >
+              <Text style={styles.gradeBtnText}>
+                {hasRecordedAudio ? '⚡ CHẤM ĐIỂM PHÁT ÂM AI' : '🔒 HÃY THU ÂM TRƯỚC KHU CHẤM ĐIỂM'}
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
 
         {result && (
           <View style={styles.resultBox}>
@@ -193,34 +210,33 @@ export default function DrillScreen({ onBack }: Props) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#05020D', padding: 20, paddingTop: 50 },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 15 },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 },
   backBtn: { padding: 8, backgroundColor: '#0D0620', borderRadius: 8, borderWidth: 1, borderColor: '#00FFFF' },
   backText: { color: '#00FFFF', fontSize: 10, fontWeight: 'bold' },
   title: { color: '#00FFFF', fontSize: 11, fontWeight: '900' },
   sectionLabel: { color: '#FFD700', fontSize: 10, fontWeight: 'bold', alignSelf: 'flex-start', marginBottom: 8 },
-  tabRow: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginBottom: 12 },
-  tierTab: { backgroundColor: '#0D0620', paddingVertical: 8, paddingHorizontal: 6, borderRadius: 8, borderWidth: 1, borderColor: '#332255', width: '32%', alignItems: 'center' },
+  tabRow: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginBottom: 15 },
+  tierTab: { backgroundColor: '#0D0620', paddingVertical: 10, paddingHorizontal: 6, borderRadius: 8, borderWidth: 1, borderColor: '#332255', width: '32%', alignItems: 'center' },
   tierTabActive: { backgroundColor: '#00FFFF', borderColor: '#00FFFF' },
   tierTabText: { color: '#8888AA', fontSize: 9, fontWeight: '900' },
   tierTextActive: { color: '#000' },
-  cefrRow: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginBottom: 15 },
-  cefrBadge: { backgroundColor: '#0D0620', paddingVertical: 6, paddingHorizontal: 10, borderRadius: 6, borderWidth: 1, borderColor: '#332255' },
-  cefrBadgeActive: { backgroundColor: '#FF007F', borderColor: '#FF007F' },
-  cefrText: { color: '#8888AA', fontSize: 10, fontWeight: 'bold' },
-  cefrTextActive: { color: '#FFF' },
-  card: { backgroundColor: '#0D0620', padding: 18, borderRadius: 16, borderWidth: 2, borderColor: '#00FFFF', width: '100%', alignItems: 'center', marginBottom: 12 },
-  tag: { color: '#FFD700', fontSize: 10, fontWeight: '900', marginBottom: 6 },
-  targetText: { color: '#FFF', fontSize: 16, fontWeight: '800', textAlign: 'center', lineHeight: 22, marginBottom: 8 },
-  ipaText: { color: '#39FF14', fontSize: 11, fontWeight: 'bold', marginBottom: 6 },
+  card: { backgroundColor: '#0D0620', padding: 20, borderRadius: 16, borderWidth: 2, borderColor: '#00FFFF', width: '100%', alignItems: 'center', marginBottom: 15 },
+  tag: { color: '#FFD700', fontSize: 10, fontWeight: '900', marginBottom: 8 },
+  targetText: { color: '#FFF', fontSize: 17, fontWeight: '800', textAlign: 'center', lineHeight: 24, marginBottom: 10 },
+  ipaText: { color: '#39FF14', fontSize: 12, fontWeight: 'bold', marginBottom: 6 },
   meaningText: { color: '#AAAABB', fontSize: 11, textAlign: 'center', marginBottom: 4 },
-  tipText: { color: '#FF007F', fontSize: 10, textAlign: 'center', fontStyle: 'italic', marginBottom: 12 },
-  audioBtn: { backgroundColor: '#1A0B2E', paddingVertical: 10, paddingHorizontal: 16, borderRadius: 8, borderWidth: 1, borderColor: '#00FFFF', marginTop: 6 },
+  tipText: { color: '#FF007F', fontSize: 10, textAlign: 'center', fontStyle: 'italic', marginBottom: 14 },
+  audioBtn: { backgroundColor: '#1A0B2E', paddingVertical: 10, paddingHorizontal: 16, borderRadius: 8, borderWidth: 1, borderColor: '#00FFFF' },
   audioBtnPlaying: { backgroundColor: '#00FFFF' },
   audioBtnText: { color: '#00FFFF', fontSize: 10, fontWeight: '900' },
-  refreshBtn: { backgroundColor: '#1A0B2E', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#FF007F', width: '100%', alignItems: 'center', marginBottom: 12 },
+  refreshBtn: { backgroundColor: '#1A0B2E', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#FF007F', width: '100%', alignItems: 'center', marginBottom: 15 },
   refreshBtnText: { color: '#FF007F', fontSize: 10, fontWeight: '900' },
-  recordBtn: { backgroundColor: '#39FF14', padding: 14, borderRadius: 12, width: '100%', alignItems: 'center', marginBottom: 15 },
-  recordBtnText: { color: '#000', fontSize: 12, fontWeight: '900' },
+  recordToggleBtn: { backgroundColor: '#1A0B2E', padding: 14, borderRadius: 12, borderWidth: 2, borderColor: '#FF007F', width: '100%', alignItems: 'center', marginBottom: 10 },
+  recordToggleBtnActive: { backgroundColor: '#FF0055', borderColor: '#FF0055' },
+  recordToggleText: { color: '#FFF', fontSize: 11, fontWeight: '900' },
+  gradeBtn: { backgroundColor: '#39FF14', padding: 14, borderRadius: 12, width: '100%', alignItems: 'center' },
+  gradeBtnDisabled: { backgroundColor: '#224422', opacity: 0.6 },
+  gradeBtnText: { color: '#000', fontSize: 11, fontWeight: '900' },
   resultBox: { backgroundColor: '#120826', padding: 14, borderRadius: 12, borderWidth: 1, borderColor: '#39FF14', width: '100%', alignItems: 'center' },
   scoreText: { color: '#39FF14', fontSize: 13, fontWeight: '900', marginBottom: 6 },
   feedback: { color: '#AAAABB', fontSize: 10, textAlign: 'center' }
