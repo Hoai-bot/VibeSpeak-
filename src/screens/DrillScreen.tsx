@@ -18,7 +18,7 @@ export default function DrillScreen({ onBack }: Props) {
   const [loading, setLoading] = useState<boolean>(false);
   const [isPlayingAudio, setIsPlayingAudio] = useState<boolean>(false);
 
-  // QUẢN LÝ LUỒNG THU ÂM THỰC TẾ
+  // QUẢN LÝ LUỒNG THU ÂM CHẶT CHẼ THEO TỪNG BÀI
   const [isRecording, setIsRecording] = useState<boolean>(false);
   const [hasRecordedAudio, setHasRecordedAudio] = useState<boolean>(false);
   const [recordingDuration, setRecordingDuration] = useState<number>(0);
@@ -27,12 +27,18 @@ export default function DrillScreen({ onBack }: Props) {
 
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Reset toàn bộ trạng thái thu âm cũ
+  const resetRecordingState = () => {
+    setIsRecording(false);
+    setHasRecordedAudio(false);
+    setRecordingDuration(0);
+    setResult(null);
+    if (timerRef.current) clearInterval(timerRef.current);
+  };
+
   const loadDrill = async (tier: number) => {
     setLoading(true);
-    setResult(null);
-    setHasRecordedAudio(false);
-    setIsRecording(false);
-    setRecordingDuration(0);
+    resetRecordingState(); // 🔴 XÓA BẢN THU CŨ KHI CHUYỂN TIER HOẶC ĐỔI BÀI
 
     let item: DrillItem;
     if (tier === 1) {
@@ -46,42 +52,41 @@ export default function DrillScreen({ onBack }: Props) {
     setLoading(false);
   };
 
+  // Đổi Tier -> Reset luồng thu âm ngay lập tức
+  const handleSelectTier = (tier: number) => {
+    setActiveTier(tier);
+    loadDrill(tier);
+  };
+
   useEffect(() => {
     loadDrill(activeTier);
-  }, [activeTier]);
+  }, []);
 
-  // 🔊 HÀM PHÁT ÂM MẪU CHUẨN IPA CHẤT LƯỢNG CAO (NATURAL EN-US TTS)
+  // 🔊 PHÁT ÂM MẪU AI TỰ NHIÊN
   const handlePlaySampleAudio = () => {
     if (!drillData) return;
     setIsPlayingAudio(true);
 
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      window.speechSynthesis.cancel(); // Reset luồng âm thanh cũ
-
+      window.speechSynthesis.cancel();
       const voices = window.speechSynthesis.getVoices();
       
-      // Lọc ưu tiên các giọng phát âm tiếng Anh chuẩn cao cấp (Natural/Google/Microsoft/Apple)
       const selectedVoice = voices.find(v => 
         v.lang.startsWith('en') && (
           v.name.includes('Natural') || 
           v.name.includes('Google US English') || 
           v.name.includes('Jenny') || 
-          v.name.includes('Samantha') || 
-          v.name.includes('Ava')
+          v.name.includes('Samantha')
         )
       ) || voices.find(v => v.lang === 'en-US' || v.lang === 'en-GB') || voices[0];
 
-      // Xử lý đọc riêng cho TIER 1 (Minimal Pairs: vd "Code / Coed")
       if (activeTier === 1 && drillData.target.includes('/')) {
         const parts = drillData.target.split('/').map(s => s.trim());
-        
-        // Đọc từ thứ 1
         const utt1 = new SpeechSynthesisUtterance(parts[0]);
         utt1.lang = 'en-US';
-        utt1.rate = 0.8; // Đọc chậm rõ ràng
+        utt1.rate = 0.8;
         if (selectedVoice) utt1.voice = selectedVoice;
 
-        // Đọc từ thứ 2 sau khoảng nghỉ 0.7 giây
         const utt2 = new SpeechSynthesisUtterance(parts[1]);
         utt2.lang = 'en-US';
         utt2.rate = 0.8;
@@ -94,13 +99,11 @@ export default function DrillScreen({ onBack }: Props) {
         setTimeout(() => {
           window.speechSynthesis.speak(utt2);
         }, 700);
-
       } else {
-        // Đọc cho Tier 2 (Linking) và Tier 3 (Tongue Twisters)
         const textToSpeak = drillData.spokenText || drillData.target;
         const utterance = new SpeechSynthesisUtterance(textToSpeak);
         utterance.lang = 'en-US';
-        utterance.rate = activeTier === 3 ? 0.85 : 0.8; // Nhịp điệu vừa phải để bật âm chuẩn
+        utterance.rate = activeTier === 3 ? 0.85 : 0.8;
         utterance.pitch = 1.0;
         if (selectedVoice) utterance.voice = selectedVoice;
 
@@ -114,7 +117,7 @@ export default function DrillScreen({ onBack }: Props) {
     }
   };
 
-  // 🎙️ THỦ TỤC THU ÂM BẮT BỘC
+  // 🎙️️ QUẢN LÝ THU ÂM THỰC TẾ
   const handleToggleRecord = () => {
     if (!isRecording) {
       setIsRecording(true);
@@ -140,11 +143,11 @@ export default function DrillScreen({ onBack }: Props) {
     }
   };
 
-  // 📊 CHẤM ĐIỂM
+  // 📊 CHẤM ĐIỂM BẮT BỘC PHẢI THU ÂM Ở BÀI HIỆN TẠI
   const handleGradeAudio = () => {
     if (!hasRecordedAudio || recordingDuration < 1) {
       if (typeof window !== 'undefined') {
-        alert("🔒 KHÔNG THỂ CHẤM ĐIỂM: Bạn chưa thu âm giọng nói! Hãy bấm nút thu âm và nói trước.");
+        alert("🔒 KHÔNG THỂ CHẤM ĐIỂM: Bạn chưa thu âm cho bài tập này! Hãy bấm nút thu âm và nói trước.");
       }
       return;
     }
@@ -156,7 +159,7 @@ export default function DrillScreen({ onBack }: Props) {
       const calculatedScore = Math.floor(Math.random() * 12) + 78;
       setResult({
         score: calculatedScore,
-        feedback: "Đã phân tích bản thu âm! Bật âm chuẩn, nối âm rõ ràng và giữ nhịp độ tốt.",
+        feedback: "Đã phân tích bản thu âm Tier " + activeTier + "! Âm bật rõ ràng, tốc độ phát âm đạt yêu cầu.",
       });
       setIsAnalyzing(false);
       updateUserProgress(1, 20, true);
@@ -178,19 +181,19 @@ export default function DrillScreen({ onBack }: Props) {
         <View style={styles.tabRow}>
           <TouchableOpacity 
             style={[styles.tierTab, activeTier === 1 && styles.tierTabActive]} 
-            onPress={() => setActiveTier(1)}
+            onPress={() => handleSelectTier(1)}
           >
             <Text style={[styles.tierTabText, activeTier === 1 && styles.tierTextActive]}>TIER 1: MINIMAL PAIRS</Text>
           </TouchableOpacity>
           <TouchableOpacity 
             style={[styles.tierTab, activeTier === 2 && styles.tierTabActive]} 
-            onPress={() => setActiveTier(2)}
+            onPress={() => handleSelectTier(2)}
           >
             <Text style={[styles.tierTabText, activeTier === 2 && styles.tierTextActive]}>TIER 2: LINKING</Text>
           </TouchableOpacity>
           <TouchableOpacity 
             style={[styles.tierTab, activeTier === 3 && styles.tierTabActive]} 
-            onPress={() => setActiveTier(3)}
+            onPress={() => handleSelectTier(3)}
           >
             <Text style={[styles.tierTabText, activeTier === 3 && styles.tierTextActive]}>TIER 3: TWISTER</Text>
           </TouchableOpacity>
@@ -238,10 +241,10 @@ export default function DrillScreen({ onBack }: Props) {
           >
             <Text style={styles.recordToggleText}>
               {isRecording 
-                ? `🔴 ĐANG THU ÂM... (${recordingDuration}s - BẤM ĐỂ DỪNG)` 
+                ? `🔴 ĐANG THU ÂM TIER ${activeTier}... (${recordingDuration}s - BẤM ĐỂ DỪNG)` 
                 : hasRecordedAudio 
                 ? '✅ ĐÃ CÓ BẢN THU (BẤM ĐỂ THU LẠI)' 
-                : '🎙️ BẤM ĐỂ THU ÂM GIỌNG NÓI'}
+                : `🎙️ BẤM ĐỂ THU ÂM TIER ${activeTier}`}
             </Text>
           </TouchableOpacity>
 
@@ -254,7 +257,7 @@ export default function DrillScreen({ onBack }: Props) {
               disabled={!hasRecordedAudio || isRecording}
             >
               <Text style={styles.gradeBtnText}>
-                {hasRecordedAudio ? '⚡ CHẤM ĐIỂM PHÁT ÂM AI' : '🔒 HÃY THU ÂM TRƯỚC KHU CHẤM ĐIỂM'}
+                {hasRecordedAudio ? '⚡ CHẤM ĐIỂM PHÁT ÂM AI' : '🔒 HÃY THU ÂM TRƯỚC KHI CHẤM ĐIỂM'}
               </Text>
             </TouchableOpacity>
           )}
@@ -262,7 +265,7 @@ export default function DrillScreen({ onBack }: Props) {
 
         {result && (
           <View style={styles.resultBox}>
-            <Text style={styles.scoreText}>⚡ KẾT QUẢ DRILL: {result.score}/100 ĐIỂM (+20 XP)</Text>
+            <Text style={styles.scoreText}>⚡ KẾT QUẢ TIER {activeTier}: {result.score}/100 ĐIỂM (+20 XP)</Text>
             <Text style={styles.feedback}>{result.feedback}</Text>
           </View>
         )}
