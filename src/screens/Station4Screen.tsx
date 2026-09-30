@@ -1,5 +1,5 @@
-// src/screens/Station4Screen.tsx (Hoặc tên file màn hình Trạm 4 tương ứng trong dự án)
-import React, { useState, useEffect, useRef } from 'react';
+// src/screens/Station4Screen.tsx
+import React, { useState, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
 import { evaluateSpeaking, AssessmentResult } from '../services/arena/assessmentService';
 import { updateUserProgress } from '../services/userService';
@@ -10,10 +10,6 @@ interface Props {
 
 export default function Station4Screen({ onBack }: Props) {
   const [cefrLevel, setCefrLevel] = useState<string>('B2');
-  const [loading, setLoading] = useState<boolean>(false);
-  
-  // TRẠNG THÁI BÀI TẬP TRẠM 4
-  const [promptTopic, setPromptTopic] = useState<string>('Describe a memorable journey you took and explain why it was special to you.');
   const [battleState, setBattleState] = useState<'idle' | 'battling' | 'analyzing' | 'ended'>('idle');
   
   // MICRO & BẢN THU ÂM THỰC TẾ
@@ -21,7 +17,7 @@ export default function Station4Screen({ onBack }: Props) {
   const [recordedAudio, setRecordedAudio] = useState<Blob | null>(null);
   const [hasRecorded, setHasRecorded] = useState<boolean>(false);
 
-  // KẾT QUẢ ĐÁNH GIÁ 6 TIÊU CHÍ
+  // KẾT QUẢ ĐÁNH GIÁ
   const [result, setResult] = useState<AssessmentResult | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -39,7 +35,7 @@ export default function Station4Screen({ onBack }: Props) {
     audioChunksRef.current = [];
   };
 
-  // 🎙 THU ÂM THỰC TẾ TRẠM 4
+  // 🎙 THU ÂM VỚI KHÓA SIẾT DUNG LƯỢNG NGHIÊM NGẶT (> 8000 BYTES)
   const handleToggleRecord = async () => {
     if (!isRecording) {
       try {
@@ -57,13 +53,15 @@ export default function Station4Screen({ onBack }: Props) {
 
           mediaRecorder.onstop = () => {
             const recordedBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-            if (recordedBlob.size > 5000) {
+            
+            // SIẾT CHẶT: BẮT BỘC > 8000 BYTES MỚI TÍNH LÀ CÓ NÓI
+            if (recordedBlob.size > 8000) {
               setRecordedAudio(recordedBlob);
               setHasRecorded(true);
             } else {
               setRecordedAudio(null);
               setHasRecorded(false);
-              alert("⚠️ Thu âm quá ngắn hoặc chưa có tiếng! Vui lòng bấm giữ nút và nói rõ ràng.");
+              alert("⚠️ Thu âm quá ngắn hoặc im lặng! Vui lòng bấm giữ nút và trả lời rõ ràng.");
             }
             stream.getTracks().forEach(track => track.stop());
           };
@@ -85,17 +83,17 @@ export default function Station4Screen({ onBack }: Props) {
     }
   };
 
-  // 📊 CHẤM ĐIỂM CHÍNH XÁC TRẠM 4 QUA GROQ WHISPER STT
+  // 📊 CHẤM ĐIỂM THỰC TẾ QUA ASSESSMENTS ERVICE (GROQ WHISPER)
   const handleSubmitAnswer = async () => {
-    if (!hasRecorded || !recordedAudio) {
-      alert("🔒 Vui lòng thu âm câu trả lời trước khi nộp bài!");
+    if (!hasRecorded || !recordedAudio || recordedAudio.size <= 8000) {
+      alert("🔒 BẠN CHƯA THU ÂM: Vui lòng ghi âm câu trả lời trước khi nộp bài!");
       return;
     }
 
     if (isRecording) setIsRecording(false);
     setBattleState('analyzing');
 
-    // Gọi trực tiếp dịch vụ chấm điểm độc lập
+    // Gọi dịch vụ chấm điểm tập trung
     const evalData = await evaluateSpeaking(recordedAudio, cefrLevel);
     setResult(evalData);
 
@@ -113,10 +111,9 @@ export default function Station4Screen({ onBack }: Props) {
       </View>
 
       <ScrollView contentContainerStyle={{ alignItems: 'center', width: '100%', paddingBottom: 30 }}>
-        {/* KHUNG ĐỀ BÀI TRẠM 4 */}
         <View style={styles.box}>
-          <Text style={styles.boxTitle}>📌 CHỦ ĐỀ THÁCH THỨC [{cefrLevel}]</Text>
-          <Text style={styles.promptText}>"{promptTopic}"</Text>
+          <Text style={styles.boxTitle}>📌 THỬ THÁCH NÓI TRẠM 4 [{cefrLevel}]</Text>
+          <Text style={styles.promptText}>"Describe a challenging situation you faced recently and how you resolved it."</Text>
 
           {/* NÚT THU ÂM */}
           {battleState !== 'ended' && (
@@ -125,40 +122,42 @@ export default function Station4Screen({ onBack }: Props) {
               onPress={handleToggleRecord}
             >
               <Text style={styles.recordBtnText}>
-                {isRecording ? '🔴 ĐANG THU ÂM... (BẤM ĐỂ DỪNG)' : hasRecorded ? '✅ ĐÃ THU ÂM (BẤM THU LẠI)' : '🎙 BẤM ĐỂ BẮT ĐẦU NÓI'}
+                {isRecording ? '🔴 ĐANG THU ÂM... (BẤM ĐỂ DỪNG)' : hasRecorded ? '✅ ĐÃ CÓ BẢN THU (BẤM THU LẠI)' : '🎙 BẤM ĐỂ BẮT ĐẦU NÓI'}
               </Text>
             </TouchableOpacity>
           )}
 
-          {/* NÚT NỘP BÀI */}
+          {/* NÚT NỘP BÀI - KHÓA NẾU CHƯA THU ÂM HỢP LỆ */}
           {battleState !== 'ended' && (
             <TouchableOpacity 
               style={[styles.submitBtn, (!hasRecorded || !recordedAudio) && styles.submitBtnDisabled]} 
               onPress={handleSubmitAnswer}
               disabled={!hasRecorded || !recordedAudio}
             >
-              <Text style={styles.submitBtnText}>⚡ NỘP BÀI & CHẤM ĐIỂM AI</Text>
+              <Text style={styles.submitBtnText}>
+                {hasRecorded ? '⚡ NỘP BÀI & CHẤM ĐIỂM AI' : '🔒 BẮT BỘC THU ÂM TRƯỚC KHINỘP'}
+              </Text>
             </TouchableOpacity>
           )}
         </View>
 
-        {/* TRẠNG THÁI WHISPER ĐANG BÓC TÁCH & CHẤM ĐIỂM */}
+        {/* TRẠNG THÁI AI ĐANG PHÂN TÍCH */}
         {battleState === 'analyzing' && (
           <View style={styles.box}>
             <ActivityIndicator size="large" color="#39FF14" style={{ marginBottom: 15 }} />
-            <Text style={styles.searchingText}>⚡ GROQ WHISPER AI ĐANG CHUYỂN GIỌNG NÓI THÀNH CHỮ & CHẤM 6 TIÊU CHÍ...</Text>
+            <Text style={styles.searchingText}>⚡ GROQ WHISPER AI ĐANG BÓC TÁCH GIỌNG NÓI & CHẤM 6 TIÊU CHÍ...</Text>
           </View>
         )}
 
-        {/* KẾT QUẢ CHẤM ĐIỂM THỰC TẾ TRẠM 4 */}
+        {/* MÀN HÌNH KẾT QUẢ THỰC TẾ TRẠM 4 */}
         {battleState === 'ended' && result && (
           <View style={styles.box}>
             <Text style={[styles.resultTitle, { color: result.isWin ? '#39FF14' : '#FF0055' }]}>
-              {result.isWin ? '🎉 BẠN ĐÃ HOÀN THÀNH XUẤT SẮC!' : '💀 CHƯA ĐẠT YÊU CẦU TRẠM 4'}
+              {result.isWin ? '🎉 BẠN ĐÃ CHIẾN THẮNG!' : '💀 CHƯA ĐẠT YÊU CẦU TRẠM 4'}
             </Text>
             <Text style={styles.scoreText}>⚡ TỔNG ĐIỂM TRẠM 4: {result.score} / 100 ĐIỂM</Text>
 
-            {/* PLAYER NATIVE AUDIO */}
+            {/* PHÁT LẠI GIỌNG NÓI */}
             {result.audioUrl && (
               <View style={styles.nativeAudioContainer}>
                 <Text style={styles.nativeAudioLabel}>🎧 NGHE LẠI BẢN THU CỦA BẠN:</Text>
@@ -166,7 +165,7 @@ export default function Station4Screen({ onBack }: Props) {
               </View>
             )}
 
-            {/* SCRIPT THỰC TẾ 100% */}
+            {/* SCRIPT BÓC TÁCH THỰC TẾ */}
             <View style={styles.scriptBox}>
               <Text style={styles.scriptLabel}>📝 BẢN DỊCH CHỮ GIỌNG NÓI THỰC TẾ (SCRIPT):</Text>
               <Text style={styles.scriptContent}>"{result.transcript}"</Text>
