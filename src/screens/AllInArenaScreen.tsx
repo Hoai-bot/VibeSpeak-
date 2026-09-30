@@ -1,6 +1,6 @@
 // src/screens/AllInArenaScreen.tsx
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
 import { generateSoloTopic, SoloTopic } from '../services/arena/soloService';
 import { generateRelayChallenge, RelayChallenge } from '../services/arena/relayService';
 import { generateRoleplayScenario, RoleplayScenario } from '../services/arena/roleplayService';
@@ -23,9 +23,10 @@ export default function AllInArenaScreen({ onBack }: Props) {
 
   // TRẠNG THÁI TRẬN ĐẤU & LƯỢT CHƠI
   const [battleState, setBattleState] = useState<'idle' | 'searching' | 'battling' | 'analyzing' | 'ended'>('idle');
-  const [currentTurn, setCurrentTurn] = useState<1 | 2>(1); // Chỉ dùng cho Relay/Roleplay
+  const [currentTurn, setCurrentTurn] = useState<1 | 2>(1);
   const [matchedOpponent, setMatchedOpponent] = useState<string>('');
   const [timeLeft, setTimeLeft] = useState<number>(30);
+  const [isTimerRunning, setIsTimerRunning] = useState<boolean>(false);
   
   // MICRO & RECORDING THỰC TẾ
   const [isRecording, setIsRecording] = useState<boolean>(false);
@@ -39,9 +40,6 @@ export default function AllInArenaScreen({ onBack }: Props) {
 
   const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
 
-  // ⏱️ QUỸ THỜI GIAN
-  // Solo: Trọn vẹn 100% thời gian (20s / 30s / 60s)
-  // Relay / Roleplay: Chia 50% thời gian cho mỗi lượt
   const getFullTimeForLevel = (level: string) => {
     if (level === 'A1' || level === 'A2') return 20;
     if (level === 'B1' || level === 'B2') return 30;
@@ -50,10 +48,8 @@ export default function AllInArenaScreen({ onBack }: Props) {
 
   const getTimeForCurrentMode = (level: string, currentMode: string) => {
     const total = getFullTimeForLevel(level);
-    if (currentMode === 'solo') {
-      return total; // FULL THỜI GIAN CHO SOLO
-    }
-    return Math.floor(total / 2); // 50% MỖI LƯỢT CHO RELAY/ROLEPLAY
+    if (currentMode === 'solo') return total;
+    return Math.floor(total / 2);
   };
 
   const resetBattleState = () => {
@@ -65,6 +61,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
     setBattleState('idle');
     setCurrentTurn(1);
     setIsRecording(false);
+    setIsTimerRunning(false);
     setRecordedTurn1(null);
     setRecordedTurn2(null);
     setResult(null);
@@ -93,19 +90,26 @@ export default function AllInArenaScreen({ onBack }: Props) {
     return () => resetBattleState();
   }, [mode, cefrLevel]);
 
-  // ĐẾM NGƯỢC THỜI GIAN TRẬN ĐẤU / LƯỢT
+  // ⏱️ CHỈ BẮT ĐẦU ĐẾM NGƯỢC KHI BẤM NÚT GHI ÂM
   const startTurnTimer = (allocatedTime: number) => {
     if (timerRef.current) clearInterval(timerRef.current);
     setTimeLeft(allocatedTime);
+    setIsTimerRunning(true);
 
     timerRef.current = setInterval(() => {
       setTimeLeft((prev) => {
         if (prev <= 1) {
           clearInterval(timerRef.current!);
+          setIsTimerRunning(false);
+
+          // Tự động dừng thu âm nếu hết giờ
+          if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+            try { mediaRecorderRef.current.stop(); } catch (e) {}
+          }
+          setIsRecording(false);
+
           if (mode !== 'solo' && currentTurn === 1) {
-            // Relay/Roleplay hết giờ lượt 1 -> Tự chuyển sang lượt 2
             setCurrentTurn(2);
-            startTurnTimer(getTimeForCurrentMode(cefrLevel, mode));
           }
           return 0;
         }
@@ -114,7 +118,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
     }, 1000);
   };
 
-  // ⚔️ BẮT ĐẦU VÀO TRẬN ĐẤU
+  // ⚔️ BẮT ĐẦU TRẬN ĐẤU (CHƯA CHẠY ĐỒNG HỒ)
   const startMatch = () => {
     setBattleState('searching');
     
@@ -128,13 +132,15 @@ export default function AllInArenaScreen({ onBack }: Props) {
       }
       
       setCurrentTurn(1);
+      setRecordedTurn1(null);
+      setRecordedTurn2(null);
       setBattleState('battling');
-      const timeToRun = getTimeForCurrentMode(cefrLevel, mode);
-      startTurnTimer(timeToRun);
+      setTimeLeft(getTimeForCurrentMode(cefrLevel, mode)); // Hiển thị thời gian chuẩn bị nhưng chưa đếm ngược
+      setIsTimerRunning(false);
     }, 1500);
   };
 
-  // 🎙️ QUẢN LÝ MICRO THU ÂM WEBRTC
+  // 🎙️ QUẢN LÝ THU ÂM (KÍCH HOẠT ĐỒNG HỒ TẠI ĐÂY)
   const handleToggleRecord = async () => {
     if (!isRecording) {
       try {
@@ -153,7 +159,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
           mediaRecorder.onstop = () => {
             const recordedBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
             
-            // XÁC MINH FILE ÂM THANH THẬT (> 3000 BYTES)
+            // XÁC MINH DUNG LƯỢNG FILE ÂM THANH THẬT (> 3000 BYTES)
             if (recordedBlob.size > 3000) {
               if (mode === 'solo' || currentTurn === 1) {
                 setRecordedTurn1(recordedBlob);
@@ -162,7 +168,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
               }
             } else {
               if (typeof window !== 'undefined') {
-                alert("⚠️ Thu âm không có tiếng hoặc quá ngắn! Vui lòng đọc rõ ràng hơn.");
+                alert("⚠️ Thu âm quá ngắn hoặc chưa phát ra tiếng! Vui lòng thu âm lại.");
               }
             }
             stream.getTracks().forEach(track => track.stop());
@@ -170,43 +176,52 @@ export default function AllInArenaScreen({ onBack }: Props) {
 
           mediaRecorder.start();
           setIsRecording(true);
+
+          // ⏱️ KÍCH HOẠT ĐỒNG HỒ ĐẾM NGƯỢC NGAY KHI BẤM NÚT GHI ÂM
+          if (!isTimerRunning) {
+            startTurnTimer(timeLeft > 0 ? timeLeft : getTimeForCurrentMode(cefrLevel, mode));
+          }
         } else {
           alert("Trình duyệt không hỗ trợ micro thu âm!");
         }
       } catch (err) {
-        alert("🔒 Lỗi: Vui lòng cấp quyền Microphone trên trình duyệt để thi đấu!");
+        alert("🔒 Lỗi: Hãy cấp quyền Microphone trên trình duyệt để thu âm!");
       }
     } else {
       setIsRecording(false);
       if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
         mediaRecorderRef.current.stop();
       }
+      if (timerRef.current) clearInterval(timerRef.current);
+      setIsTimerRunning(false);
     }
   };
 
-  // CHUYỂN LƯỢT THỦ CÔNG CHO RELAY / ROLEPLAY
   const handleNextTurnManual = () => {
     if (!recordedTurn1 || recordedTurn1.size <= 3000) {
-      alert("🔒 BẠN CHƯA THU ÂM LƯỢT 1: Vui lòng thu âm phần nói trước khi chuyển giao tiếp sức!");
+      alert("🔒 CHƯA CÓ BẢN THU ÂM LƯỢT 1: Bạn phải ghi âm câu trả lời Lượt 1 trước khi chuyển lượt!");
       return;
     }
+    if (timerRef.current) clearInterval(timerRef.current);
+    setIsTimerRunning(false);
+    setIsRecording(false);
+    
     setCurrentTurn(2);
-    const turn2Time = getTimeForCurrentMode(cefrLevel, mode);
-    startTurnTimer(turn2Time);
+    setTimeLeft(getTimeForCurrentMode(cefrLevel, mode));
   };
 
-  // 📊 HÀM CHẤM ĐIỂM NGHIÊM NGẶT (KHÓA TUYỆT ĐỐI NẾU THIẾU BẢN THU)
+  // 📊 CHẤM ĐIỂM CHẶT CHẼ BẮT BỘC CÓ BẢN THU
   const handleSubmitBattleAnswer = () => {
-    // 🛑 KIỂM TRA ĐIỀU KIỆN RECORDING BẮT BỘC
+    // 🛑 RÀO CẢN KHÓA TUYỆT ĐỐI
     if (mode === 'solo') {
       if (!recordedTurn1 || recordedTurn1.size <= 3000) {
-        alert("🔒 KHÔNG THỂ CHẤM ĐIỂM: Bạn chưa thực hiện thu âm câu trả lời Solo! Hãy bấm Micro để nói.");
-        return; // DỪNG LẬP TỨC
+        alert("🔒 CHƯA THU ÂM SOLO: Bạn không thể nộp bài khi chưa thu âm giọng nói!");
+        return; // DỪNG HÀM NGAY LẬP TỨC
       }
     } else {
       if (!recordedTurn1 || recordedTurn1.size <= 3000 || !recordedTurn2 || recordedTurn2.size <= 3000) {
-        alert("🔒 CHƯA ĐỦ BẢN THU ÂM: Chế độ tiếp sức bắt buộc phải ghi âm đầy đủ cả 2 lượt mới được chấm điểm!");
-        return; // DỪNG LẬP TỨC
+        alert("🔒 CHƯA ĐỦ BẢN THU 2 LƯỢT: Chế độ tiếp sức bắt buộc phải ghi âm đầy đủ cả 2 lượt!");
+        return; // DỪNG HÀM NGAY LẬP TỨC
       }
     }
 
@@ -231,6 +246,10 @@ export default function AllInArenaScreen({ onBack }: Props) {
       updateUserProgress(2, isWin ? 50 : 15, isWin);
     }, 2000);
   };
+
+  const isSubmitDisabled = mode === 'solo' 
+    ? (!recordedTurn1 || recordedTurn1.size <= 3000)
+    : (!recordedTurn1 || recordedTurn1.size <= 3000 || !recordedTurn2 || recordedTurn2.size <= 3000);
 
   return (
     <View style={styles.container}>
@@ -283,9 +302,9 @@ export default function AllInArenaScreen({ onBack }: Props) {
           </TouchableOpacity>
         </View>
 
-        {/* CHỌN CẤP ĐỘ CEFR & HIỂN THỊ THỜI GIAN RÕ RÀNG */}
+        {/* CHỌN CẤP ĐỘ CEFR */}
         <Text style={styles.sectionLabel}>
-          3. CHỌN LEVEL ({mode === 'solo' ? `Solo trọn vẹn ${getFullTimeForLevel(cefrLevel)}s` : `Mỗi lượt ${getTimeForCurrentMode(cefrLevel, mode)}s`}):
+          3. CHỌN LEVEL ({mode === 'solo' ? `Solo ${getFullTimeForLevel(cefrLevel)}s` : `Mỗi lượt ${getTimeForCurrentMode(cefrLevel, mode)}s`}):
         </Text>
         <View style={styles.cefrRow}>
           {CEFR_LEVELS.map((lvl) => (
@@ -372,17 +391,17 @@ export default function AllInArenaScreen({ onBack }: Props) {
           </View>
         )}
 
-        {/* TRẠNG THÁI 2: ĐANG THI ĐẤU (SOLO TRỌN VẸN THỜI GIAN, RELAY/ROLEPLAY CHIA ĐÔI) */}
+        {/* TRẠNG THÁI 2: ĐANG THI ĐẤU (ĐỒNG HỒ CHỈ CHẠY KHI BẤM GHI ÂM) */}
         {battleState === 'battling' && (
           <View style={styles.box}>
             <View style={styles.battleHeader}>
               <Text style={styles.opponentName}>
                 {mode === 'solo' 
-                  ? `⚔️ SOLO TRẬN ĐẤU VS ${matchedOpponent}` 
-                  : `🤝 TIẾP SỨC (ĐANG Ở LƯỢT ${currentTurn}/2)`}
+                  ? `⚔️ SOLO VS ${matchedOpponent}` 
+                  : `🤝 TIẾP SỨC (LƯỢT ${currentTurn}/2)`}
               </Text>
               <Text style={[styles.timerText, timeLeft <= 5 && { color: '#FF0055' }]}>
-                ⏱ {mode === 'solo' ? `THỜI GIAN: ${timeLeft}s` : `LƯỢT ${currentTurn}: ${timeLeft}s`}
+                ⏱ {isTimerRunning ? `ĐANG CHẠY: ${timeLeft}s` : `THỜI GIAN: ${timeLeft}s (CHỜ BẤM THU ÂM)`}
               </Text>
             </View>
 
@@ -390,8 +409,8 @@ export default function AllInArenaScreen({ onBack }: Props) {
               <View style={styles.turnBadgeBox}>
                 <Text style={styles.turnBadgeText}>
                   {currentTurn === 1 
-                    ? `👤 LƯỢT 1 OF 2 (${getTimeForCurrentMode(cefrLevel, mode)}s): Bạn thực hiện phần đầu` 
-                    : `👥 LƯỢT 2 OF 2 (${getTimeForCurrentMode(cefrLevel, mode)}s): ${matchedOpponent} thực hiện phần tiếp nối`}
+                    ? `👤 LƯỢT 1 OF 2 (${getTimeForCurrentMode(cefrLevel, mode)}s): Bấm nút Micro bên dưới để bắt đầu tính giờ & thu âm` 
+                    : `👥 LƯỢT 2 OF 2 (${getTimeForCurrentMode(cefrLevel, mode)}s): ${matchedOpponent} bấm nút Micro để bắt đầu thu âm`}
                 </Text>
               </View>
             )}
@@ -402,31 +421,31 @@ export default function AllInArenaScreen({ onBack }: Props) {
             >
               <Text style={styles.recordToggleText}>
                 {isRecording 
-                  ? `🔴 ĐANG THU ÂM ${mode === 'solo' ? 'SOLO' : `LƯỢT ${currentTurn}`}... (BẤM ĐỂ DỪNG)` 
+                  ? `🔴 ĐANG GHI ÂM & TÍNH GIỜ ${mode === 'solo' ? 'SOLO' : `LƯỢT ${currentTurn}`}... (BẤM ĐỂ DỪNG)` 
                   : (mode === 'solo' ? recordedTurn1 : (currentTurn === 1 ? recordedTurn1 : recordedTurn2))
-                  ? `✅ ĐÃ THU ÂM ${mode === 'solo' ? 'SOLO' : `LƯỢT ${currentTurn}`} (BẤM ĐỂ THU LẠI)` 
-                  : `🎙️ BẤM ĐỂ THU ÂM ${mode === 'solo' ? 'SOLO' : `LƯỢT ${currentTurn}`}`}
+                  ? `✅ ĐÃ CÓ BẢN THU ${mode === 'solo' ? 'SOLO' : `LƯỢT ${currentTurn}`} (BẤM ĐỂ THU LẠI)` 
+                  : `🎙️ BẤM ĐỂ BẮT ĐẦU NÓI & TÍNH GIỜ ${mode === 'solo' ? 'SOLO' : `LƯỢT ${currentTurn}`}`}
               </Text>
             </TouchableOpacity>
 
             {/* CHUYỂN LƯỢT HOẶC NỘP BÀI */}
             {mode !== 'solo' && currentTurn === 1 ? (
               <TouchableOpacity style={styles.nextTurnBtn} onPress={handleNextTurnManual}>
-                <Text style={styles.nextTurnBtnText}>➡️ CHUYỂN SANG LƯỢT 2 ({getTimeForCurrentMode(cefrLevel, mode)}s)</Text>
+                <Text style={styles.nextTurnBtnText}>➡️ XÁC NHẬN CHUYỂN SANG LƯỢT 2</Text>
               </TouchableOpacity>
             ) : (
               <TouchableOpacity 
                 style={[
                   styles.submitBtn, 
-                  (mode === 'solo' ? !recordedTurn1 : (!recordedTurn1 || !recordedTurn2)) && styles.submitBtnDisabled
+                  isSubmitDisabled && styles.submitBtnDisabled
                 ]} 
                 onPress={handleSubmitBattleAnswer}
-                disabled={mode === 'solo' ? !recordedTurn1 : (!recordedTurn1 || !recordedTurn2)}
+                disabled={isSubmitDisabled}
               >
                 <Text style={styles.submitBtnText}>
-                  {(mode === 'solo' ? recordedTurn1 : (recordedTurn1 && recordedTurn2))
+                  {!isSubmitDisabled
                     ? '⚡ NỘP BÀI & CHẤM ĐIỂM AI' 
-                    : '🔒 HÃY THU ÂM TRƯỚC KHI NỘP BÀI'}
+                    : '🔒 CẦN THU ÂM ĐẦY ĐỦ TRƯỚC KHI NỘP BÀI'}
                 </Text>
               </TouchableOpacity>
             )}
@@ -437,7 +456,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
         {battleState === 'analyzing' && (
           <View style={styles.box}>
             <ActivityIndicator size="large" color="#39FF14" style={{ marginBottom: 15 }} />
-            <Text style={styles.searchingText}>⚡ AI ĐANG PHÂN TÍCH BẢN THU ÂM CỦA BẠN...</Text>
+            <Text style={styles.searchingText}>⚡ AI ĐANG PHÂN TÍCH BẢN THU ÂM THỰC TẾ CỦA BẠN...</Text>
           </View>
         )}
 
@@ -445,7 +464,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
         {battleState === 'ended' && result && (
           <View style={styles.box}>
             <Text style={[styles.resultTitle, { color: result.isWin ? '#39FF14' : '#FF0055' }]}>
-              {result.isWin ? '🎉 BẠN ĐÃ CHIẾN THẮNG!' : '💀 BẠN ĐÃ THẤT BẠI TRONG TRẬN ĐẤU'}
+              {result.isWin ? '🎉 BẠN ĐÃ CHIẾN THẮNG!' : '💀 THẤT BẠI TRONG TRẬN ĐẤU'}
             </Text>
             <Text style={styles.scoreText}>⚡ ĐIỂM THI ĐẤU: {result.score} / 100 ĐIỂM</Text>
             <Text style={styles.feedbackText}>{result.feedback}</Text>
@@ -495,16 +514,16 @@ const styles = StyleSheet.create({
   startBtnText: { color: '#FFF', fontSize: 11, fontWeight: '900' },
   battleHeader: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginBottom: 10, alignItems: 'center' },
   opponentName: { color: '#00FFFF', fontSize: 11, fontWeight: '900' },
-  timerText: { color: '#39FF14', fontSize: 13, fontWeight: '900' },
+  timerText: { color: '#39FF14', fontSize: 11, fontWeight: '900' },
   turnBadgeBox: { backgroundColor: '#1A0B2E', padding: 8, borderRadius: 8, borderWidth: 1, borderColor: '#FFD700', width: '100%', marginBottom: 12 },
   turnBadgeText: { color: '#FFD700', fontSize: 10, fontWeight: 'bold', textAlign: 'center' },
   recordToggleBtn: { backgroundColor: '#1A0B2E', padding: 12, borderRadius: 10, borderWidth: 2, borderColor: '#FF007F', width: '100%', alignItems: 'center', marginBottom: 10 },
   recordToggleBtnActive: { backgroundColor: '#FF0055', borderColor: '#FF0055' },
   recordToggleText: { color: '#FFF', fontSize: 10, fontWeight: '900' },
-  nextTurnBtn: { backgroundColor: '#00FFFF', padding: 12, borderRadius: 10, width: '100%', alignItems: 'center' },
+  nextTurnBtn: { backgroundColor: '#00FFFF', padding: 12, borderRadius: 10, width: '100%', alignItems: 'center', marginBottom: 10 },
   nextTurnBtnText: { color: '#000', fontSize: 10, fontWeight: '900' },
   submitBtn: { backgroundColor: '#39FF14', padding: 14, borderRadius: 12, width: '100%', alignItems: 'center' },
-  submitBtnDisabled: { backgroundColor: '#224422', opacity: 0.3 },
+  submitBtnDisabled: { backgroundColor: '#224422', opacity: 0.2 },
   submitBtnText: { color: '#000', fontSize: 11, fontWeight: '900' },
   resultTitle: { fontSize: 14, fontWeight: '900', marginBottom: 8 },
   scoreText: { color: '#FFD700', fontSize: 12, fontWeight: '900', marginBottom: 6 },
