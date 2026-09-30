@@ -1,35 +1,47 @@
 // src/screens/AllInArenaScreen.tsx
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
-import { generateDynamicQuestion, CEFRLevel, GeneratedSentence } from '../services/groqClient';
+import { generateSoloTopic, SoloTopic } from '../services/arena/soloService';
+import { generateRelayChallenge, RelayChallenge } from '../services/arena/relayService';
+import { generateRoleplayScenario, RoleplayScenario } from '../services/arena/roleplayService';
 import { updateUserProgress } from '../services/userService';
 
 interface Props {
   onBack: () => void;
 }
 
-const CEFR_LEVELS: CEFRLevel[] = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
-
 export default function AllInArenaScreen({ onBack }: Props) {
-  const [selectedLevel, setSelectedLevel] = useState<CEFRLevel>('B2');
-  const [currentQuestion, setCurrentQuestion] = useState<GeneratedSentence>({
-    targetText: "Sustainable urban development requires balancing environmental conservation with economic growth.",
-    cefrLevel: 'B2',
-    topic: 'Environment & Sustainability',
-    phoneticFocus: 'Linking & Intonation'
-  });
+  const [mode, setMode] = useState<'solo' | 'relay' | 'roleplay'>('solo');
+  const [cefrLevel, setCefrLevel] = useState<string>('B2');
+  const [loading, setLoading] = useState<boolean>(false);
+
+  const [soloTopic, setSoloTopic] = useState<SoloTopic | null>(null);
+  const [relayChallenge, setRelayChallenge] = useState<RelayChallenge | null>(null);
+  const [roleplayScenario, setRoleplayScenario] = useState<RoleplayScenario | null>(null);
 
   const [battleState, setBattleState] = useState<'idle' | 'searching' | 'battling' | 'ended'>('idle');
-  const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const [winner, setWinner] = useState<string | null>(null);
 
-  const handleSelectLevel = async (level: CEFRLevel) => {
-    setSelectedLevel(level);
-    setIsGenerating(true);
-    const newQuestion = await generateDynamicQuestion(level);
-    setCurrentQuestion(newQuestion);
-    setIsGenerating(false);
+  const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
+
+  const loadModeData = async (selectedMode: string, level: string) => {
+    setLoading(true);
+    if (selectedMode === 'solo') {
+      const data = await generateSoloTopic(level);
+      setSoloTopic(data);
+    } else if (selectedMode === 'relay') {
+      const data = await generateRelayChallenge(level);
+      setRelayChallenge(data);
+    } else {
+      const data = await generateRoleplayScenario(level);
+      setRoleplayScenario(data);
+    }
+    setLoading(false);
   };
+
+  useEffect(() => {
+    loadModeData(mode, cefrLevel);
+  }, [mode, cefrLevel]);
 
   const startMatch = () => {
     setBattleState('searching');
@@ -54,53 +66,94 @@ export default function AllInArenaScreen({ onBack }: Props) {
       </View>
 
       <ScrollView contentContainerStyle={{ alignItems: 'center', width: '100%', paddingBottom: 30 }}>
-        {/* THANH CHỌN TẦNG TRÌNH ĐỘ CEFR TỪ A1 TỚI C2 */}
-        <Text style={styles.sectionLabel}>CHỌN CẤP ĐỘ ĐẤU TRƯỜNG (CEFR):</Text>
-        <View style={styles.levelRow}>
+        {/* CHỌN CHẾ ĐỘ THI ĐẤU (SOLO, RELAY, ROLEPLAY) */}
+        <Text style={styles.sectionLabel}>CHỌN CHẾ ĐỘ ĐẤU TRƯỜNG:</Text>
+        <View style={styles.tabRow}>
+          <TouchableOpacity 
+            style={[styles.modeTab, mode === 'solo' && styles.modeTabActive]} 
+            onPress={() => setMode('solo')}
+          >
+            <Text style={[styles.modeTabText, mode === 'solo' && styles.modeTextActive]}>🔥 SOLO PULSE</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={[styles.modeTab, mode === 'relay' && styles.modeTabActive]} 
+            onPress={() => setMode('relay')}
+          >
+            <Text style={[styles.modeTabText, mode === 'relay' && styles.modeTextActive]}>🤝 RELAY 2P</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={[styles.modeTab, mode === 'roleplay' && styles.modeTabActive]} 
+            onPress={() => setMode('roleplay')}
+          >
+            <Text style={[styles.modeTabText, mode === 'roleplay' && styles.modeTextActive]}>🎭 ROLEPLAY</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* CHỌN LEVEL TỪ A1 ĐẾN C2 */}
+        <View style={styles.cefrRow}>
           {CEFR_LEVELS.map((lvl) => (
             <TouchableOpacity
               key={lvl}
               style={[
-                styles.levelBadge,
-                selectedLevel === lvl && styles.levelBadgeActive,
+                styles.cefrBadge,
+                cefrLevel === lvl && styles.cefrBadgeActive,
                 lvl === 'C2' && { borderColor: '#FF007F' }
               ]}
-              onPress={() => handleSelectLevel(lvl)}
+              onPress={() => setCefrLevel(lvl)}
             >
               <Text style={[
-                styles.levelText,
-                selectedLevel === lvl && styles.levelTextActive,
+                styles.cefrText, 
+                cefrLevel === lvl && styles.cefrTextActive,
                 lvl === 'C2' && { color: '#FF007F' }
-              ]}>
-                {lvl}
-              </Text>
+              ]}>{lvl}</Text>
             </TouchableOpacity>
           ))}
         </View>
 
         {battleState === 'idle' && (
           <View style={styles.box}>
-            <Text style={styles.boxTitle}>🔥 ĐẤU TRƯỜNG THI ĐẤU [ {selectedLevel} ]</Text>
+            <Text style={styles.boxTitle}>⚡ THÁCH ĐẤU [{mode.toUpperCase()}] • LEVEL {cefrLevel}</Text>
             
-            {isGenerating ? (
+            {loading ? (
               <ActivityIndicator size="small" color="#FF007F" style={{ marginVertical: 15 }} />
             ) : (
-              <View style={styles.topicBox}>
-                <Text style={styles.topicText}>📌 CHỦ ĐỀ: {currentQuestion.topic.toUpperCase()}</Text>
-                <Text style={styles.targetSentence}>"{currentQuestion.targetText}"</Text>
+              <View style={{ width: '100%', alignItems: 'center' }}>
+                {mode === 'solo' && soloTopic && (
+                  <>
+                    <Text style={styles.topicTitle}>{soloTopic.title}</Text>
+                    <Text style={styles.promptText}>"{soloTopic.promptText}"</Text>
+                  </>
+                )}
+
+                {mode === 'relay' && relayChallenge && (
+                  <>
+                    <Text style={styles.topicTitle}>📌 {relayChallenge.topic}</Text>
+                    <Text style={styles.promptText}>💡 Context: {relayChallenge.context}</Text>
+                    <Text style={styles.subText}>👤 Player 1: {relayChallenge.player1Guideline}</Text>
+                    <Text style={styles.subText}>👥 Player 2: {relayChallenge.player2Guideline}</Text>
+                  </>
+                )}
+
+                {mode === 'roleplay' && roleplayScenario && (
+                  <>
+                    <Text style={styles.topicTitle}>🎭 {roleplayScenario.scenarioTitle}</Text>
+                    <Text style={styles.promptText}>🤖 AI Bot: "{roleplayScenario.initialAiMessage}"</Text>
+                    <Text style={styles.subText}>🎯 Goal: {roleplayScenario.goal}</Text>
+                  </>
+                )}
               </View>
             )}
 
             <TouchableOpacity 
               style={styles.refreshBtn} 
-              onPress={() => handleSelectLevel(selectedLevel)}
-              disabled={isGenerating}
+              onPress={() => loadModeData(mode, cefrLevel)}
+              disabled={loading}
             >
-              <Text style={styles.refreshBtnText}>🔄 ĐỔI CÂU THÁCH ĐẤU MỚI</Text>
+              <Text style={styles.refreshBtnText}>🔄 TẠO ĐỀ THÁCH ĐẤU MỚI</Text>
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.startBtn} onPress={startMatch}>
-              <Text style={styles.startBtnText}>⚔️ TÌM TRẬN ĐẤU REALTIME</Text>
+              <Text style={styles.startBtnText}>⚔️ BẮT ĐẦU VÀO TRẬN ĐẤU</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -108,14 +161,14 @@ export default function AllInArenaScreen({ onBack }: Props) {
         {battleState === 'searching' && (
           <View style={styles.box}>
             <ActivityIndicator size="large" color="#FF007F" style={{ marginBottom: 15 }} />
-            <Text style={styles.searchingText}>🔍 ĐANG GHÉP CẶP ĐỐI THỦ LEVEL {selectedLevel}...</Text>
+            <Text style={styles.searchingText}>🔍 ĐANG KẾT NỐI ĐỐI THỦ CHUẨN LEVEL {cefrLevel}...</Text>
           </View>
         )}
 
         {battleState === 'battling' && (
           <View style={styles.box}>
-            <Text style={styles.boxTitle}>⚡ TRẬN ĐẤU ĐANG DIỄN RA ({selectedLevel})</Text>
-            <Text style={styles.targetSentence}>"{currentQuestion.targetText}"</Text>
+            <Text style={styles.boxTitle}>⚡ TRẬN ĐẤU ĐANG DIỄN RA ({cefrLevel})</Text>
+            <Text style={styles.promptText}>Ghi âm câu trả lời phản xạ bằng giọng nói của bạn...</Text>
             <View style={styles.btnRow}>
               <TouchableOpacity style={styles.winBtn} onPress={() => endMatch(true)}>
                 <Text style={styles.btnText}>🏆 CHIẾN THẮNG (+50 XP)</Text>
@@ -147,19 +200,24 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 15 },
   backBtn: { padding: 8, backgroundColor: '#0D0620', borderRadius: 8, borderWidth: 1, borderColor: '#FF007F' },
   backText: { color: '#FF007F', fontSize: 10, fontWeight: 'bold' },
-  title: { color: '#FF007F', fontSize: 13, fontWeight: '900' },
+  title: { color: '#FF007F', fontSize: 12, fontWeight: '900' },
   sectionLabel: { color: '#FFD700', fontSize: 10, fontWeight: 'bold', alignSelf: 'flex-start', marginBottom: 8 },
-  levelRow: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginBottom: 15 },
-  levelBadge: { backgroundColor: '#0D0620', paddingVertical: 8, paddingHorizontal: 10, borderRadius: 8, borderWidth: 1, borderColor: '#332255' },
-  levelBadgeActive: { backgroundColor: '#FF007F', borderColor: '#FF007F' },
-  levelText: { color: '#8888AA', fontSize: 11, fontWeight: '900' },
-  levelTextActive: { color: '#FFF' },
+  tabRow: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginBottom: 12 },
+  modeTab: { backgroundColor: '#0D0620', paddingVertical: 8, paddingHorizontal: 6, borderRadius: 8, borderWidth: 1, borderColor: '#332255', width: '32%', alignItems: 'center' },
+  modeTabActive: { backgroundColor: '#FF007F', borderColor: '#FF007F' },
+  modeTabText: { color: '#8888AA', fontSize: 9, fontWeight: '900' },
+  modeTextActive: { color: '#FFF' },
+  cefrRow: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginBottom: 15 },
+  cefrBadge: { backgroundColor: '#0D0620', paddingVertical: 6, paddingHorizontal: 10, borderRadius: 6, borderWidth: 1, borderColor: '#332255' },
+  cefrBadgeActive: { backgroundColor: '#00FFFF', borderColor: '#00FFFF' },
+  cefrText: { color: '#8888AA', fontSize: 10, fontWeight: 'bold' },
+  cefrTextActive: { color: '#000' },
   box: { backgroundColor: '#0D0620', padding: 18, borderRadius: 16, borderWidth: 2, borderColor: '#FF007F', width: '100%', alignItems: 'center', marginBottom: 20 },
-  boxTitle: { color: '#FFD700', fontSize: 13, fontWeight: '900', marginBottom: 12 },
-  topicBox: { alignItems: 'center', marginBottom: 10 },
-  topicText: { color: '#00FFFF', fontSize: 10, fontWeight: 'bold', marginBottom: 6 },
+  boxTitle: { color: '#FFD700', fontSize: 12, fontWeight: '900', marginBottom: 12 },
+  topicTitle: { color: '#00FFFF', fontSize: 13, fontWeight: '900', marginBottom: 6 },
+  promptText: { color: '#FFF', fontSize: 13, fontWeight: '800', textAlign: 'center', lineHeight: 18, marginBottom: 10 },
+  subText: { color: '#AAAABB', fontSize: 10, textAlign: 'center', marginBottom: 4 },
   searchingText: { color: '#00FFFF', fontSize: 11, fontWeight: 'bold' },
-  targetSentence: { color: '#FFF', fontSize: 14, fontWeight: '800', textAlign: 'center', lineHeight: 20, marginBottom: 12 },
   refreshBtn: { backgroundColor: '#1A0B2E', padding: 8, borderRadius: 8, borderWidth: 1, borderColor: '#00FFFF', width: '100%', alignItems: 'center', marginBottom: 12 },
   refreshBtnText: { color: '#00FFFF', fontSize: 10, fontWeight: 'bold' },
   startBtn: { backgroundColor: '#FF007F', padding: 14, borderRadius: 12, width: '100%', alignItems: 'center' },
