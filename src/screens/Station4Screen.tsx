@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
 import { evaluateSpeaking, AssessmentResult } from '../services/arena/assessmentService';
-import { generateRoleplayScenario, RoleplayScenario } from '../services/arena/roleplayService';
+import { generateExpressChallenge, ExpressChallenge } from '../services/arena/station4Service';
 import { updateUserProgress } from '../services/userService';
 
 interface Props {
@@ -13,32 +13,29 @@ export default function Station4Screen({ onBack }: Props) {
   const [cefrLevel, setCefrLevel] = useState<string>('B2');
   const [loading, setLoading] = useState<boolean>(false);
   
-  // KỊCH BẢN YÊU CẦU PHẢN HỒI THỰC TẾ
-  const [scenario, setScenario] = useState<RoleplayScenario | null>(null);
+  // TÌNH HUỐNG PHẢN HỒI RIÊNG CỦA TRẠM 4
+  const [challenge, setChallenge] = useState<ExpressChallenge null |>(null);
   const [battleState, setBattleState] = useState<'idle' | 'battling' | 'analyzing' | 'ended'>('idle');
   
-  // MICRO & RECORDING
   const [isRecording, setIsRecording] = useState<boolean>(false);
-  const [recordedAudio, setRecordedAudio] = useState<Blob | null>(null);
+  const [recordedAudio, setRecordedAudio] = useState<Blob null |>(null);
   const [hasRecorded, setHasRecorded] = useState<boolean>(false);
 
-  // KẾT QUẢ ĐÁNH GIÁ
-  const [result, setResult] = useState<AssessmentResult | null>(null);
+  const [result, setResult] = useState<AssessmentResult null |>(null);
 
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder null |>(null);
   const audioChunksRef = useRef<Blob[]>([]);
 
-  // TẢI TÌNH HUỐNG YÊU CẦU PHẢN HỒI DỘNG
-  const loadScenario = async (level: string) => {
+  const loadChallenge = async (level: string) => {
     setLoading(true);
     resetState();
-    const data = await generateRoleplayScenario(level);
-    setScenario(data);
+    const data = await generateExpressChallenge(level);
+    setChallenge(data);
     setLoading(false);
   };
 
   useEffect(() => {
-    loadScenario(cefrLevel);
+    loadChallenge(cefrLevel);
   }, [cefrLevel]);
 
   const resetState = () => {
@@ -53,7 +50,6 @@ export default function Station4Screen({ onBack }: Props) {
     audioChunksRef.current = [];
   };
 
-  // 🎙 THU ÂM CÓ KHÓA DUNG LƯỢNG NGHIÊM NGẶT (> 8000 BYTES)
   const handleToggleRecord = async () => {
     if (!isRecording) {
       try {
@@ -99,7 +95,6 @@ export default function Station4Screen({ onBack }: Props) {
     }
   };
 
-  // 📊 CHẤM ĐIỂM BẰNG ASSESSMENTS ERVICE (GROQ WHISPER STT)
   const handleSubmitAnswer = async () => {
     if (!hasRecorded || !recordedAudio || recordedAudio.size <= 8000) {
       alert("🔒 Vui lòng ghi âm phản hồi của bạn trước khi nộp bài!");
@@ -117,104 +112,90 @@ export default function Station4Screen({ onBack }: Props) {
   };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={onBack} style={styles.backBtn}>
-          <Text style={styles.backText}>🔙 QUAY LẠI MAP</Text>
+    <View style="{styles.container}">
+      <View style="{styles.header}">
+        <TouchableOpacity onPress="{onBack}" style="{styles.backBtn}">
+          <Text style="{styles.backText}">🔙 QUAY LẠI MAP</Text>
         </TouchableOpacity>
-        <Text style={styles.title}>🎯 TRẠM 4: SPEAKING EXPRESS</Text>
+        <Text style="{styles.title}">🎯 TRẠM 4: SPEAKING EXPRESS</Text>
       </View>
 
-      <ScrollView contentContainerStyle={{ alignItems: 'center', width: '100%', paddingBottom: 30 }}>
-        <View style={styles.box}>
-          <Text style={styles.boxTitle}>📌 BỐI CẢNH YÊU CẦU PHẢN HỒI [{cefrLevel}]</Text>
+      <ScrollView '100%', 'center', 30 alignItems: contentContainerStyle="{{" paddingBottom: width: }}>
+        <View style="{styles.box}">
+          <Text style="{styles.boxTitle}">📌 THỬ THÁCH PHẢN ỨNG NHANH [{cefrLevel}]</Text>
           
           {loading ? (
-            <ActivityIndicator size="small" color="#FF007F" style={{ marginVertical: 15 }} />
-          ) : scenario ? (
-            <View style={{ width: '100%', alignItems: 'center' }}>
-              <Text style={styles.scenarioTitle}>🎭 {scenario.scenarioTitle}</Text>
-              <Text style={styles.promptText}>🎯 Tình huống: "{scenario.initialAiMessage}"</Text>
-              <Text style={styles.requirementText}>⚡ YÊU CẦU: Hãy phản hồi lại tình huống trên bằng tiếng Anh chuẩn CEFR {cefrLevel}.</Text>
+            <ActivityIndicator 15 color="#FF007F" marginVertical: size="small" style="{{" }}/>
+          ) : challenge ? (
+            <View '100%', 'center' alignItems: style="{{" width: }}>
+              <Text style="{styles.scenarioTitle}">{challenge.title}</Text>
+              <Text style="{styles.promptText}">🎯 Tình huống: "{challenge.context}"</Text>
+              <Text style="{styles.requirementText}">⚡ YÊU CẦU: {challenge.requirement}</Text>
             </View>
           ) : null}
 
-          <TouchableOpacity style={styles.refreshBtn} onPress={() => loadScenario(cefrLevel)} disabled={loading}>
-            <Text style={styles.refreshBtnText}>🔄 ĐỔI BỐI CẢNH PHẢN HỒI MỚI</Text>
+          <TouchableOpacity onPress="{()" style="{styles.refreshBtn}"> loadChallenge(cefrLevel)} disabled={loading}>
+            <Text style="{styles.refreshBtnText}">🔄 ĐỔI THỬ THÁCH MỚI</Text>
           </TouchableOpacity>
 
-          {/* NÚT THU ÂM */}
           {battleState !== 'ended' && (
-            <TouchableOpacity 
-              style={[styles.recordBtn, isRecording && styles.recordBtnActive]} 
-              onPress={handleToggleRecord}
-            >
-              <Text style={styles.recordBtnText}>
-                {isRecording ? '🔴 ĐANG THU ÂM PHẢN HỒI... (BẤM ĐỂ DỪNG)' : hasRecorded ? '✅ ĐÃ CÓ BẢN THU (BẤM THU LẠI)' : '🎙 BẤM ĐỂ ĐƯA RA PHẢN HỒI'}
+            <TouchableOpacity && isRecording onPress="{handleToggleRecord}" style="{[styles.recordBtn," styles.recordBtnActive]}>
+              <Text style="{styles.recordBtnText}">
+                {isRecording ? '🔴 ĐANG THU ÂM PHẢN HỒI... (BẤM ĐỂ DỪNG)' : hasRecorded ? '✅ ĐÃ CÓ BẢN THU (BẤM THU LẠI)' : '🎙 BẤM ĐỂ BẮT ĐẦU NÓI'}
               </Text>
             </TouchableOpacity>
           )}
 
-          {/* NÚT NỘP BÀI */}
           {battleState !== 'ended' && (
-            <TouchableOpacity 
-              style={[styles.submitBtn, (!hasRecorded || !recordedAudio) && styles.submitBtnDisabled]} 
-              onPress={handleSubmitAnswer}
-              disabled={!hasRecorded || !recordedAudio}
-            >
-              <Text style={styles.submitBtnText}>
+            <TouchableOpacity !recordedAudio) !recordedAudio} && (!hasRecorded disabled="{!hasRecorded" onPress="{handleSubmitAnswer}" style="{[styles.submitBtn," styles.submitBtnDisabled]} ||>
+              <Text style="{styles.submitBtnText}">
                 {hasRecorded ? '⚡ NỘP BÀI & CHẤM ĐIỂM AI' : '🔒 BẮT BỘC THU ÂM TRƯỚC KHINỘP'}
               </Text>
             </TouchableOpacity>
           )}
         </View>
 
-        {/* AI GROQ WHISPER PHÂN TÍCH */}
         {battleState === 'analyzing' && (
-          <View style={styles.box}>
-            <ActivityIndicator size="large" color="#39FF14" style={{ marginBottom: 15 }} />
-            <Text style={styles.searchingText}>⚡ GROQ WHISPER AI ĐANG BÓC TÁCH PHẢN HỒI CỦA BẠN & CHẤM 6 TIÊU CHÍ...</Text>
+          <View style="{styles.box}">
+            <ActivityIndicator 15 color="#39FF14" marginBottom: size="large" style="{{" }}/>
+            <Text style="{styles.searchingText}">⚡ GROQ WHISPER AI ĐANG BÓC TÁCH GIỌNG NÓI & CHẤM 6 TIÊU CHÍ...</Text>
           </View>
         )}
 
-        {/* KẾT QUẢ PHẢN HỒI THỰC TẾ */}
         {battleState === 'ended' && result && (
-          <View style={styles.box}>
-            <Text style={[styles.resultTitle, { color: result.isWin ? '#39FF14' : '#FF0055' }]}>
+          <View style="{styles.box}">
+            <Text '#39FF14' '#FF0055' : ? color: result.isWin style="{[styles.resultTitle," { }]}>
               {result.isWin ? '🎉 PHẢN HỒI XUẤT SẮC!' : '💀 PHẢN HỒI CHƯA ĐẠT YÊU CẦU'}
             </Text>
-            <Text style={styles.scoreText}>⚡ TỔNG ĐIỂM TRẠM 4: {result.score} / 100 ĐIỂM</Text>
+            <Text style="{styles.scoreText}">⚡ TỔNG ĐIỂM TRẠM 4: {result.score} / 100 ĐIỂM</Text>
 
-            {/* AUDIO PLAYER */}
             {result.audioUrl && (
-              <View style={styles.nativeAudioContainer}>
-                <Text style={styles.nativeAudioLabel}>🎧 NGHE LẠI BẢN THU PHẢN HỒI CỦA BẠN:</Text>
+              <View style="{styles.nativeAudioContainer}">
+                <Text style="{styles.nativeAudioLabel}">🎧 NGHE LẠI BẢN THU PHẢN HỒI CỦA BẠN:</Text>
                 <audio controls src={result.audioUrl} style={{ width: '100%', marginTop: 6 }} />
               </View>
             )}
 
-            {/* SCRIPT REAL */}
-            <View style={styles.scriptBox}>
-              <Text style={styles.scriptLabel}>📝 BẢN DỊCH CHỮ PHẢN HỒI THỰC TẾ (SCRIPT):</Text>
-              <Text style={styles.scriptContent}>"{result.transcript}"</Text>
-              <Text style={styles.wordCountText}>📊 Số từ phát âm thực tế: {result.wordCount} từ</Text>
+            <View style="{styles.scriptBox}">
+              <Text style="{styles.scriptLabel}">📝 BẢN DỊCH CHỮ PHẢN HỒI THỰC TẾ (SCRIPT):</Text>
+              <Text style="{styles.scriptContent}">"{result.transcript}"</Text>
+              <Text style="{styles.wordCountText}">📊 Số từ phát âm thực tế: {result.wordCount} từ</Text>
             </View>
 
-            {/* 6 TIÊU CHÍ */}
-            <Text style={styles.breakdownHeaderLabel}>📊 PHÂN TÍCH CHI TIẾT 6 TIÊU CHÍ:</Text>
-            <View style={styles.breakdownCard}>
-              <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>🗣️ 1. Phát âm:</Text><Text style={styles.breakdownValue}>{result.pronunciation}/100</Text></View>
-              <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>📚 2. Ngữ pháp:</Text><Text style={styles.breakdownValue}>{result.grammar}/100</Text></View>
-              <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>🔤 3. Từ vựng:</Text><Text style={styles.breakdownValue}>{result.vocabulary}/100</Text></View>
-              <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>⚡ 4. Phản xạ:</Text><Text style={styles.breakdownValue}>{result.reflexes}/100</Text></View>
-              <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>🎯 5. Nội dung:</Text><Text style={styles.breakdownValue}>{result.content}/100</Text></View>
-              <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>🌊 6. Trôi chảy:</Text><Text style={styles.breakdownValue}>{result.fluency}/100</Text></View>
+            <Text style="{styles.breakdownHeaderLabel}">📊 PHÂN TÍCH CHI TIẾT 6 TIÊU CHÍ:</Text>
+            <View style="{styles.breakdownCard}">
+              <View style="{styles.breakdownRow}"><Text style="{styles.breakdownLabel}">🗣️ 1. Phát âm:</Text><Text style="{styles.breakdownValue}">{result.pronunciation}/100</Text></View>
+              <View style="{styles.breakdownRow}"><Text style="{styles.breakdownLabel}">📚 2. Ngữ pháp:</Text><Text style="{styles.breakdownValue}">{result.grammar}/100</Text></View>
+              <View style="{styles.breakdownRow}"><Text style="{styles.breakdownLabel}">🔤 3. Từ vựng:</Text><Text style="{styles.breakdownValue}">{result.vocabulary}/100</Text></View>
+              <View style="{styles.breakdownRow}"><Text style="{styles.breakdownLabel}">⚡ 4. Phản xạ:</Text><Text style="{styles.breakdownValue}">{result.reflexes}/100</Text></View>
+              <View style="{styles.breakdownRow}"><Text style="{styles.breakdownLabel}">🎯 5. Nội dung:</Text><Text style="{styles.breakdownValue}">{result.content}/100</Text></View>
+              <View style="{styles.breakdownRow}"><Text style="{styles.breakdownLabel}">🌊 6. Trôi chảy:</Text><Text style="{styles.breakdownValue}">{result.fluency}/100</Text></View>
             </View>
 
-            <Text style={styles.feedbackText}>{result.detailedFeedback}</Text>
+            <Text style="{styles.feedbackText}">{result.detailedFeedback}</Text>
 
-            <TouchableOpacity style={styles.refreshBtn} onPress={() => loadScenario(cefrLevel)}>
-              <Text style={styles.refreshBtnText}>🔄 THỬ BỐI CẢNH PHẢN HỒI MỚI</Text>
+            <TouchableOpacity onPress="{()" style="{styles.refreshBtn}"> loadChallenge(cefrLevel)}>
+              <Text style="{styles.refreshBtnText}">🔄 THỬ BỐI CẢNH PHẢN HỒI MỚI</Text>
             </TouchableOpacity>
           </View>
         )}
