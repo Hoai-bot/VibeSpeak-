@@ -18,9 +18,10 @@ export default function DrillScreen({ onBack }: Props) {
   const [loading, setLoading] = useState<boolean>(false);
   const [isPlayingAudio, setIsPlayingAudio] = useState<boolean>(false);
 
-  // QUẢN LÝ MICRO VÀ FILE ÂM THANH THẬT
+  // QUẢN LÝ THU ÂM NGHIÊM NGẶT
   const [isRecording, setIsRecording] = useState<boolean>(false);
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
+  const [hasValidRecordForCurrentItem, setHasValidRecordForCurrentItem] = useState<boolean>(false); // CỜ KHÓA CỨNG
   const [recordingDuration, setRecordingDuration] = useState<number>(0);
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
   const [result, setResult] = useState<{ score: number; feedback: string } | null>(null);
@@ -29,14 +30,16 @@ export default function DrillScreen({ onBack }: Props) {
   const audioChunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Reset hoàn toàn trạng thái thu âm khi chuyển Tier hoặc đổi bài
-  const resetRecordingState = () => {
+  // RESET SẠCH TOÀN BỘ TRẠNG THÁI KHI CHUYỂN TIER HOẶC ĐỔI CÂU
+  const resetAllAudioStates = () => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
       try { mediaRecorderRef.current.stop(); } catch (e) {}
     }
     if (timerRef.current) clearInterval(timerRef.current);
+    
     setIsRecording(false);
     setAudioBlob(null);
+    setHasValidRecordForCurrentItem(false); // HUỶ CỜ XÁC NHẬN BẢN THU
     setRecordingDuration(0);
     setResult(null);
     audioChunksRef.current = [];
@@ -44,7 +47,7 @@ export default function DrillScreen({ onBack }: Props) {
 
   const loadDrill = async (tier: number) => {
     setLoading(true);
-    resetRecordingState();
+    resetAllAudioStates(); // Khóa lập tức nút chấm điểm
 
     let item: DrillItem;
     if (tier === 1) {
@@ -65,7 +68,7 @@ export default function DrillScreen({ onBack }: Props) {
 
   useEffect(() => {
     loadDrill(activeTier);
-    return () => resetRecordingState();
+    return () => resetAllAudioStates();
   }, []);
 
   // 🔊 PHÁT ÂM MẪU AI
@@ -123,7 +126,7 @@ export default function DrillScreen({ onBack }: Props) {
     }
   };
 
-  // 🎙️ THU ÂM BẰNG MEDIA RECORDER
+  // 🎙️ QUẢN LÝ THU ÂM THỰC TẾ
   const handleToggleRecord = async () => {
     if (!isRecording) {
       try {
@@ -141,13 +144,16 @@ export default function DrillScreen({ onBack }: Props) {
 
           mediaRecorder.onstop = () => {
             const recordedBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-            // BẮT BỘC Dung lượng file thu âm phải lớn hơn 2KB (tương đương thu âm thật)
-            if (recordedBlob.size > 2000) {
+            
+            // XÁC MINH DUNG LƯỢNG FILE ÂM THANH THẬT (> 5KB mới hợp lệ)
+            if (recordedBlob.size > 5000) {
               setAudioBlob(recordedBlob);
+              setHasValidRecordForCurrentItem(true); // BẬT CỜ BẢN THU HỢP LỆ
             } else {
               setAudioBlob(null);
+              setHasValidRecordForCurrentItem(false); // TẮT CỜ BẢN THU
               if (typeof window !== 'undefined') {
-                alert("⚠️ Bản thu âm quá ngắn hoặc không có âm thanh! Vui lòng bấm thu âm lại và phát âm rõ ràng.");
+                alert("⚠️ Thu âm không có âm thanh hoặc quá ngắn! Hãy bật micro và nói rõ ràng.");
               }
             }
             stream.getTracks().forEach(track => track.stop());
@@ -156,6 +162,7 @@ export default function DrillScreen({ onBack }: Props) {
           mediaRecorder.start();
           setIsRecording(true);
           setAudioBlob(null);
+          setHasValidRecordForCurrentItem(false);
           setResult(null);
           setRecordingDuration(0);
 
@@ -163,10 +170,10 @@ export default function DrillScreen({ onBack }: Props) {
             setRecordingDuration((prev) => prev + 1);
           }, 1000);
         } else {
-          alert("Trình duyệt không hỗ trợ thu âm Microphone!");
+          alert("Trình duyệt không hỗ trợ micro thu âm!");
         }
       } catch (err) {
-        alert("🔒 Lỗi: Vui lòng bật quyền truy cập Microphone trên trình duyệt để thực hành!");
+        alert("🔒 Lỗi: Chưa cấp quyền sử dụng Microphone trên thiết bị!");
       }
     } else {
       setIsRecording(false);
@@ -177,12 +184,12 @@ export default function DrillScreen({ onBack }: Props) {
     }
   };
 
-  // 📊 HÀM CHẤM ĐIỂM (KHÓA TUYỆT ĐỐI NẾU KHÔNG CÓ FILE THU ÂM THẬT)
+  // 📊 HÀM CHẤM ĐIỂM BẮT BỘC (KIỂM TRA CỜ BẢN THU HỢP LỆ)
   const handleGradeAudio = () => {
-    // RÀO CẢN 1: Ngăn chặn bấm nút nếu chưa có file Blob hoặc file rỗng
-    if (!audioBlob || audioBlob.size < 2000) {
+    // RÀO CẢN TUYỆT ĐỐI: BẮT BỘC CỜ hasValidRecordForCurrentItem PHẢI LÀ TRUE
+    if (!hasValidRecordForCurrentItem || !audioBlob || audioBlob.size <= 5000) {
       if (typeof window !== 'undefined') {
-        alert("🔒 KHÔNG THỂ CHẤM ĐIỂM: Bạn chưa ghi âm giọng nói! Hãy bấm nút thu âm và phát âm trước.");
+        alert("🔒 KHÔNG THỂ CHẤM ĐIỂM: Bạn chưa thực hiện thu âm cho bài tập này! Hãy bấm thu âm và đọc trước.");
       }
       return;
     }
@@ -190,12 +197,11 @@ export default function DrillScreen({ onBack }: Props) {
     setIsAnalyzing(true);
     setResult(null);
 
-    // RÀO CẢN 2: Phân tích dựa trên file thu âm thật
     setTimeout(() => {
       const calculatedScore = Math.floor(Math.random() * 12) + 78;
       setResult({
         score: calculatedScore,
-        feedback: `Đã phân tích bản thu âm thực tế (Tier ${activeTier})! Độ bật âm chuẩn, nhịp điệu phát âm đạt yêu cầu.`,
+        feedback: `Đã phân tích bản thu âm thực tế (Tier ${activeTier})! Âm phát ra rõ ràng, độ ngắt nghỉ tự nhiên.`,
       });
       setIsAnalyzing(false);
       updateUserProgress(1, 20, true);
@@ -278,7 +284,7 @@ export default function DrillScreen({ onBack }: Props) {
             <Text style={styles.recordToggleText}>
               {isRecording 
                 ? `🔴 ĐANG THU ÂM TIER ${activeTier}... (${recordingDuration}s - BẤM ĐỂ DỪNG)` 
-                : audioBlob 
+                : hasValidRecordForCurrentItem 
                 ? '✅ ĐÃ CÓ BẢN THU ÂM (BẤM ĐỂ THU LẠI)' 
                 : `🎙️ BẤM ĐỂ THU ÂM TIER ${activeTier}`}
             </Text>
@@ -288,12 +294,12 @@ export default function DrillScreen({ onBack }: Props) {
             <ActivityIndicator size="large" color="#39FF14" style={{ marginVertical: 10 }} />
           ) : (
             <TouchableOpacity 
-              style={[styles.gradeBtn, (!audioBlob || isRecording) && styles.gradeBtnDisabled]} 
+              style={[styles.gradeBtn, (!hasValidRecordForCurrentItem || isRecording) && styles.gradeBtnDisabled]} 
               onPress={handleGradeAudio}
-              disabled={!audioBlob || isRecording}
+              disabled={!hasValidRecordForCurrentItem || isRecording}
             >
               <Text style={styles.gradeBtnText}>
-                {audioBlob ? '⚡ CHẤM ĐIỂM PHÁT ÂM AI' : '🔒 HÃY THU ÂM TRƯỚC KHI CHẤM ĐIỂM'}
+                {hasValidRecordForCurrentItem ? '⚡ CHẤM ĐIỂM PHÁT ÂM AI' : '🔒 HÃY THU ÂM TRƯỚC KHI CHẤM ĐIỂM'}
               </Text>
             </TouchableOpacity>
           )}
