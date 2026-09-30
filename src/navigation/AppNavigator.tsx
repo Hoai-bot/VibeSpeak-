@@ -4,7 +4,7 @@ import { View, StyleSheet } from 'react-native';
 
 import AuthScreen, { UserProfile } from '../screens/AuthScreen';
 import MainMapScreen from '../screens/MainMapScreen';
-import ProfileScreen from '../screens/ProfileScreen';
+import UserProfileScreen from '../screens/UserProfileScreen';
 
 import DrillScreen from '../screens/DrillScreen';
 import AllInArenaScreen from '../screens/AllInArenaScreen';
@@ -45,7 +45,7 @@ export default function AppNavigator() {
       )}
 
       {currentScreen === 'profile' && (
-        <ProfileScreen onBackToMap={() => setCurrentScreen('map')} />
+        <UserProfileScreen onBack={() => setCurrentScreen('map')} />
       )}
 
       {currentScreen === 'station1' && (
