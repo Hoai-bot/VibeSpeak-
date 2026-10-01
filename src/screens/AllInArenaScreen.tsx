@@ -71,7 +71,6 @@ export default function AllInArenaScreen({ onBack }: Props) {
     audioChunksRef.current = [];
   };
 
-  // ⏱ HÀM ĐẾM NGƯỢC THỜI GIAN VÀ TỰ ĐỘNG DỪNG THU ÂM KHI HẾT GIỜ
   const startTurnTimer = (allocatedTime: number) => {
     if (timerRef.current) clearInterval(timerRef.current);
     setTimeLeft(allocatedTime);
@@ -98,18 +97,22 @@ export default function AllInArenaScreen({ onBack }: Props) {
     }, 1000);
   };
 
+  // 💡 HÀM ÉP TẠO CHỦ ĐỀ MỚI LIÊN TỤC KHÔNG TRÙNG
   const loadModeData = async (selectedMode: string, level: string) => {
     setLoading(true);
     resetBattleState();
 
     try {
       if (selectedMode === 'solo') {
+        setSoloTopic(null);
         const data = await generateSoloTopic(level);
         setSoloTopic(data);
       } else if (selectedMode === 'relay') {
+        setRelayChallenge(null);
         const data = await generateRelayChallenge(level);
         setRelayChallenge(data);
       } else {
+        setRoleplayScenario(null);
         const data = await generateRoleplayScenario(level);
         setRoleplayScenario(data);
       }
@@ -125,7 +128,6 @@ export default function AllInArenaScreen({ onBack }: Props) {
     return () => resetBattleState();
   }, [mode, cefrLevel]);
 
-  // ⚔️ BẮT ĐẦU TRẬN ĐẤU & KÍCH HOẠT TIMER NGAY LẬP TỨC
   const startMatch = () => {
     resetBattleState();
     setBattleState('searching');
@@ -140,8 +142,6 @@ export default function AllInArenaScreen({ onBack }: Props) {
       
       setCurrentTurn(1);
       setBattleState('battling');
-      
-      // Kích hoạt đồng hồ đếm ngược đếm ngay khi vào màn hình thi đấu
       const allocatedTime = getTimeForCurrentMode(cefrLevel, mode);
       startTurnTimer(allocatedTime);
     }, 1500);
@@ -302,6 +302,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
               </View>
             )}
 
+            {/* NÚT ĐỔI ĐỀ MỚI BẮT BUỘC TẠO CHỦ ĐỀ KHÁC */}
             <TouchableOpacity style={styles.refreshBtn} onPress={() => loadModeData(mode, cefrLevel)} disabled={loading}>
               <Text style={styles.refreshBtnText}>🔄 ĐỔI ĐỀ MỚI KHÔNG LẶP</Text>
             </TouchableOpacity>
@@ -320,7 +321,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
           </View>
         )}
 
-        {/* THI ĐẤU & HIỂN THỊ TIMER ĐANG CHẠY */}
+        {/* THI ĐẤU */}
         {battleState === 'battling' && (
           <View style={styles.box}>
             <View style={styles.battleHeader}>
@@ -344,11 +345,11 @@ export default function AllInArenaScreen({ onBack }: Props) {
         {battleState === 'analyzing' && (
           <View style={styles.box}>
             <ActivityIndicator size="large" color="#39FF14" style={{ marginBottom: 15 }} />
-            <Text style={styles.searchingText}>⚡ WHISPER AI ĐANG CHẤM DỊCH GIỌNG NÓI CỦA BẠN...</Text>
+            <Text style={styles.searchingText}>⚡ WHISPER AI ĐANG CHẤM DỊCH 6 TIÊU CHÍ GIỌNG NÓI...</Text>
           </View>
         )}
 
-        {/* KẾT QUẢ */}
+        {/* KẾT QUẢ HIỂN THỊ ĐẦY ĐỦ 6 TIÊU CHÍ */}
         {battleState === 'ended' && result && (
           <View style={styles.box}>
             <Text style={[styles.resultTitle, { color: result.isWin ? '#39FF14' : '#FF0055' }]}>
@@ -364,8 +365,20 @@ export default function AllInArenaScreen({ onBack }: Props) {
             )}
 
             <View style={styles.scriptBox}>
-              <Text style={styles.scriptLabel}>📝 SCRIPT BÓC TÁCH TỪ GIỌNG NÓI:</Text>
+              <Text style={styles.scriptLabel}>📝 BẢN DỊCH CHỮ GIỌNG NÓI THỰC TẾ (SCRIPT):</Text>
               <Text style={styles.scriptContent}>"{result.transcript}"</Text>
+              <Text style={styles.wordCountText}>📊 Số từ phản xạ thực tế: {result.wordCount} từ</Text>
+            </View>
+
+            {/* 💡 BẢNG PHÂN TÍCH HIỂN THỊ 6 TIÊU CHÍ CHUẨN */}
+            <Text style={styles.breakdownHeaderLabel}>📊 PHÂN TÍCH CHI TIẾT 6 TIÊU CHÍ:</Text>
+            <View style={styles.breakdownCard}>
+              <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>🗣️ 1. Phát âm:</Text><Text style={styles.breakdownValue}>{result.pronunciation}/100</Text></View>
+              <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>📚 2. Ngữ pháp:</Text><Text style={styles.breakdownValue}>{result.grammar}/100</Text></View>
+              <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>🔤 3. Từ vựng:</Text><Text style={styles.breakdownValue}>{result.vocabulary}/100</Text></View>
+              <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>⚡ 4. Phản xạ:</Text><Text style={styles.breakdownValue}>{result.reflexes}/100</Text></View>
+              <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>🎯 5. Nội dung:</Text><Text style={styles.breakdownValue}>{result.content}/100</Text></View>
+              <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>🌊 6. Trôi chảy:</Text><Text style={styles.breakdownValue}>{result.fluency}/100</Text></View>
             </View>
 
             <Text style={styles.feedbackText}>{result.detailedFeedback}</Text>
@@ -427,6 +440,12 @@ const styles = StyleSheet.create({
   nativeAudioLabel: { color: '#00FFFF', fontSize: 10, fontWeight: 'bold' },
   scriptBox: { backgroundColor: '#1A0B2E', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#332255', width: '100%', marginBottom: 12 },
   scriptLabel: { color: '#FFD700', fontSize: 10, fontWeight: 'bold', marginBottom: 4 },
-  scriptContent: { color: '#FFF', fontSize: 11, fontStyle: 'italic' },
+  scriptContent: { color: '#FFF', fontSize: 11, fontStyle: 'italic', marginBottom: 6 },
+  wordCountText: { color: '#39FF14', fontSize: 9, fontWeight: 'bold' },
+  breakdownHeaderLabel: { color: '#FFD700', fontSize: 10, fontWeight: 'bold', alignSelf: 'flex-start', marginBottom: 6 },
+  breakdownCard: { backgroundColor: '#120826', padding: 12, borderRadius: 10, width: '100%', marginBottom: 12, borderWidth: 1, borderColor: '#FF007F' },
+  breakdownRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4, borderBottomWidth: 1, borderBottomColor: '#221133' },
+  breakdownLabel: { color: '#AAAABB', fontSize: 10 },
+  breakdownValue: { color: '#39FF14', fontSize: 10, fontWeight: 'bold' },
   feedbackText: { color: '#FFF', fontSize: 11, textAlign: 'center', lineHeight: 16, marginBottom: 15 }
 });
