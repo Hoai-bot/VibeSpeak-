@@ -7,10 +7,13 @@ const groq = new Groq({ apiKey: ACTIVE_GROQ_KEY, dangerouslyAllowBrowser: true }
 export interface RoleplayScenario {
   id: string;
   scenarioTitle: string;
-  aiRole: string;
-  userRole: string;
+  aiRoleEn: string;
+  aiRoleVi?: string;
+  userRoleEn: string;
+  userRoleVi?: string;
   initialAiMessage: string;
-  goal: string;
+  goalEn: string;
+  goalVi?: string;
 }
 
 const sessionUsedRoleplayTexts: Set<string> = new Set();
@@ -23,21 +26,24 @@ const DYNAMIC_ROLEPLAY_FALLBACKS: Record<string, RoleplayScenario[]> = {
   A1: [
     {
       id: 'rp_a1_1',
-      scenarioTitle: "At the Coffee Shop / Tại quán cà phê [A1]",
-      aiRole: "Barista / Nhân viên pha chế",
-      userRole: "Customer / Khách hàng",
+      scenarioTitle: "Ordering Drinks [A1]",
+      aiRoleEn: "Barista",
+      aiRoleVi: "Nhân viên pha chế",
+      userRoleEn: "Customer",
+      userRoleVi: "Khách hàng",
       initialAiMessage: "Hello! What drink would you like today?",
-      goal: "Order a coffee and ask for the price. / Đặt một ly cà phê và hỏi giá tiền."
+      goalEn: "Order a coffee and ask for the price.",
+      goalVi: "Đặt một ly cà phê và hỏi giá tiền."
     }
   ],
   B2: [
     {
       id: 'rp_b2_1',
       scenarioTitle: "Project Deadline Negotiation [B2]",
-      aiRole: "Project Director",
-      userRole: "Lead Developer",
+      aiRoleEn: "Project Director",
+      userRoleEn: "Lead Developer",
       initialAiMessage: "We have an urgent request from the client to move up the release date by two weeks.",
-      goal: "Explain technical constraints and negotiate a feasible delivery timeline."
+      goalEn: "Explain technical constraints and negotiate a feasible delivery timeline."
     }
   ]
 };
@@ -45,16 +51,7 @@ const DYNAMIC_ROLEPLAY_FALLBACKS: Record<string, RoleplayScenario[]> = {
 export async function generateRoleplayScenario(cefrLevel: string = 'A1'): Promise<RoleplayScenario> {
   const dynamicSeed = `${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
   const excludedList = Array.from(sessionUsedRoleplayTexts).join(' | ');
-
-  let levelInstruction = '';
-  if (cefrLevel === 'A1' || cefrLevel === 'A2' || cefrLevel === 'B1') {
-    levelInstruction = `LEVEL ${cefrLevel} MANDATORY RULE:
-- scenarioTitle, aiRole, userRole, and goal MUST BE BILINGUAL (Format: "English / Bản dịch tiếng Việt").
-- initialAiMessage MUST BE simple English sentence for CEFR ${cefrLevel}.`;
-  } else {
-    levelInstruction = `LEVEL ${cefrLevel} MANDATORY RULE:
-- 100% ADVANCED BUSINESS / EXECUTIVE ENGLISH. NO VIETNAMESE TRANSLATION.`;
-  }
+  const isLowLevel = cefrLevel === 'A1' || cefrLevel === 'A2' || cefrLevel === 'B1';
 
   const prompt = `Generate ONE UNIQUE Roleplay Scenario strictly tailored to CEFR Level ${cefrLevel}.
 REQUEST SEED: ${dynamicSeed}
@@ -62,15 +59,22 @@ REQUEST SEED: ${dynamicSeed}
 EXCLUDED PREVIOUS SCENARIOS:
 [ ${excludedList || 'None'} ]
 
-${levelInstruction}
+CRITICAL RULES FOR LEVEL ${cefrLevel}:
+${isLowLevel 
+  ? `- You MUST provide BOTH English (En) and Vietnamese translation (Vi) for aiRole, userRole, and goal. Keep initialAiMessage simple English.`
+  : `- 100% ADVANCED BUSINESS / EXECUTIVE ENGLISH ONLY for En fields. Do NOT provide Vi fields.`
+}
 
 Return ONLY JSON:
 {
-  "scenarioTitle": "Title [${cefrLevel}]",
-  "aiRole": "Role 1",
-  "userRole": "Role 2",
-  "initialAiMessage": "Short English opening line",
-  "goal": "Goal text matching level rule"
+  "scenarioTitle": "Scenario Title [${cefrLevel}]",
+  "aiRoleEn": "Role 1 in English",
+  ${isLowLevel ? '"aiRoleVi": "Vai trò 1 tiếng Việt",' : ''}
+  "userRoleEn": "Role 2 in English",
+  ${isLowLevel ? '"userRoleVi": "Vai trò 2 tiếng Việt",' : ''}
+  "initialAiMessage": "Short English line to open conversation",
+  "goalEn": "Goal in English",
+  ${isLowLevel ? '"goalVi": "Mục tiêu tiếng Việt",' : ''}
 }`;
 
   try {
@@ -89,13 +93,16 @@ Return ONLY JSON:
     return {
       id: `rp_${dynamicSeed}`,
       scenarioTitle: titleText,
-      aiRole: parsed.aiRole || "Interlocutor",
-      userRole: parsed.userRole || "Speaker",
+      aiRoleEn: parsed.aiRoleEn || "Staff",
+      aiRoleVi: parsed.aiRoleVi || undefined,
+      userRoleEn: parsed.userRoleEn || "Customer",
+      userRoleVi: parsed.userRoleVi || undefined,
       initialAiMessage: parsed.initialAiMessage || "Hello! How can I help you?",
-      goal: parsed.goal || "Complete conversation goal / Hoàn thành mục tiêu giao tiếp"
+      goalEn: parsed.goalEn || "Complete conversational objective",
+      goalVi: parsed.goalVi || undefined
     };
   } catch (error) {
-    console.warn(`Groq Roleplay Error, applying fallback for ${cefrLevel}:`, error);
+    console.warn(`Groq Roleplay Error for ${cefrLevel}:`, error);
     const fallbackList = DYNAMIC_ROLEPLAY_FALLBACKS[cefrLevel] || DYNAMIC_ROLEPLAY_FALLBACKS['A1'];
     const selected = fallbackList[Math.floor(Math.random() * fallbackList.length)];
     sessionUsedRoleplayTexts.add(selected.scenarioTitle.toLowerCase());

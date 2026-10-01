@@ -292,7 +292,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
           ))}
         </View>
 
-        {/* CHỜ TRẬN */}
+        {/* CHỜ TRẬN & HIỂN THỊ CẤU TRÚC SONG NGỮ CHUẨN */}
         {battleState === 'idle' && (
           <View style={styles.box}>
             <Text style={styles.boxTitle}>⚡ {mode.toUpperCase()} [{cefrLevel}]</Text>
@@ -300,22 +300,52 @@ export default function AllInArenaScreen({ onBack }: Props) {
               <ActivityIndicator size="small" color="#FF007F" style={{ marginVertical: 15 }} />
             ) : (
               <View style={{ width: '100%', alignItems: 'center' }}>
+                {/* HIỂN THỊ SOLO */}
                 {mode === 'solo' && soloTopic && (
                   <>
                     <Text style={styles.topicTitle}>{soloTopic.title}</Text>
-                    <Text style={styles.promptText}>"{soloTopic.promptText}"</Text>
+                    <Text style={styles.promptText}>"{soloTopic.promptEn}"</Text>
+                    {soloTopic.promptVi && (
+                      <Text style={styles.translationText}>💡 Dịch: "{soloTopic.promptVi}"</Text>
+                    )}
                   </>
                 )}
+
+                {/* HIỂN THỊ RELAY */}
                 {mode === 'relay' && relayChallenge && (
                   <>
                     <Text style={styles.topicTitle}>📌 {relayChallenge.topic}</Text>
-                    <Text style={styles.promptText}>💡 Bối cảnh: {relayChallenge.context}</Text>
+                    <Text style={styles.promptText}>💡 Bối cảnh: "{relayChallenge.contextEn}"</Text>
+                    {relayChallenge.contextVi && (
+                      <Text style={styles.translationText}>👉 Dịch: "{relayChallenge.contextVi}"</Text>
+                    )}
+                    <View style={{ marginTop: 8, width: '100%' }}>
+                      <Text style={styles.guidelineText}>👤 P1: {relayChallenge.player1En}</Text>
+                      {relayChallenge.player1Vi && (
+                        <Text style={styles.translationText}>👉 {relayChallenge.player1Vi}</Text>
+                      )}
+                      <Text style={[styles.guidelineText, { marginTop: 4 }]}>👤 P2: {relayChallenge.player2En}</Text>
+                      {relayChallenge.player2Vi && (
+                        <Text style={styles.translationText}>👉 {relayChallenge.player2Vi}</Text>
+                      )}
+                    </View>
                   </>
                 )}
+
+                {/* HIỂN THỊ ROLEPLAY */}
                 {mode === 'roleplay' && roleplayScenario && (
                   <>
                     <Text style={styles.topicTitle}>🎭 {roleplayScenario.scenarioTitle}</Text>
+                    <Text style={styles.roleText}>
+                      🤖 AI: {roleplayScenario.aiRoleEn} {roleplayScenario.aiRoleVi ? `(${roleplayScenario.aiRoleVi})` : ''} 
+                      {'  |  '}
+                      👤 Bạn: {roleplayScenario.userRoleEn} {roleplayScenario.userRoleVi ? `(${roleplayScenario.userRoleVi})` : ''}
+                    </Text>
                     <Text style={styles.promptText}>💬 Mở đầu: "{roleplayScenario.initialAiMessage}"</Text>
+                    <Text style={styles.promptText}>🎯 Mục tiêu: {roleplayScenario.goalEn}</Text>
+                    {roleplayScenario.goalVi && (
+                      <Text style={styles.translationText}>👉 Dịch: {roleplayScenario.goalVi}</Text>
+                    )}
                   </>
                 )}
               </View>
@@ -436,9 +466,12 @@ const styles = StyleSheet.create({
   box: { backgroundColor: '#0D0620', padding: 18, borderRadius: 16, borderWidth: 2, borderColor: '#FF007F', width: '100%', alignItems: 'center', marginBottom: 20 },
   boxTitle: { color: '#FFD700', fontSize: 11, fontWeight: '900', marginBottom: 12 },
   topicTitle: { color: '#00FFFF', fontSize: 13, fontWeight: '900', marginBottom: 6 },
-  promptText: { color: '#FFF', fontSize: 13, fontWeight: '800', textAlign: 'center', lineHeight: 18, marginBottom: 10 },
+  promptText: { color: '#FFF', fontSize: 13, fontWeight: '800', textAlign: 'center', lineHeight: 18, marginBottom: 4 },
+  guidelineText: { color: '#FFF', fontSize: 11, fontWeight: '700', textAlign: 'center' },
+  roleText: { color: '#FFD700', fontSize: 11, fontWeight: '800', marginBottom: 8, textAlign: 'center' },
+  translationText: { color: '#00FFFF', fontSize: 11, fontStyle: 'italic', textAlign: 'center', marginBottom: 8 },
   searchingText: { color: '#00FFFF', fontSize: 11, fontWeight: 'bold', textAlign: 'center' },
-  refreshBtn: { backgroundColor: '#1A0B2E', padding: 8, borderRadius: 8, borderWidth: 1, borderColor: '#00FFFF', width: '100%', alignItems: 'center', marginBottom: 12 },
+  refreshBtn: { backgroundColor: '#1A0B2E', padding: 8, borderRadius: 8, borderWidth: 1, borderColor: '#00FFFF', width: '100%', alignItems: 'center', marginTop: 8, marginBottom: 12 },
   refreshBtnText: { color: '#00FFFF', fontSize: 10, fontWeight: 'bold' },
   startBtn: { backgroundColor: '#FF007F', padding: 14, borderRadius: 12, width: '100%', alignItems: 'center' },
   startBtnText: { color: '#FFF', fontSize: 11, fontWeight: '900' },

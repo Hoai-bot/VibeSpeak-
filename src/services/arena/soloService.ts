@@ -7,101 +7,90 @@ const groq = new Groq({ apiKey: ACTIVE_GROQ_KEY, dangerouslyAllowBrowser: true }
 export interface SoloTopic {
   id: string;
   title: string;
-  promptText: string;
+  promptEn: string;
+  promptVi?: string;
   keywords: string[];
 }
 
-// 🧠 1. GẮN BỘ NHỚ LỊCH SỬ PHIÊN HỌC (USED HISTORY TRACKING)
 const sessionUsedTopicTexts: Set<string> = new Set();
 
-/**
- * Xóa lịch sử đã chơi khi đổi level hoặc chọn reset lại phiên
- */
 export function clearSoloTopicHistory() {
   sessionUsedTopicTexts.clear();
 }
 
-// KHO ĐỀ DYNAMIC FALLBACK THEO TỪNG LEVEL
 const DYNAMIC_FALLBACKS: Record<string, SoloTopic[]> = {
   A1: [
-    { id: 'a1_1', title: "Solo Pulse [A1]", promptText: "Describe your favorite hobby and why you like it.", keywords: ["hobby", "free time"] },
-    { id: 'a1_2', title: "Solo Pulse [A1]", promptText: "Talk about your best friend and what they look like.", keywords: ["friend", "appearance"] },
-    { id: 'a1_3', title: "Solo Pulse [A1]", promptText: "Describe your daily morning routine before school or work.", keywords: ["morning", "routine"] }
+    { id: 'a1_1', title: "Solo Pulse [A1]", promptEn: "Describe your favorite hobby and why you like it.", promptVi: "Hãy mô tả sở thích yêu thích của bạn và lý do bạn thích nó.", keywords: ["hobby", "free time"] },
+    { id: 'a1_2', title: "Solo Pulse [A1]", promptEn: "Talk about your family members and their jobs.", promptVi: "Hãy kể về các thành viên trong gia đình và nghề nghiệp của họ.", keywords: ["family", "jobs"] }
+  ],
+  A2: [
+    { id: 'a2_1', title: "Solo Pulse [A2]", promptEn: "Describe a memorable holiday trip you had with your friends.", promptVi: "Hãy kể về một chuyến đi chơi đáng nhớ cùng bạn bè.", keywords: ["holiday", "trip"] }
+  ],
+  B1: [
+    { id: 'b1_1', title: "Solo Pulse [B1]", promptEn: "Discuss the advantages and disadvantages of living in a big city.", promptVi: "Thảo luận ưu và nhược điểm của việc sống ở thành phố lớn.", keywords: ["city", "lifestyle"] }
   ],
   B2: [
-    { id: 'b2_1', title: "Solo Pulse [B2]", promptText: "Discuss the economic and social impacts of remote work on modern urban development.", keywords: ["remote work", "urbanization", "economy"] },
-    { id: 'b2_2', title: "Solo Pulse [B2]", promptText: "Analyze how social media algorithm personalization influences public opinion.", keywords: ["social media", "algorithms", "opinion"] },
-    { id: 'b2_3', title: "Solo Pulse [B2]", promptText: "Evaluate the role of renewable energy adoption in developing nations.", keywords: ["renewable energy", "sustainability"] }
+    { id: 'b2_1', title: "Solo Pulse [B2]", promptEn: "Analyze the economic and social impacts of remote work on modern urban development.", keywords: ["remote work", "economy"] }
+  ],
+  C1: [
+    { id: 'c1_1', title: "Solo Pulse [C1]", promptEn: "Critically evaluate the ethical dilemmas surrounding corporate surveillance and data privacy in the digital era.", keywords: ["privacy", "ethics"] }
   ],
   C2: [
-    { id: 'c2_1', title: "Solo Pulse [C2]", promptText: "Examine the epistemological implications of artificial intelligence on human cognitive autonomy.", keywords: ["epistemology", "AI", "existentialism"] },
-    { id: 'c2_2', title: "Solo Pulse [C2]", promptText: "Deconstruct the geopolitical tension between space resource commercialization and international maritime governance.", keywords: ["geopolitics", "space law", "governance"] }
+    { id: 'c2_1', title: "Solo Pulse [C2]", promptEn: "Examine the epistemological implications of artificial intelligence on human cognitive autonomy.", keywords: ["epistemology", "AI"] }
   ]
 };
 
 export async function generateSoloTopic(cefrLevel: string = 'A1'): Promise<SoloTopic> {
-  // ⚡ 2. DYNAMIC REQUEST SEED CHỐNG CACHE GROQ / TRÌNH DUYỆT
   const dynamicSeed = `${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
   const excludedTopicsList = Array.from(sessionUsedTopicTexts).join(' | ');
 
-  let languageRule = '';
-  if (cefrLevel === 'A1' || cefrLevel === 'A2' || cefrLevel === 'B1') {
-    languageRule = `- LANGUAGE: BILINGUAL (English prompt + Vietnamese translation).`;
-  } else if (cefrLevel === 'B2') {
-    languageRule = `- LANGUAGE: 100% ENGLISH. Professional tone.`;
-  } else {
-    languageRule = `- LANGUAGE: 100% ADVANCED ACADEMIC / PHILOSOPHICAL ENGLISH. No Vietnamese translation.`;
-  }
+  const isLowLevel = cefrLevel === 'A1' || cefrLevel === 'A2' || cefrLevel === 'B1';
 
-  const prompt = `Generate ONE UNIQUE Solo Speaking Topic for CEFR Level ${cefrLevel}.
+  const prompt = `Generate ONE UNIQUE Solo Speaking Topic strictly tailored to CEFR Level ${cefrLevel}.
 REQUEST SEED: ${dynamicSeed}
 
-CRITICAL UNIQUNESS RULE:
-Do NOT generate or reuse any of the following topics previously presented in this session:
+EXCLUDED PREVIOUS TOPICS:
 [ ${excludedTopicsList || 'None'} ]
 
-LEVEL RULE FOR ${cefrLevel}:
-${languageRule}
+CRITICAL RULES FOR LEVEL ${cefrLevel}:
+${isLowLevel 
+  ? `- You MUST provide BOTH simple English (promptEn) AND clear Vietnamese translation (promptVi).`
+  : `- 100% ADVANCED ACADEMIC ENGLISH ONLY for promptEn. Do NOT provide promptVi.`
+}
 
-Return ONLY a valid JSON object:
+Return ONLY a valid JSON object matching this schema:
 {
-  "title": "Solo Topic [${cefrLevel}]",
-  "promptText": "A completely new prompt text strictly matching ${cefrLevel}",
-  "keywords": ["word1", "word2", "word3"]
+  "title": "Solo Pulse [${cefrLevel}]",
+  "promptEn": "English text matching difficulty ${cefrLevel}",
+  ${isLowLevel ? '"promptVi": "Bản dịch tiếng Việt chuẩn nghĩa",' : ''}
+  "keywords": ["word1", "word2"]
 }`;
 
   try {
     const response = await groq.chat.completions.create({
       messages: [{ role: 'user', content: prompt }],
       model: 'llama-3.3-70b-versatile',
-      temperature: 0.98, // Tăng độ linh hoạt tối đa để không bao giờ bị rập khuôn
+      temperature: 0.95,
       response_format: { type: 'json_object' },
     });
 
     const parsed = JSON.parse(response.choices[0]?.message?.content || '{}');
-    const promptText = parsed.promptText || `Topic ${dynamicSeed}`;
+    const promptEn = parsed.promptEn || `Practice topic for ${cefrLevel}`;
 
-    // Lưu vào lịch sử phiên làm việc
-    sessionUsedTopicTexts.add(promptText.toLowerCase());
+    sessionUsedTopicTexts.add(promptEn.toLowerCase());
 
     return {
       id: `solo_${dynamicSeed}`,
       title: parsed.title || `Solo Pulse [${cefrLevel}]`,
-      promptText: promptText,
+      promptEn: promptEn,
+      promptVi: parsed.promptVi || undefined,
       keywords: parsed.keywords || ["speaking", "practice"]
     };
   } catch (error) {
-    console.warn(`Groq Solo Error, selecting unique unused fallback:`, error);
-    
+    console.warn(`Groq Solo Error, selecting fallback for ${cefrLevel}:`, error);
     const fallbackList = DYNAMIC_FALLBACKS[cefrLevel] || DYNAMIC_FALLBACKS['A1'];
-    // Lọc các đề fallback chưa xuất hiện trong phiên
-    const unusedFallbacks = fallbackList.filter(item => !sessionUsedTopicTexts.has(item.promptText.toLowerCase()));
-    
-    const selected = unusedFallbacks.length > 0 
-      ? unusedFallbacks[Math.floor(Math.random() * unusedFallbacks.length)]
-      : fallbackList[Math.floor(Math.random() * fallbackList.length)];
-
-    sessionUsedTopicTexts.add(selected.promptText.toLowerCase());
+    const selected = fallbackList[Math.floor(Math.random() * fallbackList.length)];
+    sessionUsedTopicTexts.add(selected.promptEn.toLowerCase());
     return selected;
   }
 }
