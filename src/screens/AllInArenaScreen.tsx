@@ -1,9 +1,9 @@
 // src/screens/AllInArenaScreen.tsx
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
-import { generateSoloTopic, SoloTopic } from '../services/arena/soloService';
-import { generateRelayChallenge, RelayChallenge } from '../services/arena/relayService';
-import { generateRoleplayScenario, RoleplayScenario } from '../services/arena/roleplayService';
+import { generateSoloTopic, clearSoloTopicHistory, SoloTopic } from '../services/arena/soloService';
+import { generateRelayChallenge, clearRelayHistory, RelayChallenge } from '../services/arena/relayService';
+import { generateRoleplayScenario, clearRoleplayHistory, RoleplayScenario } from '../services/arena/roleplayService';
 import { evaluateSpeaking, AssessmentResult } from '../services/arena/assessmentService';
 import { updateUserProgress } from '../services/userService';
 
@@ -53,6 +53,24 @@ export default function AllInArenaScreen({ onBack }: Props) {
     return Math.floor(total / 2);
   };
 
+  // 💡 HÀM CHUYỂN LEVEL CÓ RESET LỊCH SỬ THI ĐẤU
+  const handleLevelChange = (newLevel: string) => {
+    if (newLevel === cefrLevel) return;
+    clearSoloTopicHistory();
+    clearRelayHistory();
+    clearRoleplayHistory();
+    setCefrLevel(newLevel);
+  };
+
+  // 💡 HÀM CHUYỂN DẠNG BÀI CÓ RESET LỊCH SỬ THI ĐẤU
+  const handleModeChange = (newMode: 'solo' | 'relay' | 'roleplay') => {
+    if (newMode === mode) return;
+    clearSoloTopicHistory();
+    clearRelayHistory();
+    clearRoleplayHistory();
+    setMode(newMode);
+  };
+
   const resetBattleState = () => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
       try { mediaRecorderRef.current.stop(); } catch (e) {}
@@ -97,12 +115,11 @@ export default function AllInArenaScreen({ onBack }: Props) {
     }, 1000);
   };
 
-  // 💡 HÀM ÉP TẠO CHỦ ĐỀ MỚI LIÊN TỤC KHÔNG TRÙNG
+  // 💡 HÀM TẢI VÀ ÉP TẠO CHỦ ĐỀ MỚI KHÔNG TRÙNG
   const loadModeData = async (selectedMode: string, level: string) => {
     setLoading(true);
     resetBattleState();
 
-    // Reset state cũ để không bị giữ lại đề cũ
     setSoloTopic(null);
     setRelayChallenge(null);
     setRoleplayScenario(null);
@@ -243,13 +260,13 @@ export default function AllInArenaScreen({ onBack }: Props) {
         {/* CHỌN CHẾ ĐỘ THI ĐẤU */}
         <Text style={styles.sectionLabel}>1. CHỌN DẠNG BÀI ĐẤU TRƯỜNG:</Text>
         <View style={styles.tabRow}>
-          <TouchableOpacity style={[styles.modeTab, mode === 'solo' && styles.modeTabActive]} onPress={() => setMode('solo')}>
+          <TouchableOpacity style={[styles.modeTab, mode === 'solo' && styles.modeTabActive]} onPress={() => handleModeChange('solo')}>
             <Text style={[styles.modeTabText, mode === 'solo' && styles.modeTextActive]}>🔥 SOLO PULSE</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.modeTab, mode === 'relay' && styles.modeTabActive]} onPress={() => setMode('relay')}>
+          <TouchableOpacity style={[styles.modeTab, mode === 'relay' && styles.modeTabActive]} onPress={() => handleModeChange('relay')}>
             <Text style={[styles.modeTabText, mode === 'relay' && styles.modeTextActive]}>🤝 RELAY 2P</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.modeTab, mode === 'roleplay' && styles.modeTabActive]} onPress={() => setMode('roleplay')}>
+          <TouchableOpacity style={[styles.modeTab, mode === 'roleplay' && styles.modeTabActive]} onPress={() => handleModeChange('roleplay')}>
             <Text style={[styles.modeTabText, mode === 'roleplay' && styles.modeTextActive]}>🎭 ROLEPLAY</Text>
           </TouchableOpacity>
         </View>
@@ -269,7 +286,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
         <Text style={styles.sectionLabel}>3. CHỌN LEVEL:</Text>
         <View style={styles.cefrRow}>
           {CEFR_LEVELS.map((lvl) => (
-            <TouchableOpacity key={lvl} style={[styles.cefrBadge, cefrLevel === lvl && styles.cefrBadgeActive]} onPress={() => setCefrLevel(lvl)}>
+            <TouchableOpacity key={lvl} style={[styles.cefrBadge, cefrLevel === lvl && styles.cefrBadgeActive]} onPress={() => handleLevelChange(lvl)}>
               <Text style={[styles.cefrText, cefrLevel === lvl && styles.cefrTextActive]}>{lvl}</Text>
             </TouchableOpacity>
           ))}
@@ -304,7 +321,6 @@ export default function AllInArenaScreen({ onBack }: Props) {
               </View>
             )}
 
-            {/* NÚT ĐỔI ĐỀ MỚI BẮT BUỘC TẠO CHỦ ĐỀ KHÁC */}
             <TouchableOpacity style={styles.refreshBtn} onPress={() => loadModeData(mode, cefrLevel)} disabled={loading}>
               <Text style={styles.refreshBtnText}>🔄 ĐỔI ĐỀ MỚI KHÔNG LẶP</Text>
             </TouchableOpacity>
@@ -372,7 +388,6 @@ export default function AllInArenaScreen({ onBack }: Props) {
               <Text style={styles.wordCountText}>📊 Số từ phản xạ thực tế: {result.wordCount} từ</Text>
             </View>
 
-            {/* BẢNG PHÂN TÍCH HIỂN THỊ 6 TIÊU CHÍ CHUẨN */}
             <Text style={styles.breakdownHeaderLabel}>📊 PHÂN TÍCH CHI TIẾT 6 TIÊU CHÍ:</Text>
             <View style={styles.breakdownCard}>
               <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>🗣️ 1. Phát âm:</Text><Text style={styles.breakdownValue}>{result.pronunciation}/100</Text></View>
