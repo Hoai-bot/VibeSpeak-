@@ -12,113 +12,168 @@ export interface AssessmentResult {
   content: number;
   fluency: number;
   detailedFeedback: string;
-  audioUrl: string | null;
+  audioUrl?: string;
 }
 
 /**
- * 1. Chuyển đổi âm thanh Blob thành chữ bằng Groq Whisper API
+ * Dịch vụ chấm điểm tập trung bằng Groq Whisper AI
  */
-export async function transcribeAudio(audioBlob: Blob): Promise<string> {
-  if (!audioBlob || audioBlob.size < 2000) {
-    return '';
-  }
+export async function evaluateSpeaking(
+  audioBlob: Blob,
+  cefrLevel: string = 'B2',
+  targetText?: string // Nhận từ mẫu (cho Trạm 1) để chấm điểm chính xác
+): Promise<AssessmentResult> {
+  const audioUrl = URL.createObjectURL(audioBlob);
 
-  // LƯU Ý: Bắt buộc dùng trực tiếp `process.env.EXPO_PUBLIC_GROQ_API_KEY` để Expo Inline khi build
-  const apiKey = process.env.EXPO_PUBLIC_GROQ_API_KEY;
-  if (!apiKey) {
-    console.error('❌ EXPO_PUBLIC_GROQ_API_KEY is undefined on client bundle!');
-    return '';
+  // 1. LỚP BẢO VỆ 1: Kiểm tra dung lượng file ghi âm (> 8000 bytes)
+  if (!audioBlob || audioBlob.size <= 8000) {
+    return {
+      score: 0,
+      isWin: false,
+      transcript: "(Không ghi nhận được âm thanh nói)",
+      wordCount: 0,
+      pronunciation: 0,
+      grammar: 0,
+      vocabulary: 0,
+      reflexes: 0,
+      content: 0,
+      fluency: 0,
+      detailedFeedback: "❌ Bạn chưa nói hoặc bản thu âm quá ngắn. Hãy phát âm rõ ràng vào micro!",
+      audioUrl
+    };
   }
 
   try {
-    const formData = new FormData();
+    // 2. GỬI AUDIO ĐẾN GROQ WHISPER STT API
+    const apiKey = process.env.EXPO_PUBLIC_GROQ_API_KEY || '';
     
-    let ext = 'webm';
-    if (audioBlob.type.includes('mp4') || audioBlob.type.includes('aac') || audioBlob.type.includes('m4a')) {
-      ext = 'm4a';
-    } else if (audioBlob.type.includes('wav')) {
-      ext = 'wav';
+    if (!apiKey) {
+      console.warn("⚠️ Thiếu EXPO_PUBLIC_GROQ_API_KEY, chuyển sang chế độ phân tích fallback.");
     }
 
-    const audioFile = new File([audioBlob], `speech.${ext}`, {
-      type: audioBlob.type || 'audio/webm'
-    });
-
-    formData.append('file', audioFile);
-    formData.append('model', 'whisper-large-v3-turbo');
+    const formData = new FormData();
+    formData.append('file', audioBlob, 'speech.webm');
+    formData.append('model', 'whisper-large-v3');
     formData.append('language', 'en');
-    formData.append('response_format', 'json');
 
-    const response = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${process.env.EXPO_PUBLIC_GROQ_API_KEY}`,
-      },
-      body: formData,
-    });
+    let transcript = "";
 
-    if (!response.ok) {
-      const errText = await response.text();
-      console.error('Groq Whisper API Response Error:', errText);
-      return '';
+    if (apiKey) {
+      const response = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        body: formData
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        transcript = data.text ? data.text.trim() : "";
+      }
     }
 
-    const data = await response.json();
-    return data.text ? data.text.trim() : '';
+    // Nếu không bóc tách được chữ nào từ Whisper
+    if (!transcript) {
+      return {
+        score: 0,
+        isWin: false,
+        transcript: "(Âm thanh không rõ hoặc im lặng)",
+        wordCount: 0,
+        pronunciation: 0,
+        grammar: 0,
+        vocabulary: 0,
+        reflexes: 0,
+        content: 0,
+        fluency: 0,
+        detailedFeedback: "❌ AI không nghe thấy từ tiếng Anh nào rõ ràng. Vui lòng thử lại!",
+        audioUrl
+      };
+    }
+
+    // 3. TÍNH TOÁN ĐIỂM CHÍNH XÁC DỰA TRÊN SCRIPT BÓC TÁCH THỰC TẾ
+    const words = transcript.split(/\s+/).filter(w => w.length > 0);
+    const wordCount = words.length;
+
+    // THUẬT TOÁN CHẤM RIÊNG CHO TRẠM 1 (DRILL ARENA - So sánh từ phát âm)
+    if (targetText) {
+      const cleanTarget = targetText.toLowerCase().replace(/[^a-z0-9\s]/g, '');
+      const cleanTranscript = transcript.toLowerCase().replace(/[^a-z0-9\s]/g, '');
+      
+      const targetWords = cleanTarget.split(/\s+/);
+      let matchedWords = 0;
+
+      targetWords.forEach(tw => {
+        if (cleanTranscript.includes(tw)) matchedWords++;
+      });
+
+      const accuracy = Math.round((matchedWords / targetWords.length) * 100);
+      const isWin = accuracy >= 70;
+
+      return {
+        score: accuracy,
+        isWin,
+        transcript,
+        wordCount,
+        pronunciation: accuracy,
+        grammar: accuracy,
+        vocabulary: accuracy,
+        reflexes: accuracy,
+        content: accuracy,
+        fluency: accuracy,
+        detailedFeedback: isWin 
+          ? `🎉 Xuất sắc! Phát âm của bạn khớp ${accuracy}% so với mẫu "${targetText}".`
+          : `💀 Chưa đạt! Bạn nói: "${transcript}". Cần nói chuẩn các từ: "${targetText}".`,
+        audioUrl
+      };
+    }
+
+    // THUẬT TOÁN CHẤM DÀNH CHO TRẠM 2, 3, 4 (Phản xạ câu dài)
+    let baseScore = Math.min(100, Math.round((wordCount / 12) * 100));
+    if (cefrLevel === 'C1' || cefrLevel === 'C2') baseScore = Math.min(100, Math.round((wordCount / 20) * 100));
+
+    const pronunciation = Math.min(100, Math.max(40, baseScore + 5));
+    const grammar = Math.min(100, Math.max(35, baseScore - 5));
+    const vocabulary = Math.min(100, Math.max(40, baseScore));
+    const reflexes = Math.min(100, Math.max(50, baseScore + 10));
+    const content = Math.min(100, Math.max(40, baseScore));
+    const fluency = Math.min(100, Math.max(45, baseScore + 2));
+
+    const finalScore = Math.round((pronunciation + grammar + vocabulary + reflexes + content + fluency) / 6);
+    const isWin = finalScore >= 65;
+
+    return {
+      score: finalScore,
+      isWin,
+      transcript,
+      wordCount,
+      pronunciation,
+      grammar,
+      vocabulary,
+      reflexes,
+      content,
+      fluency,
+      detailedFeedback: isWin
+        ? `🎉 Bạn đã hoàn thành tốt bài nói cấp độ ${cefrLevel} với ${wordCount} từ phát âm rõ ràng!`
+        : `💀 Câu trả lời còn quá ngắn (${wordCount} từ). Hãy mở rộng ý kiến để đạt chuẩn ${cefrLevel}.`,
+      audioUrl
+    };
+
   } catch (error) {
-    console.error('Lỗi khi gửi request Whisper STT:', error);
-    return '';
+    console.error("Lỗi khi chấm điểm:", error);
+    return {
+      score: 0,
+      isWin: false,
+      transcript: "(Lỗi kết nối máy chủ chấm điểm)",
+      wordCount: 0,
+      pronunciation: 0,
+      grammar: 0,
+      vocabulary: 0,
+      reflexes: 0,
+      content: 0,
+      fluency: 0,
+      detailedFeedback: "⚠️ Đã xảy ra lỗi mạng khi gửi bản ghi âm. Vui lòng bấm nộp lại!",
+      audioUrl
+    };
   }
-}
-
-/**
- * 2. Đánh giá 6 tiêu chí dựa trên Script nhận diện thực tế
- */
-export async function evaluateSpeaking(audioBlob: Blob, cefrLevel: string): Promise<AssessmentResult> {
-  const audioUrl = URL.createObjectURL(audioBlob);
-
-  const realTranscript = await transcribeAudio(audioBlob);
-  const cleanScript = realTranscript.trim();
-
-  // Đếm chính xác số từ tiếng Anh nhận diện được
-  const words = cleanScript.split(/\s+/).filter(w => w.length > 0 && /[a-zA-Z]/.test(w));
-  const wordCount = (cleanScript.length === 0) ? 0 : words.length;
-
-  let p = 0, g = 0, v = 0, r = 0, c = 0, f = 0;
-  let feedback = '';
-  let displayScript = cleanScript;
-
-  // 🛑 CHẤM ĐIỂM CHÍNH XÁC THEO NỘI DUNG NÓI
-  if (wordCount === 0 || cleanScript.length === 0) {
-    p = 0; g = 0; v = 0; r = 0; c = 0; f = 0;
-    displayScript = "(Hệ thống không nhận diện được giọng nói tiếng Anh nào từ bản thu của bạn)";
-    feedback = "☠️ THẤT BẠI: Bạn chưa nói hoặc micro chỉ ghi nhận tiếng ồn. Vui lòng nói rõ ràng vào micro.";
-  } else if (wordCount <= 3) {
-    p = 30; g = 20; v = 15; r = 25; c = 15; f = 20;
-    feedback = `❌ THẤT BẠI: Bạn chỉ phát biểu ${wordCount} từ ("${cleanScript}"). Điểm Nội dung & Phản xạ quá thấp so với chuẩn level ${cefrLevel}. Cần nói câu dài từ 8 - 15 từ.`;
-  } else if (wordCount <= 8) {
-    p = 72; g = 68; v = 65; r = 70; c = 68; f = 68;
-    feedback = `⚠️ ĐẠT TRUNG BÌNH: Đã bóc tách thành công ${wordCount} từ. Cần bổ sung thêm từ nối và ý chính để nâng điểm Từ vựng & Ngữ pháp.`;
-  } else {
-    p = 88; g = 85; v = 86; r = 90; c = 92; f = 89;
-    feedback = `🎉 CHIẾN THẮNG XUẤT SẮC: Bóc tách thành công ${wordCount} từ! Phản xạ lưu khoát, phát âm chuẩn và diễn đạt bám sát bối cảnh level ${cefrLevel}!`;
-  }
-
-  const totalScore = Math.floor((p + g + v + r + c + f) / 6);
-  const isWin = totalScore >= 70;
-
-  return {
-    score: totalScore,
-    isWin,
-    transcript: displayScript,
-    wordCount,
-    pronunciation: p,
-    grammar: g,
-    vocabulary: v,
-    reflexes: r,
-    content: c,
-    fluency: f,
-    detailedFeedback: feedback,
-    audioUrl
-  };
 }
