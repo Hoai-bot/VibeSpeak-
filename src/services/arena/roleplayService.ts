@@ -22,41 +22,86 @@ export function clearRoleplayHistory() {
   sessionUsedRoleplayTexts.clear();
 }
 
+const STRICT_ROLEPLAY_FALLBACKS: Record<string, RoleplayScenario[]> = {
+  A1: [
+    {
+      id: 'rp_fb_a1_1',
+      scenarioTitle: "At the Coffee Shop [A1]",
+      aiRoleEn: "Barista",
+      aiRoleVi: "Nhân viên pha chế",
+      userRoleEn: "Customer",
+      userRoleVi: "Khách hàng",
+      initialAiMessage: "Hello! What drink would you like today?",
+      goalEn: "Order a drink and ask for the price.",
+      goalVi: "Đặt một ly nước và hỏi giá tiền."
+    }
+  ],
+  B2: [
+    {
+      id: 'rp_fb_b2_1',
+      scenarioTitle: "Project Deadline Negotiation [B2]",
+      aiRoleEn: "Project Director",
+      userRoleEn: "Lead Engineer",
+      initialAiMessage: "The client demands an acceleration of the release timeline by two weeks.",
+      goalEn: "Explain technical constraints and negotiate a feasible delivery schedule."
+    }
+  ],
+  C1: [
+    {
+      id: 'rp_fb_c1_1',
+      scenarioTitle: "Venture Capital Due Diligence [C1]",
+      aiRoleEn: "Managing Partner",
+      userRoleEn: "Startup Founder",
+      initialAiMessage: "Your burn rate is unsustainable given current macroeconomic headwinds. How do you justify this valuation?",
+      goalEn: "Defend your financial projections and articulate market scalability."
+    }
+  ],
+  C2: [
+    {
+      id: 'rp_fb_c2_1',
+      scenarioTitle: "Cross-Border Antitrust Litigation [C2]",
+      aiRoleEn: "Regulator Committee Chair",
+      userRoleEn: "Chief Legal Officer",
+      initialAiMessage: "The proposed merger violates European competition laws regarding market dominance in cloud infrastructure.",
+      goalEn: "Structure a legally sound remedies package mitigating antitrust concerns while protecting strategic shareholder value."
+    }
+  ]
+};
+
 export async function generateRoleplayScenario(cefrLevel: string = 'A1'): Promise<RoleplayScenario> {
-  const uniqueSeed = `seed_rp_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
+  const uniqueSeed = `seed_rp_${Date.now()}_${Math.floor(Math.random() * 1000000)}`;
   const isLowLevel = ['A1', 'A2', 'B1'].includes(cefrLevel);
   const excludedList = Array.from(sessionUsedRoleplayTexts).slice(-15).join(' | ');
 
-  const systemMessage = `You are an expert English Language Examiner creating a Roleplay Scenario strictly for CEFR Level ${cefrLevel}.
-Rules for Level ${cefrLevel}:
+  const systemPrompt = `You are a strict CEFR Language Examiner. Generate ONE Roleplay Scenario for Level ${cefrLevel}.
+
+CRITICAL LEVEL RULES FOR LEVEL ${cefrLevel}:
 ${isLowLevel 
-  ? `- You MUST provide BOTH simple English (En) AND accurate Vietnamese translation (Vi) for aiRole, userRole, and goal.
-- Keep initialAiMessage in simple, conversational English.` 
-  : `- You MUST provide 100% ADVANCED EXECUTIVE/BUSINESS ENGLISH ONLY for En fields.
-- STRICTLY DO NOT PROVIDE ANY VIETNAMESE (Vi) FIELDS.`
+  ? `- MUST include simple English (aiRoleEn, userRoleEn, goalEn) AND Vietnamese translation (aiRoleVi, userRoleVi, goalVi).` 
+  : `- 100% ADVANCED BUSINESS/EXECUTIVE ENGLISH ONLY for En fields.
+- DO NOT PROVIDE ANY VIETNAMESE TRANSLATION (STRICTLY NO Vi FIELDS).`
 }
-Return strictly JSON matching the required schema. Do NOT repeat any scenario from the exclusion list.`;
 
-  const userPrompt = `Generate a brand NEW Roleplay Scenario for CEFR [${cefrLevel}]. 
-Request ID: ${uniqueSeed}
-EXCLUDED SCENARIOS: [ ${excludedList || 'None'} ]
-
-JSON Schema:
+Return ONLY JSON:
 {
-  "scenarioTitle": "Scenario Title [${cefrLevel}]",
-  "aiRoleEn": "Role 1 in English",
-  ${isLowLevel ? '"aiRoleVi": "Vai trò AI tiếng Việt",' : ''}
-  "userRoleEn": "Role 2 in English",
-  ${isLowLevel ? '"userRoleVi": "Vai trò Người chơi tiếng Việt",' : ''}
-  "initialAiMessage": "Short English line to open the chat",
-  "goalEn": "Goal in English",
-  ${isLowLevel ? '"goalVi": "Mục tiêu giao tiếp tiếng Việt",' : ''}
+  "scenarioTitle": "Title [${cefrLevel}]",
+  "aiRoleEn": "Role 1 English",
+  ${isLowLevel ? '"aiRoleVi": "Vai trò 1 tiếng Việt",' : ''}
+  "userRoleEn": "Role 2 English",
+  ${isLowLevel ? '"userRoleVi": "Vai trò 2 tiếng Việt",' : ''}
+  "initialAiMessage": "English opening line",
+  "goalEn": "Goal English",
+  ${isLowLevel ? '"goalVi": "Mục tiêu tiếng Việt",' : ''}
 }`;
+
+  const userPrompt = `Create a UNIQUE scenario for CEFR Level ${cefrLevel}.
+REQUEST ID: ${uniqueSeed}
+DO NOT REPEAT: [ ${excludedList || 'None'} ]`;
 
   try {
     const response = await groq.chat.completions.create({
       messages: [
-        { role: 'system', content: systemMessage },
+        { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt }
       ],
       model: 'llama-3.3-70b-versatile',
@@ -65,33 +110,31 @@ JSON Schema:
     });
 
     const parsed = JSON.parse(response.choices[0]?.message?.content || '{}');
-    const titleText = parsed.scenarioTitle || `Roleplay [${cefrLevel}] (${uniqueSeed.slice(-4)})`;
+    const titleText = parsed.scenarioTitle || `Roleplay [${cefrLevel}]`;
 
     sessionUsedRoleplayTexts.add(titleText.toLowerCase());
 
     return {
       id: uniqueSeed,
       scenarioTitle: titleText,
-      aiRoleEn: parsed.aiRoleEn || "Barista",
-      aiRoleVi: isLowLevel ? (parsed.aiRoleVi || "Nhân viên pha chế") : undefined,
-      userRoleEn: parsed.userRoleEn || "Customer",
-      userRoleVi: isLowLevel ? (parsed.userRoleVi || "Khách hàng") : undefined,
-      initialAiMessage: parsed.initialAiMessage || "Hello! What can I get for you today?",
-      goalEn: parsed.goalEn || "Order a coffee and ask for the price.",
-      goalVi: isLowLevel ? (parsed.goalVi || "Đặt một ly cà phê và hỏi giá tiền.") : undefined
+      aiRoleEn: parsed.aiRoleEn || "Interlocutor",
+      aiRoleVi: isLowLevel ? parsed.aiRoleVi : undefined,
+      userRoleEn: parsed.userRoleEn || "Speaker",
+      userRoleVi: isLowLevel ? parsed.userRoleVi : undefined,
+      initialAiMessage: parsed.initialAiMessage || "Hello! How can I assist you today?",
+      goalEn: parsed.goalEn || "Achieve communication objective",
+      goalVi: isLowLevel ? parsed.goalVi : undefined
     };
   } catch (error) {
-    console.warn(`Error generating roleplay for ${cefrLevel}:`, error);
+    console.warn(`Groq Roleplay API Error for ${cefrLevel}, using strict fallback:`, error);
+    
+    const fallbackList = STRICT_ROLEPLAY_FALLBACKS[cefrLevel] || STRICT_ROLEPLAY_FALLBACKS['C2'];
+    const selected = fallbackList[Math.floor(Math.random() * fallbackList.length)];
+    
+    sessionUsedRoleplayTexts.add(selected.scenarioTitle.toLowerCase());
     return {
-      id: uniqueSeed,
-      scenarioTitle: `Roleplay Scenario [${cefrLevel}]`,
-      aiRoleEn: isLowLevel ? "Store Clerk" : "Corporate Director",
-      aiRoleVi: isLowLevel ? "Nhân viên bán hàng" : undefined,
-      userRoleEn: isLowLevel ? "Shopper" : "Lead Counsel",
-      userRoleVi: isLowLevel ? "Người mua hàng" : undefined,
-      initialAiMessage: isLowLevel ? "Hi! How can I help you find what you need?" : "Let's discuss the antitrust litigation strategy.",
-      goalEn: isLowLevel ? "Buy a souvenir and ask about discounts." : "Negotiate a compliance settlement framework.",
-      goalVi: isLowLevel ? "Mua đồ lưu niệm và hỏi về giảm giá." : undefined
+      ...selected,
+      id: uniqueSeed
     };
   }
 }

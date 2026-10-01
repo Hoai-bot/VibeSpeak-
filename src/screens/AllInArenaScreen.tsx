@@ -39,18 +39,18 @@ export default function AllInArenaScreen({ onBack }: Props) {
   const audioChunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   
-  // ⚡ Dùng ref để kiểm soát request ID chống trùng lặp request cũ
+  // ⚡ Ref kiểm soát requestId chống race conditions
   const requestIdRef = useRef<number>(0);
 
   const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
 
   const getFullTimeForLevel = (level: string) => {
     if (level === 'A1' || level === 'A2') return 20;
-    if (level === 'B1' || level === 'B2') return 30;
+    if (level === 'B1' || level === 'B2') return 40;
     return 60;
   };
 
-  const getTimeForCurrentMode = (level: string, currentMode: string) => {
+  const getTimeForCurrentTurn = (level: string, currentMode: string) => {
     const total = getFullTimeForLevel(level);
     if (currentMode === 'solo') return total;
     return Math.floor(total / 2);
@@ -108,6 +108,8 @@ export default function AllInArenaScreen({ onBack }: Props) {
 
           if (mode !== 'solo' && currentTurn === 1) {
             setCurrentTurn(2);
+            const turn2Time = getTimeForCurrentTurn(cefrLevel, mode);
+            setTimeout(() => startTurnTimer(turn2Time), 500);
           }
           return 0;
         }
@@ -116,19 +118,17 @@ export default function AllInArenaScreen({ onBack }: Props) {
     }, 1000);
   };
 
-  // 💡 HÀM TẢI ĐỀ CÓ CHỐNG NGHỄN REQUEST & FLUSH STATE TỨC THÌ
+  // 💡 HÀM TẢI ĐỀ TỨC THÌ VÀ CHỐNG TRÙNG REQUEST
   const loadModeData = async (selectedMode: string, level: string) => {
     const currentRequestId = ++requestIdRef.current;
     
     setLoading(true);
     resetBattleState();
 
-    // Xóa hoàn toàn state cũ
     setSoloTopic(null);
     setRelayChallenge(null);
     setRoleplayScenario(null);
 
-    // Delay 50ms để React kịp re-render giao diện sang trạng thái Loading Spinner
     await new Promise(resolve => setTimeout(resolve, 50));
 
     try {
@@ -170,7 +170,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
       
       setCurrentTurn(1);
       setBattleState('battling');
-      const allocatedTime = getTimeForCurrentMode(cefrLevel, mode);
+      const allocatedTime = getTimeForCurrentTurn(cefrLevel, mode);
       startTurnTimer(allocatedTime);
     }, 1500);
   };
@@ -262,7 +262,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
         <TouchableOpacity onPress={onBack} style={styles.backBtn}>
           <Text style={styles.backText}>🔙 QUAY LẠI MAP</Text>
         </TouchableOpacity>
-        <Text style={styles.title}>⚔️️ TRẠM 2: ALL-IN ARENA</Text>
+        <Text style={styles.title}>⚔️ TRẠM 2: ALL-IN ARENA</Text>
       </View>
 
       <ScrollView contentContainerStyle={{ alignItems: 'center', width: '100%', paddingBottom: 30 }}>
@@ -309,7 +309,6 @@ export default function AllInArenaScreen({ onBack }: Props) {
               <ActivityIndicator size="small" color="#FF007F" style={{ marginVertical: 15 }} />
             ) : (
               <View style={{ width: '100%', alignItems: 'center' }}>
-                {/* HIỂN THỊ SOLO */}
                 {mode === 'solo' && soloTopic && (
                   <>
                     <Text style={styles.topicTitle}>{soloTopic.title}</Text>
@@ -320,7 +319,6 @@ export default function AllInArenaScreen({ onBack }: Props) {
                   </>
                 )}
 
-                {/* HIỂN THỊ RELAY */}
                 {mode === 'relay' && relayChallenge && (
                   <>
                     <Text style={styles.topicTitle}>📌 {relayChallenge.topic}</Text>
@@ -341,7 +339,6 @@ export default function AllInArenaScreen({ onBack }: Props) {
                   </>
                 )}
 
-                {/* HIỂN THỊ ROLEPLAY */}
                 {mode === 'roleplay' && roleplayScenario && (
                   <>
                     <Text style={styles.topicTitle}>🎭 {roleplayScenario.scenarioTitle}</Text>
@@ -360,7 +357,6 @@ export default function AllInArenaScreen({ onBack }: Props) {
               </View>
             )}
 
-            {/* NÚT ĐỔI ĐỀ MỚI - TÍCH HỢP TRẠNG THÁI LOADING TRỰC QUAN */}
             <TouchableOpacity 
               style={[styles.refreshBtn, loading && styles.refreshBtnDisabled]} 
               onPress={() => loadModeData(mode, cefrLevel)} 
@@ -394,13 +390,27 @@ export default function AllInArenaScreen({ onBack }: Props) {
         {battleState === 'battling' && (
           <View style={styles.box}>
             <View style={styles.battleHeader}>
-              <Text style={styles.opponentName}>⚔ VS {matchedOpponent}</Text>
-              <Text style={styles.timerText}>⏱ {timeLeft}s</Text>
+              <Text style={styles.opponentName}>⚔️ VS {matchedOpponent}</Text>
+              <Text style={styles.timerText}>
+                {mode === 'solo' ? `⏱ TỔNG THỜI GIAN: ${timeLeft}s` : `⏱ LƯỢT ${currentTurn} (P${currentTurn}): ${timeLeft}s`}
+              </Text>
             </View>
+
+            {mode !== 'solo' && (
+              <View style={styles.turnBadge}>
+                <Text style={styles.turnBadgeText}>
+                  {currentTurn === 1 ? '👉 LƯỢT PLAYER 1 (BẤM THU ÂM NÓI PHẦN P1)' : '👉 LƯỢT PLAYER 2 / BOT (BẤM THU ÂM NÓI PHẦN P2)'}
+                </Text>
+              </View>
+            )}
 
             <TouchableOpacity style={[styles.recordToggleBtn, isRecording && styles.recordToggleBtnActive]} onPress={handleToggleRecord}>
               <Text style={styles.recordToggleText}>
-                {isRecording ? '🔴 ĐANG THU ÂM... (BẤM ĐỂ DỪNG)' : hasRecordedTurn1 ? '✅ ĐÃ CÓ BẢN THU (BẤM THU LẠI)' : '🎙 BẤM ĐỂ THU ÂM'}
+                {isRecording 
+                  ? `🔴 ĐANG THU ÂM (LƯỢT ${currentTurn})...` 
+                  : (currentTurn === 1 ? hasRecordedTurn1 : hasRecordedTurn2) 
+                    ? `✅ ĐÃ CÓ BẢN THU LƯỢT ${currentTurn} (BẤM THU LẠI)` 
+                    : `🎙 BẤM THU ÂM LƯỢT ${currentTurn}`}
               </Text>
             </TouchableOpacity>
 
@@ -491,6 +501,8 @@ const styles = StyleSheet.create({
   guidelineText: { color: '#FFF', fontSize: 11, fontWeight: '700', textAlign: 'center' },
   roleText: { color: '#FFD700', fontSize: 11, fontWeight: '800', marginBottom: 8, textAlign: 'center' },
   translationText: { color: '#00FFFF', fontSize: 11, fontStyle: 'italic', textAlign: 'center', marginBottom: 8 },
+  turnBadge: { backgroundColor: '#1A0B2E', paddingVertical: 6, paddingHorizontal: 10, borderRadius: 6, borderWidth: 1, borderColor: '#39FF14', marginBottom: 10 },
+  turnBadgeText: { color: '#39FF14', fontSize: 10, fontWeight: 'bold', textAlign: 'center' },
   searchingText: { color: '#00FFFF', fontSize: 11, fontWeight: 'bold', textAlign: 'center' },
   refreshBtn: { backgroundColor: '#1A0B2E', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#00FFFF', width: '100%', alignItems: 'center', marginTop: 8, marginBottom: 12 },
   refreshBtnDisabled: { opacity: 0.5, borderColor: '#555577' },
@@ -499,7 +511,7 @@ const styles = StyleSheet.create({
   startBtnText: { color: '#FFF', fontSize: 11, fontWeight: '900' },
   battleHeader: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginBottom: 10, alignItems: 'center' },
   opponentName: { color: '#00FFFF', fontSize: 11, fontWeight: '900' },
-  timerText: { color: '#39FF14', fontSize: 11, fontWeight: '900' },
+  timerText: { color: '#39FF14', fontSize: 10, fontWeight: '900' },
   recordToggleBtn: { backgroundColor: '#1A0B2E', padding: 12, borderRadius: 10, borderWidth: 2, borderColor: '#FF007F', width: '100%', alignItems: 'center', marginBottom: 10 },
   recordToggleBtnActive: { backgroundColor: '#FF0055', borderColor: '#FF0055' },
   recordToggleText: { color: '#FFF', fontSize: 10, fontWeight: '900' },
