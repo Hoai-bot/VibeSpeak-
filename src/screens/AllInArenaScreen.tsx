@@ -102,17 +102,19 @@ export default function AllInArenaScreen({ onBack }: Props) {
     setLoading(true);
     resetBattleState();
 
+    // Reset state cũ để không bị giữ lại đề cũ
+    setSoloTopic(null);
+    setRelayChallenge(null);
+    setRoleplayScenario(null);
+
     try {
       if (selectedMode === 'solo') {
-        setSoloTopic(null);
         const data = await generateSoloTopic(level);
         setSoloTopic(data);
       } else if (selectedMode === 'relay') {
-        setRelayChallenge(null);
         const data = await generateRelayChallenge(level);
         setRelayChallenge(data);
       } else {
-        setRoleplayScenario(null);
         const data = await generateRoleplayScenario(level);
         setRoleplayScenario(data);
       }
@@ -370,7 +372,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
               <Text style={styles.wordCountText}>📊 Số từ phản xạ thực tế: {result.wordCount} từ</Text>
             </View>
 
-            {/* 💡 BẢNG PHÂN TÍCH HIỂN THỊ 6 TIÊU CHÍ CHUẨN */}
+            {/* BẢNG PHÂN TÍCH HIỂN THỊ 6 TIÊU CHÍ CHUẨN */}
             <Text style={styles.breakdownHeaderLabel}>📊 PHÂN TÍCH CHI TIẾT 6 TIÊU CHÍ:</Text>
             <View style={styles.breakdownCard}>
               <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>🗣️ 1. Phát âm:</Text><Text style={styles.breakdownValue}>{result.pronunciation}/100</Text></View>
