@@ -12,17 +12,39 @@ export interface RelayChallenge {
   keyVocabulary: string[];
 }
 
+const FALLBACK_RELAY: Record<string, RelayChallenge> = {
+  A1: {
+    topic: "Daily Routine [A1]",
+    context: "Chia sẻ về thói quen sinh hoạt hàng ngày của bạn.",
+    player1Guideline: "Giới thiệu thời gian bạn thức dậy và ăn sáng.",
+    player2Guideline: "Kể về các hoạt động bạn thường làm vào buổi tối.",
+    keyVocabulary: ["morning", "breakfast", "evening"]
+  },
+  B2: {
+    topic: "Workplace Automation [B2]",
+    context: "Discussing the role of automation in corporate productivity.",
+    player1Guideline: "Present the benefits of AI automation for daily workflow.",
+    player2Guideline: "Address potential risks regarding job displacement.",
+    keyVocabulary: ["automation", "productivity", "displacement"]
+  },
+  C2: {
+    topic: "Bioethics & Genetic Editing [C2]",
+    context: "Debating the ethical boundaries of CRISPR technology in human enhancement.",
+    player1Guideline: "Argue in favor of genetic interventions to eradicate hereditary illnesses.",
+    player2Guideline: "Critique the socio-economic disparities and slippery slope of engineered offspring.",
+    keyVocabulary: ["bioethics", "CRISPR", "hereditary", "disparities"]
+  }
+};
+
 export async function generateRelayChallenge(cefrLevel: string = 'A1'): Promise<RelayChallenge> {
   let languageRule = '';
 
   if (cefrLevel === 'A1' || cefrLevel === 'A2') {
-    languageRule = `- LANGUAGE: 100% VIETNAMESE for guidelines and context. Provide simple English sentence patterns in brackets.
-- Example player1Guideline: "Trình bày món ăn yêu thích của bạn (Mẫu câu: My favorite food is...)"`;
+    languageRule = `- LANGUAGE: 100% VIETNAMESE for guidelines and context. Simple English sentence patterns in brackets.`;
   } else if (cefrLevel === 'B1' || cefrLevel === 'B2') {
-    languageRule = `- LANGUAGE: BILINGUAL (English text first, followed by Vietnamese explanation).
-- Example player1Guideline: "State your main perspective on remote work. / Nêu quan điểm chính của bạn về làm việc từ xa."`;
+    languageRule = `- LANGUAGE: BILINGUAL (English text first, followed by Vietnamese explanation).`;
   } else {
-    languageRule = `- LANGUAGE: 100% ENGLISH. Use advanced professional communication goals and complex guidelines.`;
+    languageRule = `- LANGUAGE: 100% ADVANCED ACADEMIC ENGLISH for high-level debate and critical discourse.`;
   }
 
   const prompt = `Generate a 2-Player Speaking Relay Challenge for CEFR Level ${cefrLevel}.
@@ -40,7 +62,6 @@ Return ONLY a valid JSON object:
 }`;
 
   try {
-    // FIX: Đổi model sang 'llama-3.3-70b-versatile'
     const response = await groq.chat.completions.create({
       messages: [{ role: 'user', content: prompt }],
       model: 'llama-3.3-70b-versatile',
@@ -49,21 +70,17 @@ Return ONLY a valid JSON object:
     });
 
     const parsed: RelayChallenge = JSON.parse(response.choices[0]?.message?.content || '{}');
+    const fallback = FALLBACK_RELAY[cefrLevel] || FALLBACK_RELAY['A1'];
+
     return {
-      topic: parsed.topic || `Relay Challenge [${cefrLevel}]`,
-      context: parsed.context || (cefrLevel.startsWith('A') ? "Bối cảnh: Thảo luận về thói quen hàng ngày." : "Discussing corporate sustainability strategies."),
-      player1Guideline: parsed.player1Guideline || "Nêu ý kiến chính của bạn.",
-      player2Guideline: parsed.player2Guideline || "Bổ sung lập luận hoặc ví dụ.",
-      keyVocabulary: parsed.keyVocabulary || ["topic", "idea", "support"]
+      topic: parsed.topic || fallback.topic,
+      context: parsed.context || fallback.context,
+      player1Guideline: parsed.player1Guideline || fallback.player1Guideline,
+      player2Guideline: parsed.player2Guideline || fallback.player2Guideline,
+      keyVocabulary: parsed.keyVocabulary || fallback.keyVocabulary
     };
   } catch (error) {
     console.warn("Groq Relay Error, using fallback data:", error);
-    return {
-      topic: `Chủ đề Relay [${cefrLevel}]`,
-      context: cefrLevel.startsWith('A') ? "Cùng chia sẻ về sở thích cá nhân." : "Discussing workplace communication.",
-      player1Guideline: cefrLevel.startsWith('A') ? "Giới thiệu ý kiến của bạn (Mẫu: I think that...)" : "Introduce your main perspective.",
-      player2Guideline: cefrLevel.startsWith('A') ? "Đưa ra lý do ủng hộ (Mẫu: Because it helps...)" : "Elaborate with supporting arguments.",
-      keyVocabulary: ["communication", "perspective", "solution"]
-    };
+    return FALLBACK_RELAY[cefrLevel] || FALLBACK_RELAY['A1'];
   }
 }

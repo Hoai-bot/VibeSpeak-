@@ -12,16 +12,39 @@ export interface RoleplayScenario {
   goal: string;
 }
 
+const FALLBACK_ROLEPLAY: Record<string, RoleplayScenario> = {
+  A1: {
+    scenarioTitle: "At the Coffee Shop [A1]",
+    aiRole: "Barista",
+    userRole: "Customer",
+    initialAiMessage: "Hello! Welcome to Vibe Cafe. What would you like to drink today?",
+    goal: "Đặt một ly cà phê và hỏi vị trí nhà vệ sinh."
+  },
+  B2: {
+    scenarioTitle: "Quarterly Performance Review [B2]",
+    aiRole: "Department Manager",
+    userRole: "Senior Specialist",
+    initialAiMessage: "Thanks for coming in. Let's discuss your team's deliverables for this quarter.",
+    goal: "Báo cáo tiến độ dự án, nêu khó khăn về nhân sự và đề xuất giải pháp."
+  },
+  C2: {
+    scenarioTitle: "High-Stakes M&A Negotiation [C2]",
+    aiRole: "Managing Director",
+    userRole: "Lead Legal Counsel",
+    initialAiMessage: "The board is apprehensive about the regulatory hurdles in this cross-border acquisition. How do you propose we mitigate these antitrust liabilities?",
+    goal: "Articulate a strategic legal framework to navigate antitrust regulations while securing maximum shareholder value."
+  }
+};
+
 export async function generateRoleplayScenario(cefrLevel: string = 'A1'): Promise<RoleplayScenario> {
   let languageRule = '';
 
   if (cefrLevel === 'A1' || cefrLevel === 'A2') {
-    languageRule = `- LANGUAGE: 100% VIETNAMESE for scenario description, roles, and goal. Keep initialAiMessage in simple conversational English.
-- Goal Example: "Khách hàng gọi đồ uống và hỏi đường tới khu vực ngồi ăn."`;
+    languageRule = `- LANGUAGE: 100% VIETNAMESE for scenario description, roles, and goal. Keep initialAiMessage in simple English.`;
   } else if (cefrLevel === 'B1' || cefrLevel === 'B2') {
     languageRule = `- LANGUAGE: BILINGUAL for goal and scenario description (English + Vietnamese translation).`;
   } else {
-    languageRule = `- LANGUAGE: 100% ENGLISH for everything (Professional/Business context).`;
+    languageRule = `- LANGUAGE: 100% ADVANCED BUSINESS/ACADEMIC ENGLISH. Executive level scenario.`;
   }
 
   const prompt = `Generate ONE Roleplay Scenario tailored STRICTLY to CEFR Level ${cefrLevel}.
@@ -34,12 +57,11 @@ Return ONLY JSON:
   "scenarioTitle": "Scenario Title",
   "aiRole": "Role 1 Name",
   "userRole": "Role 2 Name",
-  "initialAiMessage": "Short initial line in English to start conversation",
-  "goal": "Communication Goal matching the language rule"
+  "initialAiMessage": "Initial line in English",
+  "goal": "Goal matching language rule"
 }`;
 
   try {
-    // FIX: Đổi model sang 'llama-3.3-70b-versatile'
     const response = await groq.chat.completions.create({
       messages: [{ role: 'user', content: prompt }],
       model: 'llama-3.3-70b-versatile',
@@ -48,23 +70,17 @@ Return ONLY JSON:
     });
 
     const parsed: RoleplayScenario = JSON.parse(response.choices[0]?.message?.content || '{}');
+    const fallback = FALLBACK_ROLEPLAY[cefrLevel] || FALLBACK_ROLEPLAY['A1'];
+
     return {
-      scenarioTitle: parsed.scenarioTitle || `Roleplay [${cefrLevel}]`,
-      aiRole: parsed.aiRole || (cefrLevel.startsWith('A') ? "Nhân viên" : "Manager"),
-      userRole: parsed.userRole || (cefrLevel.startsWith('A') ? "Khách hàng" : "Client"),
-      initialAiMessage: parsed.initialAiMessage || "Hello! How can I help you today?",
-      goal: parsed.goal || "Hoàn thành mục tiêu giao tiếp trong tình huống."
+      scenarioTitle: parsed.scenarioTitle || fallback.scenarioTitle,
+      aiRole: parsed.aiRole || fallback.aiRole,
+      userRole: parsed.userRole || fallback.userRole,
+      initialAiMessage: parsed.initialAiMessage || fallback.initialAiMessage,
+      goal: parsed.goal || fallback.goal
     };
   } catch (error) {
     console.warn("Groq Roleplay Error, using fallback data:", error);
-    return {
-      scenarioTitle: `Nhập vai giao tiếp [${cefrLevel}]`,
-      aiRole: cefrLevel.startsWith('A') ? "Nhân viên quán Cafe" : "Project Lead",
-      userRole: cefrLevel.startsWith('A') ? "Khách hàng" : "Developer",
-      initialAiMessage: "Hello! Welcome to our store. What can I get for you?",
-      goal: cefrLevel.startsWith('A') 
-        ? "Đặt món đồ uống yêu thích và hỏi vị trí chỗ ngồi."
-        : "Discuss project milestones and clarify deadline requirements. / Thảo luận tiến độ dự án và làm rõ thời hạn."
-    };
+    return FALLBACK_ROLEPLAY[cefrLevel] || FALLBACK_ROLEPLAY['A1'];
   }
 }
