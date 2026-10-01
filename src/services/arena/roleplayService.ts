@@ -39,9 +39,10 @@ Return ONLY JSON:
 }`;
 
   try {
+    // FIX: Đổi model sang 'llama-3.3-70b-versatile'
     const response = await groq.chat.completions.create({
       messages: [{ role: 'user', content: prompt }],
-      model: 'openai/gpt-oss-20b',
+      model: 'llama-3.3-70b-versatile',
       temperature: 0.8,
       response_format: { type: 'json_object' },
     });
@@ -55,6 +56,7 @@ Return ONLY JSON:
       goal: parsed.goal || "Hoàn thành mục tiêu giao tiếp trong tình huống."
     };
   } catch (error) {
+    console.warn("Groq Roleplay Error, using fallback data:", error);
     return {
       scenarioTitle: `Nhập vai giao tiếp [${cefrLevel}]`,
       aiRole: cefrLevel.startsWith('A') ? "Nhân viên quán Cafe" : "Project Lead",

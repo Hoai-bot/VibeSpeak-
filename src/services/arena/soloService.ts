@@ -33,9 +33,10 @@ Return ONLY a valid JSON object:
 }`;
 
   try {
+    // FIX: Đổi model sang 'llama-3.3-70b-versatile'
     const response = await groq.chat.completions.create({
       messages: [{ role: 'user', content: prompt }],
-      model: 'openai/gpt-oss-20b',
+      model: 'llama-3.3-70b-versatile',
       temperature: 0.8,
       response_format: { type: 'json_object' },
     });
@@ -49,6 +50,7 @@ Return ONLY a valid JSON object:
       keywords: parsed.keywords || ["routine", "favorite", "daily"]
     };
   } catch (error) {
+    console.warn("Groq Solo Error, using fallback data:", error);
     return {
       title: `Thách đấu Solo [${cefrLevel}]`,
       promptText: cefrLevel === 'B2' || cefrLevel === 'C1'

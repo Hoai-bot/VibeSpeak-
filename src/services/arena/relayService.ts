@@ -40,9 +40,10 @@ Return ONLY a valid JSON object:
 }`;
 
   try {
+    // FIX: Đổi model sang 'llama-3.3-70b-versatile'
     const response = await groq.chat.completions.create({
       messages: [{ role: 'user', content: prompt }],
-      model: 'openai/gpt-oss-20b',
+      model: 'llama-3.3-70b-versatile',
       temperature: 0.7,
       response_format: { type: 'json_object' },
     });
@@ -56,6 +57,7 @@ Return ONLY a valid JSON object:
       keyVocabulary: parsed.keyVocabulary || ["topic", "idea", "support"]
     };
   } catch (error) {
+    console.warn("Groq Relay Error, using fallback data:", error);
     return {
       topic: `Chủ đề Relay [${cefrLevel}]`,
       context: cefrLevel.startsWith('A') ? "Cùng chia sẻ về sở thích cá nhân." : "Discussing workplace communication.",
