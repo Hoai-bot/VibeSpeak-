@@ -71,6 +71,33 @@ export default function AllInArenaScreen({ onBack }: Props) {
     audioChunksRef.current = [];
   };
 
+  // ⏱ HÀM ĐẾM NGƯỢC THỜI GIAN VÀ TỰ ĐỘNG DỪNG THU ÂM KHI HẾT GIỜ
+  const startTurnTimer = (allocatedTime: number) => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    setTimeLeft(allocatedTime);
+    setIsTimerRunning(true);
+
+    timerRef.current = setInterval(() => {
+      setTimeLeft((prev) => {
+        if (prev <= 1) {
+          clearInterval(timerRef.current!);
+          setIsTimerRunning(false);
+
+          if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+            try { mediaRecorderRef.current.stop(); } catch (e) {}
+          }
+          setIsRecording(false);
+
+          if (mode !== 'solo' && currentTurn === 1) {
+            setCurrentTurn(2);
+          }
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  };
+
   const loadModeData = async (selectedMode: string, level: string) => {
     setLoading(true);
     resetBattleState();
@@ -98,6 +125,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
     return () => resetBattleState();
   }, [mode, cefrLevel]);
 
+  // ⚔️ BẮT ĐẦU TRẬN ĐẤU & KÍCH HOẠT TIMER NGAY LẬP TỨC
   const startMatch = () => {
     resetBattleState();
     setBattleState('searching');
@@ -112,8 +140,10 @@ export default function AllInArenaScreen({ onBack }: Props) {
       
       setCurrentTurn(1);
       setBattleState('battling');
-      setTimeLeft(getTimeForCurrentMode(cefrLevel, mode));
-      setIsTimerRunning(false);
+      
+      // Kích hoạt đồng hồ đếm ngược đếm ngay khi vào màn hình thi đấu
+      const allocatedTime = getTimeForCurrentMode(cefrLevel, mode);
+      startTurnTimer(allocatedTime);
     }, 1500);
   };
 
@@ -183,6 +213,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
       return;
     }
 
+    if (timerRef.current) clearInterval(timerRef.current);
     if (isRecording) setIsRecording(false);
     setBattleState('analyzing');
 
@@ -289,7 +320,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
           </View>
         )}
 
-        {/* THI ĐẤU */}
+        {/* THI ĐẤU & HIỂN THỊ TIMER ĐANG CHẠY */}
         {battleState === 'battling' && (
           <View style={styles.box}>
             <View style={styles.battleHeader}>
