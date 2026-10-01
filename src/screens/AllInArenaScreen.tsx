@@ -116,7 +116,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
     }, 1000);
   };
 
-  // 💡 HÀM TẢI ĐỀ CÓ CHỐNG NGHẼN REQUEST & FLUSH STATE TỨC THÌ
+  // 💡 HÀM TẢI ĐỀ CÓ CHỐNG NGHỄN REQUEST & FLUSH STATE TỨC THÌ
   const loadModeData = async (selectedMode: string, level: string) => {
     const currentRequestId = ++requestIdRef.current;
     
@@ -262,7 +262,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
         <TouchableOpacity onPress={onBack} style={styles.backBtn}>
           <Text style={styles.backText}>🔙 QUAY LẠI MAP</Text>
         </TouchableOpacity>
-        <Text style={styles.title}>⚔️ TRẠM 2: ALL-IN ARENA</Text>
+        <Text style={styles.title}>⚔️️ TRẠM 2: ALL-IN ARENA</Text>
       </View>
 
       <ScrollView contentContainerStyle={{ alignItems: 'center', width: '100%', paddingBottom: 30 }}>
@@ -360,8 +360,20 @@ export default function AllInArenaScreen({ onBack }: Props) {
               </View>
             )}
 
-            <TouchableOpacity style={styles.refreshBtn} onPress={() => loadModeData(mode, cefrLevel)} disabled={loading}>
-              <Text style={styles.refreshBtnText}>🔄 ĐỔI ĐỀ MỚI KHÔNG LẶP</Text>
+            {/* NÚT ĐỔI ĐỀ MỚI - TÍCH HỢP TRẠNG THÁI LOADING TRỰC QUAN */}
+            <TouchableOpacity 
+              style={[styles.refreshBtn, loading && styles.refreshBtnDisabled]} 
+              onPress={() => loadModeData(mode, cefrLevel)} 
+              disabled={loading}
+            >
+              {loading ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <ActivityIndicator size="small" color="#00FFFF" style={{ marginRight: 8 }} />
+                  <Text style={styles.refreshBtnText}>⏳ AI ĐANG SINH ĐỀ MỚI ({cefrLevel})...</Text>
+                </View>
+              ) : (
+                <Text style={styles.refreshBtnText}>🔄 ĐỔI ĐỀ MỚI KHÔNG LẶP</Text>
+              )}
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.startBtn} onPress={startMatch} disabled={loading}>
@@ -382,7 +394,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
         {battleState === 'battling' && (
           <View style={styles.box}>
             <View style={styles.battleHeader}>
-              <Text style={styles.opponentName}>⚔️️ VS {matchedOpponent}</Text>
+              <Text style={styles.opponentName}>⚔ VS {matchedOpponent}</Text>
               <Text style={styles.timerText}>⏱ {timeLeft}s</Text>
             </View>
 
@@ -480,7 +492,8 @@ const styles = StyleSheet.create({
   roleText: { color: '#FFD700', fontSize: 11, fontWeight: '800', marginBottom: 8, textAlign: 'center' },
   translationText: { color: '#00FFFF', fontSize: 11, fontStyle: 'italic', textAlign: 'center', marginBottom: 8 },
   searchingText: { color: '#00FFFF', fontSize: 11, fontWeight: 'bold', textAlign: 'center' },
-  refreshBtn: { backgroundColor: '#1A0B2E', padding: 8, borderRadius: 8, borderWidth: 1, borderColor: '#00FFFF', width: '100%', alignItems: 'center', marginTop: 8, marginBottom: 12 },
+  refreshBtn: { backgroundColor: '#1A0B2E', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#00FFFF', width: '100%', alignItems: 'center', marginTop: 8, marginBottom: 12 },
+  refreshBtnDisabled: { opacity: 0.5, borderColor: '#555577' },
   refreshBtnText: { color: '#00FFFF', fontSize: 10, fontWeight: 'bold' },
   startBtn: { backgroundColor: '#FF007F', padding: 14, borderRadius: 12, width: '100%', alignItems: 'center' },
   startBtnText: { color: '#FFF', fontSize: 11, fontWeight: '900' },
