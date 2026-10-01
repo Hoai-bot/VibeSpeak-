@@ -12,42 +12,20 @@ export interface RoleplayScenario {
   goal: string;
 }
 
-const FALLBACK_ROLEPLAY: Record<string, RoleplayScenario> = {
-  A1: {
-    scenarioTitle: "At the Coffee Shop [A1]",
-    aiRole: "Barista",
-    userRole: "Customer",
-    initialAiMessage: "Hello! Welcome to Vibe Cafe. What would you like to drink today?",
-    goal: "Đặt một ly cà phê và hỏi vị trí nhà vệ sinh."
-  },
-  B2: {
-    scenarioTitle: "Quarterly Performance Review [B2]",
-    aiRole: "Department Manager",
-    userRole: "Senior Specialist",
-    initialAiMessage: "Thanks for coming in. Let's discuss your team's deliverables for this quarter.",
-    goal: "Báo cáo tiến độ dự án, nêu khó khăn về nhân sự và đề xuất giải pháp."
-  },
-  C2: {
-    scenarioTitle: "High-Stakes M&A Negotiation [C2]",
-    aiRole: "Managing Director",
-    userRole: "Lead Legal Counsel",
-    initialAiMessage: "The board is apprehensive about the regulatory hurdles in this cross-border acquisition. How do you propose we mitigate these antitrust liabilities?",
-    goal: "Articulate a strategic legal framework to navigate antitrust regulations while securing maximum shareholder value."
-  }
-};
-
 export async function generateRoleplayScenario(cefrLevel: string = 'A1'): Promise<RoleplayScenario> {
-  let languageRule = '';
+  const randomSeed = Math.random().toString(36).substring(7) + "_" + Date.now();
 
+  let languageRule = '';
   if (cefrLevel === 'A1' || cefrLevel === 'A2') {
-    languageRule = `- LANGUAGE: 100% VIETNAMESE for scenario description, roles, and goal. Keep initialAiMessage in simple English.`;
+    languageRule = `- LANGUAGE: 100% VIETNAMESE for scenario description and goal. Keep initialAiMessage in simple English.`;
   } else if (cefrLevel === 'B1' || cefrLevel === 'B2') {
-    languageRule = `- LANGUAGE: BILINGUAL for goal and scenario description (English + Vietnamese translation).`;
+    languageRule = `- LANGUAGE: BILINGUAL for goal and scenario description.`;
   } else {
-    languageRule = `- LANGUAGE: 100% ADVANCED BUSINESS/ACADEMIC ENGLISH. Executive level scenario.`;
+    languageRule = `- LANGUAGE: 100% ADVANCED BUSINESS ENGLISH. Executive level scenario.`;
   }
 
-  const prompt = `Generate ONE Roleplay Scenario tailored STRICTLY to CEFR Level ${cefrLevel}.
+  const prompt = `Generate a NEW Roleplay Scenario tailored STRICTLY to CEFR Level ${cefrLevel}.
+Request ID: ${randomSeed}
 
 RULES:
 ${languageRule}
@@ -65,22 +43,25 @@ Return ONLY JSON:
     const response = await groq.chat.completions.create({
       messages: [{ role: 'user', content: prompt }],
       model: 'llama-3.3-70b-versatile',
-      temperature: 0.8,
+      temperature: 0.9,
       response_format: { type: 'json_object' },
     });
 
     const parsed: RoleplayScenario = JSON.parse(response.choices[0]?.message?.content || '{}');
-    const fallback = FALLBACK_ROLEPLAY[cefrLevel] || FALLBACK_ROLEPLAY['A1'];
-
     return {
-      scenarioTitle: parsed.scenarioTitle || fallback.scenarioTitle,
-      aiRole: parsed.aiRole || fallback.aiRole,
-      userRole: parsed.userRole || fallback.userRole,
-      initialAiMessage: parsed.initialAiMessage || fallback.initialAiMessage,
-      goal: parsed.goal || fallback.goal
+      scenarioTitle: parsed.scenarioTitle || `Roleplay [${cefrLevel}]`,
+      aiRole: parsed.aiRole || "Interlocutor",
+      userRole: parsed.userRole || "Speaker",
+      initialAiMessage: parsed.initialAiMessage || "Hello! How can I assist you today?",
+      goal: parsed.goal || "Complete the conversational objective."
     };
   } catch (error) {
-    console.warn("Groq Roleplay Error, using fallback data:", error);
-    return FALLBACK_ROLEPLAY[cefrLevel] || FALLBACK_ROLEPLAY['A1'];
+    return {
+      scenarioTitle: `Roleplay Scenario [${cefrLevel}]`,
+      aiRole: "Manager",
+      userRole: "Employee",
+      initialAiMessage: "Good morning! Let's talk about the new project timeline.",
+      goal: "Clarify expectations and agree on key milestones."
+    };
   }
 }

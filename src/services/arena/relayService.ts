@@ -12,42 +12,20 @@ export interface RelayChallenge {
   keyVocabulary: string[];
 }
 
-const FALLBACK_RELAY: Record<string, RelayChallenge> = {
-  A1: {
-    topic: "Daily Routine [A1]",
-    context: "Chia sẻ về thói quen sinh hoạt hàng ngày của bạn.",
-    player1Guideline: "Giới thiệu thời gian bạn thức dậy và ăn sáng.",
-    player2Guideline: "Kể về các hoạt động bạn thường làm vào buổi tối.",
-    keyVocabulary: ["morning", "breakfast", "evening"]
-  },
-  B2: {
-    topic: "Workplace Automation [B2]",
-    context: "Discussing the role of automation in corporate productivity.",
-    player1Guideline: "Present the benefits of AI automation for daily workflow.",
-    player2Guideline: "Address potential risks regarding job displacement.",
-    keyVocabulary: ["automation", "productivity", "displacement"]
-  },
-  C2: {
-    topic: "Bioethics & Genetic Editing [C2]",
-    context: "Debating the ethical boundaries of CRISPR technology in human enhancement.",
-    player1Guideline: "Argue in favor of genetic interventions to eradicate hereditary illnesses.",
-    player2Guideline: "Critique the socio-economic disparities and slippery slope of engineered offspring.",
-    keyVocabulary: ["bioethics", "CRISPR", "hereditary", "disparities"]
-  }
-};
-
 export async function generateRelayChallenge(cefrLevel: string = 'A1'): Promise<RelayChallenge> {
-  let languageRule = '';
+  const randomSeed = Math.random().toString(36).substring(7) + "_" + Date.now();
 
+  let languageRule = '';
   if (cefrLevel === 'A1' || cefrLevel === 'A2') {
-    languageRule = `- LANGUAGE: 100% VIETNAMESE for guidelines and context. Simple English sentence patterns in brackets.`;
+    languageRule = `- LANGUAGE: 100% VIETNAMESE for guidelines and context.`;
   } else if (cefrLevel === 'B1' || cefrLevel === 'B2') {
     languageRule = `- LANGUAGE: BILINGUAL (English text first, followed by Vietnamese explanation).`;
   } else {
-    languageRule = `- LANGUAGE: 100% ADVANCED ACADEMIC ENGLISH for high-level debate and critical discourse.`;
+    languageRule = `- LANGUAGE: 100% ADVANCED ACADEMIC ENGLISH for high-level debate.`;
   }
 
-  const prompt = `Generate a 2-Player Speaking Relay Challenge for CEFR Level ${cefrLevel}.
+  const prompt = `Generate a NEW 2-Player Speaking Relay Challenge for CEFR Level ${cefrLevel}.
+Request ID: ${randomSeed}
 
 RULES:
 ${languageRule}
@@ -65,22 +43,25 @@ Return ONLY a valid JSON object:
     const response = await groq.chat.completions.create({
       messages: [{ role: 'user', content: prompt }],
       model: 'llama-3.3-70b-versatile',
-      temperature: 0.7,
+      temperature: 0.9,
       response_format: { type: 'json_object' },
     });
 
     const parsed: RelayChallenge = JSON.parse(response.choices[0]?.message?.content || '{}');
-    const fallback = FALLBACK_RELAY[cefrLevel] || FALLBACK_RELAY['A1'];
-
     return {
-      topic: parsed.topic || fallback.topic,
-      context: parsed.context || fallback.context,
-      player1Guideline: parsed.player1Guideline || fallback.player1Guideline,
-      player2Guideline: parsed.player2Guideline || fallback.player2Guideline,
-      keyVocabulary: parsed.keyVocabulary || fallback.keyVocabulary
+      topic: parsed.topic || `Relay Challenge [${cefrLevel}]`,
+      context: parsed.context || "Discussing current social trends.",
+      player1Guideline: parsed.player1Guideline || "Express your initial stance.",
+      player2Guideline: parsed.player2Guideline || "Elaborate with counterarguments.",
+      keyVocabulary: parsed.keyVocabulary || ["discussion", "perspective"]
     };
   } catch (error) {
-    console.warn("Groq Relay Error, using fallback data:", error);
-    return FALLBACK_RELAY[cefrLevel] || FALLBACK_RELAY['A1'];
+    return {
+      topic: `Relay Challenge [${cefrLevel}]`,
+      context: "Debating the impact of modern technology on human interaction.",
+      player1Guideline: "State your main viewpoint.",
+      player2Guideline: "Provide supporting examples.",
+      keyVocabulary: ["technology", "society", "impact"]
+    };
   }
 }
