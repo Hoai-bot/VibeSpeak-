@@ -38,6 +38,9 @@ export default function AllInArenaScreen({ onBack }: Props) {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // ⚡ Dùng ref để kiểm soát request ID chống trùng lặp request cũ
+  const requestIdRef = useRef<number>(0);
 
   const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
 
@@ -53,7 +56,6 @@ export default function AllInArenaScreen({ onBack }: Props) {
     return Math.floor(total / 2);
   };
 
-  // 💡 HÀM CHUYỂN LEVEL CÓ RESET LỊCH SỬ THI ĐẤU
   const handleLevelChange = (newLevel: string) => {
     if (newLevel === cefrLevel) return;
     clearSoloTopicHistory();
@@ -62,7 +64,6 @@ export default function AllInArenaScreen({ onBack }: Props) {
     setCefrLevel(newLevel);
   };
 
-  // 💡 HÀM CHUYỂN DẠNG BÀI CÓ RESET LỊCH SỬ THI ĐẤU
   const handleModeChange = (newMode: 'solo' | 'relay' | 'roleplay') => {
     if (newMode === mode) return;
     clearSoloTopicHistory();
@@ -115,30 +116,38 @@ export default function AllInArenaScreen({ onBack }: Props) {
     }, 1000);
   };
 
-  // 💡 HÀM TẢI VÀ ÉP TẠO CHỦ ĐỀ MỚI KHÔNG TRÙNG
+  // 💡 HÀM TẢI ĐỀ CÓ CHỐNG NGHẼN REQUEST & FLUSH STATE TỨC THÌ
   const loadModeData = async (selectedMode: string, level: string) => {
+    const currentRequestId = ++requestIdRef.current;
+    
     setLoading(true);
     resetBattleState();
 
+    // Xóa hoàn toàn state cũ
     setSoloTopic(null);
     setRelayChallenge(null);
     setRoleplayScenario(null);
 
+    // Delay 50ms để React kịp re-render giao diện sang trạng thái Loading Spinner
+    await new Promise(resolve => setTimeout(resolve, 50));
+
     try {
       if (selectedMode === 'solo') {
         const data = await generateSoloTopic(level);
-        setSoloTopic(data);
+        if (currentRequestId === requestIdRef.current) setSoloTopic(data);
       } else if (selectedMode === 'relay') {
         const data = await generateRelayChallenge(level);
-        setRelayChallenge(data);
+        if (currentRequestId === requestIdRef.current) setRelayChallenge(data);
       } else {
         const data = await generateRoleplayScenario(level);
-        setRoleplayScenario(data);
+        if (currentRequestId === requestIdRef.current) setRoleplayScenario(data);
       }
     } catch (err) {
       console.error("Lỗi tải đề Trạm 2:", err);
     } finally {
-      setLoading(false);
+      if (currentRequestId === requestIdRef.current) {
+        setLoading(false);
+      }
     }
   };
 
@@ -373,7 +382,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
         {battleState === 'battling' && (
           <View style={styles.box}>
             <View style={styles.battleHeader}>
-              <Text style={styles.opponentName}>⚔️ VS {matchedOpponent}</Text>
+              <Text style={styles.opponentName}>⚔️️ VS {matchedOpponent}</Text>
               <Text style={styles.timerText}>⏱ {timeLeft}s</Text>
             </View>
 
