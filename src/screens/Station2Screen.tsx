@@ -10,7 +10,12 @@ export default function Station2Screen({ onBack }: Props) {
   const [cefrLevel, setCefrLevel] = useState<string>('A1');
   const [mode, setMode] = useState<'solo' | 'relay' | 'roleplay'>('solo');
   const [loading, setLoading] = useState<boolean>(false);
-  const [exercise, setExercise] = useState<any>(null);
+  const [exercise, setExercise] = useState<any>({
+    id: 'demo_st2_1',
+    title: 'Thử thách Từ vựng',
+    promptEn: 'Discuss the importance of renewable energy in modern cities.',
+    promptVi: 'Thảo luận về tầm quan trọng của năng lượng tái tạo trong các thành phố hiện đại.'
+  });
 
   // 🔊 State & Ref cho hệ thống phát âm TTS
   const [isPlayingTTS, setIsPlayingTTS] = useState<boolean>(false);
@@ -37,7 +42,7 @@ export default function Station2Screen({ onBack }: Props) {
 
     stopAllAudio();
 
-    // 💥 ĐẢM BẢO CHỈ LẤY CHUỖI TIẾNG ANH
+    // 💥 ĐẢM BẢO CHỈ LẤY CHUỖI TIẾNG ANH (Lọc bỏ các ký tự tiếng Việt)
     const englishOnlyText = textToSpeak.replace(/[\u0300-\u036f\u1ea0-\u1eff]/g, '').trim();
     if (!englishOnlyText) return;
 
@@ -99,7 +104,7 @@ export default function Station2Screen({ onBack }: Props) {
     if (exercise && textToPlay) {
       const timer = setTimeout(() => {
         playPromptTTS(textToPlay);
-      }, 200);
+      }, 300);
       return () => clearTimeout(timer);
     }
   }, [exercise?.id]);
@@ -115,6 +120,7 @@ export default function Station2Screen({ onBack }: Props) {
 
   return (
     <View style={styles.container}>
+      {/* Thanh Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack} style={styles.backBtn}>
           <Text style={styles.backText}>🔙 QUAY LẠI MAP</Text>
@@ -137,7 +143,7 @@ export default function Station2Screen({ onBack }: Props) {
           ))}
         </View>
 
-        {/* Chế độ đấu đối kháng */}
+        {/* Chọn Chế độ thi đấu */}
         <View style={styles.modeRow}>
           <TouchableOpacity 
             style={[styles.modeBtn, mode === 'solo' && styles.modeBtnActive]} 
@@ -161,7 +167,7 @@ export default function Station2Screen({ onBack }: Props) {
           </TouchableOpacity>
         </View>
 
-        {/* Bảng thi đấu chính */}
+        {/* BẢNG ĐỀ BÀI THI ĐẤU CHÍNH */}
         <View style={styles.box}>
           <Text style={styles.boxTitle}>📌 SÀN ĐẤU {mode.toUpperCase()} [{cefrLevel}]</Text>
           
@@ -177,13 +183,13 @@ export default function Station2Screen({ onBack }: Props) {
                 <Text style={styles.promptViText}>👉 Dịch: "{exercise.promptVi}"</Text>
               )}
 
-              {/* 🔊 NÚT PHÁT ÂM TTS TRỰC QUAN TRÊN MÀN HÌNH */}
+              {/* 🔊 NÚT PHÁT ÂM HIỂN THỊ NỔI BẬT */}
               <TouchableOpacity 
                 style={[styles.ttsBtn, isPlayingTTS && styles.ttsBtnActive]} 
                 onPress={() => playPromptTTS(getTargetText())}
               >
                 <Text style={[styles.ttsBtnText, isPlayingTTS && styles.ttsBtnTextActive]}>
-                  {isPlayingTTS ? '🔊 ĐANG PHÁT GIỌNG ĐỌC...' : '🔊 NGHE PHÁT ÂM (NATURAL VOICE)'}
+                  {isPlayingTTS ? '🔊 ĐANG PHÁT GIỌNG ĐỌC...' : '🔊 NGHE TÌNH HUỐNG (NATURAL VOICE)'}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -218,7 +224,7 @@ const styles = StyleSheet.create({
   scenarioTitle: { color: '#39FF14', fontSize: 13, fontWeight: '900', marginBottom: 6 },
   promptText: { color: '#FFF', fontSize: 13, fontWeight: '800', textAlign: 'center', lineHeight: 18, marginBottom: 8 },
   promptViText: { color: '#FFD700', fontSize: 11, fontWeight: '600', textAlign: 'center', marginBottom: 10, fontStyle: 'italic' },
-  ttsBtn: { backgroundColor: '#1A0B2E', paddingVertical: 10, paddingHorizontal: 14, borderRadius: 10, borderWidth: 2, borderColor: '#00FFFF', marginVertical: 10, alignItems: 'center', width: '100%' },
+  ttsBtn: { backgroundColor: '#1A0B2E', paddingVertical: 12, paddingHorizontal: 16, borderRadius: 10, borderWidth: 2, borderColor: '#00FFFF', marginVertical: 12, alignItems: 'center', width: '100%' },
   ttsBtnActive: { backgroundColor: '#00FFFF', borderColor: '#00FFFF' },
   ttsBtnText: { color: '#00FFFF', fontSize: 11, fontWeight: '900' },
   ttsBtnTextActive: { color: '#000' }
