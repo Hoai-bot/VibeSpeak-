@@ -2,7 +2,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
 import { evaluateSpeaking, AssessmentResult } from '../services/arena/assessmentService';
-import { generateStation4Scenario, Station4Scenario } from '../services/arena/station4Service';
+import { 
+  getInstantStation4Exercise, 
+  generateStation4Exercise, 
+  SpeakingExpressExercise 
+} from '../services/arena/station4Service';
 import { updateUserProgress } from '../services/userService';
 
 interface Props {
@@ -14,11 +18,10 @@ export default function Station4Screen({ onBack }: Props) {
   const [loading, setLoading] = useState<boolean>(false);
   const [isPlayingTTS, setIsPlayingTTS] = useState<boolean>(false);
   
-  // FIX: Sửa cú pháp Generics TypeScript chuẩn (Station4Scenario | null)
-  const [scenario, setScenario] = useState<Station4Scenario | null>(null);
+  // ✅ CẬP NHẬT: Dùng kiểu dữ liệu mới SpeakingExpressExercise
+  const [exercise, setExercise] = useState<SpeakingExpressExercise | null>(null);
   const [battleState, setBattleState] = useState<'idle' | 'battling' | 'analyzing' | 'ended'>('idle');
   
-  // FIX: Sửa cú pháp Generics TypeScript chuẩn (Blob | null)
   const [isRecording, setIsRecording] = useState<boolean>(false);
   const [recordedAudio, setRecordedAudio] = useState<Blob | null>(null);
   const [hasRecorded, setHasRecorded] = useState<boolean>(false);
@@ -28,11 +31,14 @@ export default function Station4Screen({ onBack }: Props) {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const currentAudioRef = useRef<HTMLAudioElement | null>(null);
+  const requestIdRef = useRef<number>(0);
 
   const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
 
-  // 🔊 GIỌNG ĐỌC TỰ NHIÊN QUA GOOGLE TTS & BROWSERS NATURAL VOICE
+  // 🔊 GIỌNG ĐỌC TỰ NHIÊN QUA GOOGLE TTS & BROWSER NATURAL VOICE
   const playPromptTTS = (textToSpeak: string) => {
+    if (!textToSpeak) return;
+
     if (currentAudioRef.current) {
       currentAudioRef.current.pause();
       currentAudioRef.current = null;
@@ -93,22 +99,40 @@ export default function Station4Screen({ onBack }: Props) {
     }
   };
 
-  const loadScenario = async (level: string) => {
-    setLoading(true);
+  // ✅ CẬP NHẬT: Luồng nạp dữ liệu Hybrid (0.01s Instant + Background AI Sync + Safe Finally)
+  const loadExerciseData = async (level: string) => {
+    const currentRequestId = ++requestIdRef.current;
     resetState();
-    const data = await generateStation4Scenario(level);
-    setScenario(data);
-    setLoading(false);
 
-    if (data && data.context) {
+    // 1. HIỂN THỊ ĐỀ TỨC THÌ TỪ KHO LOCAL (0.01 GIÂY)
+    const instantData = getInstantStation4Exercise(level);
+    setExercise(instantData);
+
+    if (instantData && instantData.promptEn) {
       setTimeout(() => {
-        playPromptTTS(data.context);
-      }, 400);
+        playPromptTTS(instantData.promptEn);
+      }, 300);
+    }
+
+    // 2. GỌI GROQ AI NGẦM ĐỂ CẬP NHẬT BÀI MỚI BẤT ĐỒNG BỘ
+    setLoading(true);
+    try {
+      const aiData = await generateStation4Exercise(level);
+      if (currentRequestId === requestIdRef.current && aiData) {
+        setExercise(aiData);
+      }
+    } catch (err) {
+      console.warn("Sử dụng đề Local dự phòng cho Trạm 4:", err);
+    } finally {
+      // 💥 BẮT BỘC: Luôn giải phóng trạng thái quay quay
+      if (currentRequestId === requestIdRef.current) {
+        setLoading(false);
+      }
     }
   };
 
   useEffect(() => {
-    loadScenario(cefrLevel);
+    loadExerciseData(cefrLevel);
     return () => {
       if (currentAudioRef.current) {
         currentAudioRef.current.pause();
@@ -244,28 +268,36 @@ export default function Station4Screen({ onBack }: Props) {
         <View style={styles.box}>
           <Text style={styles.boxTitle}>📌 THỬ THÁCH PHẢN ỨNG NHANH [{cefrLevel}]</Text>
           
-          {loading ? (
-            <ActivityIndicator size="small" color="#FF007F" style={{ marginVertical: 15 }} />
-          ) : scenario ? (
+          {exercise ? (
             <View style={{ width: '100%', alignItems: 'center' }}>
-              <Text style={styles.scenarioTitle}>{scenario.title}</Text>
-              <Text style={styles.promptText}>🎯 Tình huống: "{scenario.context}"</Text>
+              <Text style={styles.scenarioTitle}>{exercise.title}</Text>
+              <Text style={styles.promptText}>🎯 Tình huống: "{exercise.promptEn}"</Text>
               
+              {exercise.promptVi && (
+                <Text style={styles.promptViText}>👉 Dịch: "{exercise.promptVi}"</Text>
+              )}
+
               <TouchableOpacity 
                 style={[styles.ttsBtn, isPlayingTTS && styles.ttsBtnActive]} 
-                onPress={() => playPromptTTS(scenario.context)}
+                onPress={() => playPromptTTS(exercise.promptEn)}
               >
                 <Text style={styles.ttsBtnText}>
                   {isPlayingTTS ? '🔊 ĐANG PHÁT GIỌNG NÓI MƯỢT...' : '🔊 NGHE TÌNH HUỐNG (NATURAL VOICE)'}
                 </Text>
               </TouchableOpacity>
 
-              <Text style={styles.requirementText}>⚡ YÊU CẦU: {scenario.requirement}</Text>
+              <Text style={styles.requirementText}>
+                ⚡ THỜI GIAN PHẢN XẠ: {exercise.timeLimitSeconds} GIÂY | TỪ KHÓA: {exercise.suggestedKeywords?.join(', ')}
+              </Text>
             </View>
-          ) : null}
+          ) : (
+            <ActivityIndicator size="small" color="#FF007F" style={{ marginVertical: 15 }} />
+          )}
 
-          <TouchableOpacity style={styles.refreshBtn} onPress={() => loadScenario(cefrLevel)} disabled={loading}>
-            <Text style={styles.refreshBtnText}>🔄 ĐỔI THỬ THÁCH MỚI</Text>
+          <TouchableOpacity style={styles.refreshBtn} onPress={() => loadExerciseData(cefrLevel)} disabled={loading}>
+            <Text style={styles.refreshBtnText}>
+              {loading ? '🔄 ĐANG ĐỔI THỬ THÁCH...' : '🔄 ĐỔI THỬ THÁCH MỚI'}
+            </Text>
           </TouchableOpacity>
 
           {battleState !== 'ended' && (
@@ -335,7 +367,7 @@ export default function Station4Screen({ onBack }: Props) {
 
             <Text style={styles.feedbackText}>{result.detailedFeedback}</Text>
 
-            <TouchableOpacity style={styles.refreshBtn} onPress={() => loadScenario(cefrLevel)}>
+            <TouchableOpacity style={styles.refreshBtn} onPress={() => loadExerciseData(cefrLevel)}>
               <Text style={styles.refreshBtnText}>🔄 THỬ BỐI CẢNH PHẢN HỒI MỚI</Text>
             </TouchableOpacity>
           </View>
@@ -361,6 +393,7 @@ const styles = StyleSheet.create({
   boxTitle: { color: '#FFD700', fontSize: 11, fontWeight: '900', marginBottom: 12 },
   scenarioTitle: { color: '#00FFFF', fontSize: 13, fontWeight: '900', marginBottom: 6 },
   promptText: { color: '#FFF', fontSize: 13, fontWeight: '800', textAlign: 'center', lineHeight: 18, marginBottom: 8 },
+  promptViText: { color: '#FFD700', fontSize: 11, fontWeight: '600', textAlign: 'center', marginBottom: 10, fontStyle: 'italic' },
   ttsBtn: { backgroundColor: '#1A0B2E', paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8, borderWidth: 1, borderColor: '#00FFFF', marginBottom: 10, alignItems: 'center', width: '100%' },
   ttsBtnActive: { backgroundColor: '#00FFFF' },
   ttsBtnText: { color: '#00FFFF', fontSize: 10, fontWeight: 'bold' },
