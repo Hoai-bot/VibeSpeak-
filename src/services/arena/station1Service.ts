@@ -1,8 +1,8 @@
 // src/services/arena/station1Service.ts
 import { Groq } from 'groq-sdk';
-import { MINIMAL_PAIRS_DATA, MinimalPairItem } from '../../data/station1/minimalPairs';
-import { LINKING_SOUNDS_DATA, LinkingSoundItem } from '../../data/station1/linkingSounds';
-import { TONGUE_TWISTERS_DATA, TongueTwisterItem } from '../../data/station1/tongueTwisters';
+import { MINIMAL_PAIRS_DATA } from '../../data/station1/minimalPairs';
+import { LINKING_SOUNDS_DATA } from '../../data/station1/linkingSounds';
+import { TONGUE_TWISTERS_DATA } from '../../data/station1/tongueTwisters';
 
 const ACTIVE_GROQ_KEY = process.env.EXPO_PUBLIC_GROQ_API_KEY || '';
 const groq = new Groq({ apiKey: ACTIVE_GROQ_KEY, dangerouslyAllowBrowser: true });
@@ -32,21 +32,17 @@ export function getInstantStation1Exercise(
   const levelKey = (cefrLevel || 'A1').toUpperCase();
 
   // Chọn nguồn data dựa trên category
-  let rawPool: any[] = [];
+  let rawDataset: Record<string, any[]> = MINIMAL_PAIRS_DATA;
   if (category === 'linking_sounds') {
-    rawPool = LINKING_SOUNDS_DATA;
+    rawDataset = LINKING_SOUNDS_DATA;
   } else if (category === 'tongue_twisters') {
-    rawPool = TONGUE_TWISTERS_DATA;
-  } else {
-    rawPool = MINIMAL_PAIRS_DATA;
+    rawDataset = TONGUE_TWISTERS_DATA;
   }
 
-  // Lọc theo Level
-  const levelPool = rawPool.filter(item => item.level === levelKey);
-  const activePool = levelPool.length > 0 ? levelPool : rawPool;
+  const pool = rawDataset[levelKey] || rawDataset['A1'] || [];
 
-  // Lọc bài chưa sử dụng trong phiên
-  const filtered = activePool.filter(item => !sessionUsedPhonetics.has(item.contentEn.toLowerCase()));
+  // Lọc các bài chưa sử dụng trong phiên
+  const filtered = pool.filter(item => !sessionUsedPhonetics.has(item.contentEn.toLowerCase()));
 
   // Reset bộ nhớ phiên nếu đã dùng hết toàn bộ bài trong pool
   if (filtered.length === 0) {
@@ -55,24 +51,26 @@ export function getInstantStation1Exercise(
 
   const selected = filtered.length > 0 
     ? filtered[Math.floor(Math.random() * filtered.length)] 
-    : activePool[Math.floor(Math.random() * activePool.length)];
+    : pool[Math.floor(Math.random() * pool.length)];
 
-  sessionUsedPhonetics.add(selected.contentEn.toLowerCase());
+  if (selected && selected.contentEn) {
+    sessionUsedPhonetics.add(selected.contentEn.toLowerCase());
+  }
 
   // 💥 LUÔN TẠO OBJECT MỚI CÙNG UNIQUE ID ĐỂ ÉP REACT CẬP NHẬT GIAO DIỆN LẬP TỨC
   return {
     id: `instant_st1_${Date.now()}_${Math.floor(Math.random() * 1000000)}`,
     level: levelKey,
-    title: selected.title || `Phonetics [${levelKey}]`,
+    title: selected?.title || `Phonetics [${levelKey}]`,
     category: category,
-    contentEn: selected.contentEn,
-    contentVi: selected.contentVi,
-    targetFocus: selected.targetFocus,
-    phoneticSpelling: selected.phoneticSpelling
+    contentEn: selected?.contentEn || "ship / sheep",
+    contentVi: selected?.contentVi,
+    targetFocus: selected?.targetFocus || "Phonetics Focus",
+    phoneticSpelling: selected?.phoneticSpelling
   };
 }
 
-// ⚡ 2. GỌI GROQ AI NGẦM ĐỂ CẬP NHẬT BÀI MỚI TỪ SERVER
+// ⚡ 2. GỌI GROQ AI NGẦM BẤT ĐỒNG BỘ ĐỂ LẤY ĐỀ MỚI TỪ SERVER
 export async function generateStation1Exercise(
   cefrLevel: string = 'A1',
   category: 'minimal_pairs' | 'linking_sounds' | 'tongue_twisters' = 'minimal_pairs'
