@@ -11,10 +11,10 @@ export default function Station2Screen({ onBack }: Props) {
   const [mode, setMode] = useState<'solo' | 'relay' | 'roleplay'>('solo');
   const [loading, setLoading] = useState<boolean>(false);
   const [exercise, setExercise] = useState<any>({
-    id: 'demo_st2_1',
-    title: 'Thử thách Từ vựng',
-    promptEn: 'Discuss the importance of renewable energy in modern cities.',
-    promptVi: 'Thảo luận về tầm quan trọng của năng lượng tái tạo trong các thành phố hiện đại.'
+    id: 'st2_default_1',
+    title: 'Thử thách Từ vựng & Ngữ cảnh',
+    promptEn: 'How do you balance work and personal life?',
+    promptVi: 'Bạn cân bằng công việc và cuộc sống cá nhân như thế nào?'
   });
 
   // 🔊 State & Ref cho hệ thống phát âm TTS
@@ -23,7 +23,7 @@ export default function Station2Screen({ onBack }: Props) {
 
   const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
 
-  // 🧹 HỦY TOÀN BỘ ÂM THANH ĐANG PHÁT VÀ TẮT TTS TRƯỚC
+  // 🧹 Hủy âm thanh cũ
   const stopAllAudio = () => {
     if (currentAudioRef.current) {
       currentAudioRef.current.pause();
@@ -36,13 +36,13 @@ export default function Station2Screen({ onBack }: Props) {
     setIsPlayingTTS(false);
   };
 
-  // 🔊 PHÁT ÂM CHUẨN TỰ NHIÊN (TỰ ĐỘNG LỌC CHỈ ĐỌC CHUỖI TIẾNG ANH)
+  // 🔊 Phát âm tiếng Anh tự nhiên
   const playPromptTTS = (textToSpeak: string) => {
     if (!textToSpeak) return;
 
     stopAllAudio();
 
-    // 💥 ĐẢM BẢO CHỈ LẤY CHUỖI TIẾNG ANH (Lọc bỏ các ký tự tiếng Việt)
+    // Lọc bỏ ký tự tiếng Việt
     const englishOnlyText = textToSpeak.replace(/[\u0300-\u036f\u1ea0-\u1eff]/g, '').trim();
     if (!englishOnlyText) return;
 
@@ -65,7 +65,7 @@ export default function Station2Screen({ onBack }: Props) {
     }
   };
 
-  // 🎙 BỘ LỌC GIỌNG ĐỌC BẢN NGỮ (FALLBACK CHO BROWSER)
+  // 🎙 Giọng đọc dự phòng Browser
   const fallbackBrowserTTS = (textToSpeak: string) => {
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       window.speechSynthesis.cancel();
@@ -81,8 +81,7 @@ export default function Station2Screen({ onBack }: Props) {
           v.name.includes('Google') || 
           v.name.includes('Natural') || 
           v.name.includes('Samantha') || 
-          v.name.includes('Daniel') ||
-          v.name.includes('Karen')
+          v.name.includes('Daniel')
         )
       );
 
@@ -98,29 +97,30 @@ export default function Station2Screen({ onBack }: Props) {
     }
   };
 
-  // 🎯 Tự động phát âm mỗi khi đổi câu/bài tập
+  // Tự động tìm chuỗi tiếng Anh trong object exercise để phát âm
+  const extractEnglishText = (ex: any) => {
+    if (!ex) return 'Practice your vocabulary and speaking now.';
+    return ex.promptEn || ex.sentenceEn || ex.prompt || ex.targetWord || ex.question || 'Practice speaking english now.';
+  };
+
+  // Tự động đọc mỗi khi đổi bài
   useEffect(() => {
-    const textToPlay = exercise?.promptEn || exercise?.sentenceEn || exercise?.targetWord;
-    if (exercise && textToPlay) {
+    if (exercise) {
+      const textToPlay = extractEnglishText(exercise);
       const timer = setTimeout(() => {
         playPromptTTS(textToPlay);
       }, 300);
       return () => clearTimeout(timer);
     }
-  }, [exercise?.id]);
+  }, [exercise?.id, mode, cefrLevel]);
 
   useEffect(() => {
     return () => stopAllAudio();
   }, []);
 
-  const getTargetText = () => {
-    if (!exercise) return '';
-    return exercise.promptEn || exercise.sentenceEn || exercise.targetWord || '';
-  };
-
   return (
     <View style={styles.container}>
-      {/* Thanh Header */}
+      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack} style={styles.backBtn}>
           <Text style={styles.backText}>🔙 QUAY LẠI MAP</Text>
@@ -143,7 +143,7 @@ export default function Station2Screen({ onBack }: Props) {
           ))}
         </View>
 
-        {/* Chọn Chế độ thi đấu */}
+        {/* Chọn Chế độ Đấu */}
         <View style={styles.modeRow}>
           <TouchableOpacity 
             style={[styles.modeBtn, mode === 'solo' && styles.modeBtnActive]} 
@@ -167,35 +167,29 @@ export default function Station2Screen({ onBack }: Props) {
           </TouchableOpacity>
         </View>
 
-        {/* BẢNG ĐỀ BÀI THI ĐẤU CHÍNH */}
+        {/* CARD BÀI TẬP VÀ NÚT PHÁT ÂM BẮT BUỘC HIỂN THỊ */}
         <View style={styles.box}>
           <Text style={styles.boxTitle}>📌 SÀN ĐẤU {mode.toUpperCase()} [{cefrLevel}]</Text>
           
-          {exercise ? (
-            <View style={{ width: '100%', alignItems: 'center' }}>
-              <Text style={styles.scenarioTitle}>{exercise.title || `Thử thách ${mode.toUpperCase()}`}</Text>
-              
-              <Text style={styles.promptText}>
-                🎯 "{getTargetText()}"
-              </Text>
-              
-              {exercise.promptVi && (
-                <Text style={styles.promptViText}>👉 Dịch: "{exercise.promptVi}"</Text>
-              )}
-
-              {/* 🔊 NÚT PHÁT ÂM HIỂN THỊ NỔI BẬT */}
-              <TouchableOpacity 
-                style={[styles.ttsBtn, isPlayingTTS && styles.ttsBtnActive]} 
-                onPress={() => playPromptTTS(getTargetText())}
-              >
-                <Text style={[styles.ttsBtnText, isPlayingTTS && styles.ttsBtnTextActive]}>
-                  {isPlayingTTS ? '🔊 ĐANG PHÁT GIỌNG ĐỌC...' : '🔊 NGHE TÌNH HUỐNG (NATURAL VOICE)'}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <ActivityIndicator size="small" color="#00FFFF" style={{ marginVertical: 15 }} />
+          <Text style={styles.scenarioTitle}>{exercise?.title || `Thử thách ${mode.toUpperCase()}`}</Text>
+          
+          <Text style={styles.promptText}>
+            🎯 "{extractEnglishText(exercise)}"
+          </Text>
+          
+          {exercise?.promptVi && (
+            <Text style={styles.promptViText}>👉 Dịch: "{exercise.promptVi}"</Text>
           )}
+
+          {/* 🔊 NÚT PHÁT ÂM TO RÕ NỔI BẬT NẰM NGAY ĐÂY */}
+          <TouchableOpacity 
+            style={[styles.ttsBtn, isPlayingTTS && styles.ttsBtnActive]} 
+            onPress={() => playPromptTTS(extractEnglishText(exercise))}
+          >
+            <Text style={[styles.ttsBtnText, isPlayingTTS && styles.ttsBtnTextActive]}>
+              {isPlayingTTS ? '🔊 ĐANG PHÁT GIỌNG ĐỌC...' : '🔊 NGHE TÌNH HUỐNG (NATURAL VOICE)'}
+            </Text>
+          </TouchableOpacity>
         </View>
       </ScrollView>
     </View>
@@ -224,7 +218,7 @@ const styles = StyleSheet.create({
   scenarioTitle: { color: '#39FF14', fontSize: 13, fontWeight: '900', marginBottom: 6 },
   promptText: { color: '#FFF', fontSize: 13, fontWeight: '800', textAlign: 'center', lineHeight: 18, marginBottom: 8 },
   promptViText: { color: '#FFD700', fontSize: 11, fontWeight: '600', textAlign: 'center', marginBottom: 10, fontStyle: 'italic' },
-  ttsBtn: { backgroundColor: '#1A0B2E', paddingVertical: 12, paddingHorizontal: 16, borderRadius: 10, borderWidth: 2, borderColor: '#00FFFF', marginVertical: 12, alignItems: 'center', width: '100%' },
+  ttsBtn: { backgroundColor: '#1A0B2E', paddingVertical: 12, paddingHorizontal: 16, borderRadius: 10, borderWidth: 2, borderColor: '#00FFFF', marginTop: 15, alignItems: 'center', width: '100%' },
   ttsBtnActive: { backgroundColor: '#00FFFF', borderColor: '#00FFFF' },
   ttsBtnText: { color: '#00FFFF', fontSize: 11, fontWeight: '900' },
   ttsBtnTextActive: { color: '#000' }
