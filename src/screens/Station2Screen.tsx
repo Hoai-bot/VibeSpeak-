@@ -7,7 +7,6 @@ interface Props {
 }
 
 export default function Station2Screen({ onBack }: Props) {
-  // 1. CÁC STATE VÀ REF CẦN CÓ
   const [cefrLevel, setCefrLevel] = useState<string>('A1');
   const [mode, setMode] = useState<'solo' | 'relay' | 'roleplay'>('solo');
   const [loading, setLoading] = useState<boolean>(false);
@@ -38,7 +37,7 @@ export default function Station2Screen({ onBack }: Props) {
 
     stopAllAudio();
 
-    // 💥 ĐẢM BẢO CHỈ LẤY CHUỖI TIẾNG ANH (Lọc bỏ ký tự tiếng Việt)
+    // 💥 ĐẢM BẢO CHỈ LẤY CHUỖI TIẾNG ANH
     const englishOnlyText = textToSpeak.replace(/[\u0300-\u036f\u1ea0-\u1eff]/g, '').trim();
     if (!englishOnlyText) return;
 
@@ -96,8 +95,8 @@ export default function Station2Screen({ onBack }: Props) {
 
   // 🎯 Tự động phát âm mỗi khi đổi câu/bài tập
   useEffect(() => {
-    if (exercise && (exercise.promptEn || exercise.sentenceEn)) {
-      const textToPlay = exercise.promptEn || exercise.sentenceEn;
+    const textToPlay = exercise?.promptEn || exercise?.sentenceEn || exercise?.targetWord;
+    if (exercise && textToPlay) {
       const timer = setTimeout(() => {
         playPromptTTS(textToPlay);
       }, 200);
@@ -105,10 +104,14 @@ export default function Station2Screen({ onBack }: Props) {
     }
   }, [exercise?.id]);
 
-  // 🧹 Dọn dẹp âm thanh khi tháo rời màn hình
   useEffect(() => {
     return () => stopAllAudio();
   }, []);
+
+  const getTargetText = () => {
+    if (!exercise) return '';
+    return exercise.promptEn || exercise.sentenceEn || exercise.targetWord || '';
+  };
 
   return (
     <View style={styles.container}>
@@ -134,28 +137,53 @@ export default function Station2Screen({ onBack }: Props) {
           ))}
         </View>
 
-        {/* Bảng thông tin thi đấu & Nút phát âm */}
+        {/* Chế độ đấu đối kháng */}
+        <View style={styles.modeRow}>
+          <TouchableOpacity 
+            style={[styles.modeBtn, mode === 'solo' && styles.modeBtnActive]} 
+            onPress={() => setMode('solo')}
+          >
+            <Text style={[styles.modeText, mode === 'solo' && styles.modeTextActive]}>🎯 SOLO</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={[styles.modeBtn, mode === 'relay' && styles.modeBtnActive]} 
+            onPress={() => setMode('relay')}
+          >
+            <Text style={[styles.modeText, mode === 'relay' && styles.modeTextActive]}>⚡ RELAY</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={[styles.modeBtn, mode === 'roleplay' && styles.modeBtnActive]} 
+            onPress={() => setMode('roleplay')}
+          >
+            <Text style={[styles.modeText, mode === 'roleplay' && styles.modeTextActive]}>🎭 ROLEPLAY</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Bảng thi đấu chính */}
         <View style={styles.box}>
-          <Text style={styles.boxTitle}>📌 SÀN ĐẤU ĐỐI KHÁNG [{cefrLevel}]</Text>
+          <Text style={styles.boxTitle}>📌 SÀN ĐẤU {mode.toUpperCase()} [{cefrLevel}]</Text>
           
           {exercise ? (
             <View style={{ width: '100%', alignItems: 'center' }}>
-              <Text style={styles.scenarioTitle}>{exercise.title || 'Tình huống đối kháng'}</Text>
+              <Text style={styles.scenarioTitle}>{exercise.title || `Thử thách ${mode.toUpperCase()}`}</Text>
+              
               <Text style={styles.promptText}>
-                🎯 "{exercise.promptEn || exercise.sentenceEn}"
+                🎯 "{getTargetText()}"
               </Text>
               
               {exercise.promptVi && (
                 <Text style={styles.promptViText}>👉 Dịch: "{exercise.promptVi}"</Text>
               )}
 
-              {/* 🔊 Nút chủ động nghe phát âm tự nhiên */}
+              {/* 🔊 NÚT PHÁT ÂM TTS TRỰC QUAN TRÊN MÀN HÌNH */}
               <TouchableOpacity 
                 style={[styles.ttsBtn, isPlayingTTS && styles.ttsBtnActive]} 
-                onPress={() => playPromptTTS(exercise.promptEn || exercise.sentenceEn)}
+                onPress={() => playPromptTTS(getTargetText())}
               >
-                <Text style={styles.ttsBtnText}>
-                  {isPlayingTTS ? '🔊 ĐANG PHÁT GIỌNG ĐỌC ĐỐI KHÁNG...' : '🔊 NGHE TÌNH HUỐNG (NATURAL VOICE)'}
+                <Text style={[styles.ttsBtnText, isPlayingTTS && styles.ttsBtnTextActive]}>
+                  {isPlayingTTS ? '🔊 ĐANG PHÁT GIỌNG ĐỌC...' : '🔊 NGHE PHÁT ÂM (NATURAL VOICE)'}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -180,12 +208,18 @@ const styles = StyleSheet.create({
   cefrBadgeActive: { backgroundColor: '#00FFFF', borderColor: '#00FFFF' },
   cefrText: { color: '#8888AA', fontSize: 10, fontWeight: 'bold' },
   cefrTextActive: { color: '#000' },
+  modeRow: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginBottom: 15 },
+  modeBtn: { flex: 1, paddingVertical: 8, backgroundColor: '#0D0620', borderRadius: 8, borderWidth: 1, borderColor: '#332255', alignItems: 'center', marginHorizontal: 3 },
+  modeBtnActive: { backgroundColor: '#39FF14', borderColor: '#39FF14' },
+  modeText: { color: '#8888AA', fontSize: 10, fontWeight: 'bold' },
+  modeTextActive: { color: '#000' },
   box: { backgroundColor: '#0D0620', padding: 18, borderRadius: 16, borderWidth: 2, borderColor: '#00FFFF', width: '100%', alignItems: 'center', marginBottom: 20 },
   boxTitle: { color: '#FFD700', fontSize: 11, fontWeight: '900', marginBottom: 12 },
   scenarioTitle: { color: '#39FF14', fontSize: 13, fontWeight: '900', marginBottom: 6 },
   promptText: { color: '#FFF', fontSize: 13, fontWeight: '800', textAlign: 'center', lineHeight: 18, marginBottom: 8 },
   promptViText: { color: '#FFD700', fontSize: 11, fontWeight: '600', textAlign: 'center', marginBottom: 10, fontStyle: 'italic' },
-  ttsBtn: { backgroundColor: '#1A0B2E', paddingVertical: 10, paddingHorizontal: 14, borderRadius: 8, borderWidth: 1, borderColor: '#00FFFF', marginVertical: 10, alignItems: 'center', width: '100%' },
-  ttsBtnActive: { backgroundColor: '#00FFFF' },
-  ttsBtnText: { color: '#00FFFF', fontSize: 10, fontWeight: 'bold' }
+  ttsBtn: { backgroundColor: '#1A0B2E', paddingVertical: 10, paddingHorizontal: 14, borderRadius: 10, borderWidth: 2, borderColor: '#00FFFF', marginVertical: 10, alignItems: 'center', width: '100%' },
+  ttsBtnActive: { backgroundColor: '#00FFFF', borderColor: '#00FFFF' },
+  ttsBtnText: { color: '#00FFFF', fontSize: 11, fontWeight: '900' },
+  ttsBtnTextActive: { color: '#000' }
 });
