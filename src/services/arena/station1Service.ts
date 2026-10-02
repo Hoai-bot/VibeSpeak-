@@ -17,13 +17,20 @@ export interface PhoneticExercise {
   phoneticSpelling?: string;
 }
 
-const sessionUsedPhonetics: Set<string> = new Set();
+// Bộ nhớ ghi nhớ các câu đã xuất hiện
+const usedHistoryMap: Record<string, Set<string>> = {
+  minimal_pairs: new Set(),
+  linking_sounds: new Set(),
+  tongue_twisters: new Set()
+};
 
 export function clearStation1History() {
-  sessionUsedPhonetics.clear();
+  usedHistoryMap.minimal_pairs.clear();
+  usedHistoryMap.linking_sounds.clear();
+  usedHistoryMap.tongue_twisters.clear();
 }
 
-// ⚡ 1. LẤY NGAY 1 CÂU PHẲNG TỪ LOCAL POOL (0.01s) - CÓ DÙNG MÃ RANDOM THỜI GIAN ÉP RE-RENDER
+// ⚡ HÀM BỐC BÀI LOCAL ĐẢM BẢO KHÔNG BAO GIỜ BỊ TRÙNG CÂU CŨ (0.01s)
 export function getInstantStation1Exercise(
   category: 'minimal_pairs' | 'linking_sounds' | 'tongue_twisters' = 'minimal_pairs'
 ): PhoneticExercise {
@@ -34,53 +41,60 @@ export function getInstantStation1Exercise(
     activePool = TONGUE_TWISTERS_DATA;
   }
 
-  // Lọc loại bỏ bài đã xuất hiện trong phiên
-  const filtered = activePool.filter(item => !sessionUsedPhonetics.has(item.contentEn.toLowerCase()));
+  const historySet = usedHistoryMap[category] || usedHistoryMap.minimal_pairs;
 
-  // Reset nếu đã dùng hết toàn bộ pool
-  if (filtered.length === 0) {
-    sessionUsedPhonetics.clear();
+  // Lọc lấy danh sách các câu CHƯA BỊ TRÙNG
+  let available = activePool.filter(item => item && item.contentEn && !historySet.has(item.contentEn.toLowerCase()));
+
+  // Nếu đã học sạch kho 50 bài, reset bộ nhớ của riêng category đó và xáo trộn lại
+  if (available.length === 0) {
+    historySet.clear();
+    available = [...activePool];
   }
 
-  const selected = filtered.length > 0 
-    ? filtered[Math.floor(Math.random() * filtered.length)] 
-    : activePool[Math.floor(Math.random() * activePool.length)];
+  // Bốc ngẫu nhiên 1 câu trong danh sách chưa học
+  const randomIndex = Math.floor(Math.random() * available.length);
+  const selected = available[randomIndex] || activePool[0];
 
   if (selected && selected.contentEn) {
-    sessionUsedPhonetics.add(selected.contentEn.toLowerCase());
+    historySet.add(selected.contentEn.toLowerCase());
   }
 
+  // 💥 BẮT BỘC: Tạo object mới kèm Unique ID thời gian thực để ép React đổi UI
   return {
     id: `instant_st1_${Date.now()}_${Math.floor(Math.random() * 1000000)}`,
     title: selected?.title || "Phonetics Practice",
     category: category,
     contentEn: selected?.contentEn || "ship / sheep",
-    contentVi: selected?.contentVi,
+    contentVi: selected?.contentVi || "con tàu / con cừu",
     targetFocus: selected?.targetFocus || "Phonetics Focus",
-    phoneticSpelling: selected?.phoneticSpelling
+    phoneticSpelling: selected?.phoneticSpelling || ""
   };
 }
 
-// ⚡ 2. GỌI GROQ AI NGẦM ĐỂ TẠO TỰ NHIÊN BẤT ĐỒNG BỘ
+// ⚡ TẠO BÀI MỚI QUA GROQ AI NGẦM (BẤT ĐỒNG BỘ)
 export async function generateStation1Exercise(
   category: 'minimal_pairs' | 'linking_sounds' | 'tongue_twisters' = 'minimal_pairs'
 ): Promise<PhoneticExercise> {
   const uniqueSeed = `st1_${Date.now()}_${Math.floor(Math.random() * 1000000)}`;
-  const excludedList = Array.from(sessionUsedPhonetics).slice(-15).join(' | ');
+  const historySet = usedHistoryMap[category];
+  const excludedList = Array.from(historySet).slice(-25).join(' | ');
 
-  const systemPrompt = `You are an expert Phonetics Coach. Generate ONE English phonetics exercise for category "${category}".
+  const systemPrompt = `You are a creative English Phonetics Coach. Generate ONE BRAND NEW phonetics item for category "${category}".
 STRICT RULES:
-- If category is "minimal_pairs", contentEn MUST be a word pair like "fit / feet". Include "contentVi" in Vietnamese.
-- If category is "linking_sounds", contentEn MUST be a phrase like "Check it out". Include "contentVi" in Vietnamese.
-- If category is "tongue_twisters", contentEn MUST be a twister like "Fresh fried fish". Include "contentVi" in Vietnamese.
+- Category "minimal_pairs": contentEn MUST be a new word pair like "fit / feet" or "wet / vet".
+- Category "linking_sounds": contentEn MUST be a phrase like "Turn it on" or "Check it out".
+- Category "tongue_twisters": contentEn MUST be a phrase like "Fresh fried fish".
+- ALWAYS provide "contentVi" in Vietnamese translation.
+- DO NOT generate repetitive items.
 
 Return ONLY valid JSON matching:
 {
-  "title": "Short Descriptive Title",
+  "title": "Short Title",
   "category": "${category}",
   "contentEn": "Target English text",
   "contentVi": "Bản dịch tiếng Việt",
-  "targetFocus": "Phonetic element description",
+  "targetFocus": "Phonetic target description",
   "phoneticSpelling": "/IPA/"
 }`;
 
@@ -88,7 +102,7 @@ Return ONLY valid JSON matching:
     const apiCall = groq.chat.completions.create({
       messages: [
         { role: 'system', content: systemPrompt },
-        { role: 'user', content: `Generate a BRAND NEW item for category [${category}]. Request ID: ${uniqueSeed}. Exclude: [${excludedList || 'None'}]` }
+        { role: 'user', content: `Generate a UNIQUE item for category [${category}]. Request ID: ${uniqueSeed}. Exclude these used items: [${excludedList || 'None'}]` }
       ],
       model: 'llama-3.3-70b-versatile',
       temperature: 1.0,
@@ -101,20 +115,27 @@ Return ONLY valid JSON matching:
 
     const response: any = await Promise.race([apiCall, timeout]);
     const parsed = JSON.parse(response.choices[0]?.message?.content || '{}');
-    const contentEn = parsed.contentEn || "ship / sheep";
+    const contentEn = parsed.contentEn;
 
-    sessionUsedPhonetics.add(contentEn.toLowerCase());
+    // Nếu Groq AI trả về câu hợp lệ và chưa có trong lịch sử
+    if (contentEn && !historySet.has(contentEn.toLowerCase())) {
+      historySet.add(contentEn.toLowerCase());
 
-    return {
-      id: uniqueSeed,
-      title: parsed.title || "Phonetics Challenge",
-      category: category,
-      contentEn: contentEn,
-      contentVi: parsed.contentVi,
-      targetFocus: parsed.targetFocus || "Phonetics practice",
-      phoneticSpelling: parsed.phoneticSpelling || ""
-    };
+      return {
+        id: uniqueSeed,
+        title: parsed.title || "Phonetics Challenge",
+        category: category,
+        contentEn: contentEn,
+        contentVi: parsed.contentVi || "",
+        targetFocus: parsed.targetFocus || "Phonetics Practice",
+        phoneticSpelling: parsed.phoneticSpelling || ""
+      };
+    } else {
+      // Nếu AI trả câu trùng, bốc ngay 1 câu local mới
+      return getInstantStation1Exercise(category);
+    }
   } catch (error) {
+    // Khi lỗi mạng/API key, bốc ngay 1 câu local mới
     return getInstantStation1Exercise(category);
   }
 }
