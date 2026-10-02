@@ -21,6 +21,9 @@ export default function AllInArenaScreen({ onBack }: Props) {
   const [relayChallenge, setRelayChallenge] = useState<RelayChallenge | null>(null);
   const [roleplayScenario, setRoleplayScenario] = useState<RoleplayScenario | null>(null);
 
+  // ⚡ STATE PHỤ ÉP RE-RENDER GIAO DIỆN
+  const [topicKey, setTopicKey] = useState<number>(0);
+
   const [battleState, setBattleState] = useState<'idle' | 'searching' | 'battling' | 'analyzing' | 'ended'>('idle');
   const [currentTurn, setCurrentTurn] = useState<1 | 2>(1);
   const [matchedOpponent, setMatchedOpponent] = useState<string>('');
@@ -39,7 +42,6 @@ export default function AllInArenaScreen({ onBack }: Props) {
   const audioChunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   
-  // ⚡ Ref kiểm soát Request ID
   const requestIdRef = useRef<number>(0);
 
   const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
@@ -128,36 +130,39 @@ export default function AllInArenaScreen({ onBack }: Props) {
     }, 1000);
   };
 
-  // ⚡ HÀM TẢI ĐỀ ÉP XÓA VÀ GÁN DỮ LIỆU MỚI TỨC THÌ
+  // ⚡ HÀM TẢI ĐỀ ÉP XÓA VÀ RENDER LẠI 100%
   const loadModeData = async (selectedMode: string, level: string) => {
     const currentRequestId = ++requestIdRef.current;
     
     setLoading(true);
     resetBattleState();
 
-    // Clear state hoàn toàn
+    // 1. Xóa sạch State cũ
     setSoloTopic(null);
     setRelayChallenge(null);
     setRoleplayScenario(null);
 
-    // Delay 150ms để React Render xong Spinner
+    // 2. Chờ 150ms để React Re-render hiệu ứng Loading
     await new Promise((resolve) => setTimeout(resolve, 150));
 
     try {
       if (selectedMode === 'solo') {
         const data = await generateSoloTopic(level);
         if (currentRequestId === requestIdRef.current) {
-          setSoloTopic({ ...data, id: `solo_force_${Date.now()}_${Math.random()}` });
+          setSoloTopic(data);
+          setTopicKey(Date.now());
         }
       } else if (selectedMode === 'relay') {
         const data = await generateRelayChallenge(level);
         if (currentRequestId === requestIdRef.current) {
-          setRelayChallenge({ ...data, id: `relay_force_${Date.now()}_${Math.random()}` });
+          setRelayChallenge(data);
+          setTopicKey(Date.now());
         }
       } else {
         const data = await generateRoleplayScenario(level);
         if (currentRequestId === requestIdRef.current) {
-          setRoleplayScenario({ ...data, id: `rp_force_${Date.now()}_${Math.random()}` });
+          setRoleplayScenario(data);
+          setTopicKey(Date.now());
         }
       }
     } catch (err) {
@@ -169,11 +174,13 @@ export default function AllInArenaScreen({ onBack }: Props) {
     }
   };
 
-  // ⚡ NÚT ĐỔI ĐỀ MỚI - ÉP XOÁ CACHE LỊCH SỬ DỰ PHÒNG
+  // ⚡ NÚT ĐỔI ĐỀ MỚI - ÉP CLEAR CACHE LỊCH SỬ TỨC THÌ
   const handleRefreshTopic = () => {
-    clearSoloTopicHistory();
-    clearRelayHistory();
-    clearRoleplayHistory();
+    if (loading) return;
+
+    if (mode === 'solo') clearSoloTopicHistory();
+    else if (mode === 'relay') clearRelayHistory();
+    else clearRoleplayHistory();
 
     loadModeData(mode, cefrLevel);
   };
@@ -339,7 +346,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
 
         {/* CHỜ TRẬN & HIỂN THỊ ĐỀ THI */}
         {battleState === 'idle' && (
-          <View style={styles.box}>
+          <View style={styles.box} key={topicKey}>
             <Text style={styles.boxTitle}>⚡ {mode.toUpperCase()} [{cefrLevel}]</Text>
             {loading ? (
               <ActivityIndicator size="small" color="#FF007F" style={{ marginVertical: 15 }} />

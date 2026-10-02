@@ -23,12 +23,25 @@ export function clearRoleplayHistory() {
 }
 
 const STRICT_ROLEPLAY_FALLBACKS: Record<string, RoleplayScenario[]> = {
-  A1: [{ id: 'rp_a1', scenarioTitle: "At the Coffee Shop [A1]", aiRoleEn: "Barista", aiRoleVi: "Nhân viên pha chế", userRoleEn: "Customer", userRoleVi: "Khách hàng", initialAiMessage: "Hello! What drink would you like today?", goalEn: "Order a coffee and ask for the price.", goalVi: "Đặt một ly cà phê và hỏi giá tiền." }],
-  A2: [{ id: 'rp_a2', scenarioTitle: "Asking for Directions [A2]", aiRoleEn: "Local Resident", aiRoleVi: "Người dân địa phương", userRoleEn: "Tourist", userRoleVi: "Khách du lịch", initialAiMessage: "Hi there! You look a bit lost. Need help?", goalEn: "Ask for directions to the train station.", goalVi: "Hỏi đường đến ga tàu hỏa." }],
-  B1: [{ id: 'rp_b1', scenarioTitle: "Hotel Room Complaint [B1]", aiRoleEn: "Hotel Receptionist", aiRoleVi: "Lễ tân khách sạn", userRoleEn: "Guest", userRoleVi: "Khách trọ", initialAiMessage: "Good evening, sir. How can I assist you?", goalEn: "Complain about the noise and request a room change.", goalVi: "Phàn nàn về tiếng ồn và yêu cầu đổi phòng." }],
-  B2: [{ id: 'rp_b2', scenarioTitle: "Project Timeline Negotiation [B2]", aiRoleEn: "Project Director", userRoleEn: "Lead Engineer", initialAiMessage: "The client demands an acceleration of the release date by two weeks.", goalEn: "Explain technical constraints and negotiate a feasible delivery schedule." }],
-  C1: [{ id: 'rp_c1', scenarioTitle: "Venture Capital Pitch [C1]", aiRoleEn: "Managing Partner", userRoleEn: "Startup Founder", initialAiMessage: "Your burn rate seems high given current market headwinds. How do you justify this valuation?", goalEn: "Defend your financial projections and articulate market scalability." }],
-  C2: [{ id: 'rp_c2', scenarioTitle: "Cross-Border Antitrust Litigation [C2]", aiRoleEn: "Regulator Committee Chair", userRoleEn: "Chief Legal Officer", initialAiMessage: "The proposed merger violates competition laws regarding market dominance in cloud infrastructure.", goalEn: "Structure a legally sound compliance package mitigating antitrust concerns." }]
+  A1: [
+    { id: 'rp_a1_1', scenarioTitle: "At the Coffee Shop [A1]", aiRoleEn: "Barista", aiRoleVi: "Nhân viên pha chế", userRoleEn: "Customer", userRoleVi: "Khách hàng", initialAiMessage: "Hello! What drink would you like today?", goalEn: "Order a coffee and ask for the price.", goalVi: "Đặt một ly cà phê và hỏi giá tiền." },
+    { id: 'rp_a1_2', scenarioTitle: "Meeting a New Neighbor [A1]", aiRoleEn: "Neighbor", aiRoleVi: "Hàng xóm", userRoleEn: "New Resident", userRoleVi: "Cư dân mới", initialAiMessage: "Hi there! Welcome to the building.", goalEn: "Introduce yourself and ask where the supermarket is.", goalVi: "Giới thiệu bản thân và hỏi siêu thị ở đâu." }
+  ],
+  A2: [
+    { id: 'rp_a2_1', scenarioTitle: "Asking for Directions [A2]", aiRoleEn: "Local Resident", aiRoleVi: "Người dân địa phương", userRoleEn: "Tourist", userRoleVi: "Khách du lịch", initialAiMessage: "Hi! You look lost. Can I help you?", goalEn: "Ask for directions to the central station.", goalVi: "Hỏi đường đến ga trung tâm." }
+  ],
+  B1: [
+    { id: 'rp_b1_1', scenarioTitle: "Hotel Room Complaint [B1]", aiRoleEn: "Hotel Receptionist", aiRoleVi: "Lễ tân khách sạn", userRoleEn: "Guest", userRoleVi: "Khách trọ", initialAiMessage: "Good evening, sir. How can I assist you?", goalEn: "Complain about noise and request a new room.", goalVi: "Phàn nàn về tiếng ồn và yêu cầu đổi phòng." }
+  ],
+  B2: [
+    { id: 'rp_b2_1', scenarioTitle: "Project Timeline Negotiation [B2]", aiRoleEn: "Project Director", userRoleEn: "Lead Engineer", initialAiMessage: "The client demands an acceleration of the release date by two weeks.", goalEn: "Explain technical constraints and negotiate a feasible delivery schedule." }
+  ],
+  C1: [
+    { id: 'rp_c1_1', scenarioTitle: "Venture Capital Pitch [C1]", aiRoleEn: "Managing Partner", userRoleEn: "Startup Founder", initialAiMessage: "Your burn rate seems high given market headwinds. How do you justify this valuation?", goalEn: "Defend financial projections and articulate market scalability." }
+  ],
+  C2: [
+    { id: 'rp_c2_1', scenarioTitle: "Antitrust Litigation [C2]", aiRoleEn: "Regulator Chair", userRoleEn: "Chief Legal Officer", initialAiMessage: "The proposed merger violates competition laws regarding market dominance.", goalEn: "Structure a compliance package mitigating antitrust concerns." }
+  ]
 };
 
 export async function generateRoleplayScenario(cefrLevel: string = 'A1'): Promise<RoleplayScenario> {
@@ -55,17 +68,22 @@ Return ONLY valid JSON matching:
   ${isLowLevel ? '"goalVi": "Goal tiếng Việt",' : ''}
 }`;
 
-  try {
-    const response = await groq.chat.completions.create({
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: `Generate a new Roleplay Scenario for CEFR [${levelKey}]. Request ID: ${uniqueSeed}. Exclude: [${excludedList}]` }
-      ],
-      model: 'llama-3.3-70b-versatile',
-      temperature: 0.95,
-      response_format: { type: 'json_object' }
-    });
+  const apiCall = groq.chat.completions.create({
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: `Generate a BRAND NEW and DIFFERENT topic for CEFR Level [${levelKey}]. Request ID: ${uniqueSeed}. Timestamp: ${Date.now()}. DO NOT REPEAT: [${excludedList || 'None'}]` }
+    ],
+    model: 'llama-3.3-70b-versatile',
+    temperature: 1.0, // Ép Groq sinh đề mới 100%
+    response_format: { type: 'json_object' }
+  });
 
+  const timeout = new Promise((_, reject) =>
+    setTimeout(() => reject(new Error('Groq Timeout')), 4000)
+  );
+
+  try {
+    const response: any = await Promise.race([apiCall, timeout]);
     const parsed = JSON.parse(response.choices[0]?.message?.content || '{}');
     const titleText = parsed.scenarioTitle || `Roleplay [${levelKey}]`;
 
@@ -85,7 +103,10 @@ Return ONLY valid JSON matching:
   } catch (error) {
     console.warn(`Fallback triggered for Roleplay ${levelKey}:`, error);
     const list = STRICT_ROLEPLAY_FALLBACKS[levelKey] || STRICT_ROLEPLAY_FALLBACKS['C2'];
-    const item = list[Math.floor(Math.random() * list.length)];
-    return { ...item, id: uniqueSeed };
+    const filtered = list.filter(item => !sessionUsedRoleplayTexts.has(item.scenarioTitle.toLowerCase()));
+    const selected = filtered.length > 0 ? filtered[Math.floor(Math.random() * filtered.length)] : list[Math.floor(Math.random() * list.length)];
+    
+    sessionUsedRoleplayTexts.add(selected.scenarioTitle.toLowerCase());
+    return { ...selected, id: uniqueSeed };
   }
 }
