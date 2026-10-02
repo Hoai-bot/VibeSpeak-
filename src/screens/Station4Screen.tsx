@@ -34,20 +34,28 @@ export default function Station4Screen({ onBack }: Props) {
 
   const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
 
-  // 🔊 GIỌNG ĐỌC TỰ NHIÊN QUA GOOGLE TTS & BROWSER NATURAL VOICE
+  // 🧹 HÀM HỦY TOÀN BỘ ÂM THANH ĐANG PHÁT ĐỂ TRÁNH ĐỌC CHỒNG / ĐỌC CÂU CŨ
+  const stopAllAudio = () => {
+    if (currentAudioRef.current) {
+      currentAudioRef.current.pause();
+      currentAudioRef.current.currentTime = 0;
+      currentAudioRef.current = null;
+    }
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+    setIsPlayingTTS(false);
+  };
+
+  // 🔊 GIỌNG ĐỌC TỰ NHIÊN CHUẨN 100% TIẾNG ANH (CHỈ ĐỌC PROMPT TIẾNG ANH)
   const playPromptTTS = (textToSpeak: string) => {
     if (!textToSpeak) return;
 
-    if (currentAudioRef.current) {
-      currentAudioRef.current.pause();
-      currentAudioRef.current = null;
-    }
+    // Dọn dẹp triệt để trước khi đọc câu mới
+    stopAllAudio();
 
     try {
       setIsPlayingTTS(true);
-      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
-      }
 
       const encodedText = encodeURIComponent(textToSpeak);
       const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodedText}&tl=en&client=tw-ob`;
@@ -57,9 +65,7 @@ export default function Station4Screen({ onBack }: Props) {
       
       audio.onplay = () => setIsPlayingTTS(true);
       audio.onended = () => setIsPlayingTTS(false);
-      audio.onerror = () => {
-        fallbackBrowserTTS(textToSpeak);
-      };
+      audio.onerror = () => fallbackBrowserTTS(textToSpeak);
 
       audio.play().catch(() => fallbackBrowserTTS(textToSpeak));
     } catch (err) {
@@ -98,22 +104,17 @@ export default function Station4Screen({ onBack }: Props) {
     }
   };
 
-  // ✅ LUỒNG NẠP DỮ LIỆU HYBRID (0.01s Instant + Background AI Sync)
+  // ✅ LUỒNG TẢI ĐỀ DỮ LIỆU CHUẨN ĐỒNG BỘ
   const loadExerciseData = async (level: string) => {
     const currentRequestId = ++requestIdRef.current;
+    stopAllAudio();
     resetState();
 
-    // 1. HIỂN THỊ ĐỀ TỨC THÌ TỪ KHO LOCAL (0.01 GIÂY)
+    // 1. HIỂN THỊ ĐỀ LOCAL TỨC THÌ (0.01s)
     const instantData = getInstantStation4Exercise(level);
     setExercise(instantData);
 
-    if (instantData && instantData.promptEn) {
-      setTimeout(() => {
-        playPromptTTS(instantData.promptEn);
-      }, 300);
-    }
-
-    // 2. GỌI GROQ AI NGẦM BẤT ĐỒNG BỘ
+    // 2. GỌI GROQ AI NGẦM VỚI KHỐI FINALLY TẮT LOADING TRIỆT ĐỂ
     setLoading(true);
     try {
       const aiData = await generateStation4Exercise(level);
@@ -121,7 +122,7 @@ export default function Station4Screen({ onBack }: Props) {
         setExercise(aiData);
       }
     } catch (err) {
-      console.warn("Sử dụng đề Local dự phòng cho Trạm 4:", err);
+      console.warn("Dùng đề Local dự phòng cho Trạm 4:", err);
     } finally {
       if (currentRequestId === requestIdRef.current) {
         setLoading(false);
@@ -129,32 +130,30 @@ export default function Station4Screen({ onBack }: Props) {
     }
   };
 
+  // 🎯 LỜI GIẢI CHO LỖI KHÔNG TRÙNG KHỚP: Chỉ phát âm tự động khi state `exercise` ĐÃ ĐƯỢC RENDER HOÀN TOÀN
+  useEffect(() => {
+    if (exercise && exercise.promptEn && battleState === 'idle') {
+      const timer = setTimeout(() => {
+        playPromptTTS(exercise.promptEn);
+      }, 200);
+      return () => clearTimeout(timer);
+    }
+  }, [exercise?.id]); // 👉 Mỗi khi bài tập đổi (thay đổi ID), tự động đọc đúng promptEn của bài đó
+
   useEffect(() => {
     loadExerciseData(cefrLevel);
     return () => {
-      if (currentAudioRef.current) {
-        currentAudioRef.current.pause();
-      }
-      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
-      }
+      stopAllAudio();
     };
   }, [cefrLevel]);
 
   const resetState = () => {
-    if (currentAudioRef.current) {
-      currentAudioRef.current.pause();
-      currentAudioRef.current = null;
-    }
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-    }
+    stopAllAudio();
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
       try { mediaRecorderRef.current.stop(); } catch (e) {}
     }
     setBattleState('idle');
     setIsRecording(false);
-    setIsPlayingTTS(false);
     setRecordedAudio(null);
     setHasRecorded(false);
     setResult(null);
@@ -162,13 +161,7 @@ export default function Station4Screen({ onBack }: Props) {
   };
 
   const handleToggleRecord = async () => {
-    if (currentAudioRef.current) {
-      currentAudioRef.current.pause();
-    }
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-      setIsPlayingTTS(false);
-    }
+    stopAllAudio();
 
     if (!isRecording) {
       try {
@@ -275,7 +268,7 @@ export default function Station4Screen({ onBack }: Props) {
                 <Text style={styles.promptViText}>👉 Dịch: "{exercise.promptVi}"</Text>
               )}
 
-              {/* 🎯 Nút phát âm chuẩn 100% tiếng Anh cho đề A1/A2/B1/B2/C1/C2 */}
+              {/* 🎯 Nút bấm chủ động phát âm luôn lấy trực tiếp `exercise.promptEn` hiện tại trên UI */}
               <TouchableOpacity 
                 style={[styles.ttsBtn, isPlayingTTS && styles.ttsBtnActive]} 
                 onPress={() => playPromptTTS(exercise.promptEn)}
