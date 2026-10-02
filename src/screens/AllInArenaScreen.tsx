@@ -39,6 +39,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
   const audioChunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   
+  // ⚡ Ref kiểm soát Request ID
   const requestIdRef = useRef<number>(0);
 
   const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
@@ -127,30 +128,37 @@ export default function AllInArenaScreen({ onBack }: Props) {
     }, 1000);
   };
 
-  // ⚡ HÀM CỐT LÕI: TẢI ĐỀ CÓ ÉP FLUSH RE-RENDER VÀ BỎ QUA REPEAT
+  // ⚡ HÀM TẢI ĐỀ ÉP XÓA VÀ GÁN DỮ LIỆU MỚI TỨC THÌ
   const loadModeData = async (selectedMode: string, level: string) => {
     const currentRequestId = ++requestIdRef.current;
     
-    // 1. Ép chuyển trạng thái Loading và dọn dẹp state cũ
     setLoading(true);
     resetBattleState();
+
+    // Clear state hoàn toàn
     setSoloTopic(null);
     setRelayChallenge(null);
     setRoleplayScenario(null);
 
-    // 2. Delay 100ms để React chắc chắn vẽ Spinner Loading lên màn hình
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    // Delay 150ms để React Render xong Spinner
+    await new Promise((resolve) => setTimeout(resolve, 150));
 
     try {
       if (selectedMode === 'solo') {
         const data = await generateSoloTopic(level);
-        if (currentRequestId === requestIdRef.current) setSoloTopic(data);
+        if (currentRequestId === requestIdRef.current) {
+          setSoloTopic({ ...data, id: `solo_force_${Date.now()}_${Math.random()}` });
+        }
       } else if (selectedMode === 'relay') {
         const data = await generateRelayChallenge(level);
-        if (currentRequestId === requestIdRef.current) setRelayChallenge(data);
+        if (currentRequestId === requestIdRef.current) {
+          setRelayChallenge({ ...data, id: `relay_force_${Date.now()}_${Math.random()}` });
+        }
       } else {
         const data = await generateRoleplayScenario(level);
-        if (currentRequestId === requestIdRef.current) setRoleplayScenario(data);
+        if (currentRequestId === requestIdRef.current) {
+          setRoleplayScenario({ ...data, id: `rp_force_${Date.now()}_${Math.random()}` });
+        }
       }
     } catch (err) {
       console.error("Lỗi tải đề Trạm 2:", err);
@@ -161,14 +169,11 @@ export default function AllInArenaScreen({ onBack }: Props) {
     }
   };
 
-  // ⚡ HÀM NÚT ĐỔI ĐỀ TRẠM 2: DỌN DẸP LỊCH SỬ DỰ PHÒNG VÀ ÉP LÊN ĐỀ MỚI
+  // ⚡ NÚT ĐỔI ĐỀ MỚI - ÉP XOÁ CACHE LỊCH SỬ DỰ PHÒNG
   const handleRefreshTopic = () => {
-    if (loading) return;
-
-    // Clear bộ đệm chống trùng của service tương ứng
-    if (mode === 'solo') clearSoloTopicHistory();
-    else if (mode === 'relay') clearRelayHistory();
-    else clearRoleplayHistory();
+    clearSoloTopicHistory();
+    clearRelayHistory();
+    clearRoleplayHistory();
 
     loadModeData(mode, cefrLevel);
   };
@@ -388,7 +393,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
               </View>
             )}
 
-            {/* NÚT ĐỔI ĐỀ TRẠM 2 ĐÃ ĐƯỢC TỐI ƯU HÀM HANDLE REFRESH */}
+            {/* NÚT ĐỔI ĐỀ TRẠM 2 */}
             <TouchableOpacity 
               style={[styles.refreshBtn, loading && styles.refreshBtnDisabled]} 
               onPress={handleRefreshTopic} 
