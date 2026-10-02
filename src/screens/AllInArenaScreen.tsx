@@ -76,7 +76,10 @@ export default function AllInArenaScreen({ onBack }: Props) {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
       try { mediaRecorderRef.current.stop(); } catch (e) {}
     }
-    if (timerRef.current) clearInterval(timerRef.current);
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
     
     setBattleState('idle');
     setCurrentTurn(1);
@@ -90,15 +93,23 @@ export default function AllInArenaScreen({ onBack }: Props) {
     audioChunksRef.current = [];
   };
 
+  // 💡 HÀM ĐẾM NGƯỢC THỜI GIAN TỰ ĐỘNG DỌN TIMER CŨ
   const startTurnTimer = (allocatedTime: number) => {
-    if (timerRef.current) clearInterval(timerRef.current);
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+
     setTimeLeft(allocatedTime);
     setIsTimerRunning(true);
 
     timerRef.current = setInterval(() => {
       setTimeLeft((prev) => {
         if (prev <= 1) {
-          clearInterval(timerRef.current!);
+          if (timerRef.current) {
+            clearInterval(timerRef.current);
+            timerRef.current = null;
+          }
           setIsTimerRunning(false);
 
           if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
@@ -109,7 +120,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
           if (mode !== 'solo' && currentTurn === 1) {
             setCurrentTurn(2);
             const turn2Time = getTimeForCurrentTurn(cefrLevel, mode);
-            setTimeout(() => startTurnTimer(turn2Time), 500);
+            setTimeout(() => startTurnTimer(turn2Time), 300);
           }
           return 0;
         }
@@ -118,7 +129,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
     }, 1000);
   };
 
-  // 💡 HÀM TẢI ĐỀ TỨC THÌ VÀ CHỐNG TRÙNG REQUEST
+  // 💡 HÀM TẢI ĐỀ BẤT ĐỒNG BỘ CÓ CHỐNG RACE CONDITION
   const loadModeData = async (selectedMode: string, level: string) => {
     const currentRequestId = ++requestIdRef.current;
     
@@ -151,6 +162,17 @@ export default function AllInArenaScreen({ onBack }: Props) {
     }
   };
 
+  // ⚡ HÀM XỬ LÝ NÚT BẤM ĐỔI ĐỀ MỚI (XÓA CACHE LỊCH SỬ & ÉP TẠO ĐỀ)
+  const handleRefreshTopic = () => {
+    if (loading) return;
+    
+    if (mode === 'solo') clearSoloTopicHistory();
+    else if (mode === 'relay') clearRelayHistory();
+    else clearRoleplayHistory();
+
+    loadModeData(mode, cefrLevel);
+  };
+
   useEffect(() => {
     loadModeData(mode, cefrLevel);
     return () => resetBattleState();
@@ -175,6 +197,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
     }, 1500);
   };
 
+  // 💡 HÀM BẬT/TẮT THU ÂM CÓ NGẮT TIMER NGAY KHI XONG BÀI NÓI
   const handleToggleRecord = async () => {
     if (!isRecording) {
       try {
@@ -232,6 +255,13 @@ export default function AllInArenaScreen({ onBack }: Props) {
       if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
         mediaRecorderRef.current.stop();
       }
+      
+      // 🛑 Ngắt timer ngay khi người dùng dừng thu âm
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+      setIsTimerRunning(false);
     }
   };
 
@@ -241,7 +271,10 @@ export default function AllInArenaScreen({ onBack }: Props) {
       return;
     }
 
-    if (timerRef.current) clearInterval(timerRef.current);
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
     if (isRecording) setIsRecording(false);
     setBattleState('analyzing');
 
@@ -357,9 +390,10 @@ export default function AllInArenaScreen({ onBack }: Props) {
               </View>
             )}
 
+            {/* NÚT ĐỔI ĐỀ TÍCH HỢP HÀM HANDLE REFRESH TỐI ƯU */}
             <TouchableOpacity 
               style={[styles.refreshBtn, loading && styles.refreshBtnDisabled]} 
-              onPress={() => loadModeData(mode, cefrLevel)} 
+              onPress={handleRefreshTopic} 
               disabled={loading}
             >
               {loading ? (
@@ -451,7 +485,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
 
             <Text style={styles.breakdownHeaderLabel}>📊 PHÂN TÍCH CHI TIẾT 6 TIÊU CHÍ:</Text>
             <View style={styles.breakdownCard}>
-              <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>🗣️️ 1. Phát âm:</Text><Text style={styles.breakdownValue}>{result.pronunciation}/100</Text></View>
+              <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>🗣 1. Phát âm:</Text><Text style={styles.breakdownValue}>{result.pronunciation}/100</Text></View>
               <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>📚 2. Ngữ pháp:</Text><Text style={styles.breakdownValue}>{result.grammar}/100</Text></View>
               <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>🔤 3. Từ vựng:</Text><Text style={styles.breakdownValue}>{result.vocabulary}/100</Text></View>
               <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>⚡ 4. Phản xạ:</Text><Text style={styles.breakdownValue}>{result.reflexes}/100</Text></View>
