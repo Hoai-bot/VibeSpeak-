@@ -39,7 +39,6 @@ export default function AllInArenaScreen({ onBack }: Props) {
   const audioChunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   
-  // ⚡ Ref kiểm soát Request ID chống nghẽn và ghi đè dữ liệu cũ
   const requestIdRef = useRef<number>(0);
 
   const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
@@ -93,7 +92,6 @@ export default function AllInArenaScreen({ onBack }: Props) {
     audioChunksRef.current = [];
   };
 
-  // 💡 HÀM ĐẾM NGƯỢC THỜI GIAN TỰ ĐỘNG DỌN TIMER CŨ
   const startTurnTimer = (allocatedTime: number) => {
     if (timerRef.current) {
       clearInterval(timerRef.current);
@@ -129,18 +127,19 @@ export default function AllInArenaScreen({ onBack }: Props) {
     }, 1000);
   };
 
-  // 💡 HÀM TẢI ĐỀ BẤT ĐỒNG BỘ CÓ CHỐNG RACE CONDITION
+  // ⚡ HÀM CỐT LÕI: TẢI ĐỀ CÓ ÉP FLUSH RE-RENDER VÀ BỎ QUA REPEAT
   const loadModeData = async (selectedMode: string, level: string) => {
     const currentRequestId = ++requestIdRef.current;
     
+    // 1. Ép chuyển trạng thái Loading và dọn dẹp state cũ
     setLoading(true);
     resetBattleState();
-
     setSoloTopic(null);
     setRelayChallenge(null);
     setRoleplayScenario(null);
 
-    await new Promise(resolve => setTimeout(resolve, 50));
+    // 2. Delay 100ms để React chắc chắn vẽ Spinner Loading lên màn hình
+    await new Promise((resolve) => setTimeout(resolve, 100));
 
     try {
       if (selectedMode === 'solo') {
@@ -162,10 +161,11 @@ export default function AllInArenaScreen({ onBack }: Props) {
     }
   };
 
-  // ⚡ HÀM XỬ LÝ NÚT BẤM ĐỔI ĐỀ MỚI (XÓA CACHE LỊCH SỬ & ÉP TẠO ĐỀ)
+  // ⚡ HÀM NÚT ĐỔI ĐỀ TRẠM 2: DỌN DẸP LỊCH SỬ DỰ PHÒNG VÀ ÉP LÊN ĐỀ MỚI
   const handleRefreshTopic = () => {
     if (loading) return;
-    
+
+    // Clear bộ đệm chống trùng của service tương ứng
     if (mode === 'solo') clearSoloTopicHistory();
     else if (mode === 'relay') clearRelayHistory();
     else clearRoleplayHistory();
@@ -197,7 +197,6 @@ export default function AllInArenaScreen({ onBack }: Props) {
     }, 1500);
   };
 
-  // 💡 HÀM BẬT/TẮT THU ÂM CÓ NGẮT TIMER NGAY KHI XONG BÀI NÓI
   const handleToggleRecord = async () => {
     if (!isRecording) {
       try {
@@ -256,7 +255,6 @@ export default function AllInArenaScreen({ onBack }: Props) {
         mediaRecorderRef.current.stop();
       }
       
-      // 🛑 Ngắt timer ngay khi người dùng dừng thu âm
       if (timerRef.current) {
         clearInterval(timerRef.current);
         timerRef.current = null;
@@ -334,7 +332,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
           ))}
         </View>
 
-        {/* CHỜ TRẬN & HIỂN THỊ CẤU TRÚC SONG NGỮ CHUẨN */}
+        {/* CHỜ TRẬN & HIỂN THỊ ĐỀ THI */}
         {battleState === 'idle' && (
           <View style={styles.box}>
             <Text style={styles.boxTitle}>⚡ {mode.toUpperCase()} [{cefrLevel}]</Text>
@@ -390,7 +388,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
               </View>
             )}
 
-            {/* NÚT ĐỔI ĐỀ TÍCH HỢP HÀM HANDLE REFRESH TỐI ƯU */}
+            {/* NÚT ĐỔI ĐỀ TRẠM 2 ĐÃ ĐƯỢC TỐI ƯU HÀM HANDLE REFRESH */}
             <TouchableOpacity 
               style={[styles.refreshBtn, loading && styles.refreshBtnDisabled]} 
               onPress={handleRefreshTopic} 
@@ -462,7 +460,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
           </View>
         )}
 
-        {/* KẾT QUẢ HIỂN THỊ ĐẦY ĐỦ 6 TIÊU CHÍ */}
+        {/* KẾT QUẢ THI ĐẤU */}
         {battleState === 'ended' && result && (
           <View style={styles.box}>
             <Text style={[styles.resultTitle, { color: result.isWin ? '#39FF14' : '#FF0055' }]}>
