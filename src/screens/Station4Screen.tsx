@@ -34,7 +34,7 @@ export default function Station4Screen({ onBack }: Props) {
 
   const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
 
-  // 🧹 HÀM HỦY TOÀN BỘ ÂM THANH ĐANG PHÁT ĐỂ TRÁNH ĐỌC CHỒNG / ĐỌC CÂU CŨ
+  // 🧹 HỦY TOÀN BỘ ÂM THANH ĐANG PHÁT ĐỂ TRÁNH ĐỌC CHỒNG
   const stopAllAudio = () => {
     if (currentAudioRef.current) {
       currentAudioRef.current.pause();
@@ -47,11 +47,10 @@ export default function Station4Screen({ onBack }: Props) {
     setIsPlayingTTS(false);
   };
 
-  // 🔊 GIỌNG ĐỌC TỰ NHIÊN CHUẨN 100% TIẾNG ANH (CHỈ ĐỌC PROMPT TIẾNG ANH)
+  // 🔊 GIỌNG ĐỌC TỰ NHIÊN CHUẨN 100% TIẾNG ANH
   const playPromptTTS = (textToSpeak: string) => {
     if (!textToSpeak) return;
 
-    // Dọn dẹp triệt để trước khi đọc câu mới
     stopAllAudio();
 
     try {
@@ -104,17 +103,26 @@ export default function Station4Screen({ onBack }: Props) {
     }
   };
 
-  // ✅ LUỒNG TẢI ĐỀ DỮ LIỆU CHUẨN ĐỒNG BỘ
+  // ✅ LUỒNG TẢI ĐỀ DỮ LIỆU ĐÓNG GÓI CHỐNG KẸT RENDER
   const loadExerciseData = async (level: string) => {
     const currentRequestId = ++requestIdRef.current;
     stopAllAudio();
     resetState();
 
-    // 1. HIỂN THỊ ĐỀ LOCAL TỨC THÌ (0.01s)
-    const instantData = getInstantStation4Exercise(level);
-    setExercise(instantData);
+    // 💥 Ép xóa state cũ để UI xóa sạch câu cũ ngay lập tức
+    setExercise(null);
 
-    // 2. GỌI GROQ AI NGẦM VỚI KHỐI FINALLY TẮT LOADING TRIỆT ĐỂ
+    // 1. LẤY NGAY ĐỀ MỚI TỪ LOCAL POOL (0.01s)
+    const instantData = getInstantStation4Exercise(level);
+    
+    // Set timeout nhỏ để React nhận diện sự thay đổi state hoàn toàn
+    setTimeout(() => {
+      if (currentRequestId === requestIdRef.current) {
+        setExercise(instantData);
+      }
+    }, 50);
+
+    // 2. GỌI GROQ AI NGẦM
     setLoading(true);
     try {
       const aiData = await generateStation4Exercise(level);
@@ -130,7 +138,7 @@ export default function Station4Screen({ onBack }: Props) {
     }
   };
 
-  // 🎯 LỜI GIẢI CHO LỖI KHÔNG TRÙNG KHỚP: Chỉ phát âm tự động khi state `exercise` ĐÃ ĐƯỢC RENDER HOÀN TOÀN
+  // 🎯 Đọc tự động khi bài tập đã render xong trên giao diện
   useEffect(() => {
     if (exercise && exercise.promptEn && battleState === 'idle') {
       const timer = setTimeout(() => {
@@ -138,7 +146,7 @@ export default function Station4Screen({ onBack }: Props) {
       }, 200);
       return () => clearTimeout(timer);
     }
-  }, [exercise?.id]); // 👉 Mỗi khi bài tập đổi (thay đổi ID), tự động đọc đúng promptEn của bài đó
+  }, [exercise?.id]);
 
   useEffect(() => {
     loadExerciseData(cefrLevel);
@@ -268,7 +276,6 @@ export default function Station4Screen({ onBack }: Props) {
                 <Text style={styles.promptViText}>👉 Dịch: "{exercise.promptVi}"</Text>
               )}
 
-              {/* 🎯 Nút bấm chủ động phát âm luôn lấy trực tiếp `exercise.promptEn` hiện tại trên UI */}
               <TouchableOpacity 
                 style={[styles.ttsBtn, isPlayingTTS && styles.ttsBtnActive]} 
                 onPress={() => playPromptTTS(exercise.promptEn)}
