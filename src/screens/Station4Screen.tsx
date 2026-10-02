@@ -18,7 +18,6 @@ export default function Station4Screen({ onBack }: Props) {
   const [loading, setLoading] = useState<boolean>(false);
   const [isPlayingTTS, setIsPlayingTTS] = useState<boolean>(false);
   
-  // ✅ CẬP NHẬT: Dùng kiểu dữ liệu mới SpeakingExpressExercise
   const [exercise, setExercise] = useState<SpeakingExpressExercise | null>(null);
   const [battleState, setBattleState] = useState<'idle' | 'battling' | 'analyzing' | 'ended'>('idle');
   
@@ -99,7 +98,7 @@ export default function Station4Screen({ onBack }: Props) {
     }
   };
 
-  // ✅ CẬP NHẬT: Luồng nạp dữ liệu Hybrid (0.01s Instant + Background AI Sync + Safe Finally)
+  // ✅ LUỒNG NẠP DỮ LIỆU HYBRID (0.01s Instant + Background AI Sync)
   const loadExerciseData = async (level: string) => {
     const currentRequestId = ++requestIdRef.current;
     resetState();
@@ -114,7 +113,7 @@ export default function Station4Screen({ onBack }: Props) {
       }, 300);
     }
 
-    // 2. GỌI GROQ AI NGẦM ĐỂ CẬP NHẬT BÀI MỚI BẤT ĐỒNG BỘ
+    // 2. GỌI GROQ AI NGẦM BẤT ĐỒNG BỘ
     setLoading(true);
     try {
       const aiData = await generateStation4Exercise(level);
@@ -124,7 +123,6 @@ export default function Station4Screen({ onBack }: Props) {
     } catch (err) {
       console.warn("Sử dụng đề Local dự phòng cho Trạm 4:", err);
     } finally {
-      // 💥 BẮT BỘC: Luôn giải phóng trạng thái quay quay
       if (currentRequestId === requestIdRef.current) {
         setLoading(false);
       }
@@ -277,12 +275,13 @@ export default function Station4Screen({ onBack }: Props) {
                 <Text style={styles.promptViText}>👉 Dịch: "{exercise.promptVi}"</Text>
               )}
 
+              {/* 🎯 Nút phát âm chuẩn 100% tiếng Anh cho đề A1/A2/B1/B2/C1/C2 */}
               <TouchableOpacity 
                 style={[styles.ttsBtn, isPlayingTTS && styles.ttsBtnActive]} 
                 onPress={() => playPromptTTS(exercise.promptEn)}
               >
                 <Text style={styles.ttsBtnText}>
-                  {isPlayingTTS ? '🔊 ĐANG PHÁT GIỌNG NÓI MƯỢT...' : '🔊 NGHE TÌNH HUỐNG (NATURAL VOICE)'}
+                  {isPlayingTTS ? '🔊 ĐANG PHÁT GIỌNG NÓI...' : '🔊 NGHE TÌNH HUỐNG (NATURAL VOICE)'}
                 </Text>
               </TouchableOpacity>
 
