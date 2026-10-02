@@ -9,7 +9,6 @@ const groq = new Groq({ apiKey: ACTIVE_GROQ_KEY, dangerouslyAllowBrowser: true }
 
 export interface PhoneticExercise {
   id: string;
-  level: string;
   title: string;
   category: 'minimal_pairs' | 'linking_sounds' | 'tongue_twisters';
   contentEn: string;
@@ -24,44 +23,36 @@ export function clearStation1History() {
   sessionUsedPhonetics.clear();
 }
 
-// ⚡ 1. LẤY NGAY 1 BÀI TỪ KHO DATA TƯƠNG ỨNG (0.01s) - ÉP TẠO UNIQUE ID CHỐNG TRÙNG RENDER
+// ⚡ 1. LẤY NGAY 1 CÂU PHẲNG TỪ LOCAL POOL (0.01s) - CÓ DÙNG MÃ RANDOM THỜI GIAN ÉP RE-RENDER
 export function getInstantStation1Exercise(
-  cefrLevel: string = 'A1', 
   category: 'minimal_pairs' | 'linking_sounds' | 'tongue_twisters' = 'minimal_pairs'
 ): PhoneticExercise {
-  const levelKey = (cefrLevel || 'A1').toUpperCase();
-
-  // Chọn nguồn data dựa trên category
-  let rawDataset: Record<string, any[]> = MINIMAL_PAIRS_DATA;
+  let activePool: any[] = MINIMAL_PAIRS_DATA;
   if (category === 'linking_sounds') {
-    rawDataset = LINKING_SOUNDS_DATA;
+    activePool = LINKING_SOUNDS_DATA;
   } else if (category === 'tongue_twisters') {
-    rawDataset = TONGUE_TWISTERS_DATA;
+    activePool = TONGUE_TWISTERS_DATA;
   }
 
-  const pool = rawDataset[levelKey] || rawDataset['A1'] || [];
+  // Lọc loại bỏ bài đã xuất hiện trong phiên
+  const filtered = activePool.filter(item => !sessionUsedPhonetics.has(item.contentEn.toLowerCase()));
 
-  // Lọc các bài chưa sử dụng trong phiên
-  const filtered = pool.filter(item => !sessionUsedPhonetics.has(item.contentEn.toLowerCase()));
-
-  // Reset bộ nhớ phiên nếu đã dùng hết toàn bộ bài trong pool
+  // Reset nếu đã dùng hết toàn bộ pool
   if (filtered.length === 0) {
     sessionUsedPhonetics.clear();
   }
 
   const selected = filtered.length > 0 
     ? filtered[Math.floor(Math.random() * filtered.length)] 
-    : pool[Math.floor(Math.random() * pool.length)];
+    : activePool[Math.floor(Math.random() * activePool.length)];
 
   if (selected && selected.contentEn) {
     sessionUsedPhonetics.add(selected.contentEn.toLowerCase());
   }
 
-  // 💥 LUÔN TẠO OBJECT MỚI CÙNG UNIQUE ID ĐỂ ÉP REACT CẬP NHẬT GIAO DIỆN LẬP TỨC
   return {
     id: `instant_st1_${Date.now()}_${Math.floor(Math.random() * 1000000)}`,
-    level: levelKey,
-    title: selected?.title || `Phonetics [${levelKey}]`,
+    title: selected?.title || "Phonetics Practice",
     category: category,
     contentEn: selected?.contentEn || "ship / sheep",
     contentVi: selected?.contentVi,
@@ -70,40 +61,34 @@ export function getInstantStation1Exercise(
   };
 }
 
-// ⚡ 2. GỌI GROQ AI NGẦM BẤT ĐỒNG BỘ ĐỂ LẤY ĐỀ MỚI TỪ SERVER
+// ⚡ 2. GỌI GROQ AI NGẦM ĐỂ TẠO TỰ NHIÊN BẤT ĐỒNG BỘ
 export async function generateStation1Exercise(
-  cefrLevel: string = 'A1',
   category: 'minimal_pairs' | 'linking_sounds' | 'tongue_twisters' = 'minimal_pairs'
 ): Promise<PhoneticExercise> {
   const uniqueSeed = `st1_${Date.now()}_${Math.floor(Math.random() * 1000000)}`;
-  const levelKey = (cefrLevel || 'A1').toUpperCase();
-  const isLowLevel = ['A1', 'A2', 'B1'].includes(levelKey);
   const excludedList = Array.from(sessionUsedPhonetics).slice(-15).join(' | ');
 
-  const systemPrompt = `You are a strict Phonetics Coach. Generate ONE exercise STRICTLY for CEFR Level ${levelKey} and Category "${category}".
+  const systemPrompt = `You are an expert Phonetics Coach. Generate ONE English phonetics exercise for category "${category}".
 STRICT RULES:
-- Category "minimal_pairs": contentEn MUST be a word pair like "ship / sheep".
-- Category "linking_sounds": contentEn MUST be a phrase like "Check it out".
-- Category "tongue_twisters": contentEn MUST be a twister phrase like "She sells seashells".
-${isLowLevel 
-  ? `- Include BOTH "contentEn" and "contentVi" (Vietnamese translation).` 
-  : `- 100% ADVANCED ENGLISH ONLY. STRICTLY DO NOT PROVIDE "contentVi".`
-}
+- If category is "minimal_pairs", contentEn MUST be a word pair like "fit / feet". Include "contentVi" in Vietnamese.
+- If category is "linking_sounds", contentEn MUST be a phrase like "Check it out". Include "contentVi" in Vietnamese.
+- If category is "tongue_twisters", contentEn MUST be a twister like "Fresh fried fish". Include "contentVi" in Vietnamese.
+
 Return ONLY valid JSON matching:
 {
-  "title": "Phonetics Title [${levelKey}]",
+  "title": "Short Descriptive Title",
   "category": "${category}",
-  "contentEn": "Target English phrase or minimal pair",
-  ${isLowLevel ? '"contentVi": "Bản dịch tiếng Việt",' : ''}
-  "targetFocus": "Phonetic target description",
-  "phoneticSpelling": "/IPA spelling/"
+  "contentEn": "Target English text",
+  "contentVi": "Bản dịch tiếng Việt",
+  "targetFocus": "Phonetic element description",
+  "phoneticSpelling": "/IPA/"
 }`;
 
   try {
     const apiCall = groq.chat.completions.create({
       messages: [
         { role: 'system', content: systemPrompt },
-        { role: 'user', content: `Generate a BRAND NEW phonetics exercise for CEFR [${levelKey}] category [${category}]. Request ID: ${uniqueSeed}. Exclude: [${excludedList || 'None'}]` }
+        { role: 'user', content: `Generate a BRAND NEW item for category [${category}]. Request ID: ${uniqueSeed}. Exclude: [${excludedList || 'None'}]` }
       ],
       model: 'llama-3.3-70b-versatile',
       temperature: 1.0,
@@ -116,22 +101,20 @@ Return ONLY valid JSON matching:
 
     const response: any = await Promise.race([apiCall, timeout]);
     const parsed = JSON.parse(response.choices[0]?.message?.content || '{}');
-    const contentEn = parsed.contentEn || `Phonetics task for ${levelKey}`;
+    const contentEn = parsed.contentEn || "ship / sheep";
 
     sessionUsedPhonetics.add(contentEn.toLowerCase());
 
     return {
       id: uniqueSeed,
-      level: levelKey,
-      title: parsed.title || `Phonetics [${levelKey}]`,
+      title: parsed.title || "Phonetics Challenge",
       category: category,
       contentEn: contentEn,
-      contentVi: isLowLevel ? parsed.contentVi : undefined,
+      contentVi: parsed.contentVi,
       targetFocus: parsed.targetFocus || "Phonetics practice",
       phoneticSpelling: parsed.phoneticSpelling || ""
     };
   } catch (error) {
-    console.warn(`Fallback triggered for Station 1 Level ${levelKey}:`, error);
-    return getInstantStation1Exercise(cefrLevel, category);
+    return getInstantStation1Exercise(category);
   }
 }

@@ -1,41 +1,33 @@
-// src/data/station1/linkingSounds.ts
-export interface LinkingSoundItem {
+// src/data/station1/minimalPairs.ts
+export interface MinimalPairItem {
   id: string;
-  level: 'A1' | 'A2' | 'B1' | 'B2' | 'C1' | 'C2';
   title: string;
   contentEn: string;
-  contentVi: string;
+  contentVi?: string;
   targetFocus: string;
-  phoneticSpelling: string;
+  phoneticSpelling?: string;
 }
 
-export const LINKING_SOUNDS_DATA: Record<string, LinkingSoundItem[]> = {
-  A1: [
-    { id: 'ls_a1_1', level: 'A1', title: "Nối âm Phụ âm + Nguyên âm", contentEn: "Check it out", contentVi: "Kiểm tra nó xem", targetFocus: "k + i -> che-kit-out", phoneticSpelling: "/tʃek ɪt aʊt/" },
-    { id: 'ls_a1_2', level: 'A1', title: "Nối âm Phụ âm + Nguyên âm", contentEn: "Pick up the phone", contentVi: "Nhấc điện thoại lên", targetFocus: "k + u -> pi-kup", phoneticSpelling: "/pɪk ʌp ðə fəʊn/" },
-    { id: 'ls_a1_3', level: 'A1', title: "Nối âm Phụ âm + Nguyên âm", contentEn: "Turn off the light", contentVi: "Tắt đèn đi", targetFocus: "n + o -> tur-noff", phoneticSpelling: "/tɜːn ɒf ðə laɪt/" },
-    { id: 'ls_a1_4', level: 'A1', title: "Nối âm Phụ âm + Nguyên âm", contentEn: "Stand up please", contentVi: "Hãy đứng lên", targetFocus: "d + u -> stan-dup", phoneticSpelling: "/stænd ʌp pliːz/" },
-    { id: 'ls_a1_5', level: 'A1', title: "Nối âm Phụ âm + Nguyên âm", contentEn: "Sit on the chair", contentVi: "Ngồi trên ghế", targetFocus: "t + o -> si-ton", phoneticSpelling: "/sɪt ɒn ðə tʃeər/" }
-    // ... Thêm đủ 50 cụm cho A1
-  ],
-  A2: [
-    { id: 'ls_a2_1', level: 'A2', title: "Nối âm Phụ âm + Nguyên âm", contentEn: "Hold on a second", contentVi: "Chờ một chút", targetFocus: "d + o -> hol-don", phoneticSpelling: "/həʊld ɒn ə ˈsekənd/" }
-    // ... Thêm đủ 50 cụm cho A2
-  ],
-  B1: [
-    { id: 'ls_b1_1', level: 'B1', title: "Nối âm nhịp điệu nhẹ", contentEn: "An apple a day keeps the doctor away", contentVi: "Mỗi ngày một quả táo", targetFocus: "n + a -> an-napple", phoneticSpelling: "/ən ˈæpl ə deɪ/" }
-    // ... Thêm đủ 50 cụm cho B1
-  ],
-  B2: [
-    { id: 'ls_b2_1', level: 'B2', title: "Cụm nối âm câu dài", contentEn: "Not at all, it was an absolute pleasure", contentVi: "Không có gì, đó là niềm vinh hạnh", targetFocus: "t + a -> no-ta-tall", phoneticSpelling: "/nɒt ət ɔːl..." }
-    // ... Thêm đủ 50 cụm cho B2
-  ],
-  C1: [
-    { id: 'ls_c1_1', level: 'C1', title: "Nối âm nhịp điệu bản ngữ", contentEn: "First of all, I need to clear up the confusion", contentVi: "Trước hết tôi cần làm rõ", targetFocus: "st + o -> firs-to-vall", phoneticSpelling: "/fɜːst əv ɔːl..." }
-    // ... Thêm đủ 50 cụm cho C1
-  ],
-  C2: [
-    { id: 'ls_c2_1', level: 'C2', title: "Nối âm tốc độ cao", contentEn: "What are you going to do about it?", contentVi: "Bạn định làm gì với việc đó?", targetFocus: "whatcha-gonna-do-about-dit", phoneticSpelling: "/wɒt ə juː ˈɡəʊɪŋ tuː duː əˈbaʊt ɪt/" }
-    // ... Thêm đủ 50 cụm cho C2
-  ]
-};
+export const MINIMAL_PAIRS_DATA: MinimalPairItem[] = [
+  { id: 'mp_1', title: "Phân biệt /ɪ/ và /iː/", contentEn: "ship / sheep", contentVi: "con tàu / con cừu", targetFocus: "/ɪ/ vs /iː/", phoneticSpelling: "/ʃɪp/ - /ʃiːp/" },
+  { id: 'mp_2', title: "Phân biệt /p/ và /b/", contentEn: "pen / Ben", contentVi: "cây bút / tên Ben", targetFocus: "/p/ vs /b/", phoneticSpelling: "/pen/ - /ben/" },
+  { id: 'mp_3', title: "Phân biệt /f/ và /v/", contentEn: "fan / van", contentVi: "cái quạt / xe tải", targetFocus: "/f/ vs /v/", phoneticSpelling: "/fæn/ - /væn/" },
+  { id: 'mp_4', title: "Phân biệt /s/ và /z/", contentEn: "sip / zip", contentVi: "nhấp môi / khóa kéo", targetFocus: "/s/ vs /z/", phoneticSpelling: "/sɪp/ - /zɪp/" },
+  { id: 'mp_5', title: "Phân biệt /t/ và /d/", contentEn: "ten / den", contentVi: "số mười / hang thú", targetFocus: "/t/ vs /d/", phoneticSpelling: "/ten/ - /den/" },
+  { id: 'mp_6', title: "Phân biệt /k/ và /ɡ/", contentEn: "coat / goat", contentVi: "áo khoác / con dê", targetFocus: "/k/ vs /ɡ/", phoneticSpelling: "/kəʊt/ - /ɡəʊt/" },
+  { id: 'mp_7', title: "Phân biệt /l/ và /r/", contentEn: "light / right", contentVi: "ánh sáng / đúng", targetFocus: "/l/ vs /r/", phoneticSpelling: "/laɪt/ - /raɪt/" },
+  { id: 'mp_8', title: "Phân biệt /θ/ và /t/", contentEn: "thin / tin", contentVi: "mỏng / cái lon", targetFocus: "/θ/ vs /t/", phoneticSpelling: "/θɪn/ - /tɪn/" },
+  { id: 'mp_9', title: "Phân biệt /v/ và /w/", contentEn: "vet / wet", contentVi: "bác sĩ thú y / ướt", targetFocus: "/v/ vs /w/", phoneticSpelling: "/vet/ - /wet/" },
+  { id: 'mp_10', title: "Phân biệt /ʃ/ và /s/", contentEn: "shoe / sue", contentVi: "chiếc giày / kiện tụng", targetFocus: "/ʃ/ vs /s/", phoneticSpelling: "/ʃuː/ - /suː/" },
+  { id: 'mp_11', title: "Phân biệt /ɪ/ và /iː/", contentEn: "fit / feet", contentVi: "vừa vặn / đôi chân", targetFocus: "/ɪ/ vs /iː/", phoneticSpelling: "/fɪt/ - /fiːt/" },
+  { id: 'mp_12', title: "Phân biệt /ɪ/ và /iː/", contentEn: "sit / seat", contentVi: "ngồi / chỗ ngồi", targetFocus: "/ɪ/ vs /iː/", phoneticSpelling: "/sɪt/ - /siːt/" },
+  { id: 'mp_13', title: "Phân biệt /e/ và /æ/", contentEn: "bed / bad", contentVi: "cái giường / tồi tệ", targetFocus: "/e/ vs /æ/", phoneticSpelling: "/bed/ - /bæd/" },
+  { id: 'mp_14', title: "Phân biệt /e/ và /æ/", contentEn: "pen / pan", contentVi: "cây bút / cái chảo", targetFocus: "/e/ vs /æ/", phoneticSpelling: "/pen/ - /pæn/" },
+  { id: 'mp_15', title: "Phân biệt /ʌ/ và /æ/", contentEn: "cup / cap", contentVi: "cái cốc / cái mũ", targetFocus: "/ʌ/ vs /æ/", phoneticSpelling: "/kʌp/ - /kæp/" },
+  { id: 'mp_16', title: "Phân biệt /ɒ/ và /ɔː/", contentEn: "cot / caught", contentVi: "giường cối / bắt lấy", targetFocus: "/ɒ/ vs /ɔː/", phoneticSpelling: "/kɒt/ - /kɔːt/" },
+  { id: 'mp_17', title: "Phân biệt /ʊ/ và /uː/", contentEn: "full / fool", contentVi: "đầy / kẻ ngốc", targetFocus: "/ʊ/ vs /uː/", phoneticSpelling: "/fʊl/ - /fuːl/" },
+  { id: 'mp_18', title: "Phân biệt /p/ và /b/", contentEn: "pat / bat", contentVi: "vỗ nhẹ / gậy bóng chày", targetFocus: "/p/ vs /b/", phoneticSpelling: "/pæt/ - /bæt/" },
+  { id: 'mp_19', title: "Phân biệt /t/ và /d/", contentEn: "to / do", contentVi: "đến / làm", targetFocus: "/t/ vs /d/", phoneticSpelling: "/tuː/ - /duː/" },
+  { id: 'mp_20', title: "Phân biệt /m/ và /n/", contentEn: "map / nap", contentVi: "bản đồ / giấc ngủ ngắn", targetFocus: "/m/ vs /n/", phoneticSpelling: "/mæp/ - /næp/" }
+  // ... (Bổ sung tiếp danh sách 50 cặp)
+];
