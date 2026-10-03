@@ -23,6 +23,17 @@ export interface AssessmentResult {
   audioUrl?: string;
 }
 
+// 🎯 TỰ ĐỘNG XÁC ĐỊNH BASE URL
+const getBaseUrl = (): string => {
+  if (typeof window !== 'undefined' && window.location.origin) {
+    return window.location.origin;
+  }
+  if (process.env.EXPO_PUBLIC_VERCEL_URL) {
+    return `https://${process.env.EXPO_PUBLIC_VERCEL_URL}`;
+  }
+  return 'https://vibe-speak-jmz06cpaj-ic-dalat.vercel.app';
+};
+
 export async function evaluateSpeaking(
   audioBlob: Blob,
   cefrLevel: string = 'B2',
@@ -31,7 +42,7 @@ export async function evaluateSpeaking(
 ): Promise<AssessmentResult> {
   const audioUrl = URL.createObjectURL(audioBlob);
 
-  if (!audioBlob || audioBlob.size <= 8000) {
+  if (!audioBlob || audioBlob.size <= 2000) {
     return {
       score: 0,
       isWin: false,
@@ -43,32 +54,30 @@ export async function evaluateSpeaking(
       reflexes: 0,
       content: 0,
       fluency: 0,
-      detailedFeedback: "❌ Bạn chưa nói hoặc bản thu âm quá ngắn. Hãy phát âm rõ ràng vào micro!",
+      detailedFeedback: "❌ Bản thu âm quá ngắn hoặc không có tiếng. Vui lòng bật micro và nói rõ hơn!",
       audioUrl
     };
   }
 
   try {
-    const formData = new FormData();
-    formData.append('file', audioBlob, 'speech.webm');
-
+    const baseUrl = getBaseUrl();
     const queryParams = new URLSearchParams({
       cefrLevel,
       promptEn: promptEn || targetText || 'General speaking challenge',
     });
 
-    // 🎯 TỰ ĐỘNG XÁC ĐỊNH DOMAIN CHÍNH XÁC
-    const baseUrl = typeof window !== 'undefined' ? window.location.origin : '';
-    const apiUrl = `${baseUrl}/api/evaluate?${queryParams.toString()}`;
-
-    const response = await fetch(apiUrl, {
+    // Gửi trực tiếp Blob Audio qua Vercel Serverless Function Proxy
+    const response = await fetch(`${baseUrl}/api/evaluate?${queryParams.toString()}`, {
       method: 'POST',
-      body: formData,
+      headers: {
+        'Content-Type': audioBlob.type || 'audio/webm',
+      },
+      body: audioBlob,
     });
 
     if (!response.ok) {
-      const errorText = await response.text();
-      console.error("❌ API Response Error:", response.status, errorText);
+      const errText = await response.text();
+      console.error(`❌ Evaluate API Http Error (${response.status}):`, errText);
       throw new Error(`Serverless Evaluation Failed status: ${response.status}`);
     }
 
@@ -79,7 +88,7 @@ export async function evaluateSpeaking(
       audioUrl,
     };
   } catch (error) {
-    console.error("Lỗi kết nối Serverless Endpoint:", error);
+    console.error("❌ Lỗi kết nối Serverless Endpoint (evaluateSpeaking):", error);
     return {
       score: 0,
       isWin: false,
@@ -91,7 +100,7 @@ export async function evaluateSpeaking(
       reflexes: 0,
       content: 0,
       fluency: 0,
-      detailedFeedback: "⚠️ Không thể kết nối tới máy chủ chấm điểm. Vui lòng thử lại!",
+      detailedFeedback: "⚠️ Lỗi kết nối máy chủ chấm điểm. Vui lòng kiểm tra kết nối mạng và thử nộp lại!",
       audioUrl
     };
   }
