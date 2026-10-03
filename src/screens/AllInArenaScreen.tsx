@@ -21,24 +21,23 @@ export default function AllInArenaScreen({ onBack }: Props) {
   const [relayChallenge, setRelayChallenge] = useState<RelayChallenge | null>(null);
   const [roleplayScenario, setRoleplayScenario] = useState<RoleplayScenario | null>(null);
 
-  // ⚡ STATE PHỤ ÉP RE-RENDER GIAO DIỆN
   const [topicKey, setTopicKey] = useState<number>(0);
 
   const [battleState, setBattleState] = useState<'idle' | 'searching' | 'battling' | 'analyzing' | 'ended'>('idle');
   const [currentTurn, setCurrentTurn] = useState<1 | 2>(1);
   const [matchedOpponent, setMatchedOpponent] = useState<string>('');
   const [timeLeft, setTimeLeft] = useState<number>(30);
-  const [isTimerRunning, setIsTimerRunning] = useState<boolean>(false);
   
+  // ⚡ KHÓA ĐỒNG HỒ: CHỈ BẮT ĐẦU KHI NGƯỜI CHƠI BẤM MICRO
+  const [isTimerActive, setIsTimerActive] = useState<boolean>(false);
   const [isRecording, setIsRecording] = useState<boolean>(false);
+  
   const [recordedTurn1, setRecordedTurn1] = useState<Blob | null>(null);
   const [recordedTurn2, setRecordedTurn2] = useState<Blob | null>(null);
   const [hasRecordedTurn1, setHasRecordedTurn1] = useState<boolean>(false);
   const [hasRecordedTurn2, setHasRecordedTurn2] = useState<boolean>(false);
 
-  // 🎙 STATE HỖ TRỢ QUYỀN MICROPHONE
   const [micPermissionModal, setMicPermissionModal] = useState<boolean>(false);
-
   const [result, setResult] = useState<AssessmentResult | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -88,7 +87,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
     setBattleState('idle');
     setCurrentTurn(1);
     setIsRecording(false);
-    setIsTimerRunning(false);
+    setIsTimerActive(false);
     setRecordedTurn1(null);
     setRecordedTurn2(null);
     setHasRecordedTurn1(false);
@@ -97,23 +96,15 @@ export default function AllInArenaScreen({ onBack }: Props) {
     audioChunksRef.current = [];
   };
 
-  const startTurnTimer = (allocatedTime: number) => {
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-
-    setTimeLeft(allocatedTime);
-    setIsTimerRunning(true);
+  // ⏱ HIỆU ỨNG ĐỒNG HỒ CHỈ CHẠY KHI IS_TIMER_ACTIVE = TRUE
+  useEffect(() => {
+    if (!isTimerActive) return;
 
     timerRef.current = setInterval(() => {
       setTimeLeft((prev) => {
         if (prev <= 1) {
-          if (timerRef.current) {
-            clearInterval(timerRef.current);
-            timerRef.current = null;
-          }
-          setIsTimerRunning(false);
+          setIsTimerActive(false);
+          if (timerRef.current) clearInterval(timerRef.current);
 
           if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
             try { mediaRecorderRef.current.stop(); } catch (e) {}
@@ -122,17 +113,18 @@ export default function AllInArenaScreen({ onBack }: Props) {
 
           if (mode !== 'solo' && currentTurn === 1) {
             setCurrentTurn(2);
-            const turn2Time = getTimeForCurrentTurn(cefrLevel, mode);
-            setTimeout(() => startTurnTimer(turn2Time), 300);
           }
           return 0;
         }
         return prev - 1;
       });
     }, 1000);
-  };
 
-  // ⚡ HÀM TẢI ĐỀ ÉP XÓA VÀ RENDER LẠI 100%
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [isTimerActive, mode, currentTurn]);
+
   const loadModeData = async (selectedMode: string, level: string) => {
     const currentRequestId = ++requestIdRef.current;
     
@@ -189,6 +181,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
     return () => resetBattleState();
   }, [mode, cefrLevel]);
 
+  // 🎯 BẮT ĐẦU TRẬN: TẮT HOÀN TOÀN ĐỒNG HỒ ĐẾM NGƯỢC
   const startMatch = () => {
     resetBattleState();
     setBattleState('searching');
@@ -203,12 +196,13 @@ export default function AllInArenaScreen({ onBack }: Props) {
       
       setCurrentTurn(1);
       setBattleState('battling');
+      setIsTimerActive(false); // DỪNG ĐỒNG HỒ
       const allocatedTime = getTimeForCurrentTurn(cefrLevel, mode);
-      startTurnTimer(allocatedTime);
+      setTimeLeft(allocatedTime); // Thiết lập mốc thời gian chờ
     }, 1500);
   };
 
-  // 🎙 XỬ LÝ THU ÂM CÓ BẮT LỖI QUYỀN MICROPHONE
+  // 🎙 BẤM MICRO THÌ ĐỒNG HỒ MỚI BẮT ĐẦU ĐẾM NGƯỢC
   const handleToggleRecord = async () => {
     if (!isRecording) {
       try {
@@ -236,7 +230,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
             const mimeType = mediaRecorder.mimeType || 'audio/webm';
             const recordedBlob = new Blob(audioChunksRef.current, { type: mimeType });
             
-            if (recordedBlob.size > 8000) {
+            if (recordedBlob.size > 2000) {
               if (mode === 'solo' || currentTurn === 1) {
                 setRecordedTurn1(recordedBlob);
                 setHasRecordedTurn1(true);
@@ -250,33 +244,27 @@ export default function AllInArenaScreen({ onBack }: Props) {
               } else {
                 setRecordedTurn2(null); setHasRecordedTurn2(false);
               }
-              alert("⚠️ Chưa ghi nhận giọng nói rõ ràng! Vui lòng bấm giữ nút và nói rõ.");
+              alert("⚠️ Chưa ghi nhận giọng nói rõ ràng! Vui lòng bấm nút và nói lại vào micro.");
             }
             stream.getTracks().forEach(track => track.stop());
           };
 
           mediaRecorder.start(200);
           setIsRecording(true);
+          setIsTimerActive(true); // 🎯 KÍCH HOẠT ĐỒNG HỒ CHẠY TẠI ĐÂY
         }
       } catch (err) {
-        // Mở Modal hướng dẫn khi người dùng bị trình duyệt chặn Micro
         setMicPermissionModal(true);
       }
     } else {
       setIsRecording(false);
+      setIsTimerActive(false); // DỪNG ĐỒNG HỒ
       if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
         mediaRecorderRef.current.stop();
       }
-      
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
-      setIsTimerRunning(false);
     }
   };
 
-  // 💥 TẠO CHUỖI ÉP AI CHẤM NGHIÊM NGẶT THEO CHẾ ĐỘ THI ĐẤU
   const getCurrentPromptText = () => {
     if (mode === 'solo' && soloTopic) {
       return `SOLO TOPIC: "${soloTopic.promptEn}". Candidate must thoroughly address this prompt.`;
@@ -286,46 +274,55 @@ export default function AllInArenaScreen({ onBack }: Props) {
 Topic: "${relayChallenge.topic}"
 Context: "${relayChallenge.contextEn}"
 Player 1 Requirement: "${relayChallenge.player1En}"
-Player 2 Requirement: "${relayChallenge.player2En}"
-STRICT GRADING RULE FOR RELAY: The candidate MUST cover BOTH Player 1 AND Player 2 requirements. If candidate only presents Player 1 side and omits Player 2 side, Task Fulfillment (Content Score) MUST NOT exceed 45/100.`;
+Player 2 Requirement: "${relayChallenge.player2En}"`;
     }
     if (mode === 'roleplay' && roleplayScenario) {
       return `ROLEPLAY SCENARIO:
 Title: "${roleplayScenario.scenarioTitle}"
 AI Role: "${roleplayScenario.aiRoleEn}"
 User Role: "${roleplayScenario.userRoleEn}"
-Goal: "${roleplayScenario.goalEn}"
-STRICT GRADING RULE FOR ROLEPLAY: Candidate must fulfill the user role goal completely. Missing key details will penalize Task Fulfillment score severe.`;
+Goal: "${roleplayScenario.goalEn}"`;
     }
     return 'General speaking challenge';
   };
 
+  // 🎯 NỘP BÀI CHẤM ĐIỂM CHUẨN XÁC VỚI GROQ AI
   const handleSubmitBattleAnswer = async () => {
-    if (!hasRecordedTurn1 || !recordedTurn1) {
-      alert("🔒 Vui lòng thực hiện ghi âm trước!");
+    setIsTimerActive(false);
+
+    // Tự động dừng thu âm nếu người dùng bấm nộp luôn
+    if (isRecording && mediaRecorderRef.current) {
+      setIsRecording(false);
+      if (mediaRecorderRef.current.state === 'recording') {
+        mediaRecorderRef.current.stop();
+        await new Promise((res) => setTimeout(res, 400)); // Dành 400ms để đóng gói audio Blob
+      }
+    }
+
+    const currentAudioBlob = recordedTurn1 || recordedTurn2;
+
+    if (!currentAudioBlob) {
+      alert("🔒 Vui lòng bấm nút Micro thu âm bài nói trước khi nộp!");
       return;
     }
 
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-    if (isRecording) setIsRecording(false);
     setBattleState('analyzing');
 
-    const targetPrompt = getCurrentPromptText();
-    const evalData = await evaluateSpeaking(recordedTurn1, cefrLevel, undefined, targetPrompt);
-    
-    setResult(evalData);
-    setBattleState('ended');
-    updateUserProgress(2, evalData.isWin ? 50 : 10, evalData.isWin);
+    try {
+      const targetPrompt = getCurrentPromptText();
+      const evalData = await evaluateSpeaking(currentAudioBlob, cefrLevel, undefined, targetPrompt);
+      
+      setResult(evalData);
+      setBattleState('ended');
+      updateUserProgress(2, evalData.isWin ? 50 : 10, evalData.isWin);
+    } catch (err) {
+      alert("⚠️ Đã xảy ra lỗi máy chủ khi chấm điểm. Vui lòng bấm nộp lại!");
+      setBattleState('battling');
+    }
   };
 
-  const isSubmitDisabled = mode === 'solo' 
-    ? (!hasRecordedTurn1 || !recordedTurn1)
-    : (!hasRecordedTurn1 || !recordedTurn1 || !hasRecordedTurn2 || !recordedTurn2);
+  const isSubmitDisabled = !hasRecordedTurn1 && !isRecording;
 
-  // 🎯 COMPONENT DÙNG CHUNG HIỂN THỊ ĐỀ BÀI (RENDER CẢ LÚC CHỜ VÀ LÚC ĐANG THI ĐẤU)
   const renderTopicContent = () => (
     <View style={{ width: '100%', alignItems: 'center' }}>
       {mode === 'solo' && soloTopic && (
@@ -386,7 +383,6 @@ STRICT GRADING RULE FOR ROLEPLAY: Candidate must fulfill the user role goal comp
       </View>
 
       <ScrollView contentContainerStyle={{ alignItems: 'center', width: '100%', paddingBottom: 30 }}>
-        {/* CHỌN CHẾ ĐỘ THI ĐẤU */}
         <Text style={styles.sectionLabel}>1. CHỌN DẠNG BÀI ĐẤU TRƯỜNG:</Text>
         <View style={styles.tabRow}>
           <TouchableOpacity style={[styles.modeTab, mode === 'solo' && styles.modeTabActive]} onPress={() => handleModeChange('solo')}>
@@ -400,7 +396,6 @@ STRICT GRADING RULE FOR ROLEPLAY: Candidate must fulfill the user role goal comp
           </TouchableOpacity>
         </View>
 
-        {/* CHỌN ĐỐI THỦ */}
         <Text style={styles.sectionLabel}>2. CHỌN ĐỐI THỦ THÁCH ĐẤU:</Text>
         <View style={styles.opponentRow}>
           <TouchableOpacity style={[styles.opponentBtn, opponentType === 'bot' && styles.opponentBtnActive]} onPress={() => setOpponentType('bot')}>
@@ -411,7 +406,6 @@ STRICT GRADING RULE FOR ROLEPLAY: Candidate must fulfill the user role goal comp
           </TouchableOpacity>
         </View>
 
-        {/* CHỌN LEVEL */}
         <Text style={styles.sectionLabel}>3. CHỌN LEVEL:</Text>
         <View style={styles.cefrRow}>
           {CEFR_LEVELS.map((lvl) => (
@@ -421,7 +415,6 @@ STRICT GRADING RULE FOR ROLEPLAY: Candidate must fulfill the user role goal comp
           ))}
         </View>
 
-        {/* CHỜ TRẬN & HIỂN THỊ ĐỀ THI */}
         {battleState === 'idle' && (
           <View style={styles.box} key={topicKey}>
             <Text style={styles.boxTitle}>⚡ {mode.toUpperCase()} [{cefrLevel}]</Text>
@@ -452,7 +445,6 @@ STRICT GRADING RULE FOR ROLEPLAY: Candidate must fulfill the user role goal comp
           </View>
         )}
 
-        {/* GHÉP CẶP */}
         {battleState === 'searching' && (
           <View style={styles.box}>
             <ActivityIndicator size="large" color="#FF007F" style={{ marginBottom: 15 }} />
@@ -460,17 +452,15 @@ STRICT GRADING RULE FOR ROLEPLAY: Candidate must fulfill the user role goal comp
           </View>
         )}
 
-        {/* THI ĐẤU - KHUNG HIỂN THỊ ĐỀ BÀI CỐ ĐỊNH TRONG LÚC NÓI */}
         {battleState === 'battling' && (
           <View style={styles.box}>
             <View style={styles.battleHeader}>
               <Text style={styles.opponentName}>⚔️ VS {matchedOpponent}</Text>
               <Text style={styles.timerText}>
-                {mode === 'solo' ? `⏱ TỔNG THỜI GIAN: ${timeLeft}s` : `⏱ LƯỢT ${currentTurn} (P${currentTurn}): ${timeLeft}s`}
+                {isRecording ? `🔴 ĐANG THU ÂM: ${timeLeft}s` : `⏱ THỜI GIAN: ${timeLeft}s (BẤM MICRO ĐỂ CHẠY)`}
               </Text>
             </View>
 
-            {/* 📌 KHUNG CỐ ĐỊNH ĐỀ BÀI LÚC ĐANG THI ĐẤU */}
             <View style={styles.promptDisplayContainer}>
               <Text style={styles.promptDisplayTitle}>📌 ĐỀ BÀI THI ĐẤU (ĐỌC KHI NÓI):</Text>
               {renderTopicContent()}
@@ -487,10 +477,10 @@ STRICT GRADING RULE FOR ROLEPLAY: Candidate must fulfill the user role goal comp
             <TouchableOpacity style={[styles.recordToggleBtn, isRecording && styles.recordToggleBtnActive]} onPress={handleToggleRecord}>
               <Text style={styles.recordToggleText}>
                 {isRecording 
-                  ? `🔴 ĐANG THU ÂM (LƯỢT ${currentTurn})... (VỪA NÓI VỪA NHÌN ĐỀ BÀI Ở TRÊN)` 
+                  ? `🛑 DỪNG THU ÂM (LƯỢT ${currentTurn})` 
                   : (currentTurn === 1 ? hasRecordedTurn1 : hasRecordedTurn2) 
-                    ? `✅ ĐÃ CÓ BẢN THU LƯỢT ${currentTurn} (BẤM THU LẠI)` 
-                    : `🎙 BẤM THU ÂM LƯỢT ${currentTurn}`}
+                    ? `✅ ĐÃ CÓ BẢN THU (BẤM ĐỂ THU LẠI)` 
+                    : `🎙 BẤM MICRO ĐỂ BẮT ĐẦU NÓI`}
               </Text>
             </TouchableOpacity>
 
@@ -500,15 +490,13 @@ STRICT GRADING RULE FOR ROLEPLAY: Candidate must fulfill the user role goal comp
           </View>
         )}
 
-        {/* AI PHÂN TÍCH */}
         {battleState === 'analyzing' && (
           <View style={styles.box}>
             <ActivityIndicator size="large" color="#39FF14" style={{ marginBottom: 15 }} />
-            <Text style={styles.searchingText}>⚡ GROQ AI ĐANG ĐỐI CHIẾU Ý NÓI VỚI ĐỀ BÀI (TASK FULFILLMENT)...</Text>
+            <Text style={styles.searchingText}>⚡ GROQ AI ĐANG BÓC TÁCH VÀ CHẤM ĐIỂM BÀI NÓI...</Text>
           </View>
         )}
 
-        {/* KẾT QUẢ THI ĐẤU */}
         {battleState === 'ended' && result && (
           <View style={styles.box}>
             <Text style={[styles.resultTitle, { color: result.isWin ? '#39FF14' : '#FF0055' }]}>
@@ -523,7 +511,6 @@ STRICT GRADING RULE FOR ROLEPLAY: Candidate must fulfill the user role goal comp
               </View>
             )}
 
-            {/* 📝 BẢN PHÂN TÍCH TỪNG TỪ PHÁT ÂM (COLOR CODED SCRIPT) */}
             <View style={styles.scriptBox}>
               <Text style={styles.scriptLabel}>📝 PHÂN TÍCH PHÁT ÂM CHI TIẾT TỪNG TỪ:</Text>
               <View style={styles.wordBadgeContainer}>
@@ -561,7 +548,6 @@ STRICT GRADING RULE FOR ROLEPLAY: Candidate must fulfill the user role goal comp
               <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>🌊 6. Trôi chảy:</Text><Text style={styles.breakdownValue}>{result.fluency}/100</Text></View>
             </View>
 
-            {/* Hiển thị các ý bị thiếu */}
             {result.missingRequirements && result.missingRequirements.length > 0 && (
               <View style={styles.missingBox}>
                 <Text style={styles.missingTitle}>⚠️ Ý CÒN THIẾU TRONG BÀI NÓI:</Text>
@@ -580,7 +566,6 @@ STRICT GRADING RULE FOR ROLEPLAY: Candidate must fulfill the user role goal comp
         )}
       </ScrollView>
 
-      {/* 🛑 MODAL HƯỚNG DẪN MỞ MICRO KHI BỊ CHẶN */}
       <Modal visible={micPermissionModal} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalBox}>
