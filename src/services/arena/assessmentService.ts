@@ -51,21 +51,25 @@ export async function evaluateSpeaking(
   try {
     const formData = new FormData();
     formData.append('file', audioBlob, 'speech.webm');
-    formData.append('model', 'whisper-large-v3');
-    formData.append('language', 'en');
 
     const queryParams = new URLSearchParams({
       cefrLevel,
       promptEn: promptEn || targetText || 'General speaking challenge',
     });
 
-    const response = await fetch(`/api/evaluate?${queryParams.toString()}`, {
+    // 🎯 TỰ ĐỘNG XÁC ĐỊNH DOMAIN CHÍNH XÁC
+    const baseUrl = typeof window !== 'undefined' ? window.location.origin : '';
+    const apiUrl = `${baseUrl}/api/evaluate?${queryParams.toString()}`;
+
+    const response = await fetch(apiUrl, {
       method: 'POST',
       body: formData,
     });
 
     if (!response.ok) {
-      throw new Error(`Serverless Evaluation Failed: ${response.statusText}`);
+      const errorText = await response.text();
+      console.error("❌ API Response Error:", response.status, errorText);
+      throw new Error(`Serverless Evaluation Failed status: ${response.status}`);
     }
 
     const data = await response.json();
@@ -87,7 +91,7 @@ export async function evaluateSpeaking(
       reflexes: 0,
       content: 0,
       fluency: 0,
-      detailedFeedback: "⚠️ Đã xảy ra lỗi mạng khi kết nối Middleware Server. Vui lòng thử lại!",
+      detailedFeedback: "⚠️ Không thể kết nối tới máy chủ chấm điểm. Vui lòng thử lại!",
       audioUrl
     };
   }
