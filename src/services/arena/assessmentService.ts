@@ -1,5 +1,10 @@
 // src/services/arena/assessmentService.ts
 
+export interface WordAnalysis {
+  word: string;
+  status: 'correct' | 'warning' | 'error';
+}
+
 export interface AssessmentResult {
   score: number;
   isWin: boolean;
@@ -13,6 +18,7 @@ export interface AssessmentResult {
   fluency: number;
   detailedFeedback: string;
   missingRequirements?: string[];
+  wordAnalysis?: WordAnalysis[];
   improvedAnswerEn?: string;
   audioUrl?: string;
 }
