@@ -1,27 +1,26 @@
-// api/evaluate.js
+// api/evaluate.ts
+import type { VercelRequest, VercelResponse } from '@vercel/node';
 import Groq from 'groq-sdk';
 
-const groq = new Groq({
-  apiKey: process.env.GROQ_API_KEY,
-});
-
-export const config = {
-  api: {
-    bodyParser: false, // Bắt buộc cho nhận Stream Audio
-  },
-};
-
-function getRawBody(req) {
-  return new Promise((resolve, reject) => {
-    const chunks = [];
-    req.on('data', (chunk) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
-    req.on('end', () => resolve(Buffer.concat(chunks)));
-    req.on('error', (err) => reject(err));
-  });
+// 1. Khai báo Interfaces định dạng dữ liệu cho TypeScript
+interface WordAnalysisItem {
+  word: string;
+  isCorrect: boolean;
+  phonemeError?: string;
 }
 
-export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Credentials', true);
+interface EvaluationResult {
+  pronunciation: number;
+  fluency: number;
+  reflexes: number;
+  wordAnalysis: WordAnalysisItem[];
+  missingRequirements: string[];
+  detailedFeedback: string;
+}
+
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // Cấu hình CORS
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
   res.setHeader(
@@ -30,136 +29,102 @@ export default async function handler(req, res) {
   );
 
   if (req.method === 'OPTIONS') {
-    res.status(200).end();
-    return;
+    return res.status(200).end();
   }
 
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method Not Allowed' });
+  // 2. Kiểm tra API Key an toàn
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) {
+    console.error('LỖI HỆ THỐNG: GROQ_API_KEY chưa được cấu hình trên Vercel!');
+    return res.status(500).json({
+      success: false,
+      error: 'Máy chủ chưa được cấu hình GROQ_API_KEY. Vui lòng kiểm tra Vercel Settings.',
+    });
   }
 
   try {
-    if (!process.env.GROQ_API_KEY) {
-      return res.status(500).json({ error: 'Missing GROQ_API_KEY on Vercel' });
+    const groq = new Groq({ apiKey });
+    const { audioFile, userAudioTranscript: inputTranscript, targetPhrase } = req.body || {};
+
+    let finalTranscript = inputTranscript;
+
+    // 3. Xử lý Whisper STT nếu client gửi file audio (Bổ sung model 'whisper-large-v3' tránh lỗi 400)
+    if (audioFile && !finalTranscript) {
+      try {
+        const transcription = await groq.audio.transcriptions.create({
+          file: audioFile,
+          model: 'whisper-large-v3', // <-- THUỘC TÍNH BẮT BUỘC ĐÃ ĐƯỢC BỔ SUNG
+          language: 'en',
+          response_format: 'json',
+        });
+        finalTranscript = transcription.text;
+      } catch (sttError: any) {
+        console.error('❌ Groq Whisper STT Error:', sttError);
+        return res.status(400).json({
+          success: false,
+          error: 'Lỗi nhận diện giọng nói từ Whisper API',
+          details: sttError?.message || sttError,
+        });
+      }
     }
 
-    const audioBuffer = await getRawBody(req);
-
-    if (!audioBuffer || audioBuffer.length === 0) {
-      return res.status(400).json({ error: 'Empty Audio Payload' });
+    // 4. Gọi LLM để chấm điểm theo đúng schema của Frontend
+    const completion = await groq.chat.completions.create({
+      messages: [
+        {
+          role: 'system',
+          content: `You are an AI English Pronunciation Referee for VibeSpeak Cyber Arena.
+Evaluate the user's spoken text against the target phrase.
+Return ONLY a valid JSON object matching this schema:
+{
+  "pronunciation": number (0-100),
+  "fluency": number (0-100),
+  "reflexes": number (0-100),
+  "wordAnalysis": [
+    {
+      "word": "string",
+      "isCorrect": boolean,
+      "phonemeError": "string"
     }
-
-    // Gửi Audio Buffer sang Whisper STT API
-    const whisperResponse = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
-        'Content-Type': req.headers['content-type'] || 'multipart/form-data',
-      },
-      body: audioBuffer,
+  ],
+  "missingRequirements": ["string"],
+  "detailedFeedback": "string"
+}`,
+        },
+        {
+          role: 'user',
+          content: `Target Phrase: "${targetPhrase || ''}"\nUser Spoke: "${finalTranscript || ''}"`,
+        },
+      ],
+      model: 'llama-3.1-8b-instant',
+      temperature: 0.3,
+      response_format: { type: 'json_object' },
     });
 
-    if (!whisperResponse.ok) {
-      const errText = await whisperResponse.text();
-      console.error('Groq Whisper Error:', errText);
-      return res.status(500).json({ error: 'Whisper STT failed', details: errText });
-    }
+    const rawContent = completion.choices[0]?.message?.content || '{}';
+    
+    // 5. Parse dữ liệu và ép kiểu TypeScript an toàn (Giải quyết lỗi TS2339)
+    const evalResult = JSON.parse(rawContent) as Partial<EvaluationResult>;
 
-    const whisperData = await whisperResponse.json();
-    const transcript = whisperData.text ? whisperData.text.trim() : '';
-
-    if (!transcript) {
-      return res.status(200).json({
-        score: 0,
-        isWin: false,
-        transcript: "(Im lặng hoặc không rõ âm thanh)",
-        wordCount: 0,
-        pronunciation: 0,
-        grammar: 0,
-        vocabulary: 0,
-        reflexes: 0,
-        content: 0,
-        fluency: 0,
-        wordAnalysis: [],
-        detailedFeedback: "❌ AI không nghe thấy giọng nói tiếng Anh. Vui lòng thử lại!",
-      });
-    }
-
-    const cefrLevel = req.query.cefrLevel || 'B2';
-    const targetPrompt = req.query.promptEn || 'General speaking challenge';
-    const words = transcript.split(/\s+/).filter((w) => w.length > 0);
-
-    const systemPrompt = `You are a STRICT CEFR Speaking Examiner evaluating level [${cefrLevel}].
-
-PROMPT: "${targetPrompt}"
-TRANSCRIPT: "${transcript}"
-
-STRICT EVALUATION RULES:
-1. TASK FULFILLMENT: Check if prompt requirements were addressed.
-2. WORD ANALYSIS: Categorize EVERY word in transcript as "correct", "warning", or "error".
-
-Return ONLY JSON:
-{
-  "content": number,
-  "grammar": number,
-  "vocabulary": number,
-  "pronunciation": number,
-  "fluency": number,
-  "reflexes": number,
-  "missingRequirements": ["string"],
-  "wordAnalysis": [{"word": "string", "status": "correct" | "warning" | "error"}],
-  "detailedFeedback": "string"
-}`;
-
-    let parsed = {};
-    try {
-      const chatCompletion = await groq.chat.completions.create({
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: `Grade transcript: "${transcript}"` },
-        ],
-        model: 'llama-3.3-70b-versatile',
-        temperature: 0.2,
-        response_format: { type: 'json_object' },
-      });
-      parsed = JSON.parse(chatCompletion.choices[0]?.message?.content || '{}');
-    } catch (aiErr) {
-      console.warn('Groq LLM Warning:', aiErr);
-    }
-
-    const content = parsed.content ?? 50;
-    const grammar = parsed.grammar ?? 60;
-    const vocabulary = parsed.vocabulary ?? 60;
-    const pronunciation = parsed.pronunciation ?? 70;
-    const fluency = parsed.fluency ?? 60;
-    const reflexes = parsed.reflexes ?? 60;
-
-    const finalScore = Math.round(
-      content * 0.4 + grammar * 0.2 + vocabulary * 0.2 + fluency * 0.1 + pronunciation * 0.1
-    );
-
-    const wordAnalysis =
-      parsed.wordAnalysis && Array.isArray(parsed.wordAnalysis) && parsed.wordAnalysis.length > 0
-        ? parsed.wordAnalysis
-        : words.map((w) => ({ word: w, status: 'correct' }));
+    const responseData: EvaluationResult = {
+      pronunciation: evalResult.pronunciation ?? 0,
+      fluency: evalResult.fluency ?? 0,
+      reflexes: evalResult.reflexes ?? 0,
+      wordAnalysis: evalResult.wordAnalysis ?? [],
+      missingRequirements: evalResult.missingRequirements ?? [],
+      detailedFeedback: evalResult.detailedFeedback ?? 'Không có phản hồi chi tiết.',
+    };
 
     return res.status(200).json({
-      score: finalScore,
-      isWin: finalScore >= 65,
-      transcript,
-      wordCount: words.length,
-      pronunciation,
-      grammar,
-      vocabulary,
-      reflexes,
-      content,
-      fluency,
-      missingRequirements: parsed.missingRequirements || [],
-      wordAnalysis,
-      detailedFeedback: parsed.detailedFeedback || (finalScore >= 65 ? "Bài nói tốt!" : "Cần cải thiện thêm."),
+      success: true,
+      data: responseData,
     });
-  } catch (error) {
-    console.error('Evaluate API Error:', error);
-    return res.status(500).json({ error: 'Internal Server Error', details: error.message });
+  } catch (error: any) {
+    console.error('Lỗi trong quá trình chấm điểm:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Lỗi hệ thống chấm điểm AI',
+      details: error?.message || error,
+    });
   }
 }
