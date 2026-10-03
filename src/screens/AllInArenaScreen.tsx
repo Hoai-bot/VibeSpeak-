@@ -1,6 +1,6 @@
 // src/screens/AllInArenaScreen.tsx
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, Modal } from 'react-native';
 import { generateSoloTopic, clearSoloTopicHistory, SoloTopic } from '../services/arena/soloService';
 import { generateRelayChallenge, clearRelayHistory, RelayChallenge } from '../services/arena/relayService';
 import { generateRoleplayScenario, clearRoleplayHistory, RoleplayScenario } from '../services/arena/roleplayService';
@@ -35,6 +35,9 @@ export default function AllInArenaScreen({ onBack }: Props) {
   const [recordedTurn2, setRecordedTurn2] = useState<Blob | null>(null);
   const [hasRecordedTurn1, setHasRecordedTurn1] = useState<boolean>(false);
   const [hasRecordedTurn2, setHasRecordedTurn2] = useState<boolean>(false);
+
+  // 🎙 STATE HỖ TRỢ QUYỀN MICROPHONE
+  const [micPermissionModal, setMicPermissionModal] = useState<boolean>(false);
 
   const [result, setResult] = useState<AssessmentResult | null>(null);
 
@@ -205,6 +208,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
     }, 1500);
   };
 
+  // 🎙 XỬ LÝ THU ÂM CÓ BẮT LỖI QUYỀN MICROPHONE
   const handleToggleRecord = async () => {
     if (!isRecording) {
       try {
@@ -255,7 +259,8 @@ export default function AllInArenaScreen({ onBack }: Props) {
           setIsRecording(true);
         }
       } catch (err) {
-        alert("🔒 Lỗi: Hãy cấp quyền Microphone trên trình duyệt!");
+        // Mở Modal hướng dẫn khi người dùng bị trình duyệt chặn Micro
+        setMicPermissionModal(true);
       }
     } else {
       setIsRecording(false);
@@ -518,9 +523,31 @@ STRICT GRADING RULE FOR ROLEPLAY: Candidate must fulfill the user role goal comp
               </View>
             )}
 
+            {/* 📝 BẢN PHÂN TÍCH TỪNG TỪ PHÁT ÂM (COLOR CODED SCRIPT) */}
             <View style={styles.scriptBox}>
-              <Text style={styles.scriptLabel}>📝 BẢN DỊCH CHỮ GIỌNG NÓI THỰC TẾ (SCRIPT):</Text>
-              <Text style={styles.scriptContent}>"{result.transcript}"</Text>
+              <Text style={styles.scriptLabel}>📝 PHÂN TÍCH PHÁT ÂM CHI TIẾT TỪNG TỪ:</Text>
+              <View style={styles.wordBadgeContainer}>
+                {result.wordAnalysis && result.wordAnalysis.length > 0 ? (
+                  result.wordAnalysis.map((item, idx) => (
+                    <Text 
+                      key={idx} 
+                      style={[
+                        styles.wordChip,
+                        item.status === 'correct' && styles.wordCorrect,
+                        item.status === 'warning' && styles.wordWarning,
+                        item.status === 'error' && styles.wordError,
+                      ]}
+                    >
+                      {item.word}{' '}
+                    </Text>
+                  ))
+                ) : (
+                  <Text style={styles.scriptContent}>"{result.transcript}"</Text>
+                )}
+              </View>
+              <Text style={styles.wordLegendText}>
+                Chú thích: <Text style={{ color: '#39FF14' }}>● Chuẩn</Text> | <Text style={{ color: '#FFD700' }}>● Cần cải thiện</Text> | <Text style={{ color: '#FF0055' }}>● Bị sai/ngắc ứ</Text>
+              </Text>
               <Text style={styles.wordCountText}>📊 Số từ phản xạ thực tế: {result.wordCount} từ</Text>
             </View>
 
@@ -552,6 +579,24 @@ STRICT GRADING RULE FOR ROLEPLAY: Candidate must fulfill the user role goal comp
           </View>
         )}
       </ScrollView>
+
+      {/* 🛑 MODAL HƯỚNG DẪN MỞ MICRO KHI BỊ CHẶN */}
+      <Modal visible={micPermissionModal} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox}>
+            <Text style={styles.modalTitle}>🎙 QUYỀN MICRO BỊ CHẶN!</Text>
+            <Text style={styles.modalText}>
+              Trình duyệt đang chặn quyền Micro. Để tham gia thi đấu:
+              {'\n\n'}1. Bấm vào biểu tượng 🔒 **Ổ khóa** hoặc 🎙 **Micro** trên thanh địa chỉ trình duyệt.
+              {'\n'}2. Chọn **Cho phép (Allow)** Microphone.
+              {'\n'}3. Tải lại trang và bấm thu âm lại.
+            </Text>
+            <TouchableOpacity style={styles.modalCloseBtn} onPress={() => setMicPermissionModal(false)}>
+              <Text style={styles.modalCloseText}>ĐÃ HỂU & ĐÓNG</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -610,9 +655,15 @@ const styles = StyleSheet.create({
   nativeAudioContainer: { width: '100%', backgroundColor: '#1A0B2E', padding: 10, borderRadius: 10, borderWidth: 1, borderColor: '#00FFFF', marginBottom: 12, alignItems: 'center' },
   nativeAudioLabel: { color: '#00FFFF', fontSize: 10, fontWeight: 'bold' },
   scriptBox: { backgroundColor: '#1A0B2E', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#332255', width: '100%', marginBottom: 12 },
-  scriptLabel: { color: '#FFD700', fontSize: 10, fontWeight: 'bold', marginBottom: 4 },
+  scriptLabel: { color: '#FFD700', fontSize: 10, fontWeight: 'bold', marginBottom: 6 },
   scriptContent: { color: '#FFF', fontSize: 11, fontStyle: 'italic', marginBottom: 6 },
-  wordCountText: { color: '#39FF14', fontSize: 9, fontWeight: 'bold' },
+  wordBadgeContainer: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 8 },
+  wordChip: { fontSize: 12, fontWeight: '800', lineHeight: 18 },
+  wordCorrect: { color: '#39FF14' },
+  wordWarning: { color: '#FFD700' },
+  wordError: { color: '#FF0055' },
+  wordLegendText: { color: '#AAAABB', fontSize: 9, marginBottom: 4 },
+  wordCountText: { color: '#00FFFF', fontSize: 9, fontWeight: 'bold' },
   breakdownHeaderLabel: { color: '#FFD700', fontSize: 10, fontWeight: 'bold', alignSelf: 'flex-start', marginBottom: 6 },
   breakdownCard: { backgroundColor: '#120826', padding: 12, borderRadius: 10, width: '100%', marginBottom: 12, borderWidth: 1, borderColor: '#FF007F' },
   breakdownRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4, borderBottomWidth: 1, borderBottomColor: '#221133' },
@@ -621,5 +672,11 @@ const styles = StyleSheet.create({
   missingBox: { backgroundColor: '#2A081A', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#FF0055', width: '100%', marginBottom: 12 },
   missingTitle: { color: '#FF0055', fontSize: 10, fontWeight: 'bold', marginBottom: 4 },
   missingItem: { color: '#FFD700', fontSize: 10, marginVertical: 2 },
-  feedbackText: { color: '#FFF', fontSize: 11, textAlign: 'center', lineHeight: 16, marginBottom: 15 }
+  feedbackText: { color: '#FFF', fontSize: 11, textAlign: 'center', lineHeight: 16, marginBottom: 15 },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(5, 2, 13, 0.85)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+  modalBox: { backgroundColor: '#0D0620', padding: 20, borderRadius: 16, borderWidth: 2, borderColor: '#FF007F', width: '100%', alignItems: 'center' },
+  modalTitle: { color: '#FF007F', fontSize: 13, fontWeight: '900', marginBottom: 10 },
+  modalText: { color: '#FFF', fontSize: 11, lineHeight: 18, marginBottom: 15, textAlign: 'left' },
+  modalCloseBtn: { backgroundColor: '#00FFFF', paddingVertical: 10, paddingHorizontal: 20, borderRadius: 8 },
+  modalCloseText: { color: '#000', fontSize: 10, fontWeight: '900' }
 });
