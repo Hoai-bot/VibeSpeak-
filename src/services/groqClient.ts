@@ -1,4 +1,5 @@
 // src/services/groqClient.ts
+import { evaluatePronunciation, fetchCyberBattleTopic } from './aiService';
 
 export type CEFRLevel = 'A1' | 'A2' | 'B1' | 'B2' | 'C1' | 'C2';
 
@@ -60,10 +61,23 @@ const FALLBACK_QUESTIONS: Record<CEFRLevel, string[]> = {
 
 export const generateDynamicQuestion = async (level: CEFRLevel): Promise<GeneratedSentence> => {
   const randomTopic = TOPIC_POOL[Math.floor(Math.random() * TOPIC_POOL.length)];
+  
+  // Thử gọi Vercel Serverless API /api/generate-battle trước
+  const battleData = await fetchCyberBattleTopic(randomTopic, level);
+  
+  if (battleData && battleData.bot_phrase) {
+    return {
+      targetText: battleData.bot_phrase,
+      cefrLevel: level,
+      topic: randomTopic,
+      phoneticFocus: level === 'C2' ? 'Complex Rhythm & Nuanced Stress' : 'Linking Sounds & Intonation'
+    };
+  }
+
+  // Nếu API lỗi, dùng dữ liệu Fallback an toàn
   const sentences = FALLBACK_QUESTIONS[level] || FALLBACK_QUESTIONS['B2'];
   const selectedText = sentences[Math.floor(Math.random() * sentences.length)];
 
-  // Trả về dữ liệu trực tiếp giúp Expo Web Export biên dịch mượt mà 100%
   return {
     targetText: selectedText,
     cefrLevel: level,
@@ -72,17 +86,38 @@ export const generateDynamicQuestion = async (level: CEFRLevel): Promise<Generat
   };
 };
 
+/**
+ * 🎯 Đã kết nối với Vercel Serverless API /api/evaluate thật qua aiService
+ */
 export const gradeFlexibleArenaResponse = async (
-  audioUri: string,
+  userTranscriptOrAudio: string,
   targetText: string
 ): Promise<GradeResult> => {
+  // Gọi API chấm điểm thực tế qua Vercel Proxy
+  const evalResult = await evaluatePronunciation(userTranscriptOrAudio, targetText);
+
+  if (evalResult) {
+    const avgScore = Math.round((evalResult.pronunciation + evalResult.fluency + evalResult.reflexes) / 3);
+    
+    return {
+      score: avgScore,
+      phoneticScore: evalResult.pronunciation,
+      fluencyScore: evalResult.fluency,
+      semanticScore: evalResult.reflexes,
+      transcribedText: userTranscriptOrAudio,
+      feedback: evalResult.detailedFeedback || "Phân tích phát âm hoàn tất!",
+      wordAnalysis: evalResult.wordAnalysis || []
+    };
+  }
+
+  // Phân phản hồi khi không gọi được API
   return {
-    score: 88,
-    phoneticScore: 90,
-    fluencyScore: 85,
-    semanticScore: 89,
-    transcribedText: targetText,
-    feedback: "Phát âm rõ ràng, chuẩn sắc thái và ngắt nghỉ tự nhiên!",
+    score: 0,
+    phoneticScore: 0,
+    fluencyScore: 0,
+    semanticScore: 0,
+    transcribedText: userTranscriptOrAudio,
+    feedback: "Không thể kết nối với máy chủ chấm điểm AI Vercel.",
     wordAnalysis: []
   };
 };
