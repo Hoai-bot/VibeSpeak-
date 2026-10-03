@@ -1,11 +1,14 @@
 // src/screens/Station2Screen.tsx
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
 
-// Import 3 dịch vụ thi đấu đã được nâng cấp kho 300 đề
+// Import 3 dịch vụ thi đấu Local + Groq AI
 import { getInstantSoloTopic, generateSoloTopic } from '../services/arena/soloService';
 import { getInstantRelayChallenge, generateRelayChallenge } from '../services/arena/relayService';
 import { getInstantRoleplayScenario, generateRoleplayScenario } from '../services/arena/roleplayService';
+
+// Import dịch vụ chấm điểm thu âm tập trung
+import { evaluateSpeaking, AssessmentResult } from '../services/arena/assessmentService';
 
 interface Props {
   onBack: () => void;
@@ -16,81 +19,17 @@ export default function Station2Screen({ onBack }: Props) {
   const [mode, setMode] = useState<'solo' | 'relay' | 'roleplay'>('solo');
   const [exercise, setExercise] = useState<any>(null);
 
-  // 🔊 State & Ref cho hệ thống phát âm TTS
-  const [isPlayingTTS, setIsPlayingTTS] = useState<boolean>(false);
-  const currentAudioRef = useRef<HTMLAudioElement | null>(null);
+  // 🎙 State cho Thu âm & Chấm điểm
+  const [isRecording, setIsRecording] = useState<boolean>(false);
+  const [isEvaluating, setIsEvaluating] = useState<boolean>(false);
+  const [evalResult, setEvalResult] = useState<AssessmentResult | null>(null);
+  const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
 
   const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
 
-  // 🧹 Dọn dẹp âm thanh cũ
-  const stopAllAudio = () => {
-    if (currentAudioRef.current) {
-      currentAudioRef.current.pause();
-      currentAudioRef.current.currentTime = 0;
-      currentAudioRef.current = null;
-    }
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-    }
-    setIsPlayingTTS(false);
-  };
-
-  // 🔊 Phát âm Tiếng Anh chuẩn tự nhiên
-  const playPromptTTS = (textToSpeak: string) => {
-    if (!textToSpeak) return;
-
-    stopAllAudio();
-
-    // Chỉ lọc lấy câu Tiếng Anh
-    const englishOnlyText = textToSpeak.replace(/[\u0300-\u036f\u1ea0-\u1eff]/g, '').trim();
-    if (!englishOnlyText) return;
-
-    try {
-      setIsPlayingTTS(true);
-
-      const encodedText = encodeURIComponent(englishOnlyText);
-      const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodedText}&tl=en&client=tw-ob`;
-
-      const audio = new Audio(ttsUrl);
-      currentAudioRef.current = audio;
-
-      audio.onplay = () => setIsPlayingTTS(true);
-      audio.onended = () => setIsPlayingTTS(false);
-      audio.onerror = () => fallbackBrowserTTS(englishOnlyText);
-
-      audio.play().catch(() => fallbackBrowserTTS(englishOnlyText));
-    } catch (err) {
-      fallbackBrowserTTS(englishOnlyText);
-    }
-  };
-
-  // 🎙 Giọng đọc dự phòng Browser
-  const fallbackBrowserTTS = (textToSpeak: string) => {
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-
-      const utterance = new SpeechSynthesisUtterance(textToSpeak);
-      utterance.lang = 'en-US';
-      utterance.rate = 0.9;
-
-      const voices = window.speechSynthesis.getVoices();
-      const premiumVoice = voices.find(v => 
-        v.lang.includes('en') && (v.name.includes('Google') || v.name.includes('Natural') || v.name.includes('Samantha'))
-      );
-
-      if (premiumVoice) utterance.voice = premiumVoice;
-
-      utterance.onstart = () => setIsPlayingTTS(true);
-      utterance.onend = () => setIsPlayingTTS(false);
-      utterance.onerror = () => setIsPlayingTTS(false);
-
-      window.speechSynthesis.speak(utterance);
-    }
-  };
-
-  // ⚡ Tải bài tức thì (0.01s) từ Local + Gọi Groq AI ngầm
+  // ⚡ Tải bài thi đấu tức thì (0.01s) từ Local + Gọi Groq AI ngầm
   const loadNewExercise = async (selectedMode = mode, selectedLevel = cefrLevel) => {
-    stopAllAudio();
+    setEvalResult(null);
     let instantData: any = null;
 
     if (selectedMode === 'solo') {
@@ -120,27 +59,46 @@ export default function Station2Screen({ onBack }: Props) {
     loadNewExercise(mode, cefrLevel);
   }, [mode, cefrLevel]);
 
-  // Trích xuất văn bản Tiếng Anh để phát âm theo chế độ
-  const getSpeakableText = () => {
-    if (!exercise) return '';
-    if (mode === 'solo') return exercise.promptEn || '';
-    if (mode === 'relay') return exercise.contextEn || exercise.player1En || '';
-    if (mode === 'roleplay') return exercise.initialAiMessage || exercise.scenarioTitle || '';
-    return '';
+  // 🎙 HÀM BẮT ĐẦU THU ÂM BÀI NÓI
+  const startRecording = async () => {
+    try {
+      setEvalResult(null);
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      const chunks: Blob[] = [];
+
+      recorder.ondataavailable = (e) => chunks.push(e.data);
+      recorder.onstop = async () => {
+        const audioBlob = new Blob(chunks, { type: 'audio/webm' });
+        setIsEvaluating(true);
+
+        // Lấy chuỗi câu hỏi đề bài làm promptEn gửi sang AI chấm điểm Task Fulfillment
+        const targetPrompt = exercise?.promptEn || exercise?.contextEn || exercise?.scenarioTitle || '';
+        
+        // Gọi dịch vụ chấm điểm AI chính xác
+        const result = await evaluateSpeaking(audioBlob, cefrLevel, undefined, targetPrompt);
+        setEvalResult(result);
+        setIsEvaluating(false);
+
+        // Dọn dẹp micro stream
+        stream.getTracks().forEach(track => track.stop());
+      };
+
+      recorder.start();
+      setMediaRecorder(recorder);
+      setIsRecording(true);
+    } catch (err) {
+      alert("Thiết bị không hỗ trợ Micro hoặc ứng dụng chưa được cấp quyền thu âm!");
+    }
   };
 
-  // Tự động phát âm câu hỏi khi đổi bài
-  useEffect(() => {
-    const textToPlay = getSpeakableText();
-    if (textToPlay) {
-      const timer = setTimeout(() => playPromptTTS(textToPlay), 300);
-      return () => clearTimeout(timer);
+  // 🛑 HÀM DỪNG THU ÂM VÀ GỬI AI CHẤM ĐIỂM
+  const stopRecording = () => {
+    if (mediaRecorder && isRecording) {
+      mediaRecorder.stop();
+      setIsRecording(false);
     }
-  }, [exercise?.id]);
-
-  useEffect(() => {
-    return () => stopAllAudio();
-  }, []);
+  };
 
   return (
     <View style={styles.container}>
@@ -191,7 +149,7 @@ export default function Station2Screen({ onBack }: Props) {
           </TouchableOpacity>
         </View>
 
-        {/* CARD BÀI TẬP VÀ NÚT PHÁT ÂM */}
+        {/* CARD ĐỀ THI ĐẤU CHÍNH */}
         <View style={styles.box}>
           <Text style={styles.boxTitle}>📌 SÀN ĐẤU {mode.toUpperCase()} [{cefrLevel}]</Text>
 
@@ -200,7 +158,7 @@ export default function Station2Screen({ onBack }: Props) {
               <Text style={styles.scenarioTitle}>{exercise.title || exercise.topic || exercise.scenarioTitle}</Text>
               
               <Text style={styles.promptText}>
-                🎯 "{getSpeakableText()}"
+                🎯 "{exercise.promptEn || exercise.contextEn || exercise.initialAiMessage || ''}"
               </Text>
               
               {(exercise.promptVi || exercise.contextVi || exercise.goalVi) && (
@@ -209,19 +167,64 @@ export default function Station2Screen({ onBack }: Props) {
                 </Text>
               )}
 
-              {/* 🔊 NÚT PHÁT ÂM TTS NỔI BẬT */}
-              <TouchableOpacity 
-                style={[styles.ttsBtn, isPlayingTTS && styles.ttsBtnActive]} 
-                onPress={() => playPromptTTS(getSpeakableText())}
-              >
-                <Text style={[styles.ttsBtnText, isPlayingTTS && styles.ttsBtnTextActive]}>
-                  {isPlayingTTS ? '🔊 ĐANG PHÁT GIỌNG ĐỌC...' : '🔊 NGHE ĐỀ BÀI (NATURAL VOICE)'}
-                </Text>
-              </TouchableOpacity>
+              {/* Chi tiết cho chế độ Relay (Phân vai Player 1 & Player 2) */}
+              {mode === 'relay' && (
+                <View style={styles.relayDetails}>
+                  <Text style={styles.pLabel}>👤 Player 1: {exercise.player1En}</Text>
+                  <Text style={styles.pLabel}>👤 Player 2: {exercise.player2En}</Text>
+                </View>
+              )}
 
-              {/* Nút đổi thử thách mới */}
+              {/* Chi tiết cho chế độ Roleplay (Phân vai AI & User) */}
+              {mode === 'roleplay' && (
+                <View style={styles.relayDetails}>
+                  <Text style={styles.pLabel}>🤖 Vai AI: {exercise.aiRoleEn}</Text>
+                  <Text style={styles.pLabel}>👤 Vai Người Chơi: {exercise.userRoleEn}</Text>
+                  <Text style={styles.pLabel}>🎯 Mục Tiêu: {exercise.goalEn}</Text>
+                </View>
+              )}
+
+              {/* 🎙 NÚT THU ÂM BÀI NÓI (THI ĐẤU) */}
+              {!isEvaluating ? (
+                <TouchableOpacity 
+                  style={[styles.recordBtn, isRecording && styles.recordingBtnActive]} 
+                  onPress={isRecording ? stopRecording : startRecording}
+                >
+                  <Text style={styles.recordBtnText}>
+                    {isRecording ? '🛑 DỪNG & GỬI AI CHẤM ĐIỂM' : '🎙 BẤM MICRO ĐỂ NÓI'}
+                  </Text>
+                </TouchableOpacity>
+              ) : (
+                <View style={{ marginVertical: 15, alignItems: 'center' }}>
+                  <ActivityIndicator size="small" color="#00FFFF" />
+                  <Text style={{ color: '#00FFFF', fontSize: 11, marginTop: 5 }}>🤖 AI đang phân tích bài nói...</Text>
+                </View>
+              )}
+
+              {/* 🏆 HIỂN THỊ KẾT QUẢ CHẤM ĐIỂM CHI TIẾT */}
+              {evalResult && (
+                <View style={styles.evalBox}>
+                  <Text style={styles.evalScore}>🏆 ĐIỂM BÀI NÓI: {evalResult.score}/100</Text>
+                  <Text style={styles.transcriptText}>💬 Văn bản bóc tách: "{evalResult.transcript}"</Text>
+                  
+                  {/* Bảng điểm 3 tiêu chí */}
+                  <View style={styles.scoreRow}>
+                    <Text style={styles.scoreDetail}>Ý đề bài: {evalResult.content}/100</Text>
+                    <Text style={styles.scoreDetail}>Ngữ pháp: {evalResult.grammar}/100</Text>
+                    <Text style={styles.scoreDetail}>Từ vựng: {evalResult.vocabulary}/100</Text>
+                  </View>
+
+                  <Text style={styles.feedbackText}>💡 Nhận xét: {evalResult.detailedFeedback}</Text>
+
+                  {evalResult.missingRequirements && evalResult.missingRequirements.length > 0 && (
+                    <Text style={styles.missingText}>⚠️ Ý còn thiếu: {evalResult.missingRequirements.join(', ')}</Text>
+                  )}
+                </View>
+              )}
+
+              {/* Nút đổi trận đấu mới */}
               <TouchableOpacity style={styles.nextBtn} onPress={() => loadNewExercise()}>
-                <Text style={styles.nextBtnText}>🔄 ĐỔI THỬ THÁCH MỚI</Text>
+                <Text style={styles.nextBtnText}>🔄 BẮT ĐẦU VÒNG ĐẤU MỚI</Text>
               </TouchableOpacity>
             </View>
           ) : (
@@ -255,10 +258,18 @@ const styles = StyleSheet.create({
   scenarioTitle: { color: '#39FF14', fontSize: 13, fontWeight: '900', marginBottom: 6, textAlign: 'center' },
   promptText: { color: '#FFF', fontSize: 13, fontWeight: '800', textAlign: 'center', lineHeight: 18, marginBottom: 8 },
   promptViText: { color: '#FFD700', fontSize: 11, fontWeight: '600', textAlign: 'center', marginBottom: 10, fontStyle: 'italic' },
-  ttsBtn: { backgroundColor: '#1A0B2E', paddingVertical: 12, paddingHorizontal: 16, borderRadius: 10, borderWidth: 2, borderColor: '#00FFFF', marginTop: 12, alignItems: 'center', width: '100%' },
-  ttsBtnActive: { backgroundColor: '#00FFFF', borderColor: '#00FFFF' },
-  ttsBtnText: { color: '#00FFFF', fontSize: 11, fontWeight: '900' },
-  ttsBtnTextActive: { color: '#000' },
-  nextBtn: { backgroundColor: '#39FF14', paddingVertical: 10, paddingHorizontal: 16, borderRadius: 8, marginTop: 10, width: '100%', alignItems: 'center' },
+  relayDetails: { backgroundColor: '#130A2A', padding: 10, borderRadius: 8, width: '100%', marginVertical: 8, borderWidth: 1, borderColor: '#332255' },
+  pLabel: { color: '#E0E0FF', fontSize: 11, fontWeight: '700', marginVertical: 2 },
+  recordBtn: { backgroundColor: '#FF0055', paddingVertical: 12, paddingHorizontal: 16, borderRadius: 10, marginTop: 15, width: '100%', alignItems: 'center' },
+  recordingBtnActive: { backgroundColor: '#FF3300' },
+  recordBtnText: { color: '#FFF', fontSize: 11, fontWeight: '900' },
+  evalBox: { backgroundColor: '#130A2A', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#39FF14', width: '100%', marginTop: 15 },
+  evalScore: { color: '#39FF14', fontSize: 12, fontWeight: '900', marginBottom: 4 },
+  transcriptText: { color: '#FFF', fontSize: 11, fontStyle: 'italic', marginBottom: 6 },
+  scoreRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6, backgroundColor: '#05020D', padding: 6, borderRadius: 6 },
+  scoreDetail: { color: '#00FFFF', fontSize: 10, fontWeight: 'bold' },
+  feedbackText: { color: '#FFD700', fontSize: 11, marginTop: 4 },
+  missingText: { color: '#FF3366', fontSize: 10, marginTop: 4, fontWeight: 'bold' },
+  nextBtn: { backgroundColor: '#39FF14', paddingVertical: 12, paddingHorizontal: 16, borderRadius: 10, marginTop: 12, width: '100%', alignItems: 'center' },
   nextBtnText: { color: '#000', fontSize: 11, fontWeight: '900' }
 });
