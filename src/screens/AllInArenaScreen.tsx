@@ -41,7 +41,6 @@ export default function AllInArenaScreen({ onBack }: Props) {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
-  
   const requestIdRef = useRef<number>(0);
 
   const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
@@ -137,12 +136,10 @@ export default function AllInArenaScreen({ onBack }: Props) {
     setLoading(true);
     resetBattleState();
 
-    // 1. Xóa sạch State cũ
     setSoloTopic(null);
     setRelayChallenge(null);
     setRoleplayScenario(null);
 
-    // 2. Chờ 150ms để React Re-render hiệu ứng Loading
     await new Promise((resolve) => setTimeout(resolve, 150));
 
     try {
@@ -174,7 +171,6 @@ export default function AllInArenaScreen({ onBack }: Props) {
     }
   };
 
-  // ⚡ NÚT ĐỔI ĐỀ MỚI - ÉP CLEAR CACHE LỊCH SỬ TỨC THÌ
   const handleRefreshTopic = () => {
     if (loading) return;
 
@@ -275,6 +271,30 @@ export default function AllInArenaScreen({ onBack }: Props) {
     }
   };
 
+  // 💥 TẠO CHUỖI ÉP AI CHẤM NGHIÊM NGẶT THEO CHẾ ĐỘ THI ĐẤU
+  const getCurrentPromptText = () => {
+    if (mode === 'solo' && soloTopic) {
+      return `SOLO TOPIC: "${soloTopic.promptEn}". Candidate must thoroughly address this prompt.`;
+    }
+    if (mode === 'relay' && relayChallenge) {
+      return `RELAY DEBATE CHALLENGE:
+Topic: "${relayChallenge.topic}"
+Context: "${relayChallenge.contextEn}"
+Player 1 Requirement: "${relayChallenge.player1En}"
+Player 2 Requirement: "${relayChallenge.player2En}"
+STRICT GRADING RULE FOR RELAY: The candidate MUST cover BOTH Player 1 AND Player 2 requirements. If candidate only presents Player 1 side and omits Player 2 side, Task Fulfillment (Content Score) MUST NOT exceed 45/100.`;
+    }
+    if (mode === 'roleplay' && roleplayScenario) {
+      return `ROLEPLAY SCENARIO:
+Title: "${roleplayScenario.scenarioTitle}"
+AI Role: "${roleplayScenario.aiRoleEn}"
+User Role: "${roleplayScenario.userRoleEn}"
+Goal: "${roleplayScenario.goalEn}"
+STRICT GRADING RULE FOR ROLEPLAY: Candidate must fulfill the user role goal completely. Missing key details will penalize Task Fulfillment score severe.`;
+    }
+    return 'General speaking challenge';
+  };
+
   const handleSubmitBattleAnswer = async () => {
     if (!hasRecordedTurn1 || !recordedTurn1) {
       alert("🔒 Vui lòng thực hiện ghi âm trước!");
@@ -288,9 +308,10 @@ export default function AllInArenaScreen({ onBack }: Props) {
     if (isRecording) setIsRecording(false);
     setBattleState('analyzing');
 
-    const evalData = await evaluateSpeaking(recordedTurn1, cefrLevel);
+    const targetPrompt = getCurrentPromptText();
+    const evalData = await evaluateSpeaking(recordedTurn1, cefrLevel, undefined, targetPrompt);
+    
     setResult(evalData);
-
     setBattleState('ended');
     updateUserProgress(2, evalData.isWin ? 50 : 10, evalData.isWin);
   };
@@ -298,6 +319,57 @@ export default function AllInArenaScreen({ onBack }: Props) {
   const isSubmitDisabled = mode === 'solo' 
     ? (!hasRecordedTurn1 || !recordedTurn1)
     : (!hasRecordedTurn1 || !recordedTurn1 || !hasRecordedTurn2 || !recordedTurn2);
+
+  // 🎯 COMPONENT DÙNG CHUNG HIỂN THỊ ĐỀ BÀI (RENDER CẢ LÚC CHỜ VÀ LÚC ĐANG THI ĐẤU)
+  const renderTopicContent = () => (
+    <View style={{ width: '100%', alignItems: 'center' }}>
+      {mode === 'solo' && soloTopic && (
+        <>
+          <Text style={styles.topicTitle}>{soloTopic.title}</Text>
+          <Text style={styles.promptText}>"{soloTopic.promptEn}"</Text>
+          {soloTopic.promptVi && (
+            <Text style={styles.translationText}>💡 Dịch: "{soloTopic.promptVi}"</Text>
+          )}
+        </>
+      )}
+
+      {mode === 'relay' && relayChallenge && (
+        <>
+          <Text style={styles.topicTitle}>📌 {relayChallenge.topic}</Text>
+          <Text style={styles.promptText}>💡 Bối cảnh: "{relayChallenge.contextEn}"</Text>
+          {relayChallenge.contextVi && (
+            <Text style={styles.translationText}>👉 Dịch: "{relayChallenge.contextVi}"</Text>
+          )}
+          <View style={{ marginTop: 8, width: '100%', backgroundColor: '#130A2A', padding: 8, borderRadius: 8 }}>
+            <Text style={styles.guidelineText}>👤 P1: {relayChallenge.player1En}</Text>
+            {relayChallenge.player1Vi && (
+              <Text style={styles.translationText}>👉 {relayChallenge.player1Vi}</Text>
+            )}
+            <Text style={[styles.guidelineText, { marginTop: 4 }]}>👤 P2: {relayChallenge.player2En}</Text>
+            {relayChallenge.player2Vi && (
+              <Text style={styles.translationText}>👉 {relayChallenge.player2Vi}</Text>
+            )}
+          </View>
+        </>
+      )}
+
+      {mode === 'roleplay' && roleplayScenario && (
+        <>
+          <Text style={styles.topicTitle}>🎭 {roleplayScenario.scenarioTitle}</Text>
+          <Text style={styles.roleText}>
+            🤖 AI: {roleplayScenario.aiRoleEn} {roleplayScenario.aiRoleVi ? `(${roleplayScenario.aiRoleVi})` : ''} 
+            {'  |  '}
+            👤 Bạn: {roleplayScenario.userRoleEn} {roleplayScenario.userRoleVi ? `(${roleplayScenario.userRoleVi})` : ''}
+          </Text>
+          <Text style={styles.promptText}>💬 Mở đầu: "{roleplayScenario.initialAiMessage}"</Text>
+          <Text style={styles.promptText}>🎯 Mục tiêu: {roleplayScenario.goalEn}</Text>
+          {roleplayScenario.goalVi && (
+            <Text style={styles.translationText}>👉 Dịch: {roleplayScenario.goalVi}</Text>
+          )}
+        </>
+      )}
+    </View>
+  );
 
   return (
     <View style={styles.container}>
@@ -351,56 +423,9 @@ export default function AllInArenaScreen({ onBack }: Props) {
             {loading ? (
               <ActivityIndicator size="small" color="#FF007F" style={{ marginVertical: 15 }} />
             ) : (
-              <View style={{ width: '100%', alignItems: 'center' }}>
-                {mode === 'solo' && soloTopic && (
-                  <>
-                    <Text style={styles.topicTitle}>{soloTopic.title}</Text>
-                    <Text style={styles.promptText}>"{soloTopic.promptEn}"</Text>
-                    {soloTopic.promptVi && (
-                      <Text style={styles.translationText}>💡 Dịch: "{soloTopic.promptVi}"</Text>
-                    )}
-                  </>
-                )}
-
-                {mode === 'relay' && relayChallenge && (
-                  <>
-                    <Text style={styles.topicTitle}>📌 {relayChallenge.topic}</Text>
-                    <Text style={styles.promptText}>💡 Bối cảnh: "{relayChallenge.contextEn}"</Text>
-                    {relayChallenge.contextVi && (
-                      <Text style={styles.translationText}>👉 Dịch: "{relayChallenge.contextVi}"</Text>
-                    )}
-                    <View style={{ marginTop: 8, width: '100%' }}>
-                      <Text style={styles.guidelineText}>👤 P1: {relayChallenge.player1En}</Text>
-                      {relayChallenge.player1Vi && (
-                        <Text style={styles.translationText}>👉 {relayChallenge.player1Vi}</Text>
-                      )}
-                      <Text style={[styles.guidelineText, { marginTop: 4 }]}>👤 P2: {relayChallenge.player2En}</Text>
-                      {relayChallenge.player2Vi && (
-                        <Text style={styles.translationText}>👉 {relayChallenge.player2Vi}</Text>
-                      )}
-                    </View>
-                  </>
-                )}
-
-                {mode === 'roleplay' && roleplayScenario && (
-                  <>
-                    <Text style={styles.topicTitle}>🎭 {roleplayScenario.scenarioTitle}</Text>
-                    <Text style={styles.roleText}>
-                      🤖 AI: {roleplayScenario.aiRoleEn} {roleplayScenario.aiRoleVi ? `(${roleplayScenario.aiRoleVi})` : ''} 
-                      {'  |  '}
-                      👤 Bạn: {roleplayScenario.userRoleEn} {roleplayScenario.userRoleVi ? `(${roleplayScenario.userRoleVi})` : ''}
-                    </Text>
-                    <Text style={styles.promptText}>💬 Mở đầu: "{roleplayScenario.initialAiMessage}"</Text>
-                    <Text style={styles.promptText}>🎯 Mục tiêu: {roleplayScenario.goalEn}</Text>
-                    {roleplayScenario.goalVi && (
-                      <Text style={styles.translationText}>👉 Dịch: {roleplayScenario.goalVi}</Text>
-                    )}
-                  </>
-                )}
-              </View>
+              renderTopicContent()
             )}
 
-            {/* NÚT ĐỔI ĐỀ TRẠM 2 */}
             <TouchableOpacity 
               style={[styles.refreshBtn, loading && styles.refreshBtnDisabled]} 
               onPress={handleRefreshTopic} 
@@ -430,7 +455,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
           </View>
         )}
 
-        {/* THI ĐẤU */}
+        {/* THI ĐẤU - KHUNG HIỂN THỊ ĐỀ BÀI CỐ ĐỊNH TRONG LÚC NÓI */}
         {battleState === 'battling' && (
           <View style={styles.box}>
             <View style={styles.battleHeader}>
@@ -440,10 +465,16 @@ export default function AllInArenaScreen({ onBack }: Props) {
               </Text>
             </View>
 
+            {/* 📌 KHUNG CỐ ĐỊNH ĐỀ BÀI LÚC ĐANG THI ĐẤU */}
+            <View style={styles.promptDisplayContainer}>
+              <Text style={styles.promptDisplayTitle}>📌 ĐỀ BÀI THI ĐẤU (ĐỌC KHI NÓI):</Text>
+              {renderTopicContent()}
+            </View>
+
             {mode !== 'solo' && (
               <View style={styles.turnBadge}>
                 <Text style={styles.turnBadgeText}>
-                  {currentTurn === 1 ? '👉 LƯỢT PLAYER 1 (BẤM THU ÂM NÓI PHẦN P1)' : '👉 LƯỢT PLAYER 2 / BOT (BẤM THU ÂM NÓI PHẦN P2)'}
+                  {currentTurn === 1 ? '👉 LƯỢT PLAYER 1 (NÓI PHẦN P1)' : '👉 LƯỢT PLAYER 2 / BOT (NÓI PHẦN P2)'}
                 </Text>
               </View>
             )}
@@ -451,7 +482,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
             <TouchableOpacity style={[styles.recordToggleBtn, isRecording && styles.recordToggleBtnActive]} onPress={handleToggleRecord}>
               <Text style={styles.recordToggleText}>
                 {isRecording 
-                  ? `🔴 ĐANG THU ÂM (LƯỢT ${currentTurn})...` 
+                  ? `🔴 ĐANG THU ÂM (LƯỢT ${currentTurn})... (VỪA NÓI VỪA NHÌN ĐỀ BÀI Ở TRÊN)` 
                   : (currentTurn === 1 ? hasRecordedTurn1 : hasRecordedTurn2) 
                     ? `✅ ĐÃ CÓ BẢN THU LƯỢT ${currentTurn} (BẤM THU LẠI)` 
                     : `🎙 BẤM THU ÂM LƯỢT ${currentTurn}`}
@@ -468,7 +499,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
         {battleState === 'analyzing' && (
           <View style={styles.box}>
             <ActivityIndicator size="large" color="#39FF14" style={{ marginBottom: 15 }} />
-            <Text style={styles.searchingText}>⚡ WHISPER AI ĐANG CHẤM DỊCH 6 TIÊU CHÍ GIỌNG NÓI...</Text>
+            <Text style={styles.searchingText}>⚡ GROQ AI ĐANG ĐỐI CHIẾU Ý NÓI VỚI ĐỀ BÀI (TASK FULFILLMENT)...</Text>
           </View>
         )}
 
@@ -495,15 +526,25 @@ export default function AllInArenaScreen({ onBack }: Props) {
 
             <Text style={styles.breakdownHeaderLabel}>📊 PHÂN TÍCH CHI TIẾT 6 TIÊU CHÍ:</Text>
             <View style={styles.breakdownCard}>
-              <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>🗣 1. Phát âm:</Text><Text style={styles.breakdownValue}>{result.pronunciation}/100</Text></View>
-              <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>📚 2. Ngữ pháp:</Text><Text style={styles.breakdownValue}>{result.grammar}/100</Text></View>
-              <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>🔤 3. Từ vựng:</Text><Text style={styles.breakdownValue}>{result.vocabulary}/100</Text></View>
-              <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>⚡ 4. Phản xạ:</Text><Text style={styles.breakdownValue}>{result.reflexes}/100</Text></View>
-              <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>🎯 5. Nội dung:</Text><Text style={styles.breakdownValue}>{result.content}/100</Text></View>
+              <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>🎯 1. Đáp ứng ý đề bài (Task):</Text><Text style={[styles.breakdownValue, result.content < 60 && { color: '#FF0055' }]}>{result.content}/100</Text></View>
+              <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>🗣 2. Phát âm:</Text><Text style={styles.breakdownValue}>{result.pronunciation}/100</Text></View>
+              <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>📚 3. Ngữ pháp:</Text><Text style={styles.breakdownValue}>{result.grammar}/100</Text></View>
+              <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>🔤 4. Từ vựng:</Text><Text style={styles.breakdownValue}>{result.vocabulary}/100</Text></View>
+              <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>⚡ 5. Phản xạ:</Text><Text style={styles.breakdownValue}>{result.reflexes}/100</Text></View>
               <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>🌊 6. Trôi chảy:</Text><Text style={styles.breakdownValue}>{result.fluency}/100</Text></View>
             </View>
 
-            <Text style={styles.feedbackText}>{result.detailedFeedback}</Text>
+            {/* Hiển thị các ý bị thiếu */}
+            {result.missingRequirements && result.missingRequirements.length > 0 && (
+              <View style={styles.missingBox}>
+                <Text style={styles.missingTitle}>⚠️ Ý CÒN THIẾU TRONG BÀI NÓI:</Text>
+                {result.missingRequirements.map((req, idx) => (
+                  <Text key={idx} style={styles.missingItem}>• {req}</Text>
+                ))}
+              </View>
+            )}
+
+            <Text style={styles.feedbackText}>💡 Nhận xét AI: {result.detailedFeedback}</Text>
 
             <TouchableOpacity style={styles.startBtn} onPress={() => loadModeData(mode, cefrLevel)}>
               <Text style={styles.startBtnText}>🔄 TÌM TRẬN ĐẤU MỚI</Text>
@@ -545,6 +586,8 @@ const styles = StyleSheet.create({
   guidelineText: { color: '#FFF', fontSize: 11, fontWeight: '700', textAlign: 'center' },
   roleText: { color: '#FFD700', fontSize: 11, fontWeight: '800', marginBottom: 8, textAlign: 'center' },
   translationText: { color: '#00FFFF', fontSize: 11, fontStyle: 'italic', textAlign: 'center', marginBottom: 8 },
+  promptDisplayContainer: { width: '100%', backgroundColor: '#130A2A', padding: 10, borderRadius: 10, borderWidth: 1, borderColor: '#00FFFF', marginBottom: 12 },
+  promptDisplayTitle: { color: '#FFD700', fontSize: 10, fontWeight: 'bold', marginBottom: 6, textAlign: 'center' },
   turnBadge: { backgroundColor: '#1A0B2E', paddingVertical: 6, paddingHorizontal: 10, borderRadius: 6, borderWidth: 1, borderColor: '#39FF14', marginBottom: 10 },
   turnBadgeText: { color: '#39FF14', fontSize: 10, fontWeight: 'bold', textAlign: 'center' },
   searchingText: { color: '#00FFFF', fontSize: 11, fontWeight: 'bold', textAlign: 'center' },
@@ -575,5 +618,8 @@ const styles = StyleSheet.create({
   breakdownRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4, borderBottomWidth: 1, borderBottomColor: '#221133' },
   breakdownLabel: { color: '#AAAABB', fontSize: 10 },
   breakdownValue: { color: '#39FF14', fontSize: 10, fontWeight: 'bold' },
+  missingBox: { backgroundColor: '#2A081A', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#FF0055', width: '100%', marginBottom: 12 },
+  missingTitle: { color: '#FF0055', fontSize: 10, fontWeight: 'bold', marginBottom: 4 },
+  missingItem: { color: '#FFD700', fontSize: 10, marginVertical: 2 },
   feedbackText: { color: '#FFF', fontSize: 11, textAlign: 'center', lineHeight: 16, marginBottom: 15 }
 });
