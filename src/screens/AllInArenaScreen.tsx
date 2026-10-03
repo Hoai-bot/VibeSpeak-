@@ -28,7 +28,6 @@ export default function AllInArenaScreen({ onBack }: Props) {
   const [matchedOpponent, setMatchedOpponent] = useState<string>('');
   const [timeLeft, setTimeLeft] = useState<number>(30);
   
-  // ⚡ KHÓA ĐỒNG HỒ: CHỈ BẮT ĐẦU KHI NGƯỜI CHƠI BẤM MICRO
   const [isTimerActive, setIsTimerActive] = useState<boolean>(false);
   const [isRecording, setIsRecording] = useState<boolean>(false);
   
@@ -96,7 +95,6 @@ export default function AllInArenaScreen({ onBack }: Props) {
     audioChunksRef.current = [];
   };
 
-  // ⏱ HIỆU ỨNG ĐỒNG HỒ CHỈ CHẠY KHI IS_TIMER_ACTIVE = TRUE
   useEffect(() => {
     if (!isTimerActive) return;
 
@@ -181,7 +179,6 @@ export default function AllInArenaScreen({ onBack }: Props) {
     return () => resetBattleState();
   }, [mode, cefrLevel]);
 
-  // 🎯 BẮT ĐẦU TRẬN: TẮT HOÀN TOÀN ĐỒNG HỒ ĐẾM NGƯỢC
   const startMatch = () => {
     resetBattleState();
     setBattleState('searching');
@@ -196,13 +193,44 @@ export default function AllInArenaScreen({ onBack }: Props) {
       
       setCurrentTurn(1);
       setBattleState('battling');
-      setIsTimerActive(false); // DỪNG ĐỒNG HỒ
+      setIsTimerActive(false);
       const allocatedTime = getTimeForCurrentTurn(cefrLevel, mode);
-      setTimeLeft(allocatedTime); // Thiết lập mốc thời gian chờ
+      setTimeLeft(allocatedTime);
     }, 1500);
   };
 
-  // 🎙 BẤM MICRO THÌ ĐỒNG HỒ MỚI BẮT ĐẦU ĐẾM NGƯỢC
+  const stopRecordingAndGetBlob = (): Promise<Blob | null> => {
+    return new Promise((resolve) => {
+      if (!mediaRecorderRef.current || mediaRecorderRef.current.state !== 'recording') {
+        resolve(recordedTurn1 || recordedTurn2);
+        return;
+      }
+
+      mediaRecorderRef.current.onstop = () => {
+        const mimeType = mediaRecorderRef.current?.mimeType || 'audio/webm';
+        const recordedBlob = new Blob(audioChunksRef.current, { type: mimeType });
+        if (recordedBlob.size > 2000) {
+          if (mode === 'solo' || currentTurn === 1) {
+            setRecordedTurn1(recordedBlob);
+            setHasRecordedTurn1(true);
+          } else {
+            setRecordedTurn2(recordedBlob);
+            setHasRecordedTurn2(true);
+          }
+          resolve(recordedBlob);
+        } else {
+          resolve(null);
+        }
+      };
+
+      try {
+        mediaRecorderRef.current.stop();
+      } catch (e) {
+        resolve(null);
+      }
+    });
+  };
+
   const handleToggleRecord = async () => {
     if (!isRecording) {
       try {
@@ -251,14 +279,14 @@ export default function AllInArenaScreen({ onBack }: Props) {
 
           mediaRecorder.start(200);
           setIsRecording(true);
-          setIsTimerActive(true); // 🎯 KÍCH HOẠT ĐỒNG HỒ CHẠY TẠI ĐÂY
+          setIsTimerActive(true);
         }
       } catch (err) {
         setMicPermissionModal(true);
       }
     } else {
       setIsRecording(false);
-      setIsTimerActive(false); // DỪNG ĐỒNG HỒ
+      setIsTimerActive(false);
       if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
         mediaRecorderRef.current.stop();
       }
@@ -286,23 +314,21 @@ Goal: "${roleplayScenario.goalEn}"`;
     return 'General speaking challenge';
   };
 
-  // 🎯 NỘP BÀI CHẤM ĐIỂM CHUẨN XÁC VỚI GROQ AI
+  // 🎯 ĐÃ KHẮC PHỤC TRIỆT ĐỂ LỖI CHẤM ĐIỂM
   const handleSubmitBattleAnswer = async () => {
     setIsTimerActive(false);
 
-    // Tự động dừng thu âm nếu người dùng bấm nộp luôn
-    if (isRecording && mediaRecorderRef.current) {
+    // Chờ ép dừng recording và lấy Blob hoàn chỉnh
+    let activeBlob: Blob | null = null;
+    if (isRecording) {
       setIsRecording(false);
-      if (mediaRecorderRef.current.state === 'recording') {
-        mediaRecorderRef.current.stop();
-        await new Promise((res) => setTimeout(res, 400)); // Dành 400ms để đóng gói audio Blob
-      }
+      activeBlob = await stopRecordingAndGetBlob();
+    } else {
+      activeBlob = recordedTurn1 || recordedTurn2;
     }
 
-    const currentAudioBlob = recordedTurn1 || recordedTurn2;
-
-    if (!currentAudioBlob) {
-      alert("🔒 Vui lòng bấm nút Micro thu âm bài nói trước khi nộp!");
+    if (!activeBlob || activeBlob.size <= 2000) {
+      alert("🔒 Chưa ghi nhận bản thu âm giọng nói! Vui lòng bấm nút Micro nói trước khi nộp.");
       return;
     }
 
@@ -310,13 +336,14 @@ Goal: "${roleplayScenario.goalEn}"`;
 
     try {
       const targetPrompt = getCurrentPromptText();
-      const evalData = await evaluateSpeaking(currentAudioBlob, cefrLevel, undefined, targetPrompt);
+      const evalData = await evaluateSpeaking(activeBlob, cefrLevel, undefined, targetPrompt);
       
       setResult(evalData);
       setBattleState('ended');
       updateUserProgress(2, evalData.isWin ? 50 : 10, evalData.isWin);
     } catch (err) {
-      alert("⚠️ Đã xảy ra lỗi máy chủ khi chấm điểm. Vui lòng bấm nộp lại!");
+      console.error("Lỗi chấm điểm:", err);
+      alert("⚠️ Lỗi kết nối chấm điểm. Vui lòng thử nộp lại!");
       setBattleState('battling');
     }
   };
