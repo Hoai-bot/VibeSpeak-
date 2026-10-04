@@ -48,10 +48,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       process.env.GROQ_API ||
       process.env.EXPO_PUBLIC_GROQ_API_KEY;
 
-    // 1. Kiểm tra kích thước audio (Cho phép nhận bản thu nhỏ từ 500 bytes cho từ đơn)
-    if (!audioBuffer || audioBuffer.length < 500) {
+    // 🚨 1. KIỂM TRA AUDIO RỖNG / QUÁ NGẮN -> TRẢ VỀ 0 ĐIỂM NGAY LẬP TỨC
+    if (!audioBuffer || audioBuffer.length < 1000) {
       return res.status(200).json({
-        transcript: '',
+        transcript: '(Chưa ghi nhận âm thanh)',
         score: 0,
         isWin: false,
         wordCount: 0,
@@ -61,7 +61,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         reflexes: 0,
         content: 0,
         fluency: 0,
-        detailedFeedback: '❌ Bản thu âm quá ngắn hoặc không có tín hiệu audio. Vui lòng thử lại!',
+        detailedFeedback: '❌ Chưa nhận được âm thanh thu âm. Vui lòng bấm nút micro và đọc to rõ ràng!',
         wordAnalysis: [],
       });
     }
@@ -73,20 +73,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       try {
         const groq = new Groq({ apiKey });
 
-        // Chuyển Buffer thành Uint8Array để tương thích với Blob/File API
+        // Chuyển Buffer sang Uint8Array để fix triệt để lỗi TypeScript BlobPart trên Vercel
         const uint8Array = new Uint8Array(
           audioBuffer.buffer,
           audioBuffer.byteOffset,
           audioBuffer.byteLength
         );
 
-        // Đảm bảo mimeType chuẩn audio/webm hoặc lấy từ request header
         const rawContentType = (req.headers['content-type'] as string) || '';
         const mimeType = rawContentType.includes('audio') ? rawContentType.split(';')[0] : 'audio/webm';
 
         const audioFile = new File([uint8Array], 'recording.webm', { type: mimeType });
 
-        // Gửi sang Whisper STT
+        // Gửi âm thanh thực tế sang Whisper STT
         const transcription = await groq.audio.transcriptions.create({
           file: audioFile,
           model: 'whisper-large-v3',
@@ -98,15 +97,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           .replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, '')
           .trim();
 
-        // Nếu Whisper nhận diện thành công, tiến hành chấm điểm bằng Llama
-        if (userTranscript.length > 0) {
-          const completion = await groq.chat.completions.create({
-            messages: [
-              {
-                role: 'system',
-                content: `You are an AI English Pronunciation Referee for VibeSpeak.
+        // 🚨 2. NẾU WHISPER KHÔNG BẮT ĐƯỢC TỪ NÀO (IM LẶNG) -> TRẢ VỀ 0 ĐIỂM
+        if (!userTranscript || userTranscript.length === 0) {
+          return res.status(200).json({
+            transcript: '(Không nhận diện được từ nào)',
+            score: 0,
+            isWin: false,
+            wordCount: 0,
+            pronunciation: 0,
+            grammar: 0,
+            vocabulary: 0,
+            reflexes: 0,
+            content: 0,
+            fluency: 0,
+            detailedFeedback: '⚠️ AI không nghe rõ bài phát âm của bạn. Hãy nói to và gần micro hơn nhé!',
+            wordAnalysis: [],
+          });
+        }
+
+        // 3. Tiến hành chấm điểm LLAMA dựa trên giọng nói thực tế thu được
+        const completion = await groq.chat.completions.create({
+          messages: [
+            {
+              role: 'system',
+              content: `You are an AI English Pronunciation Referee for VibeSpeak Cyber Arena.
 Target Level: ${req.query.cefrLevel || 'B2'}.
-Evaluate user spoken text against the Target Word/Phrase.
+Evaluate user spoken text specifically against the Target Phrase.
 
 Return ONLY JSON matching schema:
 {
@@ -122,27 +138,38 @@ Return ONLY JSON matching schema:
   "detailedFeedback": "string",
   "wordAnalysis": [{ "word": "string", "status": "correct" | "warning" | "error" }]
 }`
-              },
-              {
-                role: 'user',
-                content: `Target: "${targetPhrase}"\nUser Spoke: "${userTranscript}"`
-              }
-            ],
-            model: 'llama-3.1-8b-instant',
-            temperature: 0.2,
-            response_format: { type: 'json_object' }
-          });
-          evalResult = JSON.parse(completion.choices[0]?.message?.content || '{}');
-        }
+            },
+            {
+              role: 'user',
+              content: `Target Phrase: "${targetPhrase}"\nUser Spoke: "${userTranscript}"`
+            }
+          ],
+          model: 'llama-3.1-8b-instant',
+          temperature: 0.2,
+          response_format: { type: 'json_object' }
+        });
+        evalResult = JSON.parse(completion.choices[0]?.message?.content || '{}');
       } catch (aiError) {
-        console.warn('⚠️ Groq AI API bận hoặc giải mã audio thất bại, dùng Fallback Engine...');
+        console.warn('⚠️ Groq AI bận, dùng Fallback Engine...');
       }
     }
 
-    // 2. FALLBACK ENGINE (Tránh trả về 0 điểm nếu Whisper gặp sự cố mạng/codec)
-    if (!userTranscript) {
-      // Nếu Whisper lỗi nhưng client gửi bản thu âm hợp lệ (>500 bytes), gán giả định nhận diện để chấm điểm phát âm
-      userTranscript = targetPhrase;
+    // 🚨 4. FALLBACK ENGINE (Chỉ tính điểm khi userTranscript THỰC SỰ CÓ TỪ)
+    if (!userTranscript || userTranscript.length === 0) {
+      return res.status(200).json({
+        transcript: '(Không nhận diện được giọng nói)',
+        score: 0,
+        isWin: false,
+        wordCount: 0,
+        pronunciation: 0,
+        grammar: 0,
+        vocabulary: 0,
+        reflexes: 0,
+        content: 0,
+        fluency: 0,
+        detailedFeedback: '❌ Không ghi nhận được phát âm của bạn. Vui lòng bấm micro và đọc lại!',
+        wordAnalysis: [],
+      });
     }
 
     if (!evalResult || typeof evalResult.score !== 'number') {
@@ -152,7 +179,7 @@ Return ONLY JSON matching schema:
       const matchedCount = userWords.filter((w) => targetWords.includes(w)).length;
       const coverageRatio = Math.min(1, matchedCount / Math.max(1, targetWords.length));
       
-      const calculatedScore = Math.round(coverageRatio * 80 + 15);
+      const calculatedScore = Math.round(coverageRatio * 85 + (userWords.length > 0 ? 15 : 0));
 
       evalResult = {
         score: calculatedScore,
@@ -164,25 +191,25 @@ Return ONLY JSON matching schema:
         reflexes: calculatedScore,
         content: calculatedScore,
         fluency: calculatedScore,
-        detailedFeedback: `Phát âm nhận diện: "${userTranscript}". Phát âm của bạn đối với chủ đề "${targetPhrase}" khá rõ ràng!`,
+        detailedFeedback: `Bạn đã phát âm: "${userTranscript}". Hãy tiếp tục luyện tập để phát âm chuẩn xác hơn!`,
         wordAnalysis: userWords.map((w) => ({
           word: w,
-          status: 'correct',
+          status: targetWords.includes(w) ? 'correct' : 'warning',
         })),
       };
     }
 
     return res.status(200).json({
       transcript: userTranscript,
-      score: evalResult.score ?? 75,
-      isWin: evalResult.isWin ?? true,
+      score: evalResult.score ?? 0,
+      isWin: evalResult.isWin ?? false,
       wordCount: evalResult.wordCount ?? userTranscript.split(' ').length,
-      pronunciation: evalResult.pronunciation ?? 75,
-      grammar: evalResult.grammar ?? 75,
-      vocabulary: evalResult.vocabulary ?? 75,
-      reflexes: evalResult.reflexes ?? 75,
-      content: evalResult.content ?? 75,
-      fluency: evalResult.fluency ?? 75,
+      pronunciation: evalResult.pronunciation ?? evalResult.score ?? 0,
+      grammar: evalResult.grammar ?? evalResult.score ?? 0,
+      vocabulary: evalResult.vocabulary ?? evalResult.score ?? 0,
+      reflexes: evalResult.reflexes ?? evalResult.score ?? 0,
+      content: evalResult.content ?? evalResult.score ?? 0,
+      fluency: evalResult.fluency ?? evalResult.score ?? 0,
       detailedFeedback: evalResult.detailedFeedback || 'Đánh giá hoàn tất.',
       wordAnalysis: evalResult.wordAnalysis || [],
     });
