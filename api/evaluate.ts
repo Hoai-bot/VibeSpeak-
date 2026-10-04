@@ -2,14 +2,12 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import Groq from 'groq-sdk';
 
-// Cấu hình để Vercel Serverless Function nhận dữ liệu Raw Buffer/Audio
 export const config = {
   api: {
     bodyParser: false,
   },
 };
 
-// Hàm đọc Raw Body từ Blob stream
 async function getRawBody(readable: any): Promise<Buffer> {
   const chunks = [];
   for await (const chunk of readable) {
@@ -19,7 +17,6 @@ async function getRawBody(readable: any): Promise<Buffer> {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // CORS Header
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
@@ -32,7 +29,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).end();
   }
 
-  // 1. Tự động nhận diện mọi biến Groq Key
   const apiKey =
     process.env.GROQ_API_KEY_NEW ||
     process.env.GROQ_API_KEY ||
@@ -49,11 +45,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const groq = new Groq({ apiKey });
 
-    // 2. Lấy thông tin từ Query Params (do assessmentService.ts gửi qua URL)
     const { promptEn, cefrLevel } = req.query;
     const targetPhrase = (promptEn as string) || 'General speaking challenge';
 
-    // 3. Đọc Audio Blob gửi trong Body
     const audioBuffer = await getRawBody(req);
 
     if (!audioBuffer || audioBuffer.length === 0) {
@@ -63,12 +57,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    // Chuyển Buffer thành File object hợp lệ cho Groq SDK
     const audioFile = new File([audioBuffer], 'recording.webm', {
       type: req.headers['content-type'] || 'audio/webm',
     });
 
-    // 4. Nhận diện giọng nói qua Whisper
+    // 1. Chạy Whisper STT
     const transcription = await groq.audio.transcriptions.create({
       file: audioFile,
       model: 'whisper-large-v3',
@@ -78,18 +71,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const userTranscript = transcription.text || '';
 
-    // 5. Thử lần lượt các model phổ biến nhất của Groq để tránh lỗi 404 model_not_found
-    const candidateModels = [
+    // 2. Danh sách LLM Active chính thức của Groq (Đã loại bỏ các model cũ)
+    const activeModels = [
       'llama-3.3-70b-versatile',
-      'llama-3.2-11b-vision-preview',
-      'llama-3.2-3b-preview',
-      'mixtral-8x7b-32768'
+      'llama-3.1-8b-instant',
+      'llama3-70b-8192'
     ];
 
     let completion = null;
     let lastError = null;
 
-    for (const modelName of candidateModels) {
+    for (const modelName of activeModels) {
       try {
         completion = await groq.chat.completions.create({
           messages: [
@@ -125,15 +117,15 @@ Return ONLY a valid JSON matching this schema:
           response_format: { type: 'json_object' },
         });
 
-        if (completion) break; // Lấy thành công thì thoát vòng lặp
+        if (completion) break;
       } catch (err: any) {
         lastError = err;
-        console.warn(`Model ${modelName} không khả dụng, thử model tiếp theo...`);
+        console.warn(`Model ${modelName} gặp lỗi, thử model tiếp theo...`);
       }
     }
 
     if (!completion) {
-      throw lastError || new Error('Không thể kết nối tới bất kỳ model Groq nào.');
+      throw lastError || new Error('Không thể gọi LLM trên Groq.');
     }
 
     const evalResult = JSON.parse(completion.choices[0]?.message?.content || '{}');
