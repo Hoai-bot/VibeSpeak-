@@ -24,6 +24,7 @@ export default function Station1Screen({ onBack }: Props) {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const currentAudioRef = useRef<HTMLAudioElement | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
 
   // 🔊 DỪNG TOÀN BỘ ÂM THANH ĐANG PHÁT
   const stopAllAudio = () => {
@@ -120,6 +121,10 @@ export default function Station1Screen({ onBack }: Props) {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
       try { mediaRecorderRef.current.stop(); } catch (e) {}
     }
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach(track => track.stop());
+      mediaStreamRef.current = null;
+    }
     setIsRecording(false);
     setRecordedAudio(null);
     setHasRecorded(false);
@@ -127,7 +132,7 @@ export default function Station1Screen({ onBack }: Props) {
     audioChunksRef.current = [];
   };
 
-  // 🎙️ THU ÂM BÀI NÓI (ĐÃ CẤP QUYỀN ĐA TRÌNH DUYỆT TỰ ĐỘNG)
+  // 🎙️ THU ÂM CÓ BỘ LỌC ĐỊNH DẠNG ÂM THANH CHUẨN AI
   const handleToggleRecord = async () => {
     stopAllAudio();
 
@@ -138,20 +143,30 @@ export default function Station1Screen({ onBack }: Props) {
           return;
         }
 
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          } 
+        });
+        mediaStreamRef.current = stream;
 
-        // Tự động chọn MIME type phù hợp nhất với trình duyệt (Chrome/Safari/Firefox)
-        let options = {};
+        // Ưu tiên MIME Type được Groq Whisper hỗ trợ tốt nhất
+        let mimeType = '';
         if (typeof MediaRecorder !== 'undefined') {
           if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
-            options = { mimeType: 'audio/webm;codecs=opus' };
+            mimeType = 'audio/webm;codecs=opus';
           } else if (MediaRecorder.isTypeSupported('audio/webm')) {
-            options = { mimeType: 'audio/webm' };
+            mimeType = 'audio/webm';
           } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
-            options = { mimeType: 'audio/mp4' };
+            mimeType = 'audio/mp4';
+          } else if (MediaRecorder.isTypeSupported('audio/ogg')) {
+            mimeType = 'audio/ogg';
           }
         }
 
+        const options = mimeType ? { mimeType } : undefined;
         const mediaRecorder = new MediaRecorder(stream, options);
         mediaRecorderRef.current = mediaRecorder;
         audioChunksRef.current = [];
@@ -161,27 +176,31 @@ export default function Station1Screen({ onBack }: Props) {
         };
 
         mediaRecorder.onstop = () => {
-          const mimeType = mediaRecorder.mimeType || 'audio/webm';
-          const blob = new Blob(audioChunksRef.current, { type: mimeType });
+          const finalMime = mediaRecorder.mimeType || mimeType || 'audio/webm';
+          const blob = new Blob(audioChunksRef.current, { type: finalMime });
 
-          if (blob.size > 2000) {
+          if (blob.size > 1500) {
             setRecordedAudio(blob);
             setHasRecorded(true);
           } else {
             setRecordedAudio(null);
             setHasRecorded(false);
-            alert("⚠️ Chưa ghi nhận âm thanh rõ ràng! Vui lòng bấm mic và đọc to lại.");
+            alert("⚠️ Bản thu âm quá ngắn hoặc không nhận được tín hiệu âm thanh! Vui lòng bấm mic và phát âm rõ ràng lại.");
           }
-          stream.getTracks().forEach(t => t.stop());
+
+          if (mediaStreamRef.current) {
+            mediaStreamRef.current.getTracks().forEach(t => t.stop());
+            mediaStreamRef.current = null;
+          }
         };
 
-        mediaRecorder.start(200);
+        mediaRecorder.start(100); // Ghi dữ liệu mỗi 100ms để tránh mất chunk
         setIsRecording(true);
         setRecordedAudio(null);
         setHasRecorded(false);
       } catch (err) {
         console.error("Lỗi Microphone:", err);
-        alert("🔒 Lỗi Micro: Vui lòng kiểm tra biểu tượng 🔒 hoặc 🎙️ trên thanh địa chỉ trình duyệt và cấp quyền 'Cho phép (Allow)' truy cập Microphone!");
+        alert("🔒 Lỗi Micro: Vui lòng kiểm tra biểu tượng 🔒/🎙️ trên thanh địa chỉ trình duyệt và bật 'Cho phép (Allow)' Microphone!");
       }
     } else {
       setIsRecording(false);
@@ -191,9 +210,9 @@ export default function Station1Screen({ onBack }: Props) {
     }
   };
 
-  // ⚔️ NỘP BÀI CÓ KHÓA CHỐNG ĐIỂM ẢO
+  // ⚔️ NỘP BÀI VÀ CHẤM ĐIỂM AI
   const handleSubmitAnswer = async () => {
-    if (!hasRecorded || !recordedAudio || recordedAudio.size <= 2000) {
+    if (!hasRecorded || !recordedAudio || recordedAudio.size <= 1500) {
       alert("🔒 Vui lòng bấm micro thu âm phát âm trước khi nộp bài!");
       return;
     }
@@ -204,21 +223,21 @@ export default function Station1Screen({ onBack }: Props) {
       const promptTarget = `Practice Phrase: "${currentDrill?.contentEn || ''}". Focus area: ${currentDrill?.targetFocus || ''}`;
       const evalData = await evaluateSpeaking(recordedAudio, 'B2', undefined, promptTarget);
 
-      if (!evalData.transcript || evalData.wordCount <= 2) {
+      if (!evalData.transcript || evalData.wordCount === 0) {
         setResult({
           score: 0,
           isWin: false,
-          transcript: "(Không nhận diện được giọng phát âm rõ ràng)",
-          wordCount: evalData.wordCount || 0,
+          transcript: "(Không nhận diện được từ nào trong bản thu)",
+          wordCount: 0,
           pronunciation: 0,
           grammar: 0,
           vocabulary: 0,
           reflexes: 0,
           content: 0,
           fluency: 0,
-          detailedFeedback: "❌ AI chỉ nhận diện được tiếng ồn. Vui lòng cất giọng đọc rõ ràng cặp từ/cụm từ mẫu!",
+          detailedFeedback: "❌ AI không nghe thấy giọng nói tiếng Anh rõ ràng. Hãy lại gần Micro và đọc to hơn!",
         });
-        alert("🛡️ NỘP BÀI THẤT BẠI: Bạn chưa phát âm! Vui lòng bấm micro và đọc lại.");
+        alert("🛡️ NỘP BÀI THẤT BẠI: AI chưa nghe rõ giọng bạn! Vui lòng bấm micro và đọc to hơn.");
       } else {
         setResult(evalData);
         if (evalData.isWin) {
