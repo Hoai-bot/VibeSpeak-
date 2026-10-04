@@ -36,6 +36,9 @@ export default function AllInArenaScreen({ onBack }: Props) {
   const [hasRecordedTurn1, setHasRecordedTurn1] = useState<boolean>(false);
   const [hasRecordedTurn2, setHasRecordedTurn2] = useState<boolean>(false);
 
+  // 🎯 1. BỔ SUNG STATE LƯU URL BẢN THU ÂM TỪ BLOB
+  const [recordedAudioUrl, setRecordedAudioUrl] = useState<string | null>(null);
+
   const [micPermissionModal, setMicPermissionModal] = useState<boolean>(false);
   const [result, setResult] = useState<AssessmentResult | null>(null);
 
@@ -91,6 +94,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
     setRecordedTurn2(null);
     setHasRecordedTurn1(false);
     setHasRecordedTurn2(false);
+    setRecordedAudioUrl(null);
     setResult(null);
     audioChunksRef.current = [];
   };
@@ -209,7 +213,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
       mediaRecorderRef.current.onstop = () => {
         const mimeType = mediaRecorderRef.current?.mimeType || 'audio/webm';
         const recordedBlob = new Blob(audioChunksRef.current, { type: mimeType });
-        if (recordedBlob.size > 2000) {
+        if (recordedBlob.size > 800) {
           if (mode === 'solo' || currentTurn === 1) {
             setRecordedTurn1(recordedBlob);
             setHasRecordedTurn1(true);
@@ -258,7 +262,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
             const mimeType = mediaRecorder.mimeType || 'audio/webm';
             const recordedBlob = new Blob(audioChunksRef.current, { type: mimeType });
             
-            if (recordedBlob.size > 2000) {
+            if (recordedBlob.size > 800) {
               if (mode === 'solo' || currentTurn === 1) {
                 setRecordedTurn1(recordedBlob);
                 setHasRecordedTurn1(true);
@@ -317,9 +321,15 @@ export default function AllInArenaScreen({ onBack }: Props) {
       activeBlob = recordedTurn1 || recordedTurn2;
     }
 
-    if (!activeBlob || activeBlob.size <= 2000) {
+    if (!activeBlob || activeBlob.size <= 800) {
       alert("🔒 Chưa ghi nhận bản thu âm giọng nói! Vui lòng bấm nút Micro nói trước khi nộp.");
       return;
+    }
+
+    // 🎯 2. TẠO URL ÂM THANH TỪ BLOB ĐỂ NGHE LẠI Ở MÀN HÌNH KẾT QUẢ
+    if (typeof window !== 'undefined' && window.URL) {
+      const audioUrl = URL.createObjectURL(activeBlob);
+      setRecordedAudioUrl(audioUrl);
     }
 
     setBattleState('analyzing');
@@ -537,10 +547,11 @@ export default function AllInArenaScreen({ onBack }: Props) {
               </Text>
             </View>
 
-            {result.audioUrl && (
+            {/* 🎧 3. HIỂN THỊ CẢ RECORDED AUDIO URL VÀ RESULT.AUDIOURL */}
+            {(recordedAudioUrl || result.audioUrl) && (
               <View style={styles.nativeAudioContainer}>
                 <Text style={styles.nativeAudioLabel}>🎧 NGHE LẠI BẢN THU CỦA BẠN:</Text>
-                <audio controls src={result.audioUrl} style={{ width: '100%', marginTop: 6 }} />
+                <audio controls src={recordedAudioUrl || result.audioUrl} style={{ width: '100%', marginTop: 6 }} />
               </View>
             )}
 
