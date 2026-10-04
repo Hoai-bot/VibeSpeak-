@@ -57,9 +57,7 @@ export default function AppNavigator() {
       )}
 
       {currentScreen === 'station3' && (
-        <ShadowBossScreen 
-          onBack={() => setCurrentScreen('map')} 
-        />
+        <ShadowBossScreen onBack={() => setCurrentScreen('map')} />
       )}
 
       {currentScreen === 'station4' && (
