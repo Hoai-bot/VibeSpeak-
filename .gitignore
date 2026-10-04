@@ -18,3 +18,5 @@ test-ai.js
 
 # 🔊 Assets & Media Cleanup
 Assets/Sounds/typewriter_click.mp3.mp3
+.vercel
+.env*
