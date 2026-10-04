@@ -32,13 +32,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).end();
   }
 
-  // 2. Kiểm tra API Key an toàn
-  const apiKey = process.env.GROQ_API_KEY;
+  // 2. Kiểm tra API Key linh hoạt (Đọc GROQ_API_KEY_NEW và các biến dự phòng)
+  const apiKey =
+    process.env.GROQ_API_KEY_NEW ||
+    process.env.GROQ_API_KEY ||
+    process.env.GROQ_API ||
+    process.env.EXPO_PUBLIC_GROQ_API_KEY;
+
   if (!apiKey) {
-    console.error('LỖI HỆ THỐNG: GROQ_API_KEY chưa được cấu hình trên Vercel!');
+    console.error('LỖI HỆ THỐNG: Chưa cấu hình GROQ API Key trên Vercel Settings!');
     return res.status(500).json({
       success: false,
-      error: 'Máy chủ chưa được cấu hình GROQ_API_KEY. Vui lòng kiểm tra Vercel Settings.',
+      error: 'Máy chủ chưa được cấu hình GROQ_API_KEY_NEW. Vui lòng kiểm tra Vercel Settings.',
     });
   }
 
@@ -48,12 +53,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     let finalTranscript = inputTranscript;
 
-    // 3. Xử lý Whisper STT nếu client gửi file audio (Bổ sung model 'whisper-large-v3' tránh lỗi 400)
+    // 3. Xử lý Whisper STT nếu client gửi file audio
     if (audioFile && !finalTranscript) {
       try {
         const transcription = await groq.audio.transcriptions.create({
           file: audioFile,
-          model: 'whisper-large-v3', // <-- THUỘC TÍNH BẮT BUỘC ĐÃ ĐƯỢC BỔ SUNG
+          model: 'whisper-large-v3',
           language: 'en',
           response_format: 'json',
         });
@@ -102,8 +107,8 @@ Return ONLY a valid JSON object matching this schema:
     });
 
     const rawContent = completion.choices[0]?.message?.content || '{}';
-    
-    // 5. Parse dữ liệu và ép kiểu TypeScript an toàn (Giải quyết lỗi TS2339)
+
+    // 5. Parse dữ liệu và ép kiểu TypeScript an toàn
     const evalResult = JSON.parse(rawContent) as Partial<EvaluationResult>;
 
     const responseData: EvaluationResult = {
