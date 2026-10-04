@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, Alert } from 'react-native';
 import { generateShadowBoss, ShadowBossItem } from '../services/drills/station3Service';
 import { updateUserProgress } from '../services/userService';
+import { playBossVoice } from '../services/bossTtsService';
 
 interface Props {
   onBack: () => void;
@@ -50,38 +51,25 @@ export default function ShadowBossScreen({ onBack }: Props) {
     return () => resetBossSession();
   }, []);
 
-  // 🔊 PHÁT ÂM MẪU AI TỰ NHIÊN (LỌC GIỌNG HIGH-QUALITY & TỐC ĐỘ 0.8)
-  const handlePlaySample = () => {
+  // 🔊 PHÁT ÂM MẪU SHADOW BOSS VỚI GIỌNG AI (ONYX / SHIMMER)
+  const handlePlaySample = async () => {
     if (!bossData) return;
     setIsPlayingAudio(true);
 
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-      const voices = window.speechSynthesis.getVoices();
-
-      // Lọc giọng tiếng Anh chuẩn tự nhiên
-      const selectedVoice = voices.find(v => 
-        v.lang.startsWith('en') && (
-          v.name.includes('Natural') || 
-          v.name.includes('Google US English') || 
-          v.name.includes('Jenny') || 
-          v.name.includes('Samantha') || 
-          v.name.includes('Ava')
-        )
-      ) || voices.find(v => v.lang === 'en-US' || v.lang === 'en-GB') || voices[0];
-
-      const utt = new SpeechSynthesisUtterance(bossData.phrase);
-      utt.lang = 'en-US';
-      utt.rate = 0.82; // Tốc độ tự nhiên cho bài Shadowing
-      utt.pitch = 1.0;
-      if (selectedVoice) utt.voice = selectedVoice;
-
-      utt.onend = () => setIsPlayingAudio(false);
-      utt.onerror = () => setIsPlayingAudio(false);
-      window.speechSynthesis.speak(utt);
-    } else {
-      setTimeout(() => setIsPlayingAudio(false), 1200);
+    try {
+      // Voice 'onyx' cho giọng Boss nam uy nghiêm, kịch tính
+      await playBossVoice(bossData.phrase, 'onyx');
+    } catch (error) {
+      console.error("Lỗi phát audio Boss:", error);
+    } finally {
+      setIsPlayingAudio(false);
     }
+  };
+
+  // ⚔️ XỬ LÝ KHI BOSS TUNG CHIÊU / KHIÊU CHIẾN
+  const handleBossAttack = (bossDialogueText: string) => {
+    // Voice 'onyx' cho giọng Boss nam uy nghiêm, hoặc 'shimmer' cho Boss nữ huyền bí
+    playBossVoice(bossDialogueText, 'onyx');
   };
 
   // 🎙️ QUẢN LÝ MICRO THU ÂM THỰC TẾ
@@ -133,7 +121,7 @@ export default function ShadowBossScreen({ onBack }: Props) {
 
   // ⚔️ TẤN CÔNG BOSS (BẢO VỆ BẰNG CỜ XÁC NHẬN)
   const handleAttackBoss = () => {
-    // 🛑 KHÓA TUYỆT ĐỐI NẾU CHƯA CÓ BẢN THU THỰC TẾ
+    // 0KHÓA TUYỆT ĐỐI NẾU CHƯA CÓ BẢN THU THỰC TẾ
     if (!hasRecordedCurrentSession || !audioBlob || audioBlob.size <= 4000) {
       if (typeof window !== 'undefined') {
         alert("🔒 KHÔNG THỂ TẤN CÔNG: Bạn chưa thực hiện thu âm Shadowing! Hãy bấm nút Micro để nói đuổi theo trước.");
@@ -155,6 +143,7 @@ export default function ShadowBossScreen({ onBack }: Props) {
 
       if (newHp === 0) {
         updateUserProgress(3, 100, true);
+        handleBossAttack("Argh... You have defeated me, warrior!");
       }
     }, 1500);
   };
@@ -181,7 +170,7 @@ export default function ShadowBossScreen({ onBack }: Props) {
               </View>
 
               <Text style={styles.hpText}>
-                {currentHp > 0 ? `HP: ${currentHp} / 100` : '☠️️ BOSS ĐÃ BỊ HẠ GỤC! (+100 XP)'}
+                {currentHp > 0 ? `HP: ${currentHp} / 100` : '☠ BOSS ĐÃ BỊ HẠ GỤC! (+100 XP)'}
               </Text>
             </View>
 
@@ -197,7 +186,7 @@ export default function ShadowBossScreen({ onBack }: Props) {
                 disabled={isPlayingAudio}
               >
                 <Text style={styles.audioBtnText}>
-                  {isPlayingAudio ? '🔊 AI ĐANG ĐỌC MẪU...' : '📢 NGHE GIỌNG MẪU CHUẨN AI'}
+                  {isPlayingAudio ? '🔊 SHADOW BOSS ĐANG PHÁT ÂM...' : '📢 NGHE GIỌNG MẪU CHUẨN AI'}
                 </Text>
               </TouchableOpacity>
             </View>
