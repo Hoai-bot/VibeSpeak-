@@ -38,6 +38,9 @@ export default function AllInArenaScreen({ onBack }: Props) {
 
   const [micPermissionModal, setMicPermissionModal] = useState<boolean>(false);
   const [result, setResult] = useState<AssessmentResult | null>(null);
+  
+  // 🎯 Thêm State ẩn/hiển thị Tapescript mẫu theo yêu cầu
+  const [showSampleScript, setShowSampleScript] = useState<boolean>(false);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -92,6 +95,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
     setHasRecordedTurn1(false);
     setHasRecordedTurn2(false);
     setResult(null);
+    setShowSampleScript(false);
     audioChunksRef.current = [];
   };
 
@@ -390,6 +394,9 @@ export default function AllInArenaScreen({ onBack }: Props) {
     </View>
   );
 
+  // 🎯 Lọc danh sách từ chỉ giữ lại các từ bị sai/cảnh báo
+  const incorrectWords = result?.wordAnalysis?.filter(item => item.status !== 'correct') || [];
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -521,21 +528,32 @@ export default function AllInArenaScreen({ onBack }: Props) {
             </Text>
             <Text style={styles.scoreText}>⚡ TỔNG ĐIỂM TRẬN ĐẤU: {result.score} / 100 ĐIỂM</Text>
 
-            {/* 📜 1. TAPESCRIPT / BÀI NÓI MẪU AI */}
-            <View style={styles.tapescriptBox}>
-              <Text style={styles.tapescriptTitle}>📜 TAPESCRIPT / BÀI NÓI MẪU AI (ĐỐI CHIẾU):</Text>
-              <Text style={styles.tapescriptContent}>
-                "{result.improvedAnswerEn || getCurrentPromptText()}"
-              </Text>
-            </View>
-
-            {/* 🎙 2. TRANSCRIPT / LỜI NÓI THỰC TẾ CỦA BẠN */}
+            {/* 🎙 1. TRANSCRIPT / LỜI NÓI THỰC TẾ CỦA BẠN */}
             <View style={styles.userTranscriptBox}>
-              <Text style={styles.userTranscriptTitle}>🎙 TRANSCRIPT / LỜI NÓI THỰC TẾ CỦA BẠN:</Text>
+              <Text style={styles.userTranscriptTitle}>🎙 BÀI NÓI THỰC TẾ CỦA BẠN (TRANSCRIPT):</Text>
               <Text style={styles.userTranscriptContent}>
                 "{result.transcript || "(Chưa nhận diện được giọng nói)"}"
               </Text>
             </View>
+
+            {/* 💡 2. NÚT ẨN/HIỆN TAPESCRIPT MẪU ĐỂ THAM KHẢO HỌC HỎI */}
+            <TouchableOpacity 
+              style={styles.toggleSampleBtn} 
+              onPress={() => setShowSampleScript(!showSampleScript)}
+            >
+              <Text style={styles.toggleSampleText}>
+                {showSampleScript ? '🙈 ẨN BÀI NÓI MẪU AI' : '💡 XEM BÀI NÓI MẪU AI THAM KHẢO'}
+              </Text>
+            </TouchableOpacity>
+
+            {showSampleScript && (
+              <View style={styles.tapescriptBox}>
+                <Text style={styles.tapescriptTitle}>📜 TAPESCRIPT / BÀI NÓI MẪU AI GỢI Ý:</Text>
+                <Text style={styles.tapescriptContent}>
+                  "{result.improvedAnswerEn || getCurrentPromptText()}"
+                </Text>
+              </View>
+            )}
 
             {result.audioUrl && (
               <View style={styles.nativeAudioContainer}>
@@ -544,17 +562,16 @@ export default function AllInArenaScreen({ onBack }: Props) {
               </View>
             )}
 
-            {/* 📝 3. PHÂN TÍCH PHÁT ÂM TỪNG TỪ */}
+            {/* 📝 3. PHÂN TÍCH TỪ PHÁT ÂM CHƯA CHUẨN (CHỈ HIỂN THỊ TỪ CẦN CẢI THIỆN) */}
             <View style={styles.scriptBox}>
-              <Text style={styles.scriptLabel}>📝 PHÂN TÍCH PHÁT ÂM CHI TIẾT TỪNG TỪ:</Text>
+              <Text style={styles.scriptLabel}>📝 TỪ CẦN CẢI THIỆN PHÁT ÂM:</Text>
               <View style={styles.wordBadgeContainer}>
-                {result.wordAnalysis && result.wordAnalysis.length > 0 ? (
-                  result.wordAnalysis.map((item, idx) => (
+                {incorrectWords.length > 0 ? (
+                  incorrectWords.map((item, idx) => (
                     <Text 
                       key={idx} 
                       style={[
                         styles.wordChip,
-                        item.status === 'correct' && styles.wordCorrect,
                         item.status === 'warning' && styles.wordWarning,
                         item.status === 'error' && styles.wordError,
                       ]}
@@ -563,11 +580,13 @@ export default function AllInArenaScreen({ onBack }: Props) {
                     </Text>
                   ))
                 ) : (
-                  <Text style={styles.scriptContent}>"{result.transcript}"</Text>
+                  <Text style={{ color: '#39FF14', fontSize: 11, fontWeight: 'bold' }}>
+                    🎉 Xuất sắc! Phát âm của bạn rất chuẩn xác, không có từ nào bị lỗi.
+                  </Text>
                 )}
               </View>
               <Text style={styles.wordLegendText}>
-                Chú thích: <Text style={{ color: '#39FF14' }}>● Chuẩn</Text> | <Text style={{ color: '#FFD700' }}>● Cần cải thiện</Text> | <Text style={{ color: '#FF0055' }}>● Bị sai/ngắc ứ</Text>
+                Chú thích: <Text style={{ color: '#FFD700' }}>● Cần cải thiện</Text> | <Text style={{ color: '#FF0055' }}>● Bị sai/ngắc ứ</Text>
               </Text>
               <Text style={styles.wordCountText}>📊 Số từ phản xạ thực tế: {result.wordCount} từ</Text>
             </View>
@@ -671,20 +690,20 @@ const styles = StyleSheet.create({
   submitBtnText: { color: '#000', fontSize: 11, fontWeight: '900' },
   resultTitle: { fontSize: 15, fontWeight: '900', marginBottom: 6 },
   scoreText: { color: '#FFD700', fontSize: 13, fontWeight: '900', marginBottom: 10 },
-  tapescriptBox: { width: '100%', backgroundColor: '#1A0B2E', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#FF007F', marginBottom: 10 },
-  tapescriptTitle: { color: '#FF007F', fontSize: 10, fontWeight: 'bold', marginBottom: 4 },
-  tapescriptContent: { color: '#FFFFFF', fontSize: 11, fontStyle: 'italic', lineHeight: 16 },
-  userTranscriptBox: { width: '100%', backgroundColor: '#1A0B2E', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#00FFFF', marginBottom: 12 },
+  userTranscriptBox: { width: '100%', backgroundColor: '#1A0B2E', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#00FFFF', marginBottom: 10 },
   userTranscriptTitle: { color: '#00FFFF', fontSize: 10, fontWeight: 'bold', marginBottom: 4 },
   userTranscriptContent: { color: '#39FF14', fontSize: 11, fontWeight: 'bold', lineHeight: 16 },
+  toggleSampleBtn: { backgroundColor: '#130A2A', paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8, borderWidth: 1, borderColor: '#FF007F', width: '100%', alignItems: 'center', marginBottom: 12 },
+  toggleSampleText: { color: '#FF007F', fontSize: 10, fontWeight: 'bold' },
+  tapescriptBox: { width: '100%', backgroundColor: '#1A0B2E', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#FF007F', marginBottom: 12 },
+  tapescriptTitle: { color: '#FF007F', fontSize: 10, fontWeight: 'bold', marginBottom: 4 },
+  tapescriptContent: { color: '#FFFFFF', fontSize: 11, fontStyle: 'italic', lineHeight: 16 },
   nativeAudioContainer: { width: '100%', backgroundColor: '#1A0B2E', padding: 10, borderRadius: 10, borderWidth: 1, borderColor: '#00FFFF', marginBottom: 12, alignItems: 'center' },
   nativeAudioLabel: { color: '#00FFFF', fontSize: 10, fontWeight: 'bold' },
   scriptBox: { backgroundColor: '#1A0B2E', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#332255', width: '100%', marginBottom: 12 },
   scriptLabel: { color: '#FFD700', fontSize: 10, fontWeight: 'bold', marginBottom: 6 },
-  scriptContent: { color: '#FFF', fontSize: 11, fontStyle: 'italic', marginBottom: 6 },
   wordBadgeContainer: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 8 },
   wordChip: { fontSize: 12, fontWeight: '800', lineHeight: 18 },
-  wordCorrect: { color: '#39FF14' },
   wordWarning: { color: '#FFD700' },
   wordError: { color: '#FF0055' },
   wordLegendText: { color: '#AAAABB', fontSize: 9, marginBottom: 4 },
