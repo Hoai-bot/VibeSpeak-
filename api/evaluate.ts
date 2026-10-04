@@ -78,7 +78,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const userTranscript = transcription.text || '';
 
-    // 5. Đánh giá phát âm bằng llama3-8b-8192 (Model mặc định luôn khả dụng trên mọi account Groq)
+    // 5. Đánh giá phát âm bằng model Groq active hiện tại (llama-3.1-8b-instant)
     const completion = await groq.chat.completions.create({
       messages: [
         {
@@ -108,7 +108,7 @@ Return ONLY a valid JSON matching this schema:
           content: `Target Phrase: "${targetPhrase}"\nUser Spoke: "${userTranscript}"`,
         },
       ],
-      model: 'llama3-8b-8192',
+      model: 'llama-3.1-8b-instant',
       temperature: 0.3,
       response_format: { type: 'json_object' },
     });
