@@ -6,7 +6,7 @@ import AuthScreen, { UserProfile } from '../screens/AuthScreen';
 import MainMapScreen from '../screens/MainMapScreen';
 import UserProfileScreen from '../screens/UserProfileScreen';
 
-import DrillScreen from '../screens/DrillScreen';
+import Station1Screen from '../screens/Station1Screen';
 import AllInArenaScreen from '../screens/AllInArenaScreen';
 import ShadowBossScreen from '../screens/ShadowBossScreen';
 import Station4Screen from '../screens/Station4Screen';
@@ -49,7 +49,7 @@ export default function AppNavigator() {
       )}
 
       {currentScreen === 'station1' && (
-        <DrillScreen tier={1} onBack={() => setCurrentScreen('map')} />
+        <Station1Screen onBack={() => setCurrentScreen('map')} />
       )}
 
       {currentScreen === 'station2' && (
@@ -59,7 +59,6 @@ export default function AppNavigator() {
       {currentScreen === 'station3' && (
         <ShadowBossScreen 
           onBack={() => setCurrentScreen('map')} 
-          onNavigateToOasis={() => setCurrentScreen('station3')}
         />
       )}
 
