@@ -44,14 +44,13 @@ export default function Station1Screen({ onBack }: Props) {
     stopAllAudio();
     setIsPlayingTTS(true);
 
-    // LỚP 1: THỬ PHÁT BẰNG WEB SPEECH API TRÌNH DUYỆT (ĐỘ TIN CẬY CAO NHẤT)
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      window.speechSynthesis.cancel(); // Xóa hàng đợi cũ
+      window.speechSynthesis.cancel();
 
       const speakText = () => {
         const utterance = new SpeechSynthesisUtterance(textToSpeak);
         utterance.lang = 'en-US';
-        utterance.rate = 0.85; // Tốc độ vừa phải cho người học phát âm
+        utterance.rate = 0.85;
         utterance.pitch = 1.0;
 
         const voices = window.speechSynthesis.getVoices();
@@ -70,7 +69,6 @@ export default function Station1Screen({ onBack }: Props) {
         window.speechSynthesis.speak(utterance);
       };
 
-      // Đảm bảo voices đã nạp xong
       if (window.speechSynthesis.getVoices().length > 0) {
         speakText();
         return;
@@ -79,30 +77,25 @@ export default function Station1Screen({ onBack }: Props) {
           speakText();
           window.speechSynthesis.onvoiceschanged = null;
         };
-        // Set timeout nếu sự kiện onvoiceschanged không kích hoạt
         setTimeout(() => speakText(), 150);
         return;
       }
     }
 
-    // LỚP 2: FALLBACK SỬ DỤNG ONLINE AUDIO STREAM
     tryAudioUrlFallback(textToSpeak);
   };
 
   const tryAudioUrlFallback = (textToSpeak: string) => {
     try {
       const encodedText = encodeURIComponent(textToSpeak);
-      const ttsUrl = `https://dict.youdao.com/dictvoice?audio=${encodedText}&type=2`; // Giọng Anh-Mỹ chuẩn
+      const ttsUrl = `https://dict.youdao.com/dictvoice?audio=${encodedText}&type=2`;
 
       const audio = new Audio(ttsUrl);
       currentAudioRef.current = audio;
 
       audio.onplay = () => setIsPlayingTTS(true);
       audio.onended = () => setIsPlayingTTS(false);
-      audio.onerror = () => {
-        setIsPlayingTTS(false);
-        alert("⚠️️ Không thể phát âm thanh! Vui lòng kiểm tra loa/loa ngoài thiết bị.");
-      };
+      audio.onerror = () => setIsPlayingTTS(false);
 
       audio.play().catch(() => setIsPlayingTTS(false));
     } catch {
@@ -134,42 +127,61 @@ export default function Station1Screen({ onBack }: Props) {
     audioChunksRef.current = [];
   };
 
-  // 🎙️ THU ÂM BÀI NÓI
+  // 🎙️ THU ÂM BÀI NÓI (ĐÃ CẤP QUYỀN ĐA TRÌNH DUYỆT TỰ ĐỘNG)
   const handleToggleRecord = async () => {
     stopAllAudio();
 
     if (!isRecording) {
       try {
-        if (typeof navigator !== 'undefined' && navigator.mediaDevices) {
-          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-          const mediaRecorder = new MediaRecorder(stream);
-          mediaRecorderRef.current = mediaRecorder;
-          audioChunksRef.current = [];
-
-          mediaRecorder.ondataavailable = (e) => {
-            if (e.data && e.data.size > 0) audioChunksRef.current.push(e.data);
-          };
-
-          mediaRecorder.onstop = () => {
-            const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-            if (blob.size > 4000) {
-              setRecordedAudio(blob);
-              setHasRecorded(true);
-            } else {
-              setRecordedAudio(null);
-              setHasRecorded(false);
-              alert("⚠️ Chưa ghi nhận âm thanh rõ ràng! Vui lòng bấm giữ nút và đọc lớn.");
-            }
-            stream.getTracks().forEach(t => t.stop());
-          };
-
-          mediaRecorder.start(200);
-          setIsRecording(true);
-          setRecordedAudio(null);
-          setHasRecorded(false);
+        if (typeof navigator === 'undefined' || !navigator.mediaDevices) {
+          alert("🔒 Trình duyệt của bạn không hỗ trợ Micro âm thanh!");
+          return;
         }
-      } catch {
-        alert("🔒 Lỗi Micro: Hãy cấp quyền Microphone trên trình duyệt!");
+
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+        // Tự động chọn MIME type phù hợp nhất với trình duyệt (Chrome/Safari/Firefox)
+        let options = {};
+        if (typeof MediaRecorder !== 'undefined') {
+          if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+            options = { mimeType: 'audio/webm;codecs=opus' };
+          } else if (MediaRecorder.isTypeSupported('audio/webm')) {
+            options = { mimeType: 'audio/webm' };
+          } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+            options = { mimeType: 'audio/mp4' };
+          }
+        }
+
+        const mediaRecorder = new MediaRecorder(stream, options);
+        mediaRecorderRef.current = mediaRecorder;
+        audioChunksRef.current = [];
+
+        mediaRecorder.ondataavailable = (e) => {
+          if (e.data && e.data.size > 0) audioChunksRef.current.push(e.data);
+        };
+
+        mediaRecorder.onstop = () => {
+          const mimeType = mediaRecorder.mimeType || 'audio/webm';
+          const blob = new Blob(audioChunksRef.current, { type: mimeType });
+
+          if (blob.size > 2000) {
+            setRecordedAudio(blob);
+            setHasRecorded(true);
+          } else {
+            setRecordedAudio(null);
+            setHasRecorded(false);
+            alert("⚠️ Chưa ghi nhận âm thanh rõ ràng! Vui lòng bấm mic và đọc to lại.");
+          }
+          stream.getTracks().forEach(t => t.stop());
+        };
+
+        mediaRecorder.start(200);
+        setIsRecording(true);
+        setRecordedAudio(null);
+        setHasRecorded(false);
+      } catch (err) {
+        console.error("Lỗi Microphone:", err);
+        alert("🔒 Lỗi Micro: Vui lòng kiểm tra biểu tượng 🔒 hoặc 🎙️ trên thanh địa chỉ trình duyệt và cấp quyền 'Cho phép (Allow)' truy cập Microphone!");
       }
     } else {
       setIsRecording(false);
@@ -181,7 +193,7 @@ export default function Station1Screen({ onBack }: Props) {
 
   // ⚔️ NỘP BÀI CÓ KHÓA CHỐNG ĐIỂM ẢO
   const handleSubmitAnswer = async () => {
-    if (!hasRecorded || !recordedAudio || recordedAudio.size <= 4000) {
+    if (!hasRecorded || !recordedAudio || recordedAudio.size <= 2000) {
       alert("🔒 Vui lòng bấm micro thu âm phát âm trước khi nộp bài!");
       return;
     }
@@ -302,9 +314,9 @@ export default function Station1Screen({ onBack }: Props) {
             >
               <Text style={styles.recordBtnText}>
                 {isRecording 
-                  ? '🔴 ĐANG THU ÂM... (BẤM DỪNG)' 
+                  ? '🔴 ĐANG THU ÂM... (BẤM ĐỂ DỪNG)' 
                   : hasRecorded 
-                  ? '✅ ĐÃ CÓ BẢN THU (BẤM THU LẠI)' 
+                  ? '✅ ĐÃ CÓ BẢN THU (BẤM ĐỂ THU LẠI)' 
                   : '🎙 BẤM ĐỂ BẮT ĐẦU PHÁT ÂM'}
               </Text>
             </TouchableOpacity>
