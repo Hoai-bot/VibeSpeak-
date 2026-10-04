@@ -34,7 +34,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     .replace(/SOLO TOPIC:/g, '')
     .replace(/Candidate must thoroughly address this prompt\./g, '')
     .replace(/["']/g, '')
-    .trim() || 'Talk about a birthday present you received that made you happy.';
+    .trim() || 'Describe your family members and their jobs.';
 
   const targetPhrase = cleanScript;
 
@@ -46,32 +46,69 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       process.env.GROQ_API ||
       process.env.EXPO_PUBLIC_GROQ_API_KEY;
 
+    // 🚨 1. KIỂM TRA BẢN THU ÂM RỖNG (Audio dưới 2KB ~ không có âm thanh)
+    if (!audioBuffer || audioBuffer.length < 2000) {
+      return res.status(200).json({
+        transcript: '(Không ghi nhận được âm thanh)',
+        score: 0,
+        isWin: false,
+        wordCount: 0,
+        pronunciation: 0,
+        grammar: 0,
+        vocabulary: 0,
+        reflexes: 0,
+        content: 0,
+        fluency: 0,
+        detailedFeedback: '❌ Bạn chưa nói gì hoặc micro quá nhỏ! Vui lòng bật micro và thử lại.',
+        wordAnalysis: [],
+      });
+    }
+
     let userTranscript = '';
     let evalResult: any = null;
 
-    if (apiKey && audioBuffer && audioBuffer.length > 0) {
+    if (apiKey) {
       try {
         const groq = new Groq({ apiKey });
         const audioFile = new File([audioBuffer], 'recording.webm', {
           type: req.headers['content-type'] || 'audio/webm',
         });
 
+        // Nhận diện giọng nói bằng Whisper
         const transcription = await groq.audio.transcriptions.create({
           file: audioFile,
           model: 'whisper-large-v3',
           language: 'en',
           response_format: 'json',
         });
-        userTranscript = transcription.text || '';
+        userTranscript = (transcription.text || '').trim();
 
+        // 🚨 2. NẾU WHISPER KHÔNG BẮT ĐƯỢC TỪ NÀO (Nói thầm / Im lặng) -> TRẢ VỀ 0 ĐIỂM
+        if (!userTranscript || userTranscript.length === 0) {
+          return res.status(200).json({
+            transcript: '(Im lặng / Không nghe rõ từ)',
+            score: 0,
+            isWin: false,
+            wordCount: 0,
+            pronunciation: 0,
+            grammar: 0,
+            vocabulary: 0,
+            reflexes: 0,
+            content: 0,
+            fluency: 0,
+            detailedFeedback: '⚠️ AI không nghe rõ bài phát âm của bạn. Hãy phát âm to và rõ ràng hơn nhé!',
+            wordAnalysis: [],
+          });
+        }
+
+        // 3. Tiến hành chấm điểm bằng Llama khi đã có giọng nói thực tế
         const completion = await groq.chat.completions.create({
           messages: [
             {
               role: 'system',
               content: `You are an AI English Pronunciation Referee for VibeSpeak Cyber Arena.
 Target CEFR Level: ${req.query.cefrLevel || 'B2'}.
-Evaluate user spoken text specifically for the given Target Topic/Phrase.
-IMPORTANT: Generate "keyKeywords" and "suggestedIdeas" that STRICTLY relate to the Target Topic/Phrase provided by the user.
+Evaluate user spoken text specifically against the Target Topic.
 
 Return ONLY JSON matching schema:
 {
@@ -85,9 +122,7 @@ Return ONLY JSON matching schema:
   "fluency": number (0-100),
   "wordCount": number,
   "detailedFeedback": "string",
-  "wordAnalysis": [{ "word": "string", "status": "correct" | "warning" | "error" }],
-  "keyKeywords": ["string"],
-  "suggestedIdeas": ["string"]
+  "wordAnalysis": [{ "word": "string", "status": "correct" | "warning" | "error" }]
 }`
             },
             {
@@ -101,63 +136,41 @@ Return ONLY JSON matching schema:
         });
         evalResult = JSON.parse(completion.choices[0]?.message?.content || '{}');
       } catch (aiError) {
-        console.warn('⚠️ Groq AI bận, dùng Dynamic Fallback Engine...');
+        console.warn('⚠️ Groq AI bận, dùng Fallback Engine...');
       }
     }
 
-    if (!userTranscript) {
-      userTranscript = targetPhrase;
-    }
-
-    // 🎯 DYNAMIC FALLBACK ENGINE (Tự động sinh từ vựng & dàn ý động phù hợp với từng chủ đề)
+    // Fallback khi bận server (Chỉ tính khi người chơi THỰC SỰ CÓ NÓI)
     if (!evalResult || !evalResult.score) {
       const words = userTranscript.split(' ');
-      const isGiftTopic = /present|gift|birthday/i.test(targetPhrase);
-      
       evalResult = {
-        score: 88,
-        isWin: true,
+        score: Math.min(100, Math.max(30, words.length * 8)),
+        isWin: words.length >= 5,
         wordCount: words.length,
-        pronunciation: 85,
-        grammar: 90,
-        vocabulary: 88,
-        reflexes: 85,
-        content: 90,
-        fluency: 86,
-        detailedFeedback: `Phát âm của bạn khá mượt mà đối với chủ đề "${targetPhrase}". Hãy chú ý nhấn ngữ điệu rõ hơn ở các từ quan trọng!`,
+        pronunciation: 75,
+        grammar: 80,
+        vocabulary: 75,
+        reflexes: 70,
+        content: 75,
+        fluency: 70,
+        detailedFeedback: `Bạn đã nói được ${words.length} từ đối với chủ đề "${targetPhrase}". Hãy tiếp tục mở rộng thêm câu trả lời!`,
         wordAnalysis: words.map((w) => ({ word: w, status: 'correct' })),
-        keyKeywords: isGiftTopic 
-          ? ['thoughtful gift', 'sentimental value', 'express gratitude', 'memorable moment']
-          : ['key vocabulary', 'collocations', 'idiomatic expressions', 'advanced terms'],
-        suggestedIdeas: isGiftTopic 
-          ? [
-              'Mention what the gift was and who gave it to you.',
-              'Explain why this present was meaningful or special to you.',
-              'Describe how you used or enjoyed the gift afterwards.'
-            ]
-          : [
-              'Directly address the main topic in your opening sentence.',
-              'Provide 2-3 supporting details or personal examples.',
-              'Summarize your thoughts with a strong conclusion.'
-            ]
       };
     }
 
     return res.status(200).json({
       transcript: userTranscript,
-      score: evalResult.score ?? 85,
-      isWin: evalResult.isWin ?? true,
+      score: evalResult.score ?? 0,
+      isWin: evalResult.isWin ?? false,
       wordCount: evalResult.wordCount ?? userTranscript.split(' ').length,
-      pronunciation: evalResult.pronunciation ?? 85,
-      grammar: evalResult.grammar ?? 85,
-      vocabulary: evalResult.vocabulary ?? 85,
-      reflexes: evalResult.reflexes ?? 85,
-      content: evalResult.content ?? 85,
-      fluency: evalResult.fluency ?? 85,
+      pronunciation: evalResult.pronunciation ?? 0,
+      grammar: evalResult.grammar ?? 0,
+      vocabulary: evalResult.vocabulary ?? 0,
+      reflexes: evalResult.reflexes ?? 0,
+      content: evalResult.content ?? 0,
+      fluency: evalResult.fluency ?? 0,
       detailedFeedback: evalResult.detailedFeedback || 'Đánh giá hoàn tất.',
       wordAnalysis: evalResult.wordAnalysis || [],
-      keyKeywords: evalResult.keyKeywords || ['topic vocabulary', 'key phrases'],
-      suggestedIdeas: evalResult.suggestedIdeas || ['Idea 1: Answer main prompt', 'Idea 2: Elaborate with details']
     });
   } catch (error: any) {
     console.error('Lỗi API Evaluate:', error);
