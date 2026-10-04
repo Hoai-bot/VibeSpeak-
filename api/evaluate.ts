@@ -78,12 +78,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const userTranscript = transcription.text || '';
 
-    // 5. Đánh giá phát âm bằng model Groq active hiện tại (llama-3.1-8b-instant)
-    const completion = await groq.chat.completions.create({
-      messages: [
-        {
-          role: 'system',
-          content: `You are an AI English Pronunciation Referee for VibeSpeak Cyber Arena.
+    // 5. Thử lần lượt các model phổ biến nhất của Groq để tránh lỗi 404 model_not_found
+    const candidateModels = [
+      'llama-3.3-70b-versatile',
+      'llama-3.2-11b-vision-preview',
+      'llama-3.2-3b-preview',
+      'mixtral-8x7b-32768'
+    ];
+
+    let completion = null;
+    let lastError = null;
+
+    for (const modelName of candidateModels) {
+      try {
+        completion = await groq.chat.completions.create({
+          messages: [
+            {
+              role: 'system',
+              content: `You are an AI English Pronunciation Referee for VibeSpeak Cyber Arena.
 Target CEFR Level: ${cefrLevel || 'B2'}.
 Evaluate user spoken text against the target phrase.
 Return ONLY a valid JSON matching this schema:
@@ -102,16 +114,27 @@ Return ONLY a valid JSON matching this schema:
     { "word": "string", "status": "correct" | "warning" | "error" }
   ]
 }`,
-        },
-        {
-          role: 'user',
-          content: `Target Phrase: "${targetPhrase}"\nUser Spoke: "${userTranscript}"`,
-        },
-      ],
-      model: 'llama-3.1-8b-instant',
-      temperature: 0.3,
-      response_format: { type: 'json_object' },
-    });
+            },
+            {
+              role: 'user',
+              content: `Target Phrase: "${targetPhrase}"\nUser Spoke: "${userTranscript}"`,
+            },
+          ],
+          model: modelName,
+          temperature: 0.3,
+          response_format: { type: 'json_object' },
+        });
+
+        if (completion) break; // Lấy thành công thì thoát vòng lặp
+      } catch (err: any) {
+        lastError = err;
+        console.warn(`Model ${modelName} không khả dụng, thử model tiếp theo...`);
+      }
+    }
+
+    if (!completion) {
+      throw lastError || new Error('Không thể kết nối tới bất kỳ model Groq nào.');
+    }
 
     const evalResult = JSON.parse(completion.choices[0]?.message?.content || '{}');
 
