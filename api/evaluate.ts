@@ -71,23 +71,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const userTranscript = transcription.text || '';
 
-    // 2. Danh sách LLM Active chính thức của Groq (Đã loại bỏ các model cũ)
-    const activeModels = [
-      'llama-3.3-70b-versatile',
-      'llama-3.1-8b-instant',
-      'llama3-70b-8192'
-    ];
-
-    let completion = null;
-    let lastError = null;
-
-    for (const modelName of activeModels) {
-      try {
-        completion = await groq.chat.completions.create({
-          messages: [
-            {
-              role: 'system',
-              content: `You are an AI English Pronunciation Referee for VibeSpeak Cyber Arena.
+    // 2. Chấm điểm phát âm với Model Llama 3.3 70B Versatile
+    const completion = await groq.chat.completions.create({
+      messages: [
+        {
+          role: 'system',
+          content: `You are an AI English Pronunciation Referee for VibeSpeak Cyber Arena.
 Target CEFR Level: ${cefrLevel || 'B2'}.
 Evaluate user spoken text against the target phrase.
 Return ONLY a valid JSON matching this schema:
@@ -106,27 +95,16 @@ Return ONLY a valid JSON matching this schema:
     { "word": "string", "status": "correct" | "warning" | "error" }
   ]
 }`,
-            },
-            {
-              role: 'user',
-              content: `Target Phrase: "${targetPhrase}"\nUser Spoke: "${userTranscript}"`,
-            },
-          ],
-          model: modelName,
-          temperature: 0.3,
-          response_format: { type: 'json_object' },
-        });
-
-        if (completion) break;
-      } catch (err: any) {
-        lastError = err;
-        console.warn(`Model ${modelName} gặp lỗi, thử model tiếp theo...`);
-      }
-    }
-
-    if (!completion) {
-      throw lastError || new Error('Không thể gọi LLM trên Groq.');
-    }
+        },
+        {
+          role: 'user',
+          content: `Target Phrase: "${targetPhrase}"\nUser Spoke: "${userTranscript}"`,
+        },
+      ],
+      model: 'llama-3.3-70b-versatile',
+      temperature: 0.3,
+      response_format: { type: 'json_object' },
+    });
 
     const evalResult = JSON.parse(completion.choices[0]?.message?.content || '{}');
 
