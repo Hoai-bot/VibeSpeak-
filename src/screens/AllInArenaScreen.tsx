@@ -39,7 +39,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
   const [micPermissionModal, setMicPermissionModal] = useState<boolean>(false);
   const [result, setResult] = useState<AssessmentResult | null>(null);
   
-  // 🎯 Thêm State ẩn/hiển thị Tapescript mẫu theo yêu cầu
+  // State ẩn/hiện Bài nói mẫu
   const [showSampleScript, setShowSampleScript] = useState<boolean>(false);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -394,8 +394,16 @@ export default function AllInArenaScreen({ onBack }: Props) {
     </View>
   );
 
-  // 🎯 Lọc danh sách từ chỉ giữ lại các từ bị sai/cảnh báo
-  const incorrectWords = result?.wordAnalysis?.filter(item => item.status !== 'correct') || [];
+  // 🎯 Lọc danh sách từ bị warning/error
+  const incorrectWords = result?.wordAnalysis?.filter(item => item.status === 'warning' || item.status === 'error') || [];
+
+  // 🎯 Sửa nhận xét AI: Đổi "mẫu câu" thành "chủ đề"
+  const formattedFeedback = (result?.detailedFeedback || '')
+    .replace(/đối với mẫu câu/g, 'đối với chủ đề')
+    .replace(/mẫu câu/g, 'chủ đề');
+
+  // 🎯 Lấy bài mẫu chuẩn cho Tapescript
+  const sampleScriptText = result?.improvedAnswerEn || getCurrentPromptText();
 
   return (
     <View style={styles.container}>
@@ -536,7 +544,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
               </Text>
             </View>
 
-            {/* 💡 2. NÚT ẨN/HIỆN TAPESCRIPT MẪU ĐỂ THAM KHẢO HỌC HỎI */}
+            {/* 💡 2. NÚT XEM TAPESCRIPT BÀI NÓI MẪU AI */}
             <TouchableOpacity 
               style={styles.toggleSampleBtn} 
               onPress={() => setShowSampleScript(!showSampleScript)}
@@ -550,7 +558,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
               <View style={styles.tapescriptBox}>
                 <Text style={styles.tapescriptTitle}>📜 TAPESCRIPT / BÀI NÓI MẪU AI GỢI Ý:</Text>
                 <Text style={styles.tapescriptContent}>
-                  "{result.improvedAnswerEn || getCurrentPromptText()}"
+                  "{sampleScriptText}"
                 </Text>
               </View>
             )}
@@ -562,7 +570,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
               </View>
             )}
 
-            {/* 📝 3. PHÂN TÍCH TỪ PHÁT ÂM CHƯA CHUẨN (CHỈ HIỂN THỊ TỪ CẦN CẢI THIỆN) */}
+            {/* 📝 3. CHỈ HIỂN THỊ CÁC TỪ BỊ PHÁT ÂM SAI / CẦN CẢI THIỆN */}
             <View style={styles.scriptBox}>
               <Text style={styles.scriptLabel}>📝 TỪ CẦN CẢI THIỆN PHÁT ÂM:</Text>
               <View style={styles.wordBadgeContainer}>
@@ -580,8 +588,10 @@ export default function AllInArenaScreen({ onBack }: Props) {
                     </Text>
                   ))
                 ) : (
-                  <Text style={{ color: '#39FF14', fontSize: 11, fontWeight: 'bold' }}>
-                    🎉 Xuất sắc! Phát âm của bạn rất chuẩn xác, không có từ nào bị lỗi.
+                  <Text style={{ color: result.score >= 95 ? '#39FF14' : '#FFD700', fontSize: 11, fontWeight: 'bold' }}>
+                    {result.score >= 95 
+                      ? '🎉 Xuất sắc! Bạn phát âm chuẩn xác hoàn hảo từng từ.' 
+                      : '💡 Không có từ bị lỗi phát âm nặng, nhưng bạn cần cải thiện ngữ điệu và độ trôi chảy.'}
                   </Text>
                 )}
               </View>
@@ -610,7 +620,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
               </View>
             )}
 
-            <Text style={styles.feedbackText}>💡 Nhận xét AI: {result.detailedFeedback}</Text>
+            <Text style={styles.feedbackText}>💡 Nhận xét AI: {formattedFeedback}</Text>
 
             <TouchableOpacity style={styles.startBtn} onPress={() => loadModeData(mode, cefrLevel)}>
               <Text style={styles.startBtnText}>🔄 TÌM TRẬN ĐẤU MỚI</Text>
