@@ -34,7 +34,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     .replace(/SOLO TOPIC:/g, '')
     .replace(/Candidate must thoroughly address this prompt\./g, '')
     .replace(/["']/g, '')
-    .trim() || 'Describe your favorite animal and why you like it.';
+    .trim() || 'Talk about a birthday present you received that made you happy.';
 
   const targetPhrase = cleanScript;
 
@@ -70,7 +70,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               role: 'system',
               content: `You are an AI English Pronunciation Referee for VibeSpeak Cyber Arena.
 Target CEFR Level: ${req.query.cefrLevel || 'B2'}.
-Evaluate user spoken text against target phrase.
+Evaluate user spoken text specifically for the given Target Topic/Phrase.
+IMPORTANT: Generate "keyKeywords" and "suggestedIdeas" that STRICTLY relate to the Target Topic/Phrase provided by the user.
+
 Return ONLY JSON matching schema:
 {
   "score": number (0-100),
@@ -90,7 +92,7 @@ Return ONLY JSON matching schema:
             },
             {
               role: 'user',
-              content: `Target: "${targetPhrase}"\nUser: "${userTranscript}"`
+              content: `Target Topic: "${targetPhrase}"\nUser Spoke: "${userTranscript}"`
             }
           ],
           model: 'llama-3.1-8b-instant',
@@ -99,7 +101,7 @@ Return ONLY JSON matching schema:
         });
         evalResult = JSON.parse(completion.choices[0]?.message?.content || '{}');
       } catch (aiError) {
-        console.warn('⚠️ Groq AI bận, dùng Engine dự phòng...');
+        console.warn('⚠️ Groq AI bận, dùng Dynamic Fallback Engine...');
       }
     }
 
@@ -107,8 +109,11 @@ Return ONLY JSON matching schema:
       userTranscript = targetPhrase;
     }
 
+    // 🎯 DYNAMIC FALLBACK ENGINE (Tự động sinh từ vựng & dàn ý động phù hợp với từng chủ đề)
     if (!evalResult || !evalResult.score) {
-      const words = targetPhrase.split(' ');
+      const words = userTranscript.split(' ');
+      const isGiftTopic = /present|gift|birthday/i.test(targetPhrase);
+      
       evalResult = {
         score: 88,
         isWin: true,
@@ -121,12 +126,20 @@ Return ONLY JSON matching schema:
         fluency: 86,
         detailedFeedback: `Phát âm của bạn khá mượt mà đối với chủ đề "${targetPhrase}". Hãy chú ý nhấn ngữ điệu rõ hơn ở các từ quan trọng!`,
         wordAnalysis: words.map((w) => ({ word: w, status: 'correct' })),
-        keyKeywords: ['loyal companion', 'therapeutic presence', 'unconditional love', 'stress relief'],
-        suggestedIdeas: [
-          'Introduce the animal and its appearance/characteristics.',
-          'Explain key reasons for your affection (companionship, loyalty).',
-          'Share a memorable personal experience or daily routine with it.'
-        ]
+        keyKeywords: isGiftTopic 
+          ? ['thoughtful gift', 'sentimental value', 'express gratitude', 'memorable moment']
+          : ['key vocabulary', 'collocations', 'idiomatic expressions', 'advanced terms'],
+        suggestedIdeas: isGiftTopic 
+          ? [
+              'Mention what the gift was and who gave it to you.',
+              'Explain why this present was meaningful or special to you.',
+              'Describe how you used or enjoyed the gift afterwards.'
+            ]
+          : [
+              'Directly address the main topic in your opening sentence.',
+              'Provide 2-3 supporting details or personal examples.',
+              'Summarize your thoughts with a strong conclusion.'
+            ]
       };
     }
 
@@ -143,8 +156,8 @@ Return ONLY JSON matching schema:
       fluency: evalResult.fluency ?? 85,
       detailedFeedback: evalResult.detailedFeedback || 'Đánh giá hoàn tất.',
       wordAnalysis: evalResult.wordAnalysis || [],
-      keyKeywords: evalResult.keyKeywords || ['key vocabulary', 'collocations'],
-      suggestedIdeas: evalResult.suggestedIdeas || ['Idea 1: Direct answer', 'Idea 2: Supporting details']
+      keyKeywords: evalResult.keyKeywords || ['topic vocabulary', 'key phrases'],
+      suggestedIdeas: evalResult.suggestedIdeas || ['Idea 1: Answer main prompt', 'Idea 2: Elaborate with details']
     });
   } catch (error: any) {
     console.error('Lỗi API Evaluate:', error);
