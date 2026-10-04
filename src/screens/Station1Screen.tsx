@@ -1,0 +1,279 @@
+// src/screens/Station1Screen.tsx
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
+import { getRandomStation1Drill, DrillType } from '../services/drills/station1Service';
+import { evaluateSpeaking, AssessmentResult } from '../services/arena/assessmentService';
+import { updateUserProgress } from '../services/userService';
+
+interface Props {
+  onBack: () => void;
+}
+
+export default function Station1Screen({ onBack }: Props) {
+  const [activeType, setActiveType] = useState<DrillType>('minimal_pairs');
+  const [currentDrill, setCurrentDrill] = useState<any>(null);
+
+  // Quản lý ghi âm & trạng thái chấm điểm
+  const [isRecording, setIsRecording] = useState<boolean>(false);
+  const [recordedAudio, setRecordedAudio] = useState<Blob | null>(null);
+  const [hasRecorded, setHasRecorded] = useState<boolean>(false);
+  const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
+  const [result, setResult] = useState<AssessmentResult | null>(null);
+
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+
+  // 🔄 HÀM ĐỔI BÀI TẬP NGẪU NHIÊN CHỐNG LẶP
+  const handleLoadNewDrill = (type: DrillType) => {
+    resetSession();
+    const newDrill = getRandomStation1Drill(type);
+    setCurrentDrill(newDrill);
+  };
+
+  // Đổi bài khi chuyển Tầng/Tab hoặc khi mới vào màn hình
+  useEffect(() => {
+    handleLoadNewDrill(activeType);
+  }, [activeType]);
+
+  const resetSession = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      try { mediaRecorderRef.current.stop(); } catch (e) {}
+    }
+    setIsRecording(false);
+    setRecordedAudio(null);
+    setHasRecorded(false);
+    setResult(null);
+    audioChunksRef.current = [];
+  };
+
+  // 🎙️ THU ÂM BÀI NÓI
+  const handleToggleRecord = async () => {
+    if (!isRecording) {
+      try {
+        if (typeof navigator !== 'undefined' && navigator.mediaDevices) {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          const mediaRecorder = new MediaRecorder(stream);
+          mediaRecorderRef.current = mediaRecorder;
+          audioChunksRef.current = [];
+
+          mediaRecorder.ondataavailable = (e) => {
+            if (e.data && e.data.size > 0) audioChunksRef.current.push(e.data);
+          };
+
+          mediaRecorder.onstop = () => {
+            const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+            if (blob.size > 4000) {
+              setRecordedAudio(blob);
+              setHasRecorded(true);
+            } else {
+              setRecordedAudio(null);
+              setHasRecorded(false);
+              alert("⚠️ Chưa ghi nhận âm thanh rõ ràng! Vui lòng bấm giữ nút và đọc lớn.");
+            }
+            stream.getTracks().forEach(t => t.stop());
+          };
+
+          mediaRecorder.start(200);
+          setIsRecording(true);
+          setRecordedAudio(null);
+          setHasRecorded(false);
+        }
+      } catch {
+        alert("🔒 Lỗi Micro: Hãy cấp quyền Microphone trên trình duyệt!");
+      }
+    } else {
+      setIsRecording(false);
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+        mediaRecorderRef.current.stop();
+      }
+    }
+  };
+
+  // ⚔️ NỘP BÀI CÓ KHÓA CHỐNG ĐIỂM ẢO
+  const handleSubmitAnswer = async () => {
+    if (!hasRecorded || !recordedAudio || recordedAudio.size <= 4000) {
+      alert("🔒 Vui lòng bấm micro thu âm phát âm trước khi nộp bài!");
+      return;
+    }
+
+    setIsAnalyzing(true);
+
+    try {
+      const promptTarget = `Practice Phrase: "${currentDrill?.contentEn || ''}". Focus area: ${currentDrill?.targetFocus || ''}`;
+      const evalData = await evaluateSpeaking(recordedAudio, 'B2', undefined, promptTarget);
+
+      if (!evalData.transcript || evalData.wordCount <= 2) {
+        setResult({
+          score: 0,
+          isWin: false,
+          transcript: "(Không nhận diện được giọng phát âm rõ ràng)",
+          wordCount: evalData.wordCount || 0,
+          pronunciation: 0,
+          grammar: 0,
+          vocabulary: 0,
+          reflexes: 0,
+          content: 0,
+          fluency: 0,
+          detailedFeedback: "❌ AI chỉ nhận diện được tiếng ồn. Vui lòng cất giọng đọc rõ ràng cặp từ/cụm từ mẫu!",
+        });
+        alert("🛡️ NỘP BÀI THẤT BẠI: Bạn chưa phát âm! Vui lòng bấm micro và đọc lại.");
+      } else {
+        setResult(evalData);
+        if (evalData.isWin) {
+          updateUserProgress(1, 30, true);
+        }
+      }
+    } catch (err) {
+      console.error("Lỗi chấm điểm Trạm 1:", err);
+      alert("⚠️ Lỗi kết nối chấm điểm. Vui lòng thử nộp lại!");
+    } finally {
+      setIsAnalyzing(false);
+      setRecordedAudio(null);
+      setHasRecorded(false);
+    }
+  };
+
+  return (
+    <View style={styles.container}>
+      <View style={styles.header}>
+        <TouchableOpacity onPress={onBack} style={styles.backBtn}>
+          <Text style={styles.backText}>🔙 QUAY LẠI MAP</Text>
+        </TouchableOpacity>
+        <Text style={styles.title}>🎯 TRẠM 1: PRONUNCIATION LAB</Text>
+      </View>
+
+      <ScrollView contentContainerStyle={{ alignItems: 'center', width: '100%', paddingBottom: 30 }}>
+        {/* THANH CHỌN TẦNG / LOẠI BÀI TẬP */}
+        <View style={styles.tabRow}>
+          <TouchableOpacity 
+            style={[styles.tabBtn, activeType === 'minimal_pairs' && styles.tabBtnActive]}
+            onPress={() => setActiveType('minimal_pairs')}
+          >
+            <Text style={[styles.tabText, activeType === 'minimal_pairs' && styles.tabTextActive]}>
+              👯 Minimal Pairs
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={[styles.tabBtn, activeType === 'linking_sounds' && styles.tabBtnActive]}
+            onPress={() => setActiveType('linking_sounds')}
+          >
+            <Text style={[styles.tabText, activeType === 'linking_sounds' && styles.tabTextActive]}>
+              🔗 Linking Sounds
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={[styles.tabBtn, activeType === 'tongue_twisters' && styles.tabBtnActive]}
+            onPress={() => setActiveType('tongue_twisters')}
+          >
+            <Text style={[styles.tabText, activeType === 'tongue_twisters' && styles.tabTextActive]}>
+              🐍 Tongue Twisters
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* THẺ BÀI TẬP HIỆN TẠI */}
+        {currentDrill && (
+          <View style={styles.box} key={currentDrill.sessionKey}>
+            <Text style={styles.boxTitle}>📌 {currentDrill.title.toUpperCase()}</Text>
+            
+            <Text style={styles.drillEn}>"{currentDrill.contentEn}"</Text>
+            {currentDrill.contentVi && <Text style={styles.drillVi}>👉 {currentDrill.contentVi}</Text>}
+            
+            {currentDrill.phoneticSpelling && (
+              <Text style={styles.phonetics}>🔊 IPA: {currentDrill.phoneticSpelling}</Text>
+            )}
+            
+            <Text style={styles.targetFocus}>🎯 Trọng tâm: {currentDrill.targetFocus}</Text>
+
+            {/* NÚT LẤY BÀI KHÁC NGẪU NHIÊN */}
+            <TouchableOpacity 
+              style={styles.refreshBtn} 
+              onPress={() => handleLoadNewDrill(activeType)}
+            >
+              <Text style={styles.refreshBtnText}>🔄 THỬ THÁCH BÀI KHÁC</Text>
+            </TouchableOpacity>
+
+            {/* NÚT THU ÂM */}
+            <TouchableOpacity 
+              style={[styles.recordBtn, isRecording && styles.recordBtnActive]} 
+              onPress={handleToggleRecord}
+            >
+              <Text style={styles.recordBtnText}>
+                {isRecording 
+                  ? '🔴 ĐANG THU ÂM... (BẤM DỪNG)' 
+                  : hasRecorded 
+                  ? '✅ ĐÃ CÓ BẢN THU (BẤM THU LẠI)' 
+                  : '🎙 BẤM ĐỂ BẮT ĐẦU PHÁT ÂM'}
+              </Text>
+            </TouchableOpacity>
+
+            {/* NÚT NỘP BÀI */}
+            {isAnalyzing ? (
+              <ActivityIndicator size="large" color="#39FF14" style={{ marginVertical: 10 }} />
+            ) : (
+              <TouchableOpacity 
+                style={[styles.submitBtn, (!hasRecorded || isRecording) && styles.submitBtnDisabled]} 
+                onPress={handleSubmitAnswer}
+                disabled={!hasRecorded || isRecording}
+              >
+                <Text style={styles.submitBtnText}>⚡ NỘP BÀI & CHẤM PHÁT ÂM AI</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
+
+        {/* KẾT QUẢ CHẤM ĐIỂM */}
+        {result && (
+          <View style={[styles.box, { borderColor: result.isWin ? '#39FF14' : '#FF0055' }]}>
+            <Text style={[styles.resultTitle, { color: result.isWin ? '#39FF14' : '#FF0055' }]}>
+              {result.isWin ? '🏆 PHÁT ÂM RẤT CHUẨN!' : '💀 CẦN LUYỆN TẬP THÊM'}
+            </Text>
+            <Text style={styles.scoreText}>⚡ Điểm phát âm: {result.score} / 100 ĐIỂM</Text>
+
+            <View style={styles.scriptBox}>
+              <Text style={styles.scriptLabel}>📝 Âm AI nghe được thực tế:</Text>
+              <Text style={styles.scriptContent}>"{result.transcript}"</Text>
+            </View>
+
+            <Text style={styles.feedbackText}>{result.detailedFeedback}</Text>
+          </View>
+        )}
+      </ScrollView>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#05020D', padding: 20, paddingTop: 50 },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 15 },
+  backBtn: { padding: 8, backgroundColor: '#0D0620', borderRadius: 8, borderWidth: 1, borderColor: '#FF007F' },
+  backText: { color: '#FF007F', fontSize: 10, fontWeight: 'bold' },
+  title: { color: '#FF007F', fontSize: 12, fontWeight: '900' },
+  tabRow: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginBottom: 15 },
+  tabBtn: { flex: 1, backgroundColor: '#0D0620', paddingVertical: 10, marginHorizontal: 2, borderRadius: 8, borderWidth: 1, borderColor: '#332255', alignItems: 'center' },
+  tabBtnActive: { backgroundColor: '#FF007F', borderColor: '#FF007F' },
+  tabText: { color: '#AAAABB', fontSize: 9, fontWeight: 'bold' },
+  tabTextActive: { color: '#FFF' },
+  box: { backgroundColor: '#0D0620', padding: 18, borderRadius: 16, borderWidth: 2, borderColor: '#00FFFF', width: '100%', alignItems: 'center', marginBottom: 20 },
+  boxTitle: { color: '#FFD700', fontSize: 11, fontWeight: '900', marginBottom: 10 },
+  drillEn: { color: '#FFF', fontSize: 16, fontWeight: '800', textAlign: 'center', marginBottom: 6 },
+  drillVi: { color: '#FFD700', fontSize: 12, fontStyle: 'italic', marginBottom: 6 },
+  phonetics: { color: '#39FF14', fontSize: 11, fontWeight: 'bold', marginBottom: 6 },
+  targetFocus: { color: '#AAAABB', fontSize: 10, textAlign: 'center', marginBottom: 12 },
+  refreshBtn: { backgroundColor: '#1A0B2E', padding: 8, borderRadius: 8, borderWidth: 1, borderColor: '#00FFFF', width: '100%', alignItems: 'center', marginBottom: 10 },
+  refreshBtnText: { color: '#00FFFF', fontSize: 10, fontWeight: 'bold' },
+  recordBtn: { backgroundColor: '#1A0B2E', padding: 12, borderRadius: 10, borderWidth: 2, borderColor: '#FF007F', width: '100%', alignItems: 'center', marginBottom: 10 },
+  recordBtnActive: { backgroundColor: '#FF0055' },
+  recordBtnText: { color: '#FFF', fontSize: 10, fontWeight: '900' },
+  submitBtn: { backgroundColor: '#39FF14', padding: 14, borderRadius: 12, width: '100%', alignItems: 'center' },
+  submitBtnDisabled: { backgroundColor: '#224422', opacity: 0.2 },
+  submitBtnText: { color: '#000', fontSize: 11, fontWeight: '900' },
+  resultTitle: { fontSize: 15, fontWeight: '900', marginBottom: 6 },
+  scoreText: { color: '#FFD700', fontSize: 13, fontWeight: '900', marginBottom: 10 },
+  scriptBox: { backgroundColor: '#1A0B2E', padding: 10, borderRadius: 8, width: '100%', marginBottom: 10 },
+  scriptLabel: { color: '#AAAABB', fontSize: 9, fontWeight: 'bold' },
+  scriptContent: { color: '#FFF', fontSize: 11, fontStyle: 'italic', marginVertical: 4 },
+  feedbackText: { color: '#FFF', fontSize: 11, textAlign: 'center', lineHeight: 16 }
+});
