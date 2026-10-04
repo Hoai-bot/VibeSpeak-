@@ -12,6 +12,7 @@ interface Props {
 export default function Station1Screen({ onBack }: Props) {
   const [activeType, setActiveType] = useState<DrillType>('minimal_pairs');
   const [currentDrill, setCurrentDrill] = useState<any>(null);
+  const [isPlayingTTS, setIsPlayingTTS] = useState<boolean>(false);
 
   // Quản lý ghi âm & trạng thái chấm điểm
   const [isRecording, setIsRecording] = useState<boolean>(false);
@@ -22,17 +23,73 @@ export default function Station1Screen({ onBack }: Props) {
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+  const currentAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  // 🔊 TÍNH NĂNG MỚI: PHÁT ÂM MẪU CHUẨN TIẾNG ANH
+  const stopAllAudio = () => {
+    if (currentAudioRef.current) {
+      currentAudioRef.current.pause();
+      currentAudioRef.current.currentTime = 0;
+      currentAudioRef.current = null;
+    }
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+    setIsPlayingTTS(false);
+  };
+
+  const playSampleAudio = (textToSpeak: string) => {
+    if (!textToSpeak) return;
+    stopAllAudio();
+
+    try {
+      setIsPlayingTTS(true);
+      const encodedText = encodeURIComponent(textToSpeak);
+      const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodedText}&tl=en&client=tw-ob`;
+
+      const audio = new Audio(ttsUrl);
+      currentAudioRef.current = audio;
+
+      audio.onplay = () => setIsPlayingTTS(true);
+      audio.onended = () => setIsPlayingTTS(false);
+      audio.onerror = () => fallbackBrowserTTS(textToSpeak);
+
+      audio.play().catch(() => fallbackBrowserTTS(textToSpeak));
+    } catch {
+      fallbackBrowserTTS(textToSpeak);
+    }
+  };
+
+  const fallbackBrowserTTS = (textToSpeak: string) => {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(textToSpeak);
+      utterance.lang = 'en-US';
+      utterance.rate = 0.85; // Tốc độ vừa phải cho phát âm mẫu
+
+      const voices = window.speechSynthesis.getVoices();
+      const usVoice = voices.find(v => v.lang.includes('en'));
+      if (usVoice) utterance.voice = usVoice;
+
+      utterance.onstart = () => setIsPlayingTTS(true);
+      utterance.onend = () => setIsPlayingTTS(false);
+      utterance.onerror = () => setIsPlayingTTS(false);
+
+      window.speechSynthesis.speak(utterance);
+    }
+  };
 
   // 🔄 HÀM ĐỔI BÀI TẬP NGẪU NHIÊN CHỐNG LẶP
   const handleLoadNewDrill = (type: DrillType) => {
+    stopAllAudio();
     resetSession();
     const newDrill = getRandomStation1Drill(type);
     setCurrentDrill(newDrill);
   };
 
-  // Đổi bài khi chuyển Tầng/Tab hoặc khi mới vào màn hình
   useEffect(() => {
     handleLoadNewDrill(activeType);
+    return () => stopAllAudio();
   }, [activeType]);
 
   const resetSession = () => {
@@ -48,6 +105,8 @@ export default function Station1Screen({ onBack }: Props) {
 
   // 🎙️ THU ÂM BÀI NÓI
   const handleToggleRecord = async () => {
+    stopAllAudio();
+
     if (!isRecording) {
       try {
         if (typeof navigator !== 'undefined' && navigator.mediaDevices) {
@@ -187,6 +246,16 @@ export default function Station1Screen({ onBack }: Props) {
             
             <Text style={styles.targetFocus}>🎯 Trọng tâm: {currentDrill.targetFocus}</Text>
 
+            {/* 🔊 NÚT PHÁT ÂM MẪU MỚI TÍCH HỢP */}
+            <TouchableOpacity 
+              style={[styles.ttsBtn, isPlayingTTS && styles.ttsBtnActive]} 
+              onPress={() => playSampleAudio(currentDrill.contentEn)}
+            >
+              <Text style={styles.ttsBtnText}>
+                {isPlayingTTS ? '🔊 ĐANG PHÁT ÂM MẪU...' : '📢 NGHE PHÁT ÂM MẪU (TTS)'}
+              </Text>
+            </TouchableOpacity>
+
             {/* NÚT LẤY BÀI KHÁC NGẪU NHIÊN */}
             <TouchableOpacity 
               style={styles.refreshBtn} 
@@ -262,6 +331,9 @@ const styles = StyleSheet.create({
   drillVi: { color: '#FFD700', fontSize: 12, fontStyle: 'italic', marginBottom: 6 },
   phonetics: { color: '#39FF14', fontSize: 11, fontWeight: 'bold', marginBottom: 6 },
   targetFocus: { color: '#AAAABB', fontSize: 10, textAlign: 'center', marginBottom: 12 },
+  ttsBtn: { backgroundColor: '#1A0B2E', paddingVertical: 10, paddingHorizontal: 16, borderRadius: 8, borderWidth: 1, borderColor: '#00FFFF', width: '100%', alignItems: 'center', marginBottom: 10 },
+  ttsBtnActive: { backgroundColor: '#00FFFF' },
+  ttsBtnText: { color: '#00FFFF', fontSize: 10, fontWeight: '900' },
   refreshBtn: { backgroundColor: '#1A0B2E', padding: 8, borderRadius: 8, borderWidth: 1, borderColor: '#00FFFF', width: '100%', alignItems: 'center', marginBottom: 10 },
   refreshBtnText: { color: '#00FFFF', fontSize: 10, fontWeight: 'bold' },
   recordBtn: { backgroundColor: '#1A0B2E', padding: 12, borderRadius: 10, borderWidth: 2, borderColor: '#FF007F', width: '100%', alignItems: 'center', marginBottom: 10 },
