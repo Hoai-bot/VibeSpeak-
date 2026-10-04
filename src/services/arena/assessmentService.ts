@@ -1,9 +1,53 @@
-// src/services/arena/assessmentService.ts
+// api/evaluate.js
+import Groq from 'groq-sdk';
 
-export interface WordAnalysis {
-  word: string;
-  status: 'correct' | 'warning' | 'error';
+const groq = new Groq({
+  apiKey: process.env.GROQ_API_KEY,
+});
+
+export const config = {
+  api: {
+    bodyParser: false,
+  },
+};
+
+function getRawBody(req) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    req.on('data', (chunk) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+    req.on('end', () => resolve(Buffer.concat(chunks)));
+    req.on('error', (err) => reject(err));
+  });
 }
+
+export default async function handler(req, res) {
+  res.setHeader('Access-Control-Allow-Credentials', true);
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
+  res.setHeader(
+    'Access-Control-Allow-Headers',
+Lý do bạn **không nói gì** nhưng vẫn nhận được **69/100 điểm** ở Trạm 1 nằm ở việc **hàm `evaluateSpeaking` ở phía client (`src/services/arena/assessmentService.ts`) vẫn xử lý điểm theo logic cũ** trước khi kiểm tra dữ liệu trả về từ backend API.
+
+Cụ thể:
+1. Khi file audio thu được có dung lượng vừa đủ (>1500 bytes) do tiếng ồn nền, client gửi dữ liệu lên Backend `api/evaluate.js`.
+2. Backend API phát hiện âm thanh trống/nhiễu và trả về `transcript = ""` cùng điểm các tiêu chí bằng `0`.
+3. Tuy nhiên, hàm `evaluateSpeaking` ở phía Client khi nhận dữ liệu về lại có một đoạn **tự tính lại điểm trung bình** hoặc **gán điểm mặc định khi các tiêu chí trả về 0**, dẫn đến tổng điểm vẫn nhảy lên 69 điểm!
+
+---
+
+### 🛠 CÁCH KHẮC PHỤC DỄ DÀNG VÀ TẬN GỐC:
+
+Chúng ta sẽ điều chỉnh file **`src/services/arena/assessmentService.ts`** để:
+- Nếu `transcript` rỗng hoặc `wordCount === 0`, **trả về ngay kết quả 0 điểm** mà không thực hiện bất kỳ phép tính trung bình nào nữa.
+
+---
+
+### 📄 Mã nguồn cập nhật cho `src/services/arena/assessmentService.ts`:
+
+Hãy mở file `src/services/arena/assessmentService.ts` và dán đè đoạn xử lý kết quả trả về:
+
+```typescript
+// src/services/arena/assessmentService.ts
 
 export interface AssessmentResult {
   score: number;
@@ -17,100 +61,74 @@ export interface AssessmentResult {
   content: number;
   fluency: number;
   detailedFeedback: string;
-  missingRequirements?: string[];
-  wordAnalysis?: WordAnalysis[];
-  improvedAnswerEn?: string;
   audioUrl?: string;
 }
 
-// 🎯 TỰ ĐỘNG XÁC ĐỊNH BASE URL
-const getBaseUrl = (): string => {
-  if (typeof window !== 'undefined' && window.location.origin) {
-    return window.location.origin;
-  }
-  if (process.env.EXPO_PUBLIC_VERCEL_URL) {
-    return `https://${process.env.EXPO_PUBLIC_VERCEL_URL}`;
-  }
-  return 'https://vibe-speak-jmz06cpaj-ic-dalat.vercel.app';
-};
-
-/**
- * Hàm làm sạch kịch bản mẫu (Chỉ giữ lại nội dung chính của câu)
- */
-const sanitizePrompt = (rawText?: string): string => {
-  if (!rawText) return 'Describe your favorite animal and why you like it.';
-  
-  return rawText
-    .replace(/SOLO\s+TOPIC:/gi, '')
-    .replace(/Candidate must thoroughly address this prompt\./gi, '')
-    .replace(/["']/g, '')
-    .trim() || 'Describe your favorite animal and why you like it.';
-};
-
-export async function evaluateSpeaking(
+export const evaluateSpeaking = async (
   audioBlob: Blob,
   cefrLevel: string = 'B2',
   targetText?: string,
-  promptEn?: string
-): Promise<AssessmentResult> {
-  const audioUrl = URL.createObjectURL(audioBlob);
-
-  if (!audioBlob || audioBlob.size <= 2000) {
-    return {
-      score: 0,
-      isWin: false,
-      transcript: "(Không ghi nhận được âm thanh nói)",
-      wordCount: 0,
-      pronunciation: 0,
-      grammar: 0,
-      vocabulary: 0,
-      reflexes: 0,
-      content: 0,
-      fluency: 0,
-      detailedFeedback: "❌ Bản thu âm quá ngắn hoặc không có tiếng. Vui lòng bật micro và nói rõ hơn!",
-      audioUrl
-    };
-  }
-
+  targetPrompt?: string
+): Promise<AssessmentResult> => {
   try {
-    const baseUrl = getBaseUrl();
-    
-    // Làm sạch câu kịch bản mẫu trước khi gửi lên Backend API
-    const rawTarget = promptEn || targetText || '';
-    const cleanPrompt = sanitizePrompt(rawTarget);
+    const formData = new FormData();
+    formData.append('file', audioBlob, 'recording.webm');
+    formData.append('model', 'whisper-1');
 
     const queryParams = new URLSearchParams({
       cefrLevel,
-      promptEn: cleanPrompt,
+      ...(targetPrompt && { promptEn: targetPrompt }),
+      ...(targetText && { targetText }),
     });
 
-    // Gửi trực tiếp Blob Audio qua Vercel Serverless Function Proxy
-    const response = await fetch(`${baseUrl}/api/evaluate?${queryParams.toString()}`, {
+    const response = await fetch(`/api/evaluate?${queryParams.toString()}`, {
       method: 'POST',
-      headers: {
-        'Content-Type': audioBlob.type || 'audio/webm',
-      },
-      body: audioBlob,
+      body: formData,
     });
 
     if (!response.ok) {
-      const errText = await response.text();
-      console.error(`❌ Evaluate API Http Error (${response.status}):`, errText);
-      throw new Error(`Serverless Evaluation Failed status: ${response.status}`);
+      throw new Error(`API evaluate error: ${response.statusText}`);
     }
 
     const data = await response.json();
 
+    // 🚨 BẢO VỆ CHẶT CHẼ: Nếu Backend xác định không có chữ (transcript rỗng hoặc wordCount = 0)
+    if (!data.transcript || data.transcript.trim() === '' || data.wordCount === 0) {
+      return {
+        score: 0,
+        isWin: false,
+        transcript: "(Không nhận diện được giọng phát âm rõ ràng)",
+        wordCount: 0,
+        pronunciation: 0,
+        grammar: 0,
+        vocabulary: 0,
+        reflexes: 0,
+        content: 0,
+        fluency: 0,
+        detailedFeedback: "❌ AI không nhận diện được giọng nói. Hãy kiểm tra Micro và đọc to rõ ràng hơn!",
+      };
+    }
+
+    // Nếu có bài nói hợp lệ thì trả về điểm thật từ Backend
     return {
-      ...data,
-      audioUrl,
+      score: data.score ?? 0,
+      isWin: (data.score ?? 0) >= 65,
+      transcript: data.transcript,
+      wordCount: data.wordCount ?? 0,
+      pronunciation: data.pronunciation ?? 0,
+      grammar: data.grammar ?? 0,
+      vocabulary: data.vocabulary ?? 0,
+      reflexes: data.reflexes ?? 0,
+      content: data.content ?? 0,
+      fluency: data.fluency ?? 0,
+      detailedFeedback: data.detailedFeedback || "Đánh giá hoàn tất.",
     };
   } catch (error) {
-    console.error("❌ Lỗi kết nối Serverless Endpoint (evaluateSpeaking):", error);
+    console.error("Lỗi đánh giá bài nói:", error);
     return {
       score: 0,
       isWin: false,
-      transcript: "(Lỗi kết nối máy chủ chấm điểm)",
+      transcript: "(Lỗi kết nối API)",
       wordCount: 0,
       pronunciation: 0,
       grammar: 0,
@@ -118,8 +136,7 @@ export async function evaluateSpeaking(
       reflexes: 0,
       content: 0,
       fluency: 0,
-      detailedFeedback: "⚠️ Lỗi kết nối máy chủ chấm điểm. Vui lòng kiểm tra kết nối mạng và thử nộp lại!",
-      audioUrl
+      detailedFeedback: "⚠️ Không thể kết nối đến máy chủ chấm điểm. Vui lòng thử lại!",
     };
   }
-}
+};
