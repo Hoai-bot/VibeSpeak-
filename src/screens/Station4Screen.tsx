@@ -34,7 +34,6 @@ export default function Station4Screen({ onBack }: Props) {
 
   const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
 
-  // 🧹 HỦY TOÀN BỘ ÂM THANH ĐANG PHÁT ĐỂ TRÁNH ĐỌC CHỒNG
   const stopAllAudio = () => {
     if (currentAudioRef.current) {
       currentAudioRef.current.pause();
@@ -47,7 +46,6 @@ export default function Station4Screen({ onBack }: Props) {
     setIsPlayingTTS(false);
   };
 
-  // 🔊 GIỌNG ĐỌC TỰ NHIÊN CHUẨN 100% TIẾNG ANH
   const playPromptTTS = (textToSpeak: string) => {
     if (!textToSpeak) return;
 
@@ -103,26 +101,21 @@ export default function Station4Screen({ onBack }: Props) {
     }
   };
 
-  // ✅ LUỒNG TẢI ĐỀ DỮ LIỆU ĐÓNG GÓI CHỐNG KẸT RENDER
   const loadExerciseData = async (level: string) => {
     const currentRequestId = ++requestIdRef.current;
     stopAllAudio();
     resetState();
 
-    // 💥 Ép xóa state cũ để UI xóa sạch câu cũ ngay lập tức
     setExercise(null);
 
-    // 1. LẤY NGAY ĐỀ MỚI TỪ LOCAL POOL (0.01s)
     const instantData = getInstantStation4Exercise(level);
     
-    // Set timeout nhỏ để React nhận diện sự thay đổi state hoàn toàn
     setTimeout(() => {
       if (currentRequestId === requestIdRef.current) {
         setExercise(instantData);
       }
     }, 50);
 
-    // 2. GỌI GROQ AI NGẦM
     setLoading(true);
     try {
       const aiData = await generateStation4Exercise(level);
@@ -138,7 +131,6 @@ export default function Station4Screen({ onBack }: Props) {
     }
   };
 
-  // 🎯 Đọc tự động khi bài tập đã render xong trên giao diện
   useEffect(() => {
     if (exercise && exercise.promptEn && battleState === 'idle') {
       const timer = setTimeout(() => {
@@ -197,7 +189,7 @@ export default function Station4Screen({ onBack }: Props) {
             const mimeType = mediaRecorder.mimeType || 'audio/webm';
             const recordedBlob = new Blob(audioChunksRef.current, { type: mimeType });
             
-            if (recordedBlob.size > 8000) {
+            if (recordedBlob.size > 4000) {
               setRecordedAudio(recordedBlob);
               setHasRecorded(true);
             } else {
@@ -225,8 +217,9 @@ export default function Station4Screen({ onBack }: Props) {
     }
   };
 
+  // ⚔️ NỘP BÀI TRẠM 4 - ĐỒNG BỘ ĐÚNG PROMPT VÀ KHÓA TIẾNG ỒN
   const handleSubmitAnswer = async () => {
-    if (!hasRecorded || !recordedAudio || recordedAudio.size <= 8000) {
+    if (!hasRecorded || !recordedAudio || recordedAudio.size <= 4000) {
       alert("🔒 Vui lòng ghi âm phản hồi của bạn trước khi nộp bài!");
       return;
     }
@@ -234,11 +227,40 @@ export default function Station4Screen({ onBack }: Props) {
     if (isRecording) setIsRecording(false);
     setBattleState('analyzing');
 
-    const evalData = await evaluateSpeaking(recordedAudio, cefrLevel);
-    setResult(evalData);
+    try {
+      // 🎯 ĐỒNG BỘ ĐÚNG CÂU HỎI THỰC TẾ ĐANG HIỂN THỊ
+      const targetPrompt = `Express Prompt: "${exercise?.promptEn || ''}". Candidate must respond directly to this prompt.`;
+      const evalData = await evaluateSpeaking(recordedAudio, cefrLevel, undefined, targetPrompt);
 
-    setBattleState('ended');
-    updateUserProgress(4, evalData.isWin ? 50 : 10, evalData.isWin);
+      // 🚨 BẢO VỆ CHỐNG ĐIỂM ẢO KHI IM LẶNG/NHIỄU ÂM (SỐ TỪ <= 2)
+      if (!evalData.transcript || evalData.wordCount <= 2) {
+        const strictFailedResult: AssessmentResult = {
+          score: 0,
+          isWin: false,
+          transcript: "(Không ghi nhận âm thanh câu trả lời rõ ràng)",
+          wordCount: evalData.wordCount || 0,
+          pronunciation: 0,
+          grammar: 0,
+          vocabulary: 0,
+          reflexes: 0,
+          content: 0,
+          fluency: 0,
+          detailedFeedback: "❌ AI chỉ nhận diện được tiếng ồn nền hoặc ngắc ứ. Vui lòng cất giọng trả lời đầy đủ câu hỏi!",
+        };
+        setResult(strictFailedResult);
+        alert("🛡️ NỘP BÀI THẤT BẠI: Bạn chưa trả lời câu hỏi! Vui lòng bấm micro để cất giọng.");
+      } else {
+        setResult(evalData);
+        updateUserProgress(4, evalData.isWin ? 50 : 10, evalData.isWin);
+      }
+    } catch (err) {
+      console.error("Lỗi chấm điểm Trạm 4:", err);
+      alert("⚠️ Lỗi kết nối chấm điểm. Vui lòng thử nộp lại!");
+    } finally {
+      setBattleState('ended');
+      setRecordedAudio(null);
+      setHasRecorded(false);
+    }
   };
 
   return (
@@ -321,7 +343,7 @@ export default function Station4Screen({ onBack }: Props) {
               disabled={!hasRecorded || !recordedAudio}
             >
               <Text style={styles.submitBtnText}>
-                {hasRecorded ? '⚡ NỘP BÀI & CHẤM ĐIỂM AI' : '🔒 BẮT BỘC THU ÂM TRƯỚC KHINỘP'}
+                {hasRecorded ? '⚡ NỘP BÀI & CHẤM ĐIỂM AI' : '🔒 BẮT BUỘC THU ÂM TRƯỚC KHI NỘP'}
               </Text>
             </TouchableOpacity>
           )}
