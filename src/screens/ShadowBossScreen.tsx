@@ -113,9 +113,8 @@ export default function ShadowBossScreen({ onBack }: Props) {
     }
   };
 
-  // ⚔️ TẤN CÔNG BOSS DỰA TRÊN ĐIỂM CHẤM THỰC TẾ TỪ GROQ AI
+  // ⚔️ TẤN CÔNG BOSS DỰA TRÊN ĐIỂM CHẤM THỰC TẾ (CÓ KIỂM TRA SỐ TỪ THỰC TẾ)
   const handleAttackBoss = async () => {
-    // 🛑 THIẾT LẬP HỆ THỐNG KHÓA CỨNG: BẮT BUỘC PhẢI CÓ AUDIO BLOB HỢP LỆ
     if (!hasRecordedCurrentSession || !audioBlob || audioBlob.size <= 4000) {
       alert("🔒 BẢO VỆ TẤN CÔNG: Bạn chưa thu âm giọng nói Shadowing! Hãy bấm nút Micro để nói đuổi theo câu thoại trước.");
       return;
@@ -128,22 +127,28 @@ export default function ShadowBossScreen({ onBack }: Props) {
       const promptTarget = `Shadowing phrase: "${bossData?.phrase || ''}"`;
       const evalResult = await evaluateSpeaking(audioBlob, 'B2', undefined, promptTarget);
 
-      // Điểm sát thương bằng đúng tổng điểm AI chấm bài nói (0 - 100 điểm)
-      const damage = evalResult.score;
-      
-      if (damage < 20) {
+      // 🚨 BẢO VỆ NGHIÊM NGẶT: Nếu số từ bóc tách được <= 2 từ (âm thanh nhiễu / chưa đọc câu thoại)
+      if (!evalResult.transcript || evalResult.wordCount <= 2) {
         setLastDamage(0);
-        setLastFeedback("❌ Phát âm/Shadowing chưa chính xác! Boss không bị mất máu.");
-        alert("❌ AI không nghe thấy câu Shadowing chuẩn xác. Vui lòng nghe giọng mẫu và phát âm lại!");
+        setLastFeedback("❌ AI chỉ nghe thấy tiếng ồn hoặc 1-2 từ ngắc ngứ. Vui lòng đọc đầy đủ cả câu thoại Boss!");
+        alert("🛡️ TẤN CÔNG THẤT BẠI: Bạn chưa đọc câu thoại Shadowing! Vui lòng bấm micro và đọc cả câu.");
       } else {
-        const newHp = Math.max(0, currentHp - damage);
-        setCurrentHp(newHp);
-        setLastDamage(damage);
-        setLastFeedback(evalResult.detailedFeedback || "Bài Shadowing tốt!");
+        // Điểm sát thương dựa trên điểm AI nhưng bắt buộc phải phát âm đạt tối thiểu 30 điểm
+        const damage = evalResult.score;
 
-        if (newHp === 0) {
-          updateUserProgress(3, 100, true);
-          handleBossAttack("Argh... You have defeated me with perfect shadowing!");
+        if (damage < 30) {
+          setLastDamage(0);
+          setLastFeedback("❌ Phát âm chưa đạt chuẩn! Boss không bị mất máu.");
+        } else {
+          const newHp = Math.max(0, currentHp - damage);
+          setCurrentHp(newHp);
+          setLastDamage(damage);
+          setLastFeedback(evalResult.detailedFeedback || "Bài Shadowing tốt!");
+
+          if (newHp === 0) {
+            updateUserProgress(3, 100, true);
+            handleBossAttack("Argh... You have defeated me with perfect shadowing!");
+          }
         }
       }
     } catch (err) {
