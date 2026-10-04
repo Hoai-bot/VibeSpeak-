@@ -217,7 +217,7 @@ export default function Station4Screen({ onBack }: Props) {
     }
   };
 
-  // ⚔️ NỘP BÀI TRẠM 4 - ĐỒNG BỘ ĐÚNG PROMPT VÀ KHÓA TIẾNG ỒN
+  // 🎯 HÀM NỘP BÀI CHÍNH - ĐÃ SỬA VÀ KHÓA CHẶT ĐIỂM ẢO
   const handleSubmitAnswer = async () => {
     if (!hasRecorded || !recordedAudio || recordedAudio.size <= 4000) {
       alert("🔒 Vui lòng ghi âm phản hồi của bạn trước khi nộp bài!");
@@ -228,11 +228,11 @@ export default function Station4Screen({ onBack }: Props) {
     setBattleState('analyzing');
 
     try {
-      // 🎯 ĐỒNG BỘ ĐÚNG CÂU HỎI THỰC TẾ ĐANG HIỂN THỊ
-      const targetPrompt = `Express Prompt: "${exercise?.promptEn || ''}". Candidate must respond directly to this prompt.`;
+      // 🎯 1. TRUYỀN ĐÚNG CÂU HỎI TÌNH HUỐNG HIỆN TẠI VÀO PROMPT
+      const targetPrompt = `Express Prompt: "${exercise?.promptEn || 'General speaking challenge'}". Candidate must respond directly to this prompt.`;
       const evalData = await evaluateSpeaking(recordedAudio, cefrLevel, undefined, targetPrompt);
 
-      // 🚨 BẢO VỆ CHỐNG ĐIỂM ẢO KHI IM LẶNG/NHIỄU ÂM (SỐ TỪ <= 2)
+      // 🚨 2. BẢO VỆ CHỐNG ĐIỂM ẢO KHI IM LẶNG/NHIỄU ÂM (SỐ TỪ <= 2)
       if (!evalData.transcript || evalData.wordCount <= 2) {
         const strictFailedResult: AssessmentResult = {
           score: 0,
