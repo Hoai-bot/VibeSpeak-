@@ -39,7 +39,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
   const [micPermissionModal, setMicPermissionModal] = useState<boolean>(false);
   const [result, setResult] = useState<AssessmentResult | null>(null);
   
-  // State ẩn/hiện Bài nói mẫu
+  // State ẩn/hiện Gợi ý từ vựng & dàn ý AI
   const [showSampleScript, setShowSampleScript] = useState<boolean>(false);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -402,9 +402,6 @@ export default function AllInArenaScreen({ onBack }: Props) {
     .replace(/đối với mẫu câu/g, 'đối với chủ đề')
     .replace(/mẫu câu/g, 'chủ đề');
 
-  // 🎯 Lấy bài mẫu chuẩn cho Tapescript
-  const sampleScriptText = result?.improvedAnswerEn || getCurrentPromptText();
-
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -544,22 +541,37 @@ export default function AllInArenaScreen({ onBack }: Props) {
               </Text>
             </View>
 
-            {/* 💡 2. NÚT XEM TAPESCRIPT BÀI NÓI MẪU AI */}
+            {/* 💡 2. NÚT XEM GỢI Ý TỪ VỰNG & DÀN Ý AI */}
             <TouchableOpacity 
               style={styles.toggleSampleBtn} 
               onPress={() => setShowSampleScript(!showSampleScript)}
             >
               <Text style={styles.toggleSampleText}>
-                {showSampleScript ? '🙈 ẨN BÀI NÓI MẪU AI' : '💡 XEM BÀI NÓI MẪU AI THAM KHẢO'}
+                {showSampleScript ? '🙈 ẨN GỢI Ý AI' : '💡 XEM GỢI Ý TỪ VỰNG & DÀN Ý AI'}
               </Text>
             </TouchableOpacity>
 
             {showSampleScript && (
               <View style={styles.tapescriptBox}>
-                <Text style={styles.tapescriptTitle}>📜 TAPESCRIPT / BÀI NÓI MẪU AI GỢI Ý:</Text>
-                <Text style={styles.tapescriptContent}>
-                  "{sampleScriptText}"
-                </Text>
+                <Text style={styles.tapescriptTitle}>🔤 TỪ VỰNG / COLLOCATIONS ĂN ĐIỂM:</Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: 10, marginTop: 4 }}>
+                  {((result as any).keyKeywords || ['loyal companion', 'therapeutic presence', 'stress relief']).map((kw: string, idx: number) => (
+                    <View key={idx} style={{ backgroundColor: '#130A2A', paddingVertical: 4, paddingHorizontal: 8, borderRadius: 6, marginRight: 6, marginBottom: 6, borderWidth: 1, borderColor: '#FF007F' }}>
+                      <Text style={{ color: '#FF007F', fontSize: 10, fontWeight: 'bold' }}>✨ {kw}</Text>
+                    </View>
+                  ))}
+                </View>
+
+                <Text style={[styles.tapescriptTitle, { color: '#00FFFF', marginTop: 4 }]}>📌 DÀN Ý GỢI Ý TRIỂN KHAI (OUTLINE):</Text>
+                {((result as any).suggestedIdeas || [
+                  'State your choice clearly at the beginning.',
+                  'Explain specific reasons or emotions attached to it.',
+                  'Conclude with how it impacts your lifestyle.'
+                ]).map((idea: string, idx: number) => (
+                  <Text key={idx} style={{ color: '#FFF', fontSize: 11, marginVertical: 2, lineHeight: 16 }}>
+                    • {idea}
+                  </Text>
+                ))}
               </View>
             )}
 

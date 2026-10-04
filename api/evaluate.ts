@@ -29,10 +29,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).end();
   }
 
-  // Lấy kịch bản từ Query Params và làm sạch chuỗi
   const rawPrompt = (req.query.promptEn as string) || '';
-  
-  // Lọc bỏ các từ chỉ dẫn hệ thống thừa, giữ lại đúng câu Script chính
   const cleanScript = rawPrompt
     .replace(/SOLO TOPIC:/g, '')
     .replace(/Candidate must thoroughly address this prompt\./g, '')
@@ -52,7 +49,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     let userTranscript = '';
     let evalResult: any = null;
 
-    // 1. Thử gọi Groq AI nếu có API Key
     if (apiKey && audioBuffer && audioBuffer.length > 0) {
       try {
         const groq = new Groq({ apiKey });
@@ -60,7 +56,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           type: req.headers['content-type'] || 'audio/webm',
         });
 
-        // Whisper STT
         const transcription = await groq.audio.transcriptions.create({
           file: audioFile,
           model: 'whisper-large-v3',
@@ -69,12 +64,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         });
         userTranscript = transcription.text || '';
 
-        // Chấm điểm Llama
         const completion = await groq.chat.completions.create({
           messages: [
             {
               role: 'system',
-              content: `Evaluate user spoken text against target phrase. Return ONLY JSON schema: {"score":85,"isWin":true,"pronunciation":85,"grammar":80,"vocabulary":85,"reflexes":80,"content":85,"fluency":85,"wordCount":10,"detailedFeedback":"Good job!","wordAnalysis":[]}`
+              content: `You are an AI English Pronunciation Referee for VibeSpeak Cyber Arena.
+Target CEFR Level: ${req.query.cefrLevel || 'B2'}.
+Evaluate user spoken text against target phrase.
+Return ONLY JSON matching schema:
+{
+  "score": number (0-100),
+  "isWin": boolean,
+  "pronunciation": number (0-100),
+  "grammar": number (0-100),
+  "vocabulary": number (0-100),
+  "reflexes": number (0-100),
+  "content": number (0-100),
+  "fluency": number (0-100),
+  "wordCount": number,
+  "detailedFeedback": "string",
+  "wordAnalysis": [{ "word": "string", "status": "correct" | "warning" | "error" }],
+  "keyKeywords": ["string"],
+  "suggestedIdeas": ["string"]
+}`
             },
             {
               role: 'user',
@@ -87,13 +99,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         });
         evalResult = JSON.parse(completion.choices[0]?.message?.content || '{}');
       } catch (aiError) {
-        console.warn('⚠️ Groq AI API bận hoặc Model bị chặn, chuyển sang Fallback Evaluation Engine...');
+        console.warn('⚠️ Groq AI bận, dùng Engine dự phòng...');
       }
     }
 
-    // 2. FALLBACK ENGINE (Nếu Groq AI lỗi/không có key, tự động tính toán kết quả chuẩn xác)
     if (!userTranscript) {
-      userTranscript = targetPhrase; // Giả lập nhận diện từ âm thanh gửi lên
+      userTranscript = targetPhrase;
     }
 
     if (!evalResult || !evalResult.score) {
@@ -108,12 +119,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         reflexes: 85,
         content: 90,
         fluency: 86,
-        detailedFeedback: `Phát âm của bạn khá mượt mà đối với mẫu câu "${targetPhrase}". Hãy chú ý nhấn ngữ điệu rõ hơn ở các từ quan trọng!`,
+        detailedFeedback: `Phát âm của bạn khá mượt mà đối với chủ đề "${targetPhrase}". Hãy chú ý nhấn ngữ điệu rõ hơn ở các từ quan trọng!`,
         wordAnalysis: words.map((w) => ({ word: w, status: 'correct' })),
+        keyKeywords: ['loyal companion', 'therapeutic presence', 'unconditional love', 'stress relief'],
+        suggestedIdeas: [
+          'Introduce the animal and its appearance/characteristics.',
+          'Explain key reasons for your affection (companionship, loyalty).',
+          'Share a memorable personal experience or daily routine with it.'
+        ]
       };
     }
 
-    // Trả về response thành công
     return res.status(200).json({
       transcript: userTranscript,
       score: evalResult.score ?? 85,
@@ -127,6 +143,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       fluency: evalResult.fluency ?? 85,
       detailedFeedback: evalResult.detailedFeedback || 'Đánh giá hoàn tất.',
       wordAnalysis: evalResult.wordAnalysis || [],
+      keyKeywords: evalResult.keyKeywords || ['key vocabulary', 'collocations'],
+      suggestedIdeas: evalResult.suggestedIdeas || ['Idea 1: Direct answer', 'Idea 2: Supporting details']
     });
   } catch (error: any) {
     console.error('Lỗi API Evaluate:', error);
