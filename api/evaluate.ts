@@ -34,7 +34,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     .replace(/SOLO TOPIC:/g, '')
     .replace(/Candidate must thoroughly address this prompt\./g, '')
     .replace(/["']/g, '')
-    .trim() || 'Describe your family members and their jobs.';
+    .trim() || 'General speaking challenge';
 
   const targetPhrase = cleanScript;
 
@@ -46,7 +46,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       process.env.GROQ_API ||
       process.env.EXPO_PUBLIC_GROQ_API_KEY;
 
-    // 🚨 1. KIỂM TRA BẢN THU ÂM RỖNG (Audio dưới 2KB ~ không có âm thanh)
+    // 1. Kiểm tra audio rỗng
     if (!audioBuffer || audioBuffer.length < 2000) {
       return res.status(200).json({
         transcript: '(Không ghi nhận được âm thanh)',
@@ -74,7 +74,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           type: req.headers['content-type'] || 'audio/webm',
         });
 
-        // Nhận diện giọng nói bằng Whisper
         const transcription = await groq.audio.transcriptions.create({
           file: audioFile,
           model: 'whisper-large-v3',
@@ -83,7 +82,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         });
         userTranscript = (transcription.text || '').trim();
 
-        // 🚨 2. NẾU WHISPER KHÔNG BẮT ĐƯỢC TỪ NÀO (Nói thầm / Im lặng) -> TRẢ VỀ 0 ĐIỂM
+        // 2. Kiểm tra nếu im lặng/nói không rõ
         if (!userTranscript || userTranscript.length === 0) {
           return res.status(200).json({
             transcript: '(Im lặng / Không nghe rõ từ)',
@@ -101,7 +100,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           });
         }
 
-        // 3. Tiến hành chấm điểm bằng Llama khi đã có giọng nói thực tế
+        // Chấm điểm Llama
         const completion = await groq.chat.completions.create({
           messages: [
             {
@@ -136,24 +135,38 @@ Return ONLY JSON matching schema:
         });
         evalResult = JSON.parse(completion.choices[0]?.message?.content || '{}');
       } catch (aiError) {
-        console.warn('⚠️ Groq AI bận, dùng Fallback Engine...');
+        console.warn('⚠️ Groq AI bận, chuyển sang Fallback Engine chuẩn...');
       }
     }
 
-    // Fallback khi bận server (Chỉ tính khi người chơi THỰC SỰ CÓ NÓI)
+    // 3. DYNAMIC FALLBACK ENGINE (Đồng bộ chuẩn 100% giữa Tổng điểm & 6 Tiêu chí)
     if (!evalResult || !evalResult.score) {
       const words = userTranscript.split(' ');
+      
+      // Khai báo 6 tiêu chí chi tiết
+      const content = words.length >= 8 ? 85 : 60;
+      const pronunciation = 75;
+      const grammar = 80;
+      const vocabulary = 75;
+      const reflexes = words.length >= 5 ? 75 : 60;
+      const fluency = words.length >= 5 ? 75 : 65;
+
+      // 🎯 ĐÃ SỬA: Lấy trung bình cộng của 6 tiêu chí làm Tổng điểm
+      const calculatedScore = Math.round(
+        (content + pronunciation + grammar + vocabulary + reflexes + fluency) / 6
+      );
+
       evalResult = {
-        score: Math.min(100, Math.max(30, words.length * 8)),
-        isWin: words.length >= 5,
+        score: calculatedScore,
+        isWin: calculatedScore >= 70,
         wordCount: words.length,
-        pronunciation: 75,
-        grammar: 80,
-        vocabulary: 75,
-        reflexes: 70,
-        content: 75,
-        fluency: 70,
-        detailedFeedback: `Bạn đã nói được ${words.length} từ đối với chủ đề "${targetPhrase}". Hãy tiếp tục mở rộng thêm câu trả lời!`,
+        pronunciation,
+        grammar,
+        vocabulary,
+        reflexes,
+        content,
+        fluency,
+        detailedFeedback: `Bạn đã nói được ${words.length} từ đối với chủ đề "${targetPhrase}". Hãy cố gắng nói câu dài hơn để tăng điểm Task và Trôi chảy nhé!`,
         wordAnalysis: words.map((w) => ({ word: w, status: 'correct' })),
       };
     }
