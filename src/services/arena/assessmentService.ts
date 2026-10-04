@@ -13,17 +13,18 @@ export interface AssessmentResult {
   fluency: number;
   detailedFeedback: string;
   audioUrl?: string;
+  wordAnalysis?: Array<{ word: string; status: 'correct' | 'warning' | 'error' }>;
 }
 
 export const evaluateSpeaking = async (
   audioBlob: Blob,
   cefrLevel: string = 'B2',
-  targetText?: string,
+  userText?: string,
   targetPrompt?: string
 ): Promise<AssessmentResult> => {
   try {
-    // 📱 1. TỰ ĐỘNG XÁC ĐỊNH ĐUÔI FILE CHUẨN TƯƠNG THÍCH ĐIỆN THOẠI (iOS / Android)
-    const mimeType = audioBlob.type || '';
+    // 📱 1. TỰ ĐỘNG XÁC ĐỊNH ĐUÔI FILE CHUẨN TƯƠNG THÍCH ĐIỆN THOẠI VÀ TRÌNH DUYỆT WEB
+    const mimeType = audioBlob.type || 'audio/webm';
     let fileName = 'recording.webm';
 
     if (mimeType.includes('mp4') || mimeType.includes('aac') || mimeType.includes('m4a')) {
@@ -34,19 +35,19 @@ export const evaluateSpeaking = async (
       fileName = 'recording.ogg';
     }
 
-    const formData = new FormData();
-    formData.append('file', audioBlob, fileName);
-    formData.append('model', 'whisper-1');
-
+    // Tạo URL query parameters
     const queryParams = new URLSearchParams({
       cefrLevel,
-      ...(targetPrompt && { promptEn: targetPrompt }),
-      ...(targetText && { targetText }),
+      promptEn: targetPrompt || userText || '',
     });
 
+    // 🎯 2. GỬI LÊN API VỚI BODY LÀ RAW BLOB VA HEADERS CONTENT-TYPE RÕ RÀNG
     const response = await fetch(`/api/evaluate?${queryParams.toString()}`, {
       method: 'POST',
-      body: formData,
+      headers: {
+        'Content-Type': mimeType,
+      },
+      body: audioBlob,
     });
 
     if (!response.ok) {
@@ -55,12 +56,12 @@ export const evaluateSpeaking = async (
 
     const data = await response.json();
 
-    // 🚨 BẢO VỆ CHẶT CHẼ: Nếu Backend xác định không có chữ (transcript rỗng hoặc wordCount = 0)
-    if (!data.transcript || data.transcript.trim() === '' || data.wordCount === 0) {
+    // 🚨 3. BẢO VỆ CHẶT CHẼ: Nếu Backend xác định không có chữ (transcript rỗng hoặc score = 0)
+    if (!data.transcript || data.transcript.trim() === '' || data.score === 0) {
       return {
         score: 0,
         isWin: false,
-        transcript: "(Không nhận diện được giọng phát âm rõ ràng)",
+        transcript: data.transcript || "(Không nhận diện được giọng phát âm rõ ràng)",
         wordCount: 0,
         pronunciation: 0,
         grammar: 0,
@@ -68,14 +69,15 @@ export const evaluateSpeaking = async (
         reflexes: 0,
         content: 0,
         fluency: 0,
-        detailedFeedback: "❌ AI không nhận diện được giọng nói. Hãy kiểm tra Micro và đọc to rõ ràng hơn!",
+        detailedFeedback: data.detailedFeedback || "❌ AI không nhận diện được giọng nói. Hãy kiểm tra Micro và đọc to rõ ràng hơn!",
+        wordAnalysis: [],
       };
     }
 
     // Nếu có bài nói hợp lệ thì trả về điểm thật từ Backend
     return {
       score: data.score ?? 0,
-      isWin: (data.score ?? 0) >= 65,
+      isWin: data.isWin ?? (data.score >= 60),
       transcript: data.transcript,
       wordCount: data.wordCount ?? 0,
       pronunciation: data.pronunciation ?? 0,
@@ -85,6 +87,7 @@ export const evaluateSpeaking = async (
       content: data.content ?? 0,
       fluency: data.fluency ?? 0,
       detailedFeedback: data.detailedFeedback || "Đánh giá hoàn tất.",
+      wordAnalysis: data.wordAnalysis || [],
     };
   } catch (error) {
     console.error("Lỗi đánh giá bài nói:", error);
@@ -100,6 +103,7 @@ export const evaluateSpeaking = async (
       content: 0,
       fluency: 0,
       detailedFeedback: "⚠️ Không thể kết nối đến máy chủ chấm điểm. Vui lòng thử lại!",
+      wordAnalysis: [],
     };
   }
 };

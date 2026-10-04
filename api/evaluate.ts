@@ -36,7 +36,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     .replace(/Practice Phrase:/gi, '')
     .replace(/Focus area:.*/gi, '')
     .replace(/["']/g, '')
-    .trim() || 'General speaking challenge';
+    .trim() || 'heart / hut';
 
   const targetPhrase = cleanScript;
 
@@ -48,8 +48,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       process.env.GROQ_API ||
       process.env.EXPO_PUBLIC_GROQ_API_KEY;
 
-    // 🚨 1. KIỂM TRA AUDIO RỖNG / QUÁ NGẮN -> TRẢ VỀ 0 ĐIỂM NGAY LẬP TỨC
-    if (!audioBuffer || audioBuffer.length < 1000) {
+    // 1. Kiểm tra audio quá nhỏ (Hạ xuống 300 bytes cho các từ siêu ngắn)
+    if (!audioBuffer || audioBuffer.length < 300) {
       return res.status(200).json({
         transcript: '(Chưa ghi nhận âm thanh)',
         score: 0,
@@ -61,7 +61,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         reflexes: 0,
         content: 0,
         fluency: 0,
-        detailedFeedback: '❌ Chưa nhận được âm thanh thu âm. Vui lòng bấm nút micro và đọc to rõ ràng!',
+        detailedFeedback: '❌ AI chưa nhận được âm thanh thu âm. Vui lòng giữ micro thêm 0.5s sau khi đọc xong!',
         wordAnalysis: [],
       });
     }
@@ -73,7 +73,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       try {
         const groq = new Groq({ apiKey });
 
-        // Chuyển Buffer sang Uint8Array để fix triệt để lỗi TypeScript BlobPart trên Vercel
         const uint8Array = new Uint8Array(
           audioBuffer.buffer,
           audioBuffer.byteOffset,
@@ -85,11 +84,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         const audioFile = new File([uint8Array], 'recording.webm', { type: mimeType });
 
-        // Gửi âm thanh thực tế sang Whisper STT
+        // Gửi sang Whisper STT với Contextual Prompt giúp bắt từ ngắn siêu nhạy
         const transcription = await groq.audio.transcriptions.create({
           file: audioFile,
           model: 'whisper-large-v3',
           language: 'en',
+          prompt: `Pronunciation practice for words: ${targetPhrase}`,
           response_format: 'json',
         });
 
@@ -97,32 +97,40 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           .replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, '')
           .trim();
 
-        // 🚨 2. NẾU WHISPER KHÔNG BẮT ĐƯỢC TỪ NÀO (IM LẶNG) -> TRẢ VỀ 0 ĐIỂM
-        if (!userTranscript || userTranscript.length === 0) {
-          return res.status(200).json({
-            transcript: '(Không nhận diện được từ nào)',
-            score: 0,
-            isWin: false,
-            wordCount: 0,
-            pronunciation: 0,
-            grammar: 0,
-            vocabulary: 0,
-            reflexes: 0,
-            content: 0,
-            fluency: 0,
-            detailedFeedback: '⚠️ AI không nghe rõ bài phát âm của bạn. Hãy nói to và gần micro hơn nhé!',
-            wordAnalysis: [],
-          });
-        }
+      } catch (aiError) {
+        console.warn('⚠️ Groq Whisper bận hoặc lỗi parse audio:', aiError);
+      }
+    }
 
-        // 3. Tiến hành chấm điểm LLAMA dựa trên giọng nói thực tế thu được
+    // 2. NẾU WHISPER KHÔNG BẮT ĐƯỢC TỪ NÀO (IM LẶNG THỰC TẾ)
+    if (!userTranscript || userTranscript.length === 0) {
+      return res.status(200).json({
+        transcript: '(Chưa nhận diện được giọng phát âm rõ ràng)',
+        score: 0,
+        isWin: false,
+        wordCount: 0,
+        pronunciation: 0,
+        grammar: 0,
+        vocabulary: 0,
+        reflexes: 0,
+        content: 0,
+        fluency: 0,
+        detailedFeedback: '❌ AI không nhận diện được giọng nói. Hãy kiểm tra Micro và đọc to rõ ràng hơn!',
+        wordAnalysis: [],
+      });
+    }
+
+    // 3. Tiến hành chấm điểm bằng LLAMA khi đã có transcript thực tế
+    if (apiKey) {
+      try {
+        const groq = new Groq({ apiKey });
         const completion = await groq.chat.completions.create({
           messages: [
             {
               role: 'system',
-              content: `You are an AI English Pronunciation Referee for VibeSpeak Cyber Arena.
-Target Level: ${req.query.cefrLevel || 'B2'}.
-Evaluate user spoken text specifically against the Target Phrase.
+              content: `You are an AI English Pronunciation Referee for VibeSpeak.
+Target Level: ${req.query.cefrLevel || 'A2'}.
+Evaluate user spoken text against the Target Words.
 
 Return ONLY JSON matching schema:
 {
@@ -141,7 +149,7 @@ Return ONLY JSON matching schema:
             },
             {
               role: 'user',
-              content: `Target Phrase: "${targetPhrase}"\nUser Spoke: "${userTranscript}"`
+              content: `Target Words: "${targetPhrase}"\nUser Spoke: "${userTranscript}"`
             }
           ],
           model: 'llama-3.1-8b-instant',
@@ -149,29 +157,12 @@ Return ONLY JSON matching schema:
           response_format: { type: 'json_object' }
         });
         evalResult = JSON.parse(completion.choices[0]?.message?.content || '{}');
-      } catch (aiError) {
-        console.warn('⚠️ Groq AI bận, dùng Fallback Engine...');
+      } catch (e) {
+        console.warn('Lỗi Llama eval:', e);
       }
     }
 
-    // 🚨 4. FALLBACK ENGINE (Chỉ tính điểm khi userTranscript THỰC SỰ CÓ TỪ)
-    if (!userTranscript || userTranscript.length === 0) {
-      return res.status(200).json({
-        transcript: '(Không nhận diện được giọng nói)',
-        score: 0,
-        isWin: false,
-        wordCount: 0,
-        pronunciation: 0,
-        grammar: 0,
-        vocabulary: 0,
-        reflexes: 0,
-        content: 0,
-        fluency: 0,
-        detailedFeedback: '❌ Không ghi nhận được phát âm của bạn. Vui lòng bấm micro và đọc lại!',
-        wordAnalysis: [],
-      });
-    }
-
+    // 4. Fallback Engine nếu Llama bận
     if (!evalResult || typeof evalResult.score !== 'number') {
       const targetWords = targetPhrase.toLowerCase().split(/\s+/);
       const userWords = userTranscript.toLowerCase().split(/\s+/);
@@ -179,7 +170,7 @@ Return ONLY JSON matching schema:
       const matchedCount = userWords.filter((w) => targetWords.includes(w)).length;
       const coverageRatio = Math.min(1, matchedCount / Math.max(1, targetWords.length));
       
-      const calculatedScore = Math.round(coverageRatio * 85 + (userWords.length > 0 ? 15 : 0));
+      const calculatedScore = Math.round(coverageRatio * 85 + 15);
 
       evalResult = {
         score: calculatedScore,
@@ -191,7 +182,7 @@ Return ONLY JSON matching schema:
         reflexes: calculatedScore,
         content: calculatedScore,
         fluency: calculatedScore,
-        detailedFeedback: `Bạn đã phát âm: "${userTranscript}". Hãy tiếp tục luyện tập để phát âm chuẩn xác hơn!`,
+        detailedFeedback: `Phát âm nhận diện: "${userTranscript}". Hãy tiếp tục phát âm rõ hơn nữa nhé!`,
         wordAnalysis: userWords.map((w) => ({
           word: w,
           status: targetWords.includes(w) ? 'correct' : 'warning',
