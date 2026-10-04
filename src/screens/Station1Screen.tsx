@@ -25,7 +25,7 @@ export default function Station1Screen({ onBack }: Props) {
   const audioChunksRef = useRef<Blob[]>([]);
   const currentAudioRef = useRef<HTMLAudioElement | null>(null);
 
-  // 🔊 TÍNH NĂNG MỚI: PHÁT ÂM MẪU CHUẨN TIẾNG ANH
+  // 🔊 DỪNG TOÀN BỘ ÂM THANH ĐANG PHÁT
   const stopAllAudio = () => {
     if (currentAudioRef.current) {
       currentAudioRef.current.pause();
@@ -38,44 +38,75 @@ export default function Station1Screen({ onBack }: Props) {
     setIsPlayingTTS(false);
   };
 
+  // 🔊 HÀM PHÁT ÂM MẪU CHUẨN ĐÃ ĐƯỢC BẢO VỆ 2 LỚP
   const playSampleAudio = (textToSpeak: string) => {
     if (!textToSpeak) return;
     stopAllAudio();
+    setIsPlayingTTS(true);
 
+    // LỚP 1: THỬ PHÁT BẰNG WEB SPEECH API TRÌNH DUYỆT (ĐỘ TIN CẬY CAO NHẤT)
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel(); // Xóa hàng đợi cũ
+
+      const speakText = () => {
+        const utterance = new SpeechSynthesisUtterance(textToSpeak);
+        utterance.lang = 'en-US';
+        utterance.rate = 0.85; // Tốc độ vừa phải cho người học phát âm
+        utterance.pitch = 1.0;
+
+        const voices = window.speechSynthesis.getVoices();
+        const englishVoice = voices.find(
+          v => v.lang.startsWith('en') && (v.name.includes('Google') || v.name.includes('Natural') || v.name.includes('Samantha') || v.name.includes('US'))
+        ) || voices.find(v => v.lang.startsWith('en'));
+
+        if (englishVoice) {
+          utterance.voice = englishVoice;
+        }
+
+        utterance.onstart = () => setIsPlayingTTS(true);
+        utterance.onend = () => setIsPlayingTTS(false);
+        utterance.onerror = () => tryAudioUrlFallback(textToSpeak);
+
+        window.speechSynthesis.speak(utterance);
+      };
+
+      // Đảm bảo voices đã nạp xong
+      if (window.speechSynthesis.getVoices().length > 0) {
+        speakText();
+        return;
+      } else {
+        window.speechSynthesis.onvoiceschanged = () => {
+          speakText();
+          window.speechSynthesis.onvoiceschanged = null;
+        };
+        // Set timeout nếu sự kiện onvoiceschanged không kích hoạt
+        setTimeout(() => speakText(), 150);
+        return;
+      }
+    }
+
+    // LỚP 2: FALLBACK SỬ DỤNG ONLINE AUDIO STREAM
+    tryAudioUrlFallback(textToSpeak);
+  };
+
+  const tryAudioUrlFallback = (textToSpeak: string) => {
     try {
-      setIsPlayingTTS(true);
       const encodedText = encodeURIComponent(textToSpeak);
-      const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodedText}&tl=en&client=tw-ob`;
+      const ttsUrl = `https://dict.youdao.com/dictvoice?audio=${encodedText}&type=2`; // Giọng Anh-Mỹ chuẩn
 
       const audio = new Audio(ttsUrl);
       currentAudioRef.current = audio;
 
       audio.onplay = () => setIsPlayingTTS(true);
       audio.onended = () => setIsPlayingTTS(false);
-      audio.onerror = () => fallbackBrowserTTS(textToSpeak);
+      audio.onerror = () => {
+        setIsPlayingTTS(false);
+        alert("⚠️️ Không thể phát âm thanh! Vui lòng kiểm tra loa/loa ngoài thiết bị.");
+      };
 
-      audio.play().catch(() => fallbackBrowserTTS(textToSpeak));
+      audio.play().catch(() => setIsPlayingTTS(false));
     } catch {
-      fallbackBrowserTTS(textToSpeak);
-    }
-  };
-
-  const fallbackBrowserTTS = (textToSpeak: string) => {
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(textToSpeak);
-      utterance.lang = 'en-US';
-      utterance.rate = 0.85; // Tốc độ vừa phải cho phát âm mẫu
-
-      const voices = window.speechSynthesis.getVoices();
-      const usVoice = voices.find(v => v.lang.includes('en'));
-      if (usVoice) utterance.voice = usVoice;
-
-      utterance.onstart = () => setIsPlayingTTS(true);
-      utterance.onend = () => setIsPlayingTTS(false);
-      utterance.onerror = () => setIsPlayingTTS(false);
-
-      window.speechSynthesis.speak(utterance);
+      setIsPlayingTTS(false);
     }
   };
 
@@ -246,13 +277,13 @@ export default function Station1Screen({ onBack }: Props) {
             
             <Text style={styles.targetFocus}>🎯 Trọng tâm: {currentDrill.targetFocus}</Text>
 
-            {/* 🔊 NÚT PHÁT ÂM MẪU MỚI TÍCH HỢP */}
+            {/* 🔊 NÚT PHÁT ÂM MẪU CHUẨN */}
             <TouchableOpacity 
               style={[styles.ttsBtn, isPlayingTTS && styles.ttsBtnActive]} 
               onPress={() => playSampleAudio(currentDrill.contentEn)}
             >
               <Text style={styles.ttsBtnText}>
-                {isPlayingTTS ? '🔊 ĐANG PHÁT ÂM MẪU...' : '📢 NGHE PHÁT ÂM MẪU (TTS)'}
+                {isPlayingTTS ? '🔊 ĐANG PHÁT ÂM MẪU...' : '📢 NGHE PHÁT ÂM MẪU'}
               </Text>
             </TouchableOpacity>
 
