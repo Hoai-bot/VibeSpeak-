@@ -22,8 +22,20 @@ export const evaluateSpeaking = async (
   targetPrompt?: string
 ): Promise<AssessmentResult> => {
   try {
+    // 📱 1. TỰ ĐỘNG XÁC ĐỊNH ĐUÔI FILE CHUẨN TƯƠNG THÍCH ĐIỆN THOẠI (iOS / Android)
+    const mimeType = audioBlob.type || '';
+    let fileName = 'recording.webm';
+
+    if (mimeType.includes('mp4') || mimeType.includes('aac') || mimeType.includes('m4a')) {
+      fileName = 'recording.mp4';
+    } else if (mimeType.includes('wav')) {
+      fileName = 'recording.wav';
+    } else if (mimeType.includes('ogg')) {
+      fileName = 'recording.ogg';
+    }
+
     const formData = new FormData();
-    formData.append('file', audioBlob, 'recording.webm');
+    formData.append('file', audioBlob, fileName);
     formData.append('model', 'whisper-1');
 
     const queryParams = new URLSearchParams({
