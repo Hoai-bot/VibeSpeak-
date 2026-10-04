@@ -179,7 +179,8 @@ export default function Station1Screen({ onBack }: Props) {
           const finalMime = mediaRecorder.mimeType || mimeType || 'audio/webm';
           const blob = new Blob(audioChunksRef.current, { type: finalMime });
 
-          if (blob.size > 1500) {
+          // 🎯 ĐÃ SỬA: Hạ ngưỡng kiểm tra size Blob xuống 800 bytes cho các từ đơn ngắn
+          if (blob.size > 800) {
             setRecordedAudio(blob);
             setHasRecorded(true);
           } else {
@@ -194,7 +195,7 @@ export default function Station1Screen({ onBack }: Props) {
           }
         };
 
-        mediaRecorder.start(100); // Ghi dữ liệu mỗi 100ms để tránh mất chunk
+        mediaRecorder.start(100);
         setIsRecording(true);
         setRecordedAudio(null);
         setHasRecorded(false);
@@ -212,7 +213,7 @@ export default function Station1Screen({ onBack }: Props) {
 
   // ⚔️ NỘP BÀI VÀ CHẤM ĐIỂM AI
   const handleSubmitAnswer = async () => {
-    if (!hasRecorded || !recordedAudio || recordedAudio.size <= 1500) {
+    if (!hasRecorded || !recordedAudio || recordedAudio.size <= 800) {
       alert("🔒 Vui lòng bấm micro thu âm phát âm trước khi nộp bài!");
       return;
     }
@@ -220,29 +221,15 @@ export default function Station1Screen({ onBack }: Props) {
     setIsAnalyzing(true);
 
     try {
-      const promptTarget = `Practice Phrase: "${currentDrill?.contentEn || ''}". Focus area: ${currentDrill?.targetFocus || ''}`;
-      const evalData = await evaluateSpeaking(recordedAudio, 'B2', undefined, promptTarget);
+      // 🎯 ĐÃ SỬA: Chỉ truyền DUY NHẤT nội dung tiếng Anh cần đọc, loại bỏ các chữ tiếng Việt thừa gây nhiễu AI
+      const promptTarget = (currentDrill?.contentEn || '').trim();
+      const evalData = await evaluateSpeaking(recordedAudio, 'A2', undefined, promptTarget);
 
-      if (!evalData.transcript || evalData.wordCount === 0) {
-        setResult({
-          score: 0,
-          isWin: false,
-          transcript: "(Không nhận diện được từ nào trong bản thu)",
-          wordCount: 0,
-          pronunciation: 0,
-          grammar: 0,
-          vocabulary: 0,
-          reflexes: 0,
-          content: 0,
-          fluency: 0,
-          detailedFeedback: "❌ AI không nghe thấy giọng nói tiếng Anh rõ ràng. Hãy lại gần Micro và đọc to hơn!",
-        });
-        alert("🛡️ NỘP BÀI THẤT BẠI: AI chưa nghe rõ giọng bạn! Vui lòng bấm micro và đọc to hơn.");
-      } else {
-        setResult(evalData);
-        if (evalData.isWin) {
-          updateUserProgress(1, 30, true);
-        }
+      // 🎯 ĐÃ SỬA: Cập nhật kết quả chấm điểm mượt mà, không tự nhảy alert chặn
+      setResult(evalData);
+      
+      if (evalData.isWin) {
+        updateUserProgress(1, 30, true);
       }
     } catch (err) {
       console.error("Lỗi chấm điểm Trạm 1:", err);
@@ -365,7 +352,7 @@ export default function Station1Screen({ onBack }: Props) {
 
             <View style={styles.scriptBox}>
               <Text style={styles.scriptLabel}>📝 Âm AI nghe được thực tế:</Text>
-              <Text style={styles.scriptContent}>"{result.transcript}"</Text>
+              <Text style={styles.scriptContent}>"{result.transcript || '(Không nghe rõ từ)'}"</Text>
             </View>
 
             <Text style={styles.feedbackText}>{result.detailedFeedback}</Text>
