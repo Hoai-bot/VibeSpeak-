@@ -34,6 +34,14 @@ export default function Station4Screen({ onBack }: Props) {
 
   const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
 
+  // 🏆 HÀM PHÂN PHẤP NHÃN TIÊU ĐỀ KẾT QUẢ CHÍNH XÁC THEO THANG ĐIỂM
+  const getResultHeader = (score: number) => {
+    if (score >= 85) return { title: '🏆 PHẢN HỒI XUẤT SẮC!', color: '#39FF14' };
+    if (score >= 70) return { title: '👍 PHẢN HỒI ĐẠT YÊU CẦU (KHÁ)', color: '#00FFFF' };
+    if (score >= 50) return { title: '⚠️ PHẢN HỒI TRUNG BÌNH (CẦN CẢI THIỆN)', color: '#FFD700' };
+    return { title: '💀 PHẢN HỒI CHƯA ĐẠT', color: '#FF0055' };
+  };
+
   const stopAllAudio = () => {
     if (currentAudioRef.current) {
       currentAudioRef.current.pause();
@@ -217,7 +225,6 @@ export default function Station4Screen({ onBack }: Props) {
     }
   };
 
-  // 🎯 HÀM NỘP BÀI CHÍNH - ĐÃ SỬA VÀ KHÓA CHẶT ĐIỂM ẢO
   const handleSubmitAnswer = async () => {
     if (!hasRecorded || !recordedAudio || recordedAudio.size <= 4000) {
       alert("🔒 Vui lòng ghi âm phản hồi của bạn trước khi nộp bài!");
@@ -228,11 +235,9 @@ export default function Station4Screen({ onBack }: Props) {
     setBattleState('analyzing');
 
     try {
-      // 🎯 1. TRUYỀN ĐÚNG CÂU HỎI TÌNH HUỐNG HIỆN TẠI VÀO PROMPT
       const targetPrompt = `Express Prompt: "${exercise?.promptEn || 'General speaking challenge'}". Candidate must respond directly to this prompt.`;
       const evalData = await evaluateSpeaking(recordedAudio, cefrLevel, undefined, targetPrompt);
 
-      // 🚨 2. BẢO VỆ CHỐNG ĐIỂM ẢO KHI IM LẶNG/NHIỄU ÂM (SỐ TỪ <= 2)
       if (!evalData.transcript || evalData.wordCount <= 2) {
         const strictFailedResult: AssessmentResult = {
           score: 0,
@@ -358,8 +363,9 @@ export default function Station4Screen({ onBack }: Props) {
 
         {battleState === 'ended' && result && (
           <View style={styles.box}>
-            <Text style={[styles.resultTitle, { color: result.isWin ? '#39FF14' : '#FF0055' }]}>
-              {result.isWin ? '🎉 PHẢN HỒI XUẤT SẮC!' : '💀 PHẢN HỒI CHƯA ĐẠT YÊU CẦU'}
+            {/* TIÊU ĐỀ PHÂN CẤP ĐỘNG CHÍNH XÁC THEO ĐIỂM SỐ */}
+            <Text style={[styles.resultTitle, { color: getResultHeader(result.score).color }]}>
+              {getResultHeader(result.score).title}
             </Text>
             <Text style={styles.scoreText}>⚡ TỔNG ĐIỂM TRẠM 4: {result.score} / 100 ĐIỂM</Text>
 
