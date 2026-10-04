@@ -295,30 +295,20 @@ export default function AllInArenaScreen({ onBack }: Props) {
 
   const getCurrentPromptText = () => {
     if (mode === 'solo' && soloTopic) {
-      return `SOLO TOPIC: "${soloTopic.promptEn}". Candidate must thoroughly address this prompt.`;
+      return soloTopic.promptEn;
     }
     if (mode === 'relay' && relayChallenge) {
-      return `RELAY DEBATE CHALLENGE:
-Topic: "${relayChallenge.topic}"
-Context: "${relayChallenge.contextEn}"
-Player 1 Requirement: "${relayChallenge.player1En}"
-Player 2 Requirement: "${relayChallenge.player2En}"`;
+      return `${relayChallenge.topic}: ${relayChallenge.contextEn}`;
     }
     if (mode === 'roleplay' && roleplayScenario) {
-      return `ROLEPLAY SCENARIO:
-Title: "${roleplayScenario.scenarioTitle}"
-AI Role: "${roleplayScenario.aiRoleEn}"
-User Role: "${roleplayScenario.userRoleEn}"
-Goal: "${roleplayScenario.goalEn}"`;
+      return `${roleplayScenario.scenarioTitle} - Goal: ${roleplayScenario.goalEn}`;
     }
     return 'General speaking challenge';
   };
 
-  // 🎯 ĐÃ KHẮC PHỤC TRIỆT ĐỂ LỖI CHẤM ĐIỂM
   const handleSubmitBattleAnswer = async () => {
     setIsTimerActive(false);
 
-    // Chờ ép dừng recording và lấy Blob hoàn chỉnh
     let activeBlob: Blob | null = null;
     if (isRecording) {
       setIsRecording(false);
@@ -531,6 +521,22 @@ Goal: "${roleplayScenario.goalEn}"`;
             </Text>
             <Text style={styles.scoreText}>⚡ TỔNG ĐIỂM TRẬN ĐẤU: {result.score} / 100 ĐIỂM</Text>
 
+            {/* 📜 1. TAPESCRIPT / BÀI NÓI MẪU AI */}
+            <View style={styles.tapescriptBox}>
+              <Text style={styles.tapescriptTitle}>📜 TAPESCRIPT / BÀI NÓI MẪU AI (ĐỐI CHIẾU):</Text>
+              <Text style={styles.tapescriptContent}>
+                "{result.improvedAnswerEn || getCurrentPromptText()}"
+              </Text>
+            </View>
+
+            {/* 🎙 2. TRANSCRIPT / LỜI NÓI THỰC TẾ CỦA BẠN */}
+            <View style={styles.userTranscriptBox}>
+              <Text style={styles.userTranscriptTitle}>🎙 TRANSCRIPT / LỜI NÓI THỰC TẾ CỦA BẠN:</Text>
+              <Text style={styles.userTranscriptContent}>
+                "{result.transcript || "(Chưa nhận diện được giọng nói)"}"
+              </Text>
+            </View>
+
             {result.audioUrl && (
               <View style={styles.nativeAudioContainer}>
                 <Text style={styles.nativeAudioLabel}>🎧 NGHE LẠI BẢN THU CỦA BẠN:</Text>
@@ -538,6 +544,7 @@ Goal: "${roleplayScenario.goalEn}"`;
               </View>
             )}
 
+            {/* 📝 3. PHÂN TÍCH PHÁT ÂM TỪNG TỪ */}
             <View style={styles.scriptBox}>
               <Text style={styles.scriptLabel}>📝 PHÂN TÍCH PHÁT ÂM CHI TIẾT TỪNG TỪ:</Text>
               <View style={styles.wordBadgeContainer}>
@@ -664,6 +671,12 @@ const styles = StyleSheet.create({
   submitBtnText: { color: '#000', fontSize: 11, fontWeight: '900' },
   resultTitle: { fontSize: 15, fontWeight: '900', marginBottom: 6 },
   scoreText: { color: '#FFD700', fontSize: 13, fontWeight: '900', marginBottom: 10 },
+  tapescriptBox: { width: '100%', backgroundColor: '#1A0B2E', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#FF007F', marginBottom: 10 },
+  tapescriptTitle: { color: '#FF007F', fontSize: 10, fontWeight: 'bold', marginBottom: 4 },
+  tapescriptContent: { color: '#FFFFFF', fontSize: 11, fontStyle: 'italic', lineHeight: 16 },
+  userTranscriptBox: { width: '100%', backgroundColor: '#1A0B2E', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#00FFFF', marginBottom: 12 },
+  userTranscriptTitle: { color: '#00FFFF', fontSize: 10, fontWeight: 'bold', marginBottom: 4 },
+  userTranscriptContent: { color: '#39FF14', fontSize: 11, fontWeight: 'bold', lineHeight: 16 },
   nativeAudioContainer: { width: '100%', backgroundColor: '#1A0B2E', padding: 10, borderRadius: 10, borderWidth: 1, borderColor: '#00FFFF', marginBottom: 12, alignItems: 'center' },
   nativeAudioLabel: { color: '#00FFFF', fontSize: 10, fontWeight: 'bold' },
   scriptBox: { backgroundColor: '#1A0B2E', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#332255', width: '100%', marginBottom: 12 },
