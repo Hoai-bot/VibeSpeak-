@@ -29,8 +29,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).end();
   }
 
-  const { promptEn, cefrLevel } = req.query;
-  const targetPhrase = (promptEn as string) || 'General speaking challenge';
+  // Lấy kịch bản từ Query Params và làm sạch chuỗi
+  const rawPrompt = (req.query.promptEn as string) || '';
+  
+  // Lọc bỏ các từ chỉ dẫn hệ thống thừa, giữ lại đúng câu Script chính
+  const cleanScript = rawPrompt
+    .replace(/SOLO TOPIC:/g, '')
+    .replace(/Candidate must thoroughly address this prompt\./g, '')
+    .replace(/["']/g, '')
+    .trim() || 'Describe your favorite animal and why you like it.';
+
+  const targetPhrase = cleanScript;
 
   try {
     const audioBuffer = await getRawBody(req);
