@@ -34,6 +34,19 @@ const getBaseUrl = (): string => {
   return 'https://vibe-speak-jmz06cpaj-ic-dalat.vercel.app';
 };
 
+/**
+ * Hàm làm sạch kịch bản mẫu (Chỉ giữ lại nội dung chính của câu)
+ */
+const sanitizePrompt = (rawText?: string): string => {
+  if (!rawText) return 'Describe your favorite animal and why you like it.';
+  
+  return rawText
+    .replace(/SOLO\s+TOPIC:/gi, '')
+    .replace(/Candidate must thoroughly address this prompt\./gi, '')
+    .replace(/["']/g, '')
+    .trim() || 'Describe your favorite animal and why you like it.';
+};
+
 export async function evaluateSpeaking(
   audioBlob: Blob,
   cefrLevel: string = 'B2',
@@ -61,9 +74,14 @@ export async function evaluateSpeaking(
 
   try {
     const baseUrl = getBaseUrl();
+    
+    // Làm sạch câu kịch bản mẫu trước khi gửi lên Backend API
+    const rawTarget = promptEn || targetText || '';
+    const cleanPrompt = sanitizePrompt(rawTarget);
+
     const queryParams = new URLSearchParams({
       cefrLevel,
-      promptEn: promptEn || targetText || 'General speaking challenge',
+      promptEn: cleanPrompt,
     });
 
     // Gửi trực tiếp Blob Audio qua Vercel Serverless Function Proxy
