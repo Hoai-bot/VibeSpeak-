@@ -25,6 +25,9 @@ export default function Station4Screen({ onBack }: Props) {
   const [recordedAudio, setRecordedAudio] = useState<Blob | null>(null);
   const [hasRecorded, setHasRecorded] = useState<boolean>(false);
 
+  // State tạo URL nghe lại bản thu âm
+  const [recordedAudioUrl, setRecordedAudioUrl] = useState<string | null>(null);
+
   const [result, setResult] = useState<AssessmentResult | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -34,7 +37,6 @@ export default function Station4Screen({ onBack }: Props) {
 
   const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
 
-  // 🏆 HÀM PHÂN PHẤP NHÃN TIÊU ĐỀ KẾT QUẢ CHÍNH XÁC THEO THANG ĐIỂM
   const getResultHeader = (score: number) => {
     if (score >= 85) return { title: '🏆 PHẢN HỒI XUẤT SẮC!', color: '#39FF14' };
     if (score >= 70) return { title: '👍 PHẢN HỒI ĐẠT YÊU CẦU (KHÁ)', color: '#00FFFF' };
@@ -164,6 +166,7 @@ export default function Station4Screen({ onBack }: Props) {
     setIsRecording(false);
     setRecordedAudio(null);
     setHasRecorded(false);
+    setRecordedAudioUrl(null);
     setResult(null);
     audioChunksRef.current = [];
   };
@@ -197,7 +200,8 @@ export default function Station4Screen({ onBack }: Props) {
             const mimeType = mediaRecorder.mimeType || 'audio/webm';
             const recordedBlob = new Blob(audioChunksRef.current, { type: mimeType });
             
-            if (recordedBlob.size > 4000) {
+            // 🎯 ĐÃ FIX: Hạ ngưỡng từ 4000 xuống 800 bytes
+            if (recordedBlob.size > 800) {
               setRecordedAudio(recordedBlob);
               setHasRecorded(true);
             } else {
@@ -208,7 +212,7 @@ export default function Station4Screen({ onBack }: Props) {
             stream.getTracks().forEach(track => track.stop());
           };
 
-          mediaRecorder.start(200);
+          mediaRecorder.start(100);
           setIsRecording(true);
           setBattleState('battling');
         } else {
@@ -226,23 +230,31 @@ export default function Station4Screen({ onBack }: Props) {
   };
 
   const handleSubmitAnswer = async () => {
-    if (!hasRecorded || !recordedAudio || recordedAudio.size <= 4000) {
+    if (!hasRecorded || !recordedAudio || recordedAudio.size <= 800) {
       alert("🔒 Vui lòng ghi âm phản hồi của bạn trước khi nộp bài!");
       return;
     }
 
     if (isRecording) setIsRecording(false);
+
+    // 🎯 ĐÃ FIX: Tự động tạo URL để nghe lại bản thu âm ở màn hình kết quả
+    if (typeof window !== 'undefined' && window.URL) {
+      const audioUrl = URL.createObjectURL(recordedAudio);
+      setRecordedAudioUrl(audioUrl);
+    }
+
     setBattleState('analyzing');
 
     try {
-      const targetPrompt = `Express Prompt: "${exercise?.promptEn || 'General speaking challenge'}". Candidate must respond directly to this prompt.`;
+      // 🎯 ĐÃ FIX: Làm sạch prompt target truyền sang AI
+      const targetPrompt = (exercise?.promptEn || 'General speaking challenge').trim();
       const evalData = await evaluateSpeaking(recordedAudio, cefrLevel, undefined, targetPrompt);
 
-      if (!evalData.transcript || evalData.wordCount <= 2) {
+      if (!evalData.transcript || evalData.wordCount === 0 || evalData.score === 0) {
         const strictFailedResult: AssessmentResult = {
           score: 0,
           isWin: false,
-          transcript: "(Không ghi nhận âm thanh câu trả lời rõ ràng)",
+          transcript: evalData.transcript || "(Không ghi nhận âm thanh câu trả lời rõ ràng)",
           wordCount: evalData.wordCount || 0,
           pronunciation: 0,
           grammar: 0,
@@ -363,16 +375,16 @@ export default function Station4Screen({ onBack }: Props) {
 
         {battleState === 'ended' && result && (
           <View style={styles.box}>
-            {/* TIÊU ĐỀ PHÂN CẤP ĐỘNG CHÍNH XÁC THEO ĐIỂM SỐ */}
             <Text style={[styles.resultTitle, { color: getResultHeader(result.score).color }]}>
               {getResultHeader(result.score).title}
             </Text>
             <Text style={styles.scoreText}>⚡ TỔNG ĐIỂM TRẠM 4: {result.score} / 100 ĐIỂM</Text>
 
-            {result.audioUrl && (
+            {/* 🎯 ĐÃ FIX: Cho phép hiển thị player nghe lại từ URL Blob thực tế */}
+            {(recordedAudioUrl || result.audioUrl) && (
               <View style={styles.nativeAudioContainer}>
                 <Text style={styles.nativeAudioLabel}>🎧 NGHE LẠI BẢN THU PHẢN HỒI CỦA BẠN:</Text>
-                <audio controls src={result.audioUrl} style={{ width: '100%', marginTop: 6 }} />
+                <audio controls src={recordedAudioUrl || result.audioUrl} style={{ width: '100%', marginTop: 6 }} />
               </View>
             )}
 
@@ -384,7 +396,7 @@ export default function Station4Screen({ onBack }: Props) {
 
             <Text style={styles.breakdownHeaderLabel}>📊 PHÂN TÍCH CHI TIẾT 6 TIÊU CHÍ:</Text>
             <View style={styles.breakdownCard}>
-              <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>🗣️ 1. Phát âm:</Text><Text style={styles.breakdownValue}>{result.pronunciation}/100</Text></View>
+              <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>🗣️️ 1. Phát âm:</Text><Text style={styles.breakdownValue}>{result.pronunciation}/100</Text></View>
               <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>📚 2. Ngữ pháp:</Text><Text style={styles.breakdownValue}>{result.grammar}/100</Text></View>
               <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>🔤 3. Từ vựng:</Text><Text style={styles.breakdownValue}>{result.vocabulary}/100</Text></View>
               <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>⚡ 4. Phản xạ:</Text><Text style={styles.breakdownValue}>{result.reflexes}/100</Text></View>
