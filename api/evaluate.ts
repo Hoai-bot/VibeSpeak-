@@ -123,7 +123,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    // 2. Chấm điểm bằng Llama 3.1
+    // 2. Chấm điểm bằng Llama 3
     if (apiKey && userTranscript.length > 0) {
       try {
         const groq = new Groq({ apiKey });
@@ -202,7 +202,7 @@ Return ONLY JSON matching schema:
             { role: 'system', content: systemPrompt },
             { role: 'user', content: `Target Prompt: "${targetPhrase}"\nUser Answer: "${userTranscript}"` }
           ],
-          model: 'llama-3.1-8b-instant',
+          model: 'llama3-8b-8192',
           temperature: 0.2,
           response_format: { type: 'json_object' }
         });
