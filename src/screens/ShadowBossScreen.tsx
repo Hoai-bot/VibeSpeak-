@@ -1,7 +1,12 @@
 // src/screens/ShadowBossScreen.tsx
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
-import { generateShadowBoss, ShadowBossItem } from '../services/drills/station3Service';
+import { 
+  generateShadowBoss, 
+  getInstantShadowBoss, 
+  clearStation3History 
+} from '../services/drills/station3Service';
+import { BossScenarioItem } from '../data/station3/bossScenarios';
 import { updateUserProgress } from '../services/userService';
 import { playBossVoice } from '../services/bossTtsService';
 import { evaluateSpeaking } from '../services/arena/assessmentService';
@@ -11,7 +16,8 @@ interface Props {
 }
 
 export default function ShadowBossScreen({ onBack }: Props) {
-  const [bossData, setBossData] = useState<ShadowBossItem | null>(null);
+  const [cefrLevel, setCefrLevel] = useState<string>('B2');
+  const [bossData, setBossData] = useState<BossScenarioItem | null>(null);
   const [currentHp, setCurrentHp] = useState<number>(100);
   const [loading, setLoading] = useState<boolean>(false);
   const [isPlayingAudio, setIsPlayingAudio] = useState<boolean>(false);
@@ -27,7 +33,17 @@ export default function ShadowBossScreen({ onBack }: Props) {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
 
+  const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
+
+  const stopAllAudio = () => {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+    setIsPlayingAudio(false);
+  };
+
   const resetBossSession = () => {
+    stopAllAudio();
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
       try { mediaRecorderRef.current.stop(); } catch (e) {}
     }
@@ -39,25 +55,46 @@ export default function ShadowBossScreen({ onBack }: Props) {
     audioChunksRef.current = [];
   };
 
-  const loadBoss = async () => {
-    setLoading(true);
+  const loadBoss = async (level: string) => {
     resetBossSession();
-    const data = await generateShadowBoss('B2');
-    setBossData(data);
-    setCurrentHp(data.bossHp || 100);
-    setLoading(false);
+
+    // 1. Nạp ngay Flash Data Local để giao diện có ngay dữ liệu (0ms delay)
+    const instantBoss = getInstantShadowBoss(level);
+    setBossData(instantBoss);
+    setCurrentHp(instantBoss.maxHp || 100);
+
+    // 2. Gọi AI tạo ngầm Boss mới
+    setLoading(true);
+    try {
+      const aiBoss = await generateShadowBoss(level);
+      if (aiBoss && aiBoss.bossChallengeEn) {
+        setBossData(aiBoss);
+        setCurrentHp(aiBoss.maxHp || 100);
+      }
+    } catch (err) {
+      console.warn("Dùng Flash Boss cho Trạm 3:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleLevelChange = (newLevel: string) => {
+    if (newLevel === cefrLevel) return;
+    clearStation3History();
+    setCefrLevel(newLevel);
   };
 
   useEffect(() => {
-    loadBoss();
+    loadBoss(cefrLevel);
     return () => resetBossSession();
-  }, []);
+  }, [cefrLevel]);
 
+  // 📢 SỬA LỖI PHÁT GIỌNG NÓI MẪU AI
   const handlePlaySample = async () => {
-    if (!bossData) return;
+    if (!bossData || !bossData.bossChallengeEn) return;
     setIsPlayingAudio(true);
     try {
-      await playBossVoice(bossData.phrase, 'onyx');
+      await playBossVoice(bossData.bossChallengeEn, 'onyx');
     } catch (error) {
       console.error("Lỗi phát audio Boss:", error);
     } finally {
@@ -70,6 +107,8 @@ export default function ShadowBossScreen({ onBack }: Props) {
   };
 
   const handleToggleRecord = async () => {
+    stopAllAudio();
+
     if (!isRecording) {
       try {
         if (typeof navigator !== 'undefined' && navigator.mediaDevices) {
@@ -96,7 +135,6 @@ export default function ShadowBossScreen({ onBack }: Props) {
             const mimeType = mediaRecorder.mimeType || 'audio/webm';
             const blob = new Blob(audioChunksRef.current, { type: mimeType });
             
-            // 🎯 ĐÃ FIX: Hạ ngưỡng size Blob xuống 800 bytes cho bài Shadowing câu ngắn
             if (blob.size > 800) {
               setAudioBlob(blob);
               setHasRecordedCurrentSession(true);
@@ -124,7 +162,6 @@ export default function ShadowBossScreen({ onBack }: Props) {
     }
   };
 
-  // ⚔️ TẤN CÔNG BOSS DỰA TRÊN ĐIỂM CHẤM THỰC TẾ
   const handleAttackBoss = async () => {
     if (!hasRecordedCurrentSession || !audioBlob || audioBlob.size <= 800) {
       alert("🔒 BẢO VỆ TẤN CÔNG: Bạn chưa thu âm giọng nói Shadowing! Hãy bấm nút Micro để nói đuổi theo câu thoại trước.");
@@ -135,14 +172,13 @@ export default function ShadowBossScreen({ onBack }: Props) {
     setLastFeedback('');
 
     try {
-      // 🎯 ĐÃ FIX: Chỉ truyền DUY NHẤT câu thoại mẫu của Boss
-      const promptTarget = (bossData?.phrase || '').trim();
-      const evalResult = await evaluateSpeaking(audioBlob, 'B2', undefined, promptTarget);
+      const promptTarget = `Shadowing phrase: ${bossData?.bossChallengeEn || ''}`;
+      const evalResult = await evaluateSpeaking(audioBlob, cefrLevel, '3', promptTarget);
 
       if (!evalResult.transcript || evalResult.score === 0) {
         setLastDamage(0);
         setLastFeedback("❌ AI không nghe rõ câu Shadowing. Vui lòng đọc to và rõ ràng hơn!");
-        alert("🛡️️ TẤN CÔNG THẤT BẠI: Bạn chưa đọc rõ câu thoại Shadowing! Vui lòng bấm micro và đọc lại.");
+        alert("🛡 TẤN CÔNG THẤT BẠI: Bạn chưa đọc rõ câu thoại Shadowing! Vui lòng bấm micro và đọc lại.");
       } else {
         const damage = evalResult.score;
 
@@ -181,27 +217,41 @@ export default function ShadowBossScreen({ onBack }: Props) {
       </View>
 
       <ScrollView contentContainerStyle={{ alignItems: 'center', width: '100%', paddingBottom: 30 }}>
-        {loading ? (
-          <ActivityIndicator size="large" color="#FF007F" style={{ marginTop: 40 }} />
-        ) : bossData ? (
+        {/* 🎯 THANH CHỌN LEVEL ĐỒNG BỘ CÁC TRẠM */}
+        <Text style={styles.sectionLabel}>CHỌN LEVEL CẤP ĐỘ:</Text>
+        <View style={styles.cefrRow}>
+          {CEFR_LEVELS.map((lvl) => (
+            <TouchableOpacity 
+              key={lvl} 
+              style={[styles.cefrBadge, cefrLevel === lvl && styles.cefrBadgeActive]} 
+              onPress={() => handleLevelChange(lvl)}
+            >
+              <Text style={[styles.cefrText, cefrLevel === lvl && styles.cefrTextActive]}>{lvl}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {bossData ? (
           <>
             {/* THANH MÁU BOSS */}
             <View style={styles.bossCard}>
-              <Text style={styles.bossName}>{bossData.bossName}</Text>
+              <Text style={styles.bossName}>{bossData.bossAvatar} {bossData.bossName} ({bossData.bossTitle}) [{cefrLevel}]</Text>
               <View style={styles.hpBarBg}>
-                <View style={[styles.hpBarFill, { width: `${currentHp}%` }]} />
+                <View style={[styles.hpBarFill, { width: `${(currentHp / (bossData.maxHp || 100)) * 100}%` }]} />
               </View>
 
               <Text style={styles.hpText}>
-                {currentHp > 0 ? `HP: ${currentHp} / 100` : '☠ BOSS ĐÃ BỊ HẠ GỤC! (+100 XP)'}
+                {currentHp > 0 ? `HP: ${currentHp} / ${bossData.maxHp || 100}` : '☠ BOSS ĐÃ BỊ HẠ GỤC! (+100 XP)'}
               </Text>
             </View>
 
             {/* CÂU HỎI SHADOWING */}
             <View style={styles.phraseCard}>
-              <Text style={styles.phraseText}>"{bossData.phrase}"</Text>
-              <Text style={styles.ipaText}>🔊 IPA: {bossData.phonetics}</Text>
-              <Text style={styles.tipText}>📌 Nhịp điệu: {bossData.rhythmTip}</Text>
+              <Text style={styles.phraseText}>"{bossData.bossChallengeEn}"</Text>
+              {bossData.bossChallengeVi && (
+                <Text style={styles.promptViText}>👉 Dịch: "{bossData.bossChallengeVi}"</Text>
+              )}
+              <Text style={styles.tipText}>📌 Từ khóa ghi điểm: {bossData.keyTargetPhrases?.join(', ')}</Text>
 
               <TouchableOpacity 
                 style={[styles.audioBtn, isPlayingAudio && styles.audioBtnPlaying]} 
@@ -243,7 +293,7 @@ export default function ShadowBossScreen({ onBack }: Props) {
                     disabled={!hasRecordedCurrentSession || isRecording}
                   >
                     <Text style={styles.attackBtnText}>
-                      {hasRecordedCurrentSession ? '⚔️ TẤN CÔNG BOSS AI (CHẤM ĐIỂM GIỌNG)' : '🔒 BẮT BUỘC THU ÂM ĐỂ TẤN CÔNG'}
+                      {hasRecordedCurrentSession ? '⚔️️ TẤN CÔNG BOSS AI (CHẤM ĐIỂM GIỌNG)' : '🔒 BẮT BUỘC THU ÂM ĐỂ TẤN CÔNG'}
                     </Text>
                   </TouchableOpacity>
                 )}
@@ -258,12 +308,14 @@ export default function ShadowBossScreen({ onBack }: Props) {
                 )}
               </View>
             ) : (
-              <TouchableOpacity style={styles.refreshBtn} onPress={loadBoss}>
-                <Text style={styles.refreshText}>🔄 THÁCH ĐẤU BOSS MỚI</Text>
+              <TouchableOpacity style={styles.refreshBtn} onPress={() => loadBoss(cefrLevel)}>
+                <Text style={styles.refreshText}>🔄 THÁCH ĐẤU BOSS MỚI ({cefrLevel})</Text>
               </TouchableOpacity>
             )}
           </>
-        ) : null}
+        ) : (
+          <ActivityIndicator size="large" color="#FF007F" style={{ marginTop: 40 }} />
+        )}
       </ScrollView>
     </View>
   );
@@ -275,6 +327,12 @@ const styles = StyleSheet.create({
   backBtn: { padding: 8, backgroundColor: '#0D0620', borderRadius: 8, borderWidth: 1, borderColor: '#FF007F' },
   backText: { color: '#FF007F', fontSize: 10, fontWeight: 'bold' },
   title: { color: '#FF007F', fontSize: 12, fontWeight: '900' },
+  sectionLabel: { color: '#FFD700', fontSize: 10, fontWeight: 'bold', alignSelf: 'flex-start', marginBottom: 6 },
+  cefrRow: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginBottom: 15 },
+  cefrBadge: { backgroundColor: '#0D0620', paddingVertical: 6, paddingHorizontal: 10, borderRadius: 6, borderWidth: 1, borderColor: '#332255' },
+  cefrBadgeActive: { backgroundColor: '#39FF14', borderColor: '#39FF14' },
+  cefrText: { color: '#8888AA', fontSize: 10, fontWeight: 'bold' },
+  cefrTextActive: { color: '#000' },
   bossCard: { backgroundColor: '#1A0B2E', padding: 16, borderRadius: 16, borderWidth: 2, borderColor: '#FF007F', width: '100%', alignItems: 'center', marginBottom: 15 },
   bossName: { color: '#FFD700', fontSize: 14, fontWeight: '900', marginBottom: 8 },
   hpBarBg: { width: '100%', height: 12, backgroundColor: '#331122', borderRadius: 6, overflow: 'hidden', marginBottom: 6 },
@@ -282,8 +340,8 @@ const styles = StyleSheet.create({
   hpText: { color: '#FFF', fontSize: 11, fontWeight: 'bold' },
   phraseCard: { backgroundColor: '#0D0620', padding: 18, borderRadius: 16, borderWidth: 2, borderColor: '#00FFFF', width: '100%', alignItems: 'center', marginBottom: 15 },
   phraseText: { color: '#FFF', fontSize: 15, fontWeight: '800', textAlign: 'center', lineHeight: 22, marginBottom: 8 },
-  ipaText: { color: '#39FF14', fontSize: 11, fontWeight: 'bold', marginBottom: 6 },
-  tipText: { color: '#AAAABB', fontSize: 10, textAlign: 'center', marginBottom: 12 },
+  promptViText: { color: '#FFD700', fontSize: 11, fontWeight: '600', textAlign: 'center', marginBottom: 8, fontStyle: 'italic' },
+  tipText: { color: '#39FF14', fontSize: 10, textAlign: 'center', marginBottom: 12, fontWeight: 'bold' },
   audioBtn: { backgroundColor: '#1A0B2E', paddingVertical: 10, paddingHorizontal: 16, borderRadius: 8, borderWidth: 1, borderColor: '#00FFFF' },
   audioBtnPlaying: { backgroundColor: '#00FFFF' },
   audioBtnText: { color: '#00FFFF', fontSize: 10, fontWeight: '900' },
