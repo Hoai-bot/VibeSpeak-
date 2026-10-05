@@ -31,11 +31,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const rawPrompt = (req.query.promptEn as string) || '';
   const isStation4 = req.query.targetText === '4' || req.query.station === '4';
+  const isStation3 = rawPrompt.toLowerCase().includes('shadowing') || req.query.station === '3';
 
   const cleanScript = rawPrompt
     .replace(/SOLO TOPIC:/g, '')
     .replace(/Candidate must thoroughly address this prompt\./g, '')
     .replace(/Practice Phrase:/gi, '')
+    .replace(/Shadowing phrase:/gi, '')
     .replace(/Focus area:.*/gi, '')
     .replace(/["']/g, '')
     .trim() || 'General speaking challenge';
@@ -90,7 +92,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           file: audioFile,
           model: 'whisper-large-v3',
           language: 'en',
-          prompt: `User is answering prompt: ${targetPhrase}`,
+          prompt: `User is practicing pronunciation/shadowing: ${targetPhrase}`,
           response_format: 'json',
         });
 
@@ -103,7 +105,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     }
 
-    // 2. Nếu không nghe thấy giọng nói
     if (!userTranscript || userTranscript.length === 0) {
       return res.status(200).json({
         transcript: '(Chưa nhận diện được giọng phát âm rõ ràng)',
@@ -116,29 +117,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         reflexes: 0,
         content: 0,
         fluency: 0,
-        detailedFeedback: '❌ AI không nhận diện được giọng nói. Hãy kiểm tra Micro và cất giọng rõ hơn!',
+        detailedFeedback: '❌ AI không nhận diện được giọng nói. Hãy kiểm tra Micro và đọc to rõ ràng hơn!',
         wordAnalysis: [],
       });
     }
 
-    // 3. Tiến hành chấm Llama 3.1
+    // 2. Tiến hành chấm bằng Llama 3.1
     if (apiKey && userTranscript.length > 0) {
       try {
         const groq = new Groq({ apiKey });
 
-        // 🎯 SYSTEM PROMPT CHUYÊN BỊỆT CHO TRẠM 4 (SPEAKING EXPRESS)
-        const systemPrompt = isStation4
-          ? `You are an AI Referee for VibeSpeak Station 4 (Speaking Express - Open Response).
-Target Level: ${req.query.cefrLevel || 'B2'}.
-User is responding to a real-life situation/prompt.
-
-CRITICAL SCORING RULES FOR STATION 4:
-- Do NOT match words with the prompt. The user is SUPPOSED to give an original answer.
-- Evaluate based on:
-  1. Content relevance: Does the answer make sense for the situation?
-  2. Grammar & Vocabulary: Sentence correctness and word choice.
-  3. Fluency & Reflexes: Natural flow and expression.
-- A clear, natural English response like "Hello, I am feeling good, what about you?" MUST score 75-90+ points! Never give 30 points for a clear sentence.
+        // Build System Prompt theo từng trạm
+        let systemPrompt = '';
+        if (isStation3) {
+          systemPrompt = `You are an AI Shadowing Referee for VibeSpeak Station 3 (Shadow Boss Raid).
+Evaluate user's shadowing accuracy against the target Boss phrase: "${targetPhrase}".
+Instructions:
+- Check how well user matched the words, rhythm, and pronunciation of the target phrase.
+- Feedback MUST be in Vietnamese, brief, and focus strictly on shadowing accuracy and pronunciation (e.g. "Phát âm nhịp điệu rất chuẩn câu thoại Boss!"). NEVER tell user to add more sentences.
 
 Return ONLY JSON matching schema:
 {
@@ -151,10 +147,30 @@ Return ONLY JSON matching schema:
   "content": number (0-100),
   "fluency": number (0-100),
   "wordCount": number,
-  "detailedFeedback": "string in Vietnamese (khen ngợi phản xạ và gợi ý mở rộng thêm ý)",
+  "detailedFeedback": "string in Vietnamese",
   "wordAnalysis": [{ "word": "string", "status": "correct" | "warning" | "error" }]
-}`
-          : `You are an AI English Pronunciation Referee for VibeSpeak Arena.
+}`;
+        } else if (isStation4) {
+          systemPrompt = `You are an AI Referee for VibeSpeak Station 4 (Speaking Express - Open Response).
+Target Level: ${req.query.cefrLevel || 'B2'}.
+User is responding to a real-life situation/prompt: "${targetPhrase}".
+
+Return ONLY JSON matching schema:
+{
+  "score": number (0-100),
+  "isWin": boolean,
+  "pronunciation": number (0-100),
+  "grammar": number (0-100),
+  "vocabulary": number (0-100),
+  "reflexes": number (0-100),
+  "content": number (0-100),
+  "fluency": number (0-100),
+  "wordCount": number,
+  "detailedFeedback": "string in Vietnamese",
+  "wordAnalysis": [{ "word": "string", "status": "correct" | "warning" | "error" }]
+}`;
+        } else {
+          systemPrompt = `You are an AI English Pronunciation Referee for VibeSpeak Arena.
 Target Level: ${req.query.cefrLevel || 'B2'}.
 Evaluate user spoken text against target phrase.
 
@@ -169,14 +185,15 @@ Return ONLY JSON matching schema:
   "content": number (0-100),
   "fluency": number (0-100),
   "wordCount": number,
-  "detailedFeedback": "string",
+  "detailedFeedback": "string in Vietnamese",
   "wordAnalysis": [{ "word": "string", "status": "correct" | "warning" | "error" }]
 }`;
+        }
 
         const completion = await groq.chat.completions.create({
           messages: [
             { role: 'system', content: systemPrompt },
-            { role: 'user', content: `Prompt/Situation: "${targetPhrase}"\nUser Spoke: "${userTranscript}"` }
+            { role: 'user', content: `Target: "${targetPhrase}"\nUser Spoke: "${userTranscript}"` }
           ],
           model: 'llama-3.1-8b-instant',
           temperature: 0.2,
@@ -189,15 +206,26 @@ Return ONLY JSON matching schema:
       }
     }
 
-    // 4. DYNAMIC FALLBACK ENGINE DÀNH CHO TRẠM 4
+    // 3. DYNAMIC FALLBACK ENGINE DÀNH CHO CẢ TRẠM 3 VÀ TRẠM 4
     if (!evalResult || typeof evalResult.score !== 'number' || evalResult.score === 0) {
       const words = userTranscript.split(/\s+/).filter(Boolean);
       const wordCount = words.length;
 
-      let baseScore = 70;
-      if (wordCount >= 12) baseScore = 88;
-      else if (wordCount >= 7) baseScore = 80;
-      else if (wordCount >= 4) baseScore = 75;
+      const targetWords = targetPhrase.toLowerCase().split(/\s+/);
+      const userWords = userTranscript.toLowerCase().split(/\s+/);
+
+      const matchedCount = userWords.filter((w) => targetWords.includes(w)).length;
+      const coverageRatio = Math.min(1, matchedCount / Math.max(1, targetWords.length));
+
+      let baseScore = Math.round(coverageRatio * 85 + 15);
+
+      // Nhận xét chuẩn từng trạm trong Fallback Engine
+      let feedbackText = `Bạn đã phát âm: "${userTranscript}". Phát âm rõ ràng, nhịp điệu khá mượt!`;
+      if (isStation3) {
+        feedbackText = `Khớp ${matchedCount}/${targetWords.length} từ câu thoại Boss! Phát âm chuẩn xác, gây -${baseScore} HP tổn hại!`;
+      } else if (isStation4) {
+        feedbackText = `Phản xạ rất tốt (${wordCount} từ)! Câu nói của bạn rõ ràng. Hãy tiếp tục duy trì phong độ nhé.`;
+      }
 
       evalResult = {
         score: baseScore,
@@ -206,25 +234,28 @@ Return ONLY JSON matching schema:
         pronunciation: baseScore,
         grammar: baseScore,
         vocabulary: baseScore,
-        reflexes: Math.min(95, baseScore + 5),
+        reflexes: baseScore,
         content: baseScore,
         fluency: baseScore,
-        detailedFeedback: `Phản xạ rất tốt (${wordCount} từ)! Câu nói của bạn rõ ràng. Hãy thử mở rộng thêm 1-2 câu để đạt điểm cao hơn nhé.`,
-        wordAnalysis: words.map((w) => ({ word: w, status: 'correct' })),
+        detailedFeedback: feedbackText,
+        wordAnalysis: words.map((w) => ({
+          word: w,
+          status: targetWords.includes(w.toLowerCase()) ? 'correct' : 'warning',
+        })),
       };
     }
 
     return res.status(200).json({
       transcript: userTranscript,
-      score: evalResult.score ?? 78,
+      score: evalResult.score ?? 80,
       isWin: evalResult.isWin ?? true,
       wordCount: evalResult.wordCount ?? userTranscript.split(' ').length,
-      pronunciation: evalResult.pronunciation ?? evalResult.score ?? 78,
-      grammar: evalResult.grammar ?? evalResult.score ?? 78,
-      vocabulary: evalResult.vocabulary ?? evalResult.score ?? 78,
-      reflexes: evalResult.reflexes ?? evalResult.score ?? 78,
-      content: evalResult.content ?? evalResult.score ?? 78,
-      fluency: evalResult.fluency ?? evalResult.score ?? 78,
+      pronunciation: evalResult.pronunciation ?? evalResult.score ?? 80,
+      grammar: evalResult.grammar ?? evalResult.score ?? 80,
+      vocabulary: evalResult.vocabulary ?? evalResult.score ?? 80,
+      reflexes: evalResult.reflexes ?? evalResult.score ?? 80,
+      content: evalResult.content ?? evalResult.score ?? 80,
+      fluency: evalResult.fluency ?? evalResult.score ?? 80,
       detailedFeedback: evalResult.detailedFeedback || 'Đánh giá hoàn tất.',
       wordAnalysis: evalResult.wordAnalysis || [],
     });
