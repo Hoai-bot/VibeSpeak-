@@ -10,6 +10,7 @@ import { BossScenarioItem } from '../data/station3/bossScenarios';
 import { updateUserProgress } from '../services/userService';
 import { playBossVoice } from '../services/bossTtsService';
 import { evaluateSpeaking } from '../services/arena/assessmentService';
+import LeaderboardScreen from './LeaderboardScreen';
 
 interface Props {
   onBack: () => void;
@@ -21,6 +22,7 @@ export default function ShadowBossScreen({ onBack }: Props) {
   const [currentHp, setCurrentHp] = useState<number>(100);
   const [loading, setLoading] = useState<boolean>(false);
   const [isPlayingAudio, setIsPlayingAudio] = useState<boolean>(false);
+  const [showLeaderboard, setShowLeaderboard] = useState<boolean>(false);
 
   // QUẢN LÝ MICRO & CỜ BẢO VỆ GHI ÂM TẠI TRẬN HIỆN TẠI
   const [isRecording, setIsRecording] = useState<boolean>(false);
@@ -89,7 +91,7 @@ export default function ShadowBossScreen({ onBack }: Props) {
     return () => resetBossSession();
   }, [cefrLevel]);
 
-  // 📢 SỬA LỖI PHÁT GIỌNG NÓI MẪU AI
+  // 📢 PHÁT GIỌNG NÓI MẪU AI
   const handlePlaySample = async () => {
     if (!bossData || !bossData.bossChallengeEn) return;
     setIsPlayingAudio(true);
@@ -207,13 +209,29 @@ export default function ShadowBossScreen({ onBack }: Props) {
     }
   };
 
+  // 🏆 ĐIỀU KIỆN RENDER MÀN HÌNH BẢNG XẾP HẠNG
+  if (showLeaderboard) {
+    const userDamage = bossData ? ((bossData.maxHp || 100) - currentHp) * 50 : 3500;
+    return (
+      <LeaderboardScreen 
+        onBack={() => setShowLeaderboard(false)} 
+        userXp={userDamage > 0 ? userDamage : 3500} 
+      />
+    );
+  }
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack} style={styles.backBtn}>
           <Text style={styles.backText}>🔙 MAP</Text>
         </TouchableOpacity>
+        
         <Text style={styles.title}>👹 TRẠM 3: SHADOW BOSS RAID</Text>
+
+        <TouchableOpacity onPress={() => setShowLeaderboard(true)} style={styles.leaderboardHeaderBtn}>
+          <Text style={styles.leaderboardHeaderText}>🏆 TOP</Text>
+        </TouchableOpacity>
       </View>
 
       <ScrollView contentContainerStyle={{ alignItems: 'center', width: '100%', paddingBottom: 30 }}>
@@ -293,7 +311,7 @@ export default function ShadowBossScreen({ onBack }: Props) {
                     disabled={!hasRecordedCurrentSession || isRecording}
                   >
                     <Text style={styles.attackBtnText}>
-                      {hasRecordedCurrentSession ? '⚔️️ TẤN CÔNG BOSS AI (CHẤM ĐIỂM GIỌNG)' : '🔒 BẮT BUỘC THU ÂM ĐỂ TẤN CÔNG'}
+                      {hasRecordedCurrentSession ? '⚔ TẤN CÔNG BOSS AI (CHẤM ĐIỂM GIỌNG)' : '🔒 BẮT BUỘC THU ÂM ĐỂ TẤN CÔNG'}
                     </Text>
                   </TouchableOpacity>
                 )}
@@ -327,6 +345,8 @@ const styles = StyleSheet.create({
   backBtn: { padding: 8, backgroundColor: '#0D0620', borderRadius: 8, borderWidth: 1, borderColor: '#FF007F' },
   backText: { color: '#FF007F', fontSize: 10, fontWeight: 'bold' },
   title: { color: '#FF007F', fontSize: 12, fontWeight: '900' },
+  leaderboardHeaderBtn: { paddingVertical: 6, paddingHorizontal: 10, backgroundColor: '#1A0B2E', borderRadius: 8, borderWidth: 1, borderColor: '#FFD700' },
+  leaderboardHeaderText: { color: '#FFD700', fontSize: 10, fontWeight: '900' },
   sectionLabel: { color: '#FFD700', fontSize: 10, fontWeight: 'bold', alignSelf: 'flex-start', marginBottom: 6 },
   cefrRow: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginBottom: 15 },
   cefrBadge: { backgroundColor: '#0D0620', paddingVertical: 6, paddingHorizontal: 10, borderRadius: 6, borderWidth: 1, borderColor: '#332255' },
