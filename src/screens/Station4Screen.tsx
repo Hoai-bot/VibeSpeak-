@@ -9,6 +9,7 @@ import {
   SpeakingExpressExercise 
 } from '../services/arena/station4Service';
 import { updateUserProgress } from '../services/userService';
+import { saveWeakPoint } from '../services/weakPointsService';
 
 interface Props {
   onBack: () => void;
@@ -114,7 +115,6 @@ export default function Station4Screen({ onBack }: Props) {
     resetState();
 
     try {
-      // 1. Nạp tức thì Flash Data Local (Safe check)
       const instantData = getInstantStation4Exercise(level);
       if (instantData) {
         setExercise(instantData);
@@ -123,7 +123,6 @@ export default function Station4Screen({ onBack }: Props) {
       console.warn("Lỗi nạp Flash Data Trạm 4:", err);
     }
 
-    // 2. Tạo ngầm từ AI
     setLoading(true);
     try {
       const aiData = await generateStation4Exercise(level);
@@ -245,10 +244,14 @@ export default function Station4Screen({ onBack }: Props) {
           detailedFeedback: "❌ AI chỉ nhận diện được tiếng ồn nền hoặc ngắc ứ. Vui lòng cất giọng trả lời đầy đủ câu hỏi!",
         };
         setResult(strictFailedResult);
+        saveWeakPoint('station4', targetPrompt, 0);
         alert("🛡️ NỘP BÀI THẤT BẠI: Bạn chưa trả lời câu hỏi! Vui lòng bấm micro để cất giọng.");
       } else {
         setResult(evalData);
         updateUserProgress(4, evalData.isWin ? 50 : 10, evalData.isWin);
+        if (evalData.score < 60) {
+          saveWeakPoint('station4', targetPrompt, evalData.score);
+        }
       }
     } catch (err) {
       console.error("Lỗi chấm điểm Trạm 4:", err);
@@ -367,9 +370,26 @@ export default function Station4Screen({ onBack }: Props) {
               </View>
             )}
 
+            {/* 🎯 HIỂN THỊ BẢN THU KÈM TÔ MÀU PHÁT ÂM CHI TIẾT TỪNG TỪ */}
             <View style={styles.scriptBox}>
-              <Text style={styles.scriptLabel}>📝 BẢN DỊCH CHỮ PHẢN HỒI THỰC TẾ (SCRIPT):</Text>
-              <Text style={styles.scriptContent}>"{result.transcript}"</Text>
+              <Text style={styles.scriptLabel}>📝 CHI TIẾT PHÁT ÂM TỪNG TỪ (WORD-BY-WORD):</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 6 }}>
+                {result.wordAnalysis && result.wordAnalysis.length > 0 ? (
+                  result.wordAnalysis.map((item, idx) => {
+                    let color = '#39FF14'; // Xanh lá: Đúng chuẩn
+                    if (item.status === 'warning') color = '#FFD700'; // Vàng: Cần cải thiện
+                    if (item.status === 'error') color = '#FF0055'; // Đỏ: Phát âm sai
+
+                    return (
+                      <Text key={idx} style={{ color, fontSize: 13, fontWeight: 'bold', marginRight: 6, marginBottom: 4 }}>
+                        {item.word}
+                      </Text>
+                    );
+                  })
+                ) : (
+                  <Text style={styles.scriptContent}>"{result.transcript}"</Text>
+                )}
+              </View>
               <Text style={styles.wordCountText}>📊 Số từ phát âm thực tế: {result.wordCount} từ</Text>
             </View>
 
@@ -432,7 +452,7 @@ const styles = StyleSheet.create({
   scriptBox: { backgroundColor: '#1A0B2E', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#332255', width: '100%', marginBottom: 12 },
   scriptLabel: { color: '#FFD700', fontSize: 10, fontWeight: 'bold', marginBottom: 4 },
   scriptContent: { color: '#FFF', fontSize: 11, fontStyle: 'italic', marginBottom: 6 },
-  wordCountText: { color: '#39FF14', fontSize: 9, fontWeight: 'bold' },
+  wordCountText: { color: '#39FF14', fontSize: 9, fontWeight: 'bold', marginTop: 6 },
   breakdownHeaderLabel: { color: '#FFD700', fontSize: 10, fontWeight: 'bold', alignSelf: 'flex-start', marginBottom: 6 },
   breakdownCard: { backgroundColor: '#120826', padding: 12, borderRadius: 10, width: '100%', marginBottom: 12, borderWidth: 1, borderColor: '#FF007F' },
   breakdownRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4, borderBottomWidth: 1, borderBottomColor: '#221133' },
