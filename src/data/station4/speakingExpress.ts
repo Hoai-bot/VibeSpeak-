@@ -12,188 +12,105 @@ export interface ExpressExerciseItem {
 }
 
 export const SPEAKING_EXPRESS_DATA: ExpressExerciseItem[] = [
-  // ==================== LEVEL A1 ====================
-  {
-    id: 'exp_a1_1',
-    level: 'A1',
-    title: "Quick Response [A1]",
-    expressType: 'quick_response',
-    promptEn: "Someone says: 'Good morning! How are you feeling today?' Respond immediately!",
-    promptVi: "Ai đó nói: 'Chào buổi sáng! Hôm nay bạn thế nào?' Hãy đáp lại ngay!",
-    timeLimitSeconds: 15,
-    suggestedKeywords: ["Good morning", "I am feeling", "great", "thank you"]
-  },
-  {
-    id: 'exp_a1_2',
-    level: 'A1',
-    title: "Situation Flash [A1]",
-    expressType: 'situation_flash',
-    promptEn: "You are at a coffee shop. Order an iced coffee in under 10 seconds!",
-    promptVi: "Bạn đang ở quán cafe. Hãy gọi 1 ly cà phê đá trong dưới 10 giây!",
-    timeLimitSeconds: 12,
-    suggestedKeywords: ["I would like", "iced coffee", "please", "how much"]
-  },
-  {
-    id: 'exp_a1_3',
-    level: 'A1',
-    title: "Speed Reading [A1]",
-    expressType: 'speed_reading',
-    promptEn: "Read aloud fast: 'The sun is shining, the birds are singing, and today is a beautiful day!'",
-    promptVi: "Đọc to nhanh: 'Mặt trời đang tỏa nắng, chim đang hót, và hôm nay là một ngày tuyệt vời!'",
-    timeLimitSeconds: 10,
-    suggestedKeywords: ["sun", "shining", "beautiful day"]
-  },
-  {
-    id: 'exp_a1_4',
-    level: 'A1',
-    title: "Quick Response [A1]",
-    expressType: 'quick_response',
-    promptEn: "A friend asks: 'What is your favorite color and why?' Answer fast!",
-    promptVi: "Một người bạn hỏi: 'Màu yêu thích của bạn là gì và tại sao?' Trả lời nhanh!",
-    timeLimitSeconds: 12,
-    suggestedKeywords: ["My favorite color is", "because it is", "bright", "nice"]
-  },
+  // ==================== LEVEL A1 (15 EXERCISES) ====================
+  { id: 'exp_a1_01', level: 'A1', title: "Quick Response [A1]", expressType: 'quick_response', promptEn: "Someone says: 'Good morning! How are you feeling today?' Respond immediately!", promptVi: "Ai đó nói: 'Chào buổi sáng! Hôm nay bạn thế nào?' Hãy đáp lại ngay!", timeLimitSeconds: 15, suggestedKeywords: ["Good morning", "I am feeling", "great", "thank you"] },
+  { id: 'exp_a1_02', level: 'A1', title: "Situation Flash [A1]", expressType: 'situation_flash', promptEn: "You are at a coffee shop. Order an iced coffee in under 10 seconds!", promptVi: "Bạn đang ở quán cafe. Hãy gọi 1 ly cà phê đá trong dưới 10 giây!", timeLimitSeconds: 12, suggestedKeywords: ["I would like", "iced coffee", "please", "how much"] },
+  { id: 'exp_a1_03', level: 'A1', title: "Speed Reading [A1]", expressType: 'speed_reading', promptEn: "Read aloud fast: 'The sun is shining, the birds are singing, and today is a beautiful day!'", promptVi: "Đọc to nhanh: 'Mặt trời đang tỏa nắng, chim đang hót, và hôm nay là một ngày tuyệt vời!'", timeLimitSeconds: 10, suggestedKeywords: ["sun", "shining", "beautiful day"] },
+  { id: 'exp_a1_04', level: 'A1', title: "Quick Response [A1]", expressType: 'quick_response', promptEn: "A friend asks: 'What is your favorite color and why?' Answer fast!", promptVi: "Một người bạn hỏi: 'Màu yêu thích của bạn là gì và tại sao?' Trả lời nhanh!", timeLimitSeconds: 12, suggestedKeywords: ["My favorite color is", "because it is", "bright"] },
+  { id: 'exp_a1_05', level: 'A1', title: "Situation Flash [A1]", expressType: 'situation_flash', promptEn: "You meet a new classmate. Introduce your name and age in 10 seconds!", promptVi: "Bạn gặp bạn mới. Giới thiệu tên và tuổi trong 10 giây!", timeLimitSeconds: 10, suggestedKeywords: ["Hello", "My name is", "I am", "years old"] },
+  { id: 'exp_a1_06', level: 'A1', title: "Quick Response [A1]", expressType: 'quick_response', promptEn: "Someone asks: 'What time is it right now?' Answer in English!", promptVi: "Ai đó hỏi: 'Mấy giờ rồi?' Trả lời bằng tiếng Anh!", timeLimitSeconds: 10, suggestedKeywords: ["It is", "o'clock", "now"] },
+  { id: 'exp_a1_07', level: 'A1', title: "Speed Reading [A1]", expressType: 'speed_reading', promptEn: "Read fast: 'I like to eat apples, bananas, and oranges for breakfast.'", promptVi: "Đọc nhanh: 'Tôi thích ăn táo, chuối và cam cho bữa sáng.'", timeLimitSeconds: 10, suggestedKeywords: ["eat", "apples", "breakfast"] },
+  { id: 'exp_a1_08', level: 'A1', title: "Situation Flash [A1]", expressType: 'situation_flash', promptEn: "Ask a shop assistant how much a t-shirt costs!", promptVi: "Hỏi nhân viên bán hàng xem chiếc áo phông giá bao nhiêu!", timeLimitSeconds: 10, suggestedKeywords: ["Excuse me", "how much is", "this t-shirt"] },
+  { id: 'exp_a1_09', level: 'A1', title: "Quick Response [A1]", expressType: 'quick_response', promptEn: "A friend asks: 'Do you have any pets?' Answer immediately!", promptVi: "Bạn bè hỏi: 'Bạn có nuôi thú cưng không?' Trả lời ngay!", timeLimitSeconds: 10, suggestedKeywords: ["Yes I have", "a dog", "a cat", "cute"] },
+  { id: 'exp_a1_10', level: 'A1', title: "Speed Reading [A1]", expressType: 'speed_reading', promptEn: "Read aloud: 'My family lives in a small house near a green park.'", promptVi: "Đọc to: 'Gia đình tôi sống trong ngôi nhà nhỏ gần công viên xanh.'", timeLimitSeconds: 10, suggestedKeywords: ["family", "small house", "park"] },
+  { id: 'exp_a1_11', level: 'A1', title: "Situation Flash [A1]", expressType: 'situation_flash', promptEn: "Say goodbye to your teacher at the end of the lesson!", promptVi: "Chào tạm biệt thầy cô giáo vào cuối buổi học!", timeLimitSeconds: 10, suggestedKeywords: ["Goodbye teacher", "see you next time", "thank you"] },
+  { id: 'exp_a1_12', level: 'A1', title: "Quick Response [A1]", expressType: 'quick_response', promptEn: "Someone asks: 'What day is it today?' Answer fast!", promptVi: "Ai đó hỏi: 'Hôm nay là thứ mấy?' Trả lời nhanh!", timeLimitSeconds: 10, suggestedKeywords: ["Today is", "Monday", "Friday"] },
+  { id: 'exp_a1_13', level: 'A1', title: "Speed Reading [A1]", expressType: 'speed_reading', promptEn: "Read fast: 'She wears a red jacket and blue jeans every weekend.'", promptVi: "Đọc nhanh: 'Cô ấy mặc áo khoác đỏ và quần jean xanh mỗi cuối tuần.'", timeLimitSeconds: 10, suggestedKeywords: ["red jacket", "blue jeans", "weekend"] },
+  { id: 'exp_a1_14', level: 'A1', title: "Situation Flash [A1]", expressType: 'situation_flash', promptEn: "Tell your friend you are hungry and want to eat pizza!", promptVi: "Nói với bạn của bạn rằng bạn đói và muốn ăn pizza!", timeLimitSeconds: 10, suggestedKeywords: ["I am hungry", "let's eat", "pizza"] },
+  { id: 'exp_a1_15', level: 'A1', title: "Quick Response [A1]", expressType: 'quick_response', promptEn: "Someone says: 'Thank you very much for your help!' Reply politely!", promptVi: "Ai đó nói: 'Cảm ơn bạn rất nhiều vì đã giúp đỡ!' Đáp lại lịch sự!", timeLimitSeconds: 10, suggestedKeywords: ["You are welcome", "no problem", "my pleasure"] },
 
-  // ==================== LEVEL A2 ====================
-  {
-    id: 'exp_a2_1',
-    level: 'A2',
-    title: "Quick Response [A2]",
-    expressType: 'quick_response',
-    promptEn: "A tourist asks: 'Excuse me, where is the nearest supermarket?' Guide them quickly!",
-    promptVi: "Khách du lịch hỏi đường đến siêu thị gần nhất. Hãy chỉ đường nhanh!",
-    timeLimitSeconds: 15,
-    suggestedKeywords: ["Go straight", "turn left", "next to", "on your right"]
-  },
-  {
-    id: 'exp_a2_2',
-    level: 'A2',
-    title: "Speed Reading [A2]",
-    expressType: 'speed_reading',
-    promptEn: "Read aloud: 'I love traveling to new cities because I can try different foods and meet friendly locals.'",
-    promptVi: "Đọc to: 'Tôi thích đi du lịch đến các thành phố mới vì có thể thử đồ ăn và gặp gỡ người dân địa phương.'",
-    timeLimitSeconds: 12,
-    suggestedKeywords: ["traveling", "different foods", "friendly locals"]
-  },
-  {
-    id: 'exp_a2_3',
-    level: 'A2',
-    title: "Situation Flash [A2]",
-    expressType: 'situation_flash',
-    promptEn: "You missed the last bus home. Ask a passerby politely for directions to the train station!",
-    promptVi: "Bạn bị lỡ chuyến xe bus cuối cùng. Hãy hỏi người qua đường cách đi đến ga tàu!",
-    timeLimitSeconds: 15,
-    suggestedKeywords: ["Excuse me", "missed the bus", "train station", "how to get to"]
-  },
-  {
-    id: 'exp_a2_4',
-    level: 'A2',
-    title: "Quick Response [A2]",
-    expressType: 'quick_response',
-    promptEn: "Your colleague asks: 'What did you do last weekend?' Give a short 2-sentence summary!",
-    promptVi: "Đồng nghiệp hỏi: 'Bạn đã làm gì cuối tuần trước?' Hãy tóm tắt ngắn gọn trong 2 câu!",
-    timeLimitSeconds: 15,
-    suggestedKeywords: ["I visited", "I stayed at home", "relaxed", "went out with"]
-  },
+  // ==================== LEVEL A2 (15 EXERCISES) ====================
+  { id: 'exp_a2_01', level: 'A2', title: "Quick Response [A2]", expressType: 'quick_response', promptEn: "A tourist asks: 'Excuse me, where is the nearest supermarket?' Guide them quickly!", promptVi: "Khách du lịch hỏi đường đến siêu thị gần nhất. Hãy chỉ đường nhanh!", timeLimitSeconds: 15, suggestedKeywords: ["Go straight", "turn left", "next to"] },
+  { id: 'exp_a2_02', level: 'A2', title: "Speed Reading [A2]", expressType: 'speed_reading', promptEn: "Read aloud: 'I love traveling to new cities because I can try different foods and meet friendly locals.'", promptVi: "Đọc to: 'Tôi thích đi du lịch đến các thành phố mới vì có thể thử đồ ăn và gặp gỡ người dân địa phương.'", timeLimitSeconds: 12, suggestedKeywords: ["traveling", "different foods", "friendly locals"] },
+  { id: 'exp_a2_03', level: 'A2', title: "Situation Flash [A2]", expressType: 'situation_flash', promptEn: "You missed the last bus home. Ask a passerby politely for directions to the train station!", promptVi: "Bạn bị lỡ chuyến xe bus cuối cùng. Hãy hỏi người qua đường cách đi đến ga tàu!", timeLimitSeconds: 15, suggestedKeywords: ["Excuse me", "missed the bus", "train station"] },
+  { id: 'exp_a2_04', level: 'A2', title: "Quick Response [A2]", expressType: 'quick_response', promptEn: "Your colleague asks: 'What did you do last weekend?' Give a short 2-sentence summary!", promptVi: "Đồng nghiệp hỏi: 'Bạn đã làm gì cuối tuần trước?' Hãy tóm tắt ngắn gọn trong 2 câu!", timeLimitSeconds: 15, suggestedKeywords: ["I visited", "stayed at home", "went out with"] },
+  { id: 'exp_a2_05', level: 'A2', title: "Situation Flash [A2]", expressType: 'situation_flash', promptEn: "Call a restaurant to reserve a table for 4 people at 7 PM tonight!", promptVi: "Gọi điện cho nhà hàng đặt bàn cho 4 người lúc 7 giờ tối nay!", timeLimitSeconds: 15, suggestedKeywords: ["I would like to book", "table for four", "at seven PM"] },
+  { id: 'exp_a2_06', level: 'A2', title: "Quick Response [A2]", expressType: 'quick_response', promptEn: "A friend asks: 'Why do you like playing video games?' Give two quick reasons!", promptVi: "Bạn hỏi: 'Tại sao bạn thích chơi game?' Đưa ra 2 lý do nhanh!", timeLimitSeconds: 15, suggestedKeywords: ["It is fun", "helps me relax", "play with friends"] },
+  { id: 'exp_a2_07', level: 'A2', title: "Speed Reading [A2]", expressType: 'speed_reading', promptEn: "Read fast: 'Regular exercise and a balanced diet help people maintain good health and high energy levels.'", promptVi: "Đọc nhanh: 'Tập thể dục đều đặn và chế độ ăn cân bằng giúp con người duy trì sức khỏe tốt.'", timeLimitSeconds: 12, suggestedKeywords: ["exercise", "balanced diet", "high energy"] },
+  { id: 'exp_a2_08', level: 'A2', title: "Situation Flash [A2]", expressType: 'situation_flash', promptEn: "You bought a broken toy. Ask the store clerk for an exchange or refund!", promptVi: "Bạn mua phải đồ chơi bị hỏng. Yêu cầu nhân viên đổi món khác hoặc hoàn tiền!", timeLimitSeconds: 15, suggestedKeywords: ["This item is broken", "I want an exchange", "refund please"] },
+  { id: 'exp_a2_09', level: 'A2', title: "Quick Response [A2]", expressType: 'quick_response', promptEn: "Someone asks: 'What is the weather like in your hometown during winter?' Answer fast!", promptVi: "Ai đó hỏi: 'Thời tiết quê bạn vào mùa đông thế nào?' Trả lời nhanh!", timeLimitSeconds: 15, suggestedKeywords: ["It is cold", "windy", "wear warm clothes"] },
+  { id: 'exp_a2_10', level: 'A2', title: "Speed Reading [A2]", expressType: 'speed_reading', promptEn: "Read aloud: 'Online learning allows students to access lessons anytime and study at their own pace.'", promptVi: "Đọc to: 'Học trực tuyến cho phép học sinh truy cập bài học bất cứ lúc nào và tự chủ tốc độ học.'", timeLimitSeconds: 12, suggestedKeywords: ["online learning", "access lessons", "own pace"] },
+  { id: 'exp_a2_11', level: 'A2', title: "Situation Flash [A2]", expressType: 'situation_flash', promptEn: "You are late for a meeting with a friend. Apologize and explain why in 15s!", promptVi: "Bạn bị trễ cuộc hẹn với bạn. Xin lỗi và giải thích lý do trong 15s!", timeLimitSeconds: 15, suggestedKeywords: ["I am so sorry", "heavy traffic", "on my way"] },
+  { id: 'exp_a2_12', level: 'A2', title: "Quick Response [A2]", expressType: 'quick_response', promptEn: "A stranger asks: 'Which sports do you enjoy watching on TV?' Answer immediately!", promptVi: "Người lạ hỏi: 'Bạn thích xem môn thể thao nào trên TV?' Trả lời ngay!", timeLimitSeconds: 15, suggestedKeywords: ["I enjoy watching", "football", "tennis", "exciting"] },
+  { id: 'exp_a2_13', level: 'A2', title: "Speed Reading [A2]", expressType: 'speed_reading', promptEn: "Read fast: 'Cooking at home is healthier and cheaper than eating out at expensive restaurants.'", promptVi: "Đọc nhanh: 'Nấu ăn ở nhà lành mạnh và rẻ hơn ăn ở nhà hàng đắt đỏ.'", timeLimitSeconds: 12, suggestedKeywords: ["cooking at home", "healthier", "cheaper"] },
+  { id: 'exp_a2_14', level: 'A2', title: "Situation Flash [A2]", expressType: 'situation_flash', promptEn: "Invite your coworker to join you for dinner after work today!", promptVi: "Mời đồng nghiệp đi ăn tối cùng bạn sau giờ làm hôm nay!", timeLimitSeconds: 15, suggestedKeywords: ["Would you like to", "have dinner", "after work"] },
+  { id: 'exp_a2_15', level: 'A2', title: "Quick Response [A2]", expressType: 'quick_response', promptEn: "A friend asks: 'What kind of movies do you dislike most?' Answer in 2 sentences!", promptVi: "Bạn hỏi: 'Thể loại phim nào bạn không thích nhất?' Trả lời trong 2 câu!", timeLimitSeconds: 15, suggestedKeywords: ["I dislike", "horror movies", "too scary"] },
 
-  // ==================== LEVEL B1 ====================
-  {
-    id: 'exp_b1_1',
-    level: 'B1',
-    title: "Situation Flash [B1]",
-    expressType: 'situation_flash',
-    promptEn: "Your flight is delayed by 3 hours. Express your complaint politely to the airline staff!",
-    promptVi: "Chuyến bay bị trễ 3 tiếng. Hãy phàn nàn lịch sự với nhân viên hãng bay!",
-    timeLimitSeconds: 15,
-    suggestedKeywords: ["I would like to complain", "delay", "compensation", "meal voucher"]
-  },
-  {
-    id: 'exp_b1_2',
-    level: 'B1',
-    title: "Quick Response [B1]",
-    expressType: 'quick_response',
-    promptEn: "Explain to your friend why learning English online is more flexible than traditional classes!",
-    promptVi: "Giải thích cho bạn của bạn lý do học tiếng Anh online linh hoạt hơn lớp học truyền thống!",
-    timeLimitSeconds: 15,
-    suggestedKeywords: ["flexible schedule", "learn anywhere", "save commuting time", "convenient"]
-  },
-  {
-    id: 'exp_b1_3',
-    level: 'B1',
-    title: "Speed Impromptu [B1]",
-    expressType: 'quick_response',
-    promptEn: "Give 2 strong reasons why people should exercise at least three times a week!",
-    promptVi: "Đưa ra 2 lý do thuyết phục vì sao mọi người nên tập thể dục ít nhất 3 lần mỗi tuần!",
-    timeLimitSeconds: 15,
-    suggestedKeywords: ["boost immune system", "reduce stress", "stay energetic", "health benefits"]
-  },
+  // ==================== LEVEL B1 (15 EXERCISES) ====================
+  { id: 'exp_b1_01', level: 'B1', title: "Situation Flash [B1]", expressType: 'situation_flash', promptEn: "Your flight is delayed by 3 hours. Express your complaint politely to the airline staff!", promptVi: "Chuyến bay bị trễ 3 tiếng. Hãy phàn nàn lịch sự với nhân viên hãng bay!", timeLimitSeconds: 15, suggestedKeywords: ["I would like to complain", "delay", "compensation"] },
+  { id: 'exp_b1_02', level: 'B1', title: "Quick Response [B1]", expressType: 'quick_response', promptEn: "Explain to your friend why learning English online is more flexible than traditional classes!", promptVi: "Giải thích lý do học tiếng Anh online linh hoạt hơn lớp học truyền thống!", timeLimitSeconds: 15, suggestedKeywords: ["flexible schedule", "learn anywhere", "convenient"] },
+  { id: 'exp_b1_03', level: 'B1', title: "Speed Impromptu [B1]", expressType: 'quick_response', promptEn: "Give 2 strong reasons why people should exercise at least three times a week!", promptVi: "Đưa ra 2 lý do thuyết phục vì sao nên tập thể dục 3 lần/tuần!", timeLimitSeconds: 15, suggestedKeywords: ["boost immune system", "reduce stress", "stay energetic"] },
+  { id: 'exp_b1_04', level: 'B1', title: "Situation Flash [B1]", expressType: 'situation_flash', promptEn: "Your hotel room is noisy. Ask the receptionist politely to change you to a quieter room!", promptVi: "Phòng khách sạn quá ồn. Yêu cầu lễ tân đổi sang phòng yên tĩnh hơn!", timeLimitSeconds: 15, suggestedKeywords: ["The room is noisy", "could I change", "quieter room"] },
+  { id: 'exp_b1_05', level: 'B1', title: "Quick Response [B1]", expressType: 'quick_response', promptEn: "A colleague asks if social media does more harm than good. Give your opinion in 15s!", promptVi: "Đồng nghiệp hỏi mạng xã hội có hại nhiều hơn lợi không. Trả lời trong 15s!", timeLimitSeconds: 15, suggestedKeywords: ["In my opinion", "connect people", "distraction"] },
+  { id: 'exp_b1_06', level: 'B1', title: "Speed Impromptu [B1]", expressType: 'quick_response', promptEn: "State two main advantages of using public transport instead of private motorbikes!", promptVi: "Nêu 2 lợi ích chính của xe bus công cộng so với xe máy cá nhân!", timeLimitSeconds: 15, suggestedKeywords: ["save money", "reduce traffic pollution", "safer"] },
+  { id: 'exp_b1_07', level: 'B1', title: "Situation Flash [B1]", expressType: 'situation_flash', promptEn: "You received the wrong dish at a restaurant. Inform the waiter politely!", promptVi: "Bạn nhận nhầm món ăn ở nhà hàng. Thông báo với phục vụ lịch sự!", timeLimitSeconds: 15, suggestedKeywords: ["Excuse me", "this is not what I ordered", "check again"] },
+  { id: 'exp_b1_08', level: 'B1', title: "Quick Response [B1]", expressType: 'quick_response', promptEn: "Why is saving money early in your career crucial? Explain in 15 seconds!", promptVi: "Tại sao tiết kiệm tiền từ sớm lại quan trọng? Giải thích trong 15s!", timeLimitSeconds: 15, suggestedKeywords: ["emergency fund", "financial independence", "future goals"] },
+  { id: 'exp_b1_09', level: 'B1', title: "Speed Impromptu [B1]", expressType: 'quick_response', promptEn: "Convince your younger brother to read more books instead of watching TikTok!", promptVi: "Thuyết phục em trai đọc sách nhiều hơn thay vì lướt TikTok!", timeLimitSeconds: 15, suggestedKeywords: ["expand vocabulary", "improves focus", "better knowledge"] },
+  { id: 'exp_b1_10', level: 'B1', title: "Situation Flash [B1]", expressType: 'situation_flash', promptEn: "Ask your boss for permission to leave work 1 hour early today for a medical checkup!", promptVi: "Xin phép sếp cho về sớm 1 tiếng hôm nay để đi khám bệnh!", timeLimitSeconds: 15, suggestedKeywords: ["Would it be possible", "leave early", "medical checkup"] },
+  { id: 'exp_b1_11', level: 'B1', title: "Quick Response [B1]", expressType: 'quick_response', promptEn: "Is it better to live in a big city or a quiet countryside? Give a quick argument!", promptVi: "Sống ở thành phố lớn hay nông thôn tốt hơn? Đưa ra ý kiến nhanh!", timeLimitSeconds: 15, suggestedKeywords: ["city offers opportunities", "countryside is peaceful", "depends on lifestyle"] },
+  { id: 'exp_b1_12', level: 'B1', title: "Speed Impromptu [B1]", expressType: 'quick_response', promptEn: "Explain why recycling plastic waste is essential for ocean protection!", promptVi: "Giải thích tại sao tái chế nhựa lại thiết yếu để bảo vệ đại dương!", timeLimitSeconds: 15, suggestedKeywords: ["protect marine life", "reduce pollution", "sustainable environment"] },
+  { id: 'exp_b1_13', level: 'B1', title: "Situation Flash [B1]", expressType: 'situation_flash', promptEn: "Your neighbor plays loud music late at night. Request them politely to turn it down!", promptVi: "Hàng xóm bật nhạc to muộn đêm. Yêu cầu họ vặn nhỏ lịch sự!", timeLimitSeconds: 15, suggestedKeywords: ["Excuse me", "it is quite late", "could you turn down"] },
+  { id: 'exp_b1_14', level: 'B1', title: "Quick Response [B1]", expressType: 'quick_response', promptEn: "What skills are most important for working in a professional team?", promptVi: "Kỹ năng nào quan trọng nhất khi làm việc nhóm chuyên nghiệp?", timeLimitSeconds: 15, suggestedKeywords: ["communication", "active listening", "collaboration"] },
+  { id: 'exp_b1_15', level: 'B1', title: "Speed Impromptu [B1]", expressType: 'quick_response', promptEn: "Suggest two effective ways to overcome stress after a busy workday!", promptVi: "Gợi ý 2 cách hiệu quả để giảm căng thẳng sau ngày làm việc bận rộn!", timeLimitSeconds: 15, suggestedKeywords: ["listen to music", "do meditation", "take a walk"] },
 
-  // ==================== LEVEL B2 ====================
-  {
-    id: 'exp_b2_1',
-    level: 'B2',
-    title: "Quick Pitch [B2]",
-    expressType: 'quick_response',
-    promptEn: "Your manager asks: 'Why should we approve your budget request for this project?' Pitch in 15 seconds!",
-    timeLimitSeconds: 15,
-    suggestedKeywords: ["return on investment", "efficiency", "market expansion", "cost-effective"]
-  },
-  {
-    id: 'exp_b2_2',
-    level: 'B2',
-    title: "Situation Flash [B2]",
-    expressType: 'situation_flash',
-    promptEn: "A client complains that your team missed a project deadline. Apologize professionally and propose a resolution!",
-    timeLimitSeconds: 15,
-    suggestedKeywords: ["sincere apologies", "unforeseen delays", "expedite the process", "compensation"]
-  },
-  {
-    id: 'exp_b2_3',
-    level: 'B2',
-    title: "Speed Debate [B2]",
-    expressType: 'quick_response',
-    promptEn: "Argue against this statement in 15s: 'Social media is purely detrimental to modern youth.'",
-    timeLimitSeconds: 15,
-    suggestedKeywords: ["educational resources", "global networking", "community support", "double-edged sword"]
-  },
+  // ==================== LEVEL B2 (15 EXERCISES) ====================
+  { id: 'exp_b2_01', level: 'B2', title: "Quick Pitch [B2]", expressType: 'quick_response', promptEn: "Your manager asks: 'Why should we approve your budget request for this project?' Pitch in 15 seconds!", timeLimitSeconds: 15, suggestedKeywords: ["return on investment", "efficiency", "cost-effective"] },
+  { id: 'exp_b2_02', level: 'B2', title: "Situation Flash [B2]", expressType: 'situation_flash', promptEn: "A client complains that your team missed a project deadline. Apologize professionally and propose a resolution!", timeLimitSeconds: 15, suggestedKeywords: ["sincere apologies", "unforeseen delays", "expedite the process"] },
+  { id: 'exp_b2_03', level: 'B2', title: "Speed Debate [B2]", expressType: 'quick_response', promptEn: "Argue against this statement in 15s: 'Social media is purely detrimental to modern youth.'", timeLimitSeconds: 15, suggestedKeywords: ["educational resources", "global networking", "double-edged sword"] },
+  { id: 'exp_b2_04', level: 'B2', title: "Executive Express [B2]", expressType: 'quick_response', promptEn: "Explain why corporate AI adoption will create more high-value jobs than it displaces!", timeLimitSeconds: 15, suggestedKeywords: ["job transformation", "productivity boost", "new technical roles"] },
+  { id: 'exp_b2_05', level: 'B2', title: "Situation Flash [B2]", expressType: 'situation_flash', promptEn: "Negotiate a 10% discount with a vendor for buying software in bulk!", timeLimitSeconds: 15, suggestedKeywords: ["bulk purchase", "long-term partnership", "competitive pricing"] },
+  { id: 'exp_b2_06', level: 'B2', title: "Speed Debate [B2]", expressType: 'quick_response', promptEn: "Defend remote working against a manager who claims it lowers team productivity!", timeLimitSeconds: 15, suggestedKeywords: ["higher autonomy", "zero commute stress", "measured deliverables"] },
+  { id: 'exp_b2_07', level: 'B2', title: "Executive Express [B2]", expressType: 'quick_response', promptEn: "Summarize the primary advantage of sustainable green energy over fossil fuels in 15 seconds!", timeLimitSeconds: 15, suggestedKeywords: ["carbon reduction", "renewable resources", "long-term viability"] },
+  { id: 'exp_b2_08', level: 'B2', title: "Situation Flash [B2]", expressType: 'situation_flash', promptEn: "Your team member made a major coding error. Give constructive feedback professionally!", timeLimitSeconds: 15, suggestedKeywords: ["identify the bug", "collaborative fix", "learning opportunity"] },
+  { id: 'exp_b2_09', level: 'B2', title: "Speed Debate [B2]", expressType: 'quick_response', promptEn: "Rebut the argument that university degrees are becoming obsolete in the tech industry!", timeLimitSeconds: 15, suggestedKeywords: ["foundational knowledge", "critical thinking", "structured learning"] },
+  { id: 'exp_b2_10', level: 'B2', title: "Executive Express [B2]", expressType: 'quick_response', promptEn: "Pitch your startup idea for an AI language tutor app to an investor in 15 seconds!", timeLimitSeconds: 15, suggestedKeywords: ["personalized learning", "scalable market", "high retention"] },
+  { id: 'exp_b2_11', level: 'B2', title: "Situation Flash [B2]", expressType: 'situation_flash', promptEn: "De-escalate an angry customer who received a damaged delivery item!", timeLimitSeconds: 15, suggestedKeywords: ["understand your frustration", "immediate replacement", "priority shipping"] },
+  { id: 'exp_b2_12', level: 'B2', title: "Speed Debate [B2]", expressType: 'quick_response', promptEn: "Argue why fast fashion supply chains must be regulated for environmental protection!", timeLimitSeconds: 15, suggestedKeywords: ["textile waste", "carbon footprint", "sustainable consumerism"] },
+  { id: 'exp_b2_13', level: 'B2', title: "Executive Express [B2]", expressType: 'quick_response', promptEn: "Explain how customer feedback loops directly improve product development cycles!", timeLimitSeconds: 15, suggestedKeywords: ["user insights", "iterative improvement", "customer satisfaction"] },
+  { id: 'exp_b2_14', level: 'B2', title: "Situation Flash [B2]", expressType: 'situation_flash', promptEn: "Convince your company board to invest in cybersecurity infrastructure upgrade!", timeLimitSeconds: 15, suggestedKeywords: ["prevent data breach", "protect reputation", "compliance requirements"] },
+  { id: 'exp_b2_15', level: 'B2', title: "Speed Debate [B2]", expressType: 'quick_response', promptEn: "Rebut the claim that gig economy freelancing offers more stability than full-time employment!", timeLimitSeconds: 15, suggestedKeywords: ["lack of benefits", "income volatility", "labor protection"] },
 
-  // ==================== LEVEL C1 ====================
-  {
-    id: 'exp_c1_1',
-    level: 'C1',
-    title: "Situation Flash [C1]",
-    expressType: 'situation_flash',
-    promptEn: "Rebut this statement in 15s: 'Remote working completely destroys corporate culture and productivity.'",
-    timeLimitSeconds: 15,
-    suggestedKeywords: ["on the contrary", "autonomy", "retention metrics", "flexible framework"]
-  },
-  {
-    id: 'exp_c1_2',
-    level: 'C1',
-    title: "Executive Express [C1]",
-    expressType: 'quick_response',
-    promptEn: "Summarize the key trade-off between aggressive market growth and long-term financial sustainability in 15s!",
-    timeLimitSeconds: 15,
-    suggestedKeywords: ["burn rate", "capital allocation", "sustainable scaling", "market share"]
-  },
+  // ==================== LEVEL C1 (15 EXERCISES) ====================
+  { id: 'exp_c1_01', level: 'C1', title: "Situation Flash [C1]", expressType: 'situation_flash', promptEn: "Rebut this statement in 15s: 'Remote working completely destroys corporate culture and productivity.'", timeLimitSeconds: 15, suggestedKeywords: ["on the contrary", "autonomy", "retention metrics"] },
+  { id: 'exp_c1_02', level: 'C1', title: "Executive Express [C1]", expressType: 'quick_response', promptEn: "Summarize the key trade-off between aggressive market growth and long-term financial sustainability in 15s!", timeLimitSeconds: 15, suggestedKeywords: ["burn rate", "capital allocation", "sustainable scaling"] },
+  { id: 'exp_c1_03', level: 'C1', title: "Speed Debate [C1]", expressType: 'quick_response', promptEn: "Deconstruct how algorithmic bias in hiring software perpetuates socioeconomic discrimination!", timeLimitSeconds: 15, suggestedKeywords: ["algorithmic discrimination", "historical training data", "systemic disparity"] },
+  { id: 'exp_c1_04', level: 'C1', title: "Executive Express [C1]", expressType: 'quick_response', promptEn: "Critique the geopolitical risks of national monopolies over rare-earth mineral supply chains!", timeLimitSeconds: 15, suggestedKeywords: ["geopolitical leverage", "supply chain resilience", "friend-shoring"] },
+  { id: 'exp_c1_05', level: 'C1', title: "Situation Flash [C1]", expressType: 'situation_flash', promptEn: "Address shareholders after a data breach crisis to restore corporate market confidence in 15s!", timeLimitSeconds: 15, suggestedKeywords: ["containment protocols", "transparent audit", "uncompromising security"] },
+  { id: 'exp_c1_06', level: 'C1', title: "Speed Debate [C1]", expressType: 'quick_response', promptEn: "Argue why central bank digital currencies present severe risks to individual financial privacy!", timeLimitSeconds: 15, suggestedKeywords: ["financial surveillance", "centralized control", "data autonomy"] },
+  { id: 'exp_c1_07', level: 'C1', title: "Executive Express [C1]", expressType: 'quick_response', promptEn: "Explain how platform capitalism exploits precarious gig workers under the guise of flexibility!", timeLimitSeconds: 15, suggestedKeywords: ["precarious labor", "algorithmic management", "asymmetric power"] },
+  { id: 'exp_c1_08', level: 'C1', title: "Situation Flash [C1]", expressType: 'situation_flash', promptEn: "Persuade a reluctant regulatory committee to approve trials for autonomous electric shuttles!", timeLimitSeconds: 15, suggestedKeywords: ["fail-safe redundancy", "carbon mitigation", "rigorous testing"] },
+  { id: 'exp_c1_09', level: 'C1', title: "Speed Debate [C1]", expressType: 'quick_response', promptEn: "Rebut the argument that intellectual property laws on green tech accelerate global carbon neutrality!", timeLimitSeconds: 15, suggestedKeywords: ["patent barriers", "technology transfer", "monopolistic pricing"] },
+  { id: 'exp_c1_10', level: 'C1', title: "Executive Express [C1]", expressType: 'quick_response', promptEn: "Analyze how micro-targeted social media profiling threatens democratic electoral integrity!", timeLimitSeconds: 15, suggestedKeywords: ["psychographic profiling", "echo chambers", "electoral manipulation"] },
+  { id: 'exp_c1_11', level: 'C1', title: "Situation Flash [C1]", expressType: 'situation_flash', promptEn: "Defend your team's high-risk pivot strategy during a hostile board meeting in 15s!", timeLimitSeconds: 15, suggestedKeywords: ["calculated gamble", "market disruption", "pivotal necessity"] },
+  { id: 'exp_c1_12', level: 'C1', title: "Speed Debate [C1]", expressType: 'quick_response', promptEn: "Critique the moral ethics of private corporations commercializing space resource extraction!", timeLimitSeconds: 15, suggestedKeywords: ["outer space commons", "monopolization", "regulatory void"] },
+  { id: 'exp_c1_13', level: 'C1', title: "Executive Express [C1]", expressType: 'quick_response', promptEn: "Summarize how deepfake synthetic media erodes empirical truth in investigative journalism!", timeLimitSeconds: 15, suggestedKeywords: ["synthetic verification", "epistemic crisis", "information warfare"] },
+  { id: 'exp_c1_14', level: 'C1', title: "Situation Flash [C1]", expressType: 'situation_flash', promptEn: "Pitch a carbon-tax corporate policy to reluctant board members in 15 seconds!", timeLimitSeconds: 15, suggestedKeywords: ["regulatory compliance", "green reputational capital", "tax offset"] },
+  { id: 'exp_c1_15', level: 'C1', title: "Speed Debate [C1]", expressType: 'quick_response', promptEn: "Argue whether universal basic income disincentivizes innovation or unlocks human potential!", timeLimitSeconds: 15, suggestedKeywords: ["socioeconomic safety net", "entrepreneurial freedom", "labor incentive"] },
 
-  // ==================== LEVEL C2 ====================
-  {
-    id: 'exp_c2_1',
-    level: 'C2',
-    title: "Speed Impromptu [C2]",
-    expressType: 'quick_response',
-    promptEn: "Summarize the core ethical conflict of artificial general intelligence in under 15 seconds!",
-    timeLimitSeconds: 15,
-    suggestedKeywords: ["existential risk", "alignment problem", "epistemic autonomy", "regulatory frameworks"]
-  },
-  {
-    id: 'exp_c2_2',
-    level: 'C2',
-    title: "Philosophical Express [C2]",
-    expressType: 'quick_response',
-    promptEn: "Deconstruct the paradox of deterministic algorithms operating within unpredictable human legal systems in 15s!",
-    timeLimitSeconds: 15,
-    suggestedKeywords: ["algorithmic determinism", "judicial discretion", "epistemological gap", "accountability"]
-  }
+  // ==================== LEVEL C2 (15 EXERCISES) ====================
+  { id: 'exp_c2_01', level: 'C2', title: "Speed Impromptu [C2]", expressType: 'quick_response', promptEn: "Summarize the core ethical conflict of artificial general intelligence in under 15 seconds!", timeLimitSeconds: 15, suggestedKeywords: ["existential risk", "alignment problem", "epistemic autonomy"] },
+  { id: 'exp_c2_02', level: 'C2', title: "Philosophical Express [C2]", expressType: 'quick_response', promptEn: "Deconstruct the paradox of deterministic algorithms operating within unpredictable human legal systems in 15s!", timeLimitSeconds: 15, suggestedKeywords: ["algorithmic determinism", "judicial discretion", "accountability"] },
+  { id: 'exp_c2_03', level: 'C2', title: "Executive Express [C2]", expressType: 'quick_response', promptEn: "Deconstruct the epistemological shift induced by generative AI models in scientific empirical inquiry!", timeLimitSeconds: 15, suggestedKeywords: ["epistemological paradigm", "empirical validity", "black-box models"] },
+  { id: 'exp_c2_04', level: 'C2', title: "Speed Debate [C2]", expressType: 'quick_response', promptEn: "Critique the ontological validity of consciousness simulated within hyper-realistic artificial environments!", timeLimitSeconds: 15, suggestedKeywords: ["ontological shifts", "simulated consciousness", "phenomenology"] },
+  { id: 'exp_c2_05', level: 'C2', title: "Executive Express [C2]", expressType: 'quick_response', promptEn: "Evaluate the legal and philosophical personhood status of autonomous synthetic cognitive entities!", timeLimitSeconds: 15, suggestedKeywords: ["synthetic personhood", "moral agency", "legal precedent"] },
+  { id: 'exp_c2_06', level: 'C2', title: "Philosophical Express [C2]", expressType: 'quick_response', promptEn: "Analyze the commodification of human attention in late-stage surveillance capitalism in 15s!", timeLimitSeconds: 15, suggestedKeywords: ["attention economy", "surveillance capitalism", "cognitive harvesting"] },
+  { id: 'exp_c2_07', level: 'C2', title: "Speed Debate [C2]", expressType: 'quick_response', promptEn: "Critique the post-humanist ethical ramifications of radical bio-technological longevity enhancement!", timeLimitSeconds: 15, suggestedKeywords: ["radical longevity", "sociobiological divides", "post-humanism"] },
+  { id: 'exp_c2_08', level: 'C2', title: "Executive Express [C2]", expressType: 'quick_response', promptEn: "Deconstruct the fragile equilibrium between quantum decryption capabilities and nation-state cyber sovereignty!", timeLimitSeconds: 15, suggestedKeywords: ["quantum supremacy", "post-quantum cryptography", "cyber sovereignty"] },
+  { id: 'exp_c2_09', level: 'C2', title: "Philosophical Express [C2]", expressType: 'quick_response', promptEn: "Evaluate the biosecurity risks stemming from the democratization of open-source synthetic biology tools!", timeLimitSeconds: 15, suggestedKeywords: ["synthetic biology", "dual-use technology", "biosecurity governance"] },
+  { id: 'exp_c2_10', level: 'C2', title: "Speed Debate [C2]", expressType: 'quick_response', promptEn: "Deconstruct the crisis of procedural authority induced by automated algorithmic sentencing in judicial courts!", timeLimitSeconds: 15, suggestedKeywords: ["algorithmic justice", "procedural fairness", "judicial authority"] },
+  { id: 'exp_c2_11', level: 'C2', title: "Executive Express [C2]", expressType: 'quick_response', promptEn: "Critique the neocolonialist paradigm embedded within current outer space mineral commercialization treaties!", timeLimitSeconds: 15, suggestedKeywords: ["extraterrestrial mining", "outer space treaty", "neocolonialism"] },
+  { id: 'exp_c2_12', level: 'C2', title: "Philosophical Express [C2]", expressType: 'quick_response', promptEn: "Deconstruct the weaponization of cognitive neuroscience in modern hybrid information warfare!", timeLimitSeconds: 15, suggestedKeywords: ["neuro-weaponization", "cognitive domain warfare", "neuromorphic manipulation"] },
+  { id: 'exp_c2_13', level: 'C2', title: "Speed Debate [C2]", expressType: 'quick_response', promptEn: "Evaluate the breakdown of empirical consensus under deep-fake hyper-steganographic media environments!", timeLimitSeconds: 15, suggestedKeywords: ["hyper-steganography", "epistemic crisis", "synthetic consensus"] },
+  { id: 'exp_c2_14', level: 'C2', title: "Executive Express [C2]", expressType: 'quick_response', promptEn: "Critique the philosophical continuity of selfhood under digital brain emulation and mind-uploading scenarios!", timeLimitSeconds: 15, suggestedKeywords: ["mind emulation", "continuity of consciousness", "identity paradox"] },
+  { id: 'exp_c2_15', level: 'C2', title: "Philosophical Express [C2]", expressType: 'quick_response', promptEn: "Deconstruct the systemic vulnerabilities of high-frequency algorithmic financial trading during flash crashes!", timeLimitSeconds: 15, suggestedKeywords: ["algorithmic trading", "flash crash vulnerability", "systemic risk"] }
 ];

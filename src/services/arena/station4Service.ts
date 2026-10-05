@@ -2,7 +2,13 @@
 import { Groq } from 'groq-sdk';
 import { SPEAKING_EXPRESS_DATA, ExpressExerciseItem } from '../../data/station4/speakingExpress';
 
-const ACTIVE_GROQ_KEY = process.env.EXPO_PUBLIC_GROQ_API_KEY || '';
+const ACTIVE_GROQ_KEY =
+  process.env.GROQ_API_KEY_NEW ||
+  process.env.GROQ_API_KEY ||
+  process.env.GROQ_API ||
+  process.env.EXPO_PUBLIC_GROQ_API_KEY ||
+  '';
+
 const groq = new Groq({ apiKey: ACTIVE_GROQ_KEY, dangerouslyAllowBrowser: true });
 
 export interface SpeakingExpressExercise {
@@ -16,95 +22,73 @@ export interface SpeakingExpressExercise {
   suggestedKeywords: string[];
 }
 
-const sessionUsedExpressExercises: Set<string> = new Set();
+// Bộ nhớ đệm lưu vết ID đề đã xuất hiện để chống lặp
+let usedTopicIds: string[] = [];
 
-export function clearStation4History() {
-  sessionUsedExpressExercises.clear();
-}
+/**
+ * ⚡ LẤY THỬ THÁCH TỨC THÌ TỪ FLASH DATA LOCAL (Chống lặp 100%)
+ */
+export function getInstantStation4Exercise(level: string = 'B2'): SpeakingExpressExercise {
+  const levelExercises = SPEAKING_EXPRESS_DATA.filter((e) => e.level === level);
+  const targetList = levelExercises.length > 0 ? levelExercises : SPEAKING_EXPRESS_DATA;
 
-// ⚡ 1. LẤY NGAY 1 BÀI TỪ KHO LOCAL (Bắt buộc tạo ID mới để ép React Re-render)
-export function getInstantStation4Exercise(cefrLevel: string = 'A1'): SpeakingExpressExercise {
-  const levelKey = (cefrLevel || 'A1').toUpperCase();
-  const pool = SPEAKING_EXPRESS_DATA.filter(item => item.level === levelKey);
-  const activePool = pool.length > 0 ? pool : SPEAKING_EXPRESS_DATA;
+  let available = targetList.filter((e) => !usedTopicIds.includes(e.id));
 
-  const filtered = activePool.filter(item => !sessionUsedExpressExercises.has(item.promptEn.toLowerCase()));
-  
-  // Nếu đã dùng hết bài, reset bộ nhớ tạm để bốc ngẫu nhiên lại
-  if (filtered.length === 0) {
-    sessionUsedExpressExercises.clear();
+  // Nếu đã duyệt hết kho đề của Level này -> Reset danh sách level đó
+  if (available.length === 0) {
+    usedTopicIds = usedTopicIds.filter((id) => !targetList.some((e) => e.id === id));
+    available = [...targetList];
   }
 
-  const selected = filtered.length > 0 
-    ? filtered[Math.floor(Math.random() * filtered.length)] 
-    : activePool[Math.floor(Math.random() * activePool.length)];
+  const selected = available[Math.floor(Math.random() * available.length)];
+  usedTopicIds.push(selected.id);
 
-  sessionUsedExpressExercises.add(selected.promptEn.toLowerCase());
-
-  // 💥 ĐIỂM MẤU CHỐC: Luôn trả về Object mới với ID độc bản
-  return {
-    ...selected,
-    id: `instant_st4_${Date.now()}_${Math.floor(Math.random() * 1000000)}`
-  };
+  return selected;
 }
 
-// ⚡ 2. GỌI GROQ AI NGẦM
-export async function generateStation4Exercise(cefrLevel: string = 'A1'): Promise<SpeakingExpressExercise> {
-  const uniqueSeed = `st4_${Date.now()}_${Math.floor(Math.random() * 1000000)}`;
-  const levelKey = (cefrLevel || 'A1').toUpperCase();
-  const isLowLevel = ['A1', 'A2', 'B1'].includes(levelKey);
-  const excludedList = Array.from(sessionUsedExpressExercises).slice(-15).join(' | ');
+/**
+ * 🤖 TẠO NGẦM THỬ THÁCH MỚI BẰNG GROQ AI (Dynamic Generation)
+ */
+export async function generateStation4Exercise(level: string = 'B2'): Promise<SpeakingExpressExercise> {
+  const prompt = `You are an AI ELT Coach designing a Speaking Express (Quick Reflex) prompt for CEFR level ${level}.
+Create ONE real-life speaking scenario or question requiring a 15-second response.
 
-  const systemPrompt = `You are a strict Fast-Speaking Coach. Generate ONE Speaking Express exercise STRICTLY for CEFR Level ${levelKey}.
-STRICT RULES:
-- Must focus on FAST REFLEXES (10-15s response time).
-- Express types allowed: "quick_response", "speed_reading", "situation_flash".
-${isLowLevel 
-  ? `- Include BOTH "promptEn" and "promptVi" (Vietnamese translation).` 
-  : `- 100% ADVANCED ENGLISH ONLY. STRICTLY DO NOT PROVIDE "promptVi".`
-}
-Return ONLY valid JSON matching:
+Return ONLY JSON matching schema:
 {
-  "title": "Exercise Title [${levelKey}]",
-  "expressType": "quick_response" | "speed_reading" | "situation_flash",
-  "promptEn": "Fast prompt or text to read/respond",
-  ${isLowLevel ? '"promptVi": "Bản dịch tiếng Việt",' : ''}
+  "id": "ai_exp_${Date.now()}",
+  "level": "${level}",
+  "title": "Express Challenge [${level}]",
+  "expressType": "quick_response",
+  "promptEn": "One engaging English prompt or situation asking for candidate's quick response",
+  "promptVi": "Vietnamese translation of the prompt",
   "timeLimitSeconds": 15,
-  "suggestedKeywords": ["word1", "word2"]
+  "suggestedKeywords": ["keyword1", "keyword2", "keyword3"]
 }`;
 
   try {
-    const apiCall = groq.chat.completions.create({
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: `Generate a BRAND NEW exercise for CEFR [${levelKey}]. Request ID: ${uniqueSeed}. Exclude: [${excludedList || 'None'}]` }
-      ],
-      model: 'llama-3.3-70b-versatile',
-      temperature: 1.0,
-      response_format: { type: 'json_object' }
+    const completion = await groq.chat.completions.create({
+      messages: [{ role: 'user', content: prompt }],
+      model: 'llama-3.1-8b-instant',
+      temperature: 0.8,
+      response_format: { type: 'json_object' },
     });
 
-    const timeout = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('Groq Timeout')), 3500)
-    );
+    const aiData = JSON.parse(completion.choices[0]?.message?.content || '{}') as SpeakingExpressExercise;
 
-    const response: any = await Promise.race([apiCall, timeout]);
-    const parsed = JSON.parse(response.choices[0]?.message?.content || '{}');
-    const promptEn = parsed.promptEn || `Reflex task for ${levelKey}`;
-
-    sessionUsedExpressExercises.add(promptEn.toLowerCase());
-
-    return {
-      id: uniqueSeed,
-      level: levelKey,
-      title: parsed.title || `Speaking Express [${levelKey}]`,
-      expressType: parsed.expressType || 'quick_response',
-      promptEn: promptEn,
-      promptVi: isLowLevel ? parsed.promptVi : undefined,
-      timeLimitSeconds: parsed.timeLimitSeconds || 15,
-      suggestedKeywords: parsed.suggestedKeywords || ["speaking", "express"]
-    };
+    if (aiData && aiData.promptEn) {
+      usedTopicIds.push(aiData.id);
+      return aiData;
+    }
   } catch (error) {
-    return getInstantStation4Exercise(cefrLevel);
+    console.warn('⚠️ Groq AI Trạm 4 gặp sự cố, dùng Flash Data Local:', error);
   }
+
+  return getInstantStation4Exercise(level);
+}
+
+/**
+ * 🔄 XÓA LỊCH SỬ ĐỀ KHI ĐỔI LEVEL
+ */
+export function clearStation4History() {
+  usedTopicIds = [];
 }
