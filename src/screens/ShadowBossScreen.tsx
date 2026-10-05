@@ -1,6 +1,6 @@
 // src/screens/ShadowBossScreen.tsx
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
 import { generateShadowBoss, ShadowBossItem } from '../services/drills/station3Service';
 import { updateUserProgress } from '../services/userService';
 import { playBossVoice } from '../services/bossTtsService';
@@ -74,7 +74,17 @@ export default function ShadowBossScreen({ onBack }: Props) {
       try {
         if (typeof navigator !== 'undefined' && navigator.mediaDevices) {
           const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-          const mediaRecorder = new MediaRecorder(stream);
+          
+          let options = {};
+          if (typeof MediaRecorder !== 'undefined') {
+            if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+              options = { mimeType: 'audio/webm;codecs=opus' };
+            } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+              options = { mimeType: 'audio/mp4' };
+            }
+          }
+
+          const mediaRecorder = new MediaRecorder(stream, options);
           mediaRecorderRef.current = mediaRecorder;
           audioChunksRef.current = [];
 
@@ -83,10 +93,11 @@ export default function ShadowBossScreen({ onBack }: Props) {
           };
 
           mediaRecorder.onstop = () => {
-            const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+            const mimeType = mediaRecorder.mimeType || 'audio/webm';
+            const blob = new Blob(audioChunksRef.current, { type: mimeType });
             
-            // BẮT BỘC KÍCH THƯỚC DỮ LIỆU THẬT > 4000 BYTES
-            if (blob.size > 4000) {
+            // 🎯 ĐÃ FIX: Hạ ngưỡng size Blob xuống 800 bytes cho bài Shadowing câu ngắn
+            if (blob.size > 800) {
               setAudioBlob(blob);
               setHasRecordedCurrentSession(true);
             } else {
@@ -97,7 +108,7 @@ export default function ShadowBossScreen({ onBack }: Props) {
             stream.getTracks().forEach(t => t.stop());
           };
 
-          mediaRecorder.start(200);
+          mediaRecorder.start(100);
           setIsRecording(true);
           setAudioBlob(null);
           setHasRecordedCurrentSession(false);
@@ -113,9 +124,9 @@ export default function ShadowBossScreen({ onBack }: Props) {
     }
   };
 
-  // ⚔️ TẤN CÔNG BOSS DỰA TRÊN ĐIỂM CHẤM THỰC TẾ (CÓ KIỂM TRA SỐ TỪ THỰC TẾ)
+  // ⚔️ TẤN CÔNG BOSS DỰA TRÊN ĐIỂM CHẤM THỰC TẾ
   const handleAttackBoss = async () => {
-    if (!hasRecordedCurrentSession || !audioBlob || audioBlob.size <= 4000) {
+    if (!hasRecordedCurrentSession || !audioBlob || audioBlob.size <= 800) {
       alert("🔒 BẢO VỆ TẤN CÔNG: Bạn chưa thu âm giọng nói Shadowing! Hãy bấm nút Micro để nói đuổi theo câu thoại trước.");
       return;
     }
@@ -124,16 +135,15 @@ export default function ShadowBossScreen({ onBack }: Props) {
     setLastFeedback('');
 
     try {
-      const promptTarget = `Shadowing phrase: "${bossData?.phrase || ''}"`;
+      // 🎯 ĐÃ FIX: Chỉ truyền DUY NHẤT câu thoại mẫu của Boss
+      const promptTarget = (bossData?.phrase || '').trim();
       const evalResult = await evaluateSpeaking(audioBlob, 'B2', undefined, promptTarget);
 
-      // 🚨 BẢO VỆ NGHIÊM NGẶT: Nếu số từ bóc tách được <= 2 từ (âm thanh nhiễu / chưa đọc câu thoại)
-      if (!evalResult.transcript || evalResult.wordCount <= 2) {
+      if (!evalResult.transcript || evalResult.score === 0) {
         setLastDamage(0);
-        setLastFeedback("❌ AI chỉ nghe thấy tiếng ồn hoặc 1-2 từ ngắc ngứ. Vui lòng đọc đầy đủ cả câu thoại Boss!");
-        alert("🛡️ TẤN CÔNG THẤT BẠI: Bạn chưa đọc câu thoại Shadowing! Vui lòng bấm micro và đọc cả câu.");
+        setLastFeedback("❌ AI không nghe rõ câu Shadowing. Vui lòng đọc to và rõ ràng hơn!");
+        alert("🛡️️ TẤN CÔNG THẤT BẠI: Bạn chưa đọc rõ câu thoại Shadowing! Vui lòng bấm micro và đọc lại.");
       } else {
-        // Điểm sát thương dựa trên điểm AI nhưng bắt buộc phải phát âm đạt tối thiểu 30 điểm
         const damage = evalResult.score;
 
         if (damage < 30) {
@@ -156,7 +166,6 @@ export default function ShadowBossScreen({ onBack }: Props) {
       alert("⚠️ Lỗi kết nối mạng khi chấm điểm Shadowing. Vui lòng thử lại!");
     } finally {
       setIsAnalyzing(false);
-      // Xóa cờ bản thu cũ sau mỗi lượt tấn công để bắt buộc thu lượt mới
       setAudioBlob(null);
       setHasRecordedCurrentSession(false);
     }
