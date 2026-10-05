@@ -68,7 +68,7 @@ Return ONLY JSON matching schema:
   try {
     const completion = await groq.chat.completions.create({
       messages: [{ role: 'user', content: prompt }],
-      model: 'llama-3.1-8b-instant',
+      model: 'llama3-8b-8192',
       temperature: 0.8,
       response_format: { type: 'json_object' },
     });
