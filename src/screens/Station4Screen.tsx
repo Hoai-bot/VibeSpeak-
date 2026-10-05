@@ -10,6 +10,7 @@ import {
 } from '../services/arena/station4Service';
 import { updateUserProgress } from '../services/userService';
 import { saveWeakPoint } from '../services/weakPointsService';
+import WeakPointsScreen from './WeakPointsScreen';
 
 interface Props {
   onBack: () => void;
@@ -19,7 +20,8 @@ export default function Station4Screen({ onBack }: Props) {
   const [cefrLevel, setCefrLevel] = useState<string>('B2');
   const [loading, setLoading] = useState<boolean>(false);
   const [isPlayingTTS, setIsPlayingTTS] = useState<boolean>(false);
-  
+  const [showWeakPoints, setShowWeakPoints] = useState<boolean>(false);
+
   const [exercise, setExercise] = useState<SpeakingExpressExercise | null>(null);
   const [battleState, setBattleState] = useState<'idle' | 'battling' | 'analyzing' | 'ended'>('idle');
   
@@ -263,13 +265,36 @@ export default function Station4Screen({ onBack }: Props) {
     }
   };
 
+  if (showWeakPoints) {
+    return (
+      <WeakPointsScreen 
+        onBack={() => setShowWeakPoints(false)} 
+        onSelectPractice={(promptText) => {
+          setShowWeakPoints(false);
+          if (exercise) {
+            setExercise({
+              ...exercise,
+              promptEn: promptText,
+              title: "Ôn Luyện Cụm Yếu",
+            });
+          }
+        }}
+      />
+    );
+  }
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack} style={styles.backBtn}>
-          <Text style={styles.backText}>🔙 QUAY LẠI MAP</Text>
+          <Text style={styles.backText}>🔙 MAP</Text>
         </TouchableOpacity>
+        
         <Text style={styles.title}>🎯 TRẠM 4: SPEAKING EXPRESS</Text>
+
+        <TouchableOpacity onPress={() => setShowWeakPoints(true)} style={styles.weakBtn}>
+          <Text style={styles.weakBtnText}>🎯 YẾU</Text>
+        </TouchableOpacity>
       </View>
 
       <ScrollView contentContainerStyle={{ alignItems: 'center', width: '100%', paddingBottom: 30 }}>
@@ -370,15 +395,14 @@ export default function Station4Screen({ onBack }: Props) {
               </View>
             )}
 
-            {/* 🎯 HIỂN THỊ BẢN THU KÈM TÔ MÀU PHÁT ÂM CHI TIẾT TỪNG TỪ */}
             <View style={styles.scriptBox}>
               <Text style={styles.scriptLabel}>📝 CHI TIẾT PHÁT ÂM TỪNG TỪ (WORD-BY-WORD):</Text>
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 6 }}>
                 {result.wordAnalysis && result.wordAnalysis.length > 0 ? (
                   result.wordAnalysis.map((item, idx) => {
-                    let color = '#39FF14'; // Xanh lá: Đúng chuẩn
-                    if (item.status === 'warning') color = '#FFD700'; // Vàng: Cần cải thiện
-                    if (item.status === 'error') color = '#FF0055'; // Đỏ: Phát âm sai
+                    let color = '#39FF14';
+                    if (item.status === 'warning') color = '#FFD700';
+                    if (item.status === 'error') color = '#FF0055';
 
                     return (
                       <Text key={idx} style={{ color, fontSize: 13, fontWeight: 'bold', marginRight: 6, marginBottom: 4 }}>
@@ -421,6 +445,8 @@ const styles = StyleSheet.create({
   backBtn: { padding: 8, backgroundColor: '#0D0620', borderRadius: 8, borderWidth: 1, borderColor: '#FF007F' },
   backText: { color: '#FF007F', fontSize: 10, fontWeight: 'bold' },
   title: { color: '#FF007F', fontSize: 12, fontWeight: '900' },
+  weakBtn: { paddingVertical: 6, paddingHorizontal: 10, backgroundColor: '#1A0B2E', borderRadius: 8, borderWidth: 1, borderColor: '#FF007F' },
+  weakBtnText: { color: '#FF007F', fontSize: 10, fontWeight: '900' },
   sectionLabel: { color: '#FFD700', fontSize: 10, fontWeight: 'bold', alignSelf: 'flex-start', marginBottom: 6 },
   cefrRow: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginBottom: 15 },
   cefrBadge: { backgroundColor: '#0D0620', paddingVertical: 6, paddingHorizontal: 10, borderRadius: 6, borderWidth: 1, borderColor: '#332255' },
