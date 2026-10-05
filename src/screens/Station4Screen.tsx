@@ -200,7 +200,6 @@ export default function Station4Screen({ onBack }: Props) {
             const mimeType = mediaRecorder.mimeType || 'audio/webm';
             const recordedBlob = new Blob(audioChunksRef.current, { type: mimeType });
             
-            // 🎯 ĐÃ FIX: Hạ ngưỡng từ 4000 xuống 800 bytes
             if (recordedBlob.size > 800) {
               setRecordedAudio(recordedBlob);
               setHasRecorded(true);
@@ -229,6 +228,7 @@ export default function Station4Screen({ onBack }: Props) {
     }
   };
 
+  // 🎯 HÀM SUBMIT ANSWER ĐÃ CẬP NHẬT TRUYỀN THAM SỐ '4'
   const handleSubmitAnswer = async () => {
     if (!hasRecorded || !recordedAudio || recordedAudio.size <= 800) {
       alert("🔒 Vui lòng ghi âm phản hồi của bạn trước khi nộp bài!");
@@ -237,7 +237,6 @@ export default function Station4Screen({ onBack }: Props) {
 
     if (isRecording) setIsRecording(false);
 
-    // 🎯 ĐÃ FIX: Tự động tạo URL để nghe lại bản thu âm ở màn hình kết quả
     if (typeof window !== 'undefined' && window.URL) {
       const audioUrl = URL.createObjectURL(recordedAudio);
       setRecordedAudioUrl(audioUrl);
@@ -246,9 +245,10 @@ export default function Station4Screen({ onBack }: Props) {
     setBattleState('analyzing');
 
     try {
-      // 🎯 ĐÃ FIX: Làm sạch prompt target truyền sang AI
       const targetPrompt = (exercise?.promptEn || 'General speaking challenge').trim();
-      const evalData = await evaluateSpeaking(recordedAudio, cefrLevel, undefined, targetPrompt);
+      
+      // 🎯 ĐÃ CẬP NHẬT: Thêm tham số '4' làm targetText để Backend nhận diện bài mở Trạm 4
+      const evalData = await evaluateSpeaking(recordedAudio, cefrLevel, '4', targetPrompt);
 
       if (!evalData.transcript || evalData.wordCount === 0 || evalData.score === 0) {
         const strictFailedResult: AssessmentResult = {
@@ -380,7 +380,6 @@ export default function Station4Screen({ onBack }: Props) {
             </Text>
             <Text style={styles.scoreText}>⚡ TỔNG ĐIỂM TRẠM 4: {result.score} / 100 ĐIỂM</Text>
 
-            {/* 🎯 ĐÃ FIX: Cho phép hiển thị player nghe lại từ URL Blob thực tế */}
             {(recordedAudioUrl || result.audioUrl) && (
               <View style={styles.nativeAudioContainer}>
                 <Text style={styles.nativeAudioLabel}>🎧 NGHE LẠI BẢN THU PHẢN HỒI CỦA BẠN:</Text>
@@ -396,7 +395,7 @@ export default function Station4Screen({ onBack }: Props) {
 
             <Text style={styles.breakdownHeaderLabel}>📊 PHÂN TÍCH CHI TIẾT 6 TIÊU CHÍ:</Text>
             <View style={styles.breakdownCard}>
-              <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>🗣️️ 1. Phát âm:</Text><Text style={styles.breakdownValue}>{result.pronunciation}/100</Text></View>
+              <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>🗣 1. Phát âm:</Text><Text style={styles.breakdownValue}>{result.pronunciation}/100</Text></View>
               <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>📚 2. Ngữ pháp:</Text><Text style={styles.breakdownValue}>{result.grammar}/100</Text></View>
               <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>🔤 3. Từ vựng:</Text><Text style={styles.breakdownValue}>{result.vocabulary}/100</Text></View>
               <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>⚡ 4. Phản xạ:</Text><Text style={styles.breakdownValue}>{result.reflexes}/100</Text></View>
