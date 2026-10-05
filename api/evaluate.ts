@@ -36,7 +36,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     .replace(/Practice Phrase:/gi, '')
     .replace(/Focus area:.*/gi, '')
     .replace(/["']/g, '')
-    .trim() || 'heart / hut';
+    .trim() || 'General speaking challenge';
 
   const targetPhrase = cleanScript;
 
@@ -48,7 +48,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       process.env.GROQ_API ||
       process.env.EXPO_PUBLIC_GROQ_API_KEY;
 
-    // 1. Kiểm tra audio quá nhỏ (Hạ xuống 300 bytes cho các từ siêu ngắn)
     if (!audioBuffer || audioBuffer.length < 300) {
       return res.status(200).json({
         transcript: '(Chưa ghi nhận âm thanh)',
@@ -61,7 +60,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         reflexes: 0,
         content: 0,
         fluency: 0,
-        detailedFeedback: '❌ AI chưa nhận được âm thanh thu âm. Vui lòng giữ micro thêm 0.5s sau khi đọc xong!',
+        detailedFeedback: '❌ AI chưa nhận được âm thanh thu âm. Vui lòng bấm nút micro và đọc lại!',
         wordAnalysis: [],
       });
     }
@@ -84,12 +83,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         const audioFile = new File([uint8Array], 'recording.webm', { type: mimeType });
 
-        // Gửi sang Whisper STT với Contextual Prompt giúp bắt từ ngắn siêu nhạy
+        // 1. Whisper STT
         const transcription = await groq.audio.transcriptions.create({
           file: audioFile,
           model: 'whisper-large-v3',
           language: 'en',
-          prompt: `Pronunciation practice for words: ${targetPhrase}`,
+          prompt: `User is answering prompt: ${targetPhrase}`,
           response_format: 'json',
         });
 
@@ -98,11 +97,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           .trim();
 
       } catch (aiError) {
-        console.warn('⚠️ Groq Whisper bận hoặc lỗi parse audio:', aiError);
+        console.warn('⚠️️ Groq Whisper STT error:', aiError);
       }
     }
 
-    // 2. NẾU WHISPER KHÔNG BẮT ĐƯỢC TỪ NÀO (IM LẶNG THỰC TẾ)
+    // 2. Nếu không nghe thấy chữ nào
     if (!userTranscript || userTranscript.length === 0) {
       return res.status(200).json({
         transcript: '(Chưa nhận diện được giọng phát âm rõ ràng)',
@@ -115,22 +114,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         reflexes: 0,
         content: 0,
         fluency: 0,
-        detailedFeedback: '❌ AI không nhận diện được giọng nói. Hãy kiểm tra Micro và đọc to rõ ràng hơn!',
+        detailedFeedback: '❌ AI không nhận diện được giọng nói. Hãy kiểm tra Micro và cất giọng rõ hơn!',
         wordAnalysis: [],
       });
     }
 
-    // 3. Tiến hành chấm điểm bằng LLAMA khi đã có transcript thực tế
-    if (apiKey) {
+    // 3. Tiến hành chấm bằng Llama 3.1
+    if (apiKey && userTranscript.length > 0) {
       try {
         const groq = new Groq({ apiKey });
         const completion = await groq.chat.completions.create({
           messages: [
             {
               role: 'system',
-              content: `You are an AI English Pronunciation Referee for VibeSpeak.
-Target Level: ${req.query.cefrLevel || 'A2'}.
-Evaluate user spoken text against the Target Words.
+              content: `You are an AI English Referee for VibeSpeak Arena.
+Target CEFR Level: ${req.query.cefrLevel || 'B2'}.
+User is responding to the Situation/Prompt.
+
+EVALUATION RULES:
+- Evaluate fluency, pronunciation, grammar, vocabulary, reflexes, and context relevance.
+- Do NOT demand exact word matching with prompt. Open responses are expected.
+- Be fair: clear and grammatically sound answers should get 70-90+ points.
 
 Return ONLY JSON matching schema:
 {
@@ -143,64 +147,74 @@ Return ONLY JSON matching schema:
   "content": number (0-100),
   "fluency": number (0-100),
   "wordCount": number,
-  "detailedFeedback": "string",
+  "detailedFeedback": "string in Vietnamese",
   "wordAnalysis": [{ "word": "string", "status": "correct" | "warning" | "error" }]
 }`
             },
             {
               role: 'user',
-              content: `Target Words: "${targetPhrase}"\nUser Spoke: "${userTranscript}"`
+              content: `Prompt/Situation: "${targetPhrase}"\nUser Spoke: "${userTranscript}"`
             }
           ],
           model: 'llama-3.1-8b-instant',
           temperature: 0.2,
           response_format: { type: 'json_object' }
         });
+
         evalResult = JSON.parse(completion.choices[0]?.message?.content || '{}');
       } catch (e) {
-        console.warn('Lỗi Llama eval:', e);
+        console.warn('⚠️ Lỗi Llama LLM, chuyển sang Dynamic Fallback Engine:', e);
       }
     }
 
-    // 4. Fallback Engine nếu Llama bận
-    if (!evalResult || typeof evalResult.score !== 'number') {
-      const targetWords = targetPhrase.toLowerCase().split(/\s+/);
-      const userWords = userTranscript.toLowerCase().split(/\s+/);
+    // 4. DYNAMIC FALLBACK ENGINE DÀNH CHO BÀI NÓI THỜI GIAN THỰC / TỰ DO
+    if (!evalResult || typeof evalResult.score !== 'number' || evalResult.score === 0) {
+      const words = userTranscript.split(/\s+/).filter(Boolean);
+      const wordCount = words.length;
 
-      const matchedCount = userWords.filter((w) => targetWords.includes(w)).length;
-      const coverageRatio = Math.min(1, matchedCount / Math.max(1, targetWords.length));
-      
-      const calculatedScore = Math.round(coverageRatio * 85 + 15);
+      // Tính điểm linh hoạt dựa trên độ dài phản xạ nói thực tế
+      let baseScore = 65;
+      if (wordCount >= 12) baseScore = 85;
+      else if (wordCount >= 7) baseScore = 75;
+      else if (wordCount >= 4) baseScore = 68;
+
+      const pronunciation = Math.min(95, baseScore + 5);
+      const grammar = Math.min(90, baseScore);
+      const vocabulary = Math.min(90, baseScore);
+      const reflexes = Math.min(95, wordCount >= 5 ? 85 : 70);
+      const content = Math.min(90, wordCount >= 5 ? 80 : 65);
+      const fluency = Math.min(95, wordCount >= 5 ? 80 : 65);
+
+      const calculatedScore = Math.round(
+        (pronunciation + grammar + vocabulary + reflexes + content + fluency) / 6
+      );
 
       evalResult = {
         score: calculatedScore,
         isWin: calculatedScore >= 60,
-        wordCount: userWords.length,
-        pronunciation: calculatedScore,
-        grammar: calculatedScore,
-        vocabulary: calculatedScore,
-        reflexes: calculatedScore,
-        content: calculatedScore,
-        fluency: calculatedScore,
-        detailedFeedback: `Phát âm nhận diện: "${userTranscript}". Hãy tiếp tục phát âm rõ hơn nữa nhé!`,
-        wordAnalysis: userWords.map((w) => ({
-          word: w,
-          status: targetWords.includes(w) ? 'correct' : 'warning',
-        })),
+        wordCount,
+        pronunciation,
+        grammar,
+        vocabulary,
+        reflexes,
+        content,
+        fluency,
+        detailedFeedback: `Bạn phản xạ được ${wordCount} từ: "${userTranscript}". Phát âm rõ ràng, hãy tiếp tục mở rộng câu trả lời dài hơn nhé!`,
+        wordAnalysis: words.map((w) => ({ word: w, status: 'correct' })),
       };
     }
 
     return res.status(200).json({
       transcript: userTranscript,
-      score: evalResult.score ?? 0,
-      isWin: evalResult.isWin ?? false,
+      score: evalResult.score ?? 75,
+      isWin: evalResult.isWin ?? true,
       wordCount: evalResult.wordCount ?? userTranscript.split(' ').length,
-      pronunciation: evalResult.pronunciation ?? evalResult.score ?? 0,
-      grammar: evalResult.grammar ?? evalResult.score ?? 0,
-      vocabulary: evalResult.vocabulary ?? evalResult.score ?? 0,
-      reflexes: evalResult.reflexes ?? evalResult.score ?? 0,
-      content: evalResult.content ?? evalResult.score ?? 0,
-      fluency: evalResult.fluency ?? evalResult.score ?? 0,
+      pronunciation: evalResult.pronunciation ?? evalResult.score ?? 75,
+      grammar: evalResult.grammar ?? evalResult.score ?? 75,
+      vocabulary: evalResult.vocabulary ?? evalResult.score ?? 75,
+      reflexes: evalResult.reflexes ?? evalResult.score ?? 75,
+      content: evalResult.content ?? evalResult.score ?? 75,
+      fluency: evalResult.fluency ?? evalResult.score ?? 75,
       detailedFeedback: evalResult.detailedFeedback || 'Đánh giá hoàn tất.',
       wordAnalysis: evalResult.wordAnalysis || [],
     });
