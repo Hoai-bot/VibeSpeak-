@@ -92,7 +92,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           file: audioFile,
           model: 'whisper-large-v3',
           language: 'en',
-          prompt: `User is practicing pronunciation/shadowing: ${targetPhrase}`,
+          prompt: `User is practicing English speaking: ${targetPhrase}`,
           response_format: 'json',
         });
 
@@ -127,14 +127,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       try {
         const groq = new Groq({ apiKey });
 
-        // Build System Prompt theo từng trạm
         let systemPrompt = '';
         if (isStation3) {
           systemPrompt = `You are an AI Shadowing Referee for VibeSpeak Station 3 (Shadow Boss Raid).
 Evaluate user's shadowing accuracy against the target Boss phrase: "${targetPhrase}".
 Instructions:
 - Check how well user matched the words, rhythm, and pronunciation of the target phrase.
-- Feedback MUST be in Vietnamese, brief, and focus strictly on shadowing accuracy and pronunciation (e.g. "Phát âm nhịp điệu rất chuẩn câu thoại Boss!"). NEVER tell user to add more sentences.
+- Feedback MUST be in Vietnamese, brief, and focus strictly on shadowing accuracy and pronunciation. NEVER tell user to add more sentences.
 
 Return ONLY JSON matching schema:
 {
@@ -154,6 +153,11 @@ Return ONLY JSON matching schema:
           systemPrompt = `You are an AI Referee for VibeSpeak Station 4 (Speaking Express - Open Response).
 Target Level: ${req.query.cefrLevel || 'B2'}.
 User is responding to a real-life situation/prompt: "${targetPhrase}".
+
+CRITICAL SCORING RULES FOR STATION 4:
+- Do NOT match words with the prompt. The user is SUPPOSED to give an original answer.
+- Evaluate based on relevance, grammar, and natural flow.
+- A clear 5+ word English response MUST score 75-90+ points! Never give low scores for a clear sentence.
 
 Return ONLY JSON matching schema:
 {
@@ -206,43 +210,63 @@ Return ONLY JSON matching schema:
       }
     }
 
-    // 3. DYNAMIC FALLBACK ENGINE DÀNH CHO CẢ TRẠM 3 VÀ TRẠM 4
+    // 3. DYNAMIC FALLBACK ENGINE CHUYÊN BIỆT THEO TRẠM
     if (!evalResult || typeof evalResult.score !== 'number' || evalResult.score === 0) {
       const words = userTranscript.split(/\s+/).filter(Boolean);
       const wordCount = words.length;
 
-      const targetWords = targetPhrase.toLowerCase().split(/\s+/);
-      const userWords = userTranscript.toLowerCase().split(/\s+/);
+      if (isStation4) {
+        // 🎯 LOGIC RIÊNG TRẠM 4: Chấm bài mở theo số từ phát âm rõ ràng
+        let baseScore = 75;
+        if (wordCount >= 12) baseScore = 88;
+        else if (wordCount >= 7) baseScore = 80;
+        else if (wordCount >= 4) baseScore = 75;
+        else baseScore = 60;
 
-      const matchedCount = userWords.filter((w) => targetWords.includes(w)).length;
-      const coverageRatio = Math.min(1, matchedCount / Math.max(1, targetWords.length));
+        evalResult = {
+          score: baseScore,
+          isWin: baseScore >= 60,
+          wordCount,
+          pronunciation: Math.min(95, baseScore + 5),
+          grammar: baseScore,
+          vocabulary: baseScore,
+          reflexes: Math.min(95, baseScore + 5),
+          content: baseScore,
+          fluency: baseScore,
+          detailedFeedback: `Phản xạ rất tốt (${wordCount} từ)! Câu nói của bạn rõ ràng: "${userTranscript}". Hãy tiếp tục phát huy nhé!`,
+          wordAnalysis: words.map((w) => ({ word: w, status: 'correct' })),
+        };
+      } else {
+        // LOGIC TRẠM 1, 2, 3: So khớp từ chuẩn xác với câu mẫu
+        const targetWords = targetPhrase.toLowerCase().split(/\s+/);
+        const userWords = userTranscript.toLowerCase().split(/\s+/);
 
-      let baseScore = Math.round(coverageRatio * 85 + 15);
+        const matchedCount = userWords.filter((w) => targetWords.includes(w)).length;
+        const coverageRatio = Math.min(1, matchedCount / Math.max(1, targetWords.length));
+        const baseScore = Math.round(coverageRatio * 85 + 15);
 
-      // Nhận xét chuẩn từng trạm trong Fallback Engine
-      let feedbackText = `Bạn đã phát âm: "${userTranscript}". Phát âm rõ ràng, nhịp điệu khá mượt!`;
-      if (isStation3) {
-        feedbackText = `Khớp ${matchedCount}/${targetWords.length} từ câu thoại Boss! Phát âm chuẩn xác, gây -${baseScore} HP tổn hại!`;
-      } else if (isStation4) {
-        feedbackText = `Phản xạ rất tốt (${wordCount} từ)! Câu nói của bạn rõ ràng. Hãy tiếp tục duy trì phong độ nhé.`;
+        let feedbackText = `Bạn đã phát âm: "${userTranscript}". Phát âm rõ ràng, nhịp điệu khá mượt!`;
+        if (isStation3) {
+          feedbackText = `Khớp ${matchedCount}/${targetWords.length} từ câu thoại Boss! Phát âm chuẩn xác, gây -${baseScore} HP tổn hại!`;
+        }
+
+        evalResult = {
+          score: baseScore,
+          isWin: baseScore >= 60,
+          wordCount,
+          pronunciation: baseScore,
+          grammar: baseScore,
+          vocabulary: baseScore,
+          reflexes: baseScore,
+          content: baseScore,
+          fluency: baseScore,
+          detailedFeedback: feedbackText,
+          wordAnalysis: words.map((w) => ({
+            word: w,
+            status: targetWords.includes(w.toLowerCase()) ? 'correct' : 'warning',
+          })),
+        };
       }
-
-      evalResult = {
-        score: baseScore,
-        isWin: baseScore >= 60,
-        wordCount,
-        pronunciation: baseScore,
-        grammar: baseScore,
-        vocabulary: baseScore,
-        reflexes: baseScore,
-        content: baseScore,
-        fluency: baseScore,
-        detailedFeedback: feedbackText,
-        wordAnalysis: words.map((w) => ({
-          word: w,
-          status: targetWords.includes(w.toLowerCase()) ? 'correct' : 'warning',
-        })),
-      };
     }
 
     return res.status(200).json({
