@@ -1,7 +1,7 @@
 // src/screens/UserProfileScreen.tsx
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
-import { getUserProgress, UserProgress } from '../services/userService';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, TextInput, Modal, Alert } from 'react-native';
+import { getUserProgress, savePlayerName, getStoredPlayerName, UserProgress } from '../services/userService';
 
 interface Props {
   onBack: () => void;
@@ -10,9 +10,18 @@ interface Props {
 export default function UserProfileScreen({ onBack }: Props) {
   const [profile, setProfile] = useState<UserProgress | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  
+  // State quản lý tên / mã tên sinh viên
+  const [playerName, setPlayerName] = useState<string>('');
+  const [isEditModalOpen, setIsEditModalOpen] = useState<boolean>(false);
+  const [tempNameInput, setTempNameInput] = useState<string>('');
 
   const loadUserData = async () => {
     setLoading(true);
+
+    // Lấy tên hiện tại
+    const currentName = getStoredPlayerName();
+    setPlayerName(currentName);
 
     // Bọc Safety Timeout để chống kẹt xoay vòng tròn quá 1.5s
     const timeoutPromise = new Promise<UserProgress>((resolve) => {
@@ -27,7 +36,6 @@ export default function UserProfileScreen({ onBack }: Props) {
     });
 
     try {
-      // Đua thời gian giữa API thực tế và Timeout
       const data = await Promise.race([getUserProgress(), timeoutPromise]);
       setProfile(data || {
         totalXp: 100,
@@ -36,7 +44,6 @@ export default function UserProfileScreen({ onBack }: Props) {
         completedStations: [1]
       });
     } catch (error) {
-      // Fallback dữ liệu nếu có lỗi
       setProfile({
         totalXp: 120,
         streakDays: 1,
@@ -44,7 +51,7 @@ export default function UserProfileScreen({ onBack }: Props) {
         completedStations: [1]
       });
     } finally {
-      setLoading(false); // BẮT BỘC TẮT VÒNG XOAY TRONG MỌI TRƯỜNG HỢP
+      setLoading(false);
     }
   };
 
@@ -52,13 +59,18 @@ export default function UserProfileScreen({ onBack }: Props) {
     loadUserData();
   }, []);
 
-  const calculateLevel = (xp: number = 0) => {
-    return Math.floor(xp / 100) + 1;
+  // Hàm xử lý lưu tên mới
+  const handleSaveName = async () => {
+    if (!tempNameInput.trim()) {
+      return;
+    }
+    const updatedName = await savePlayerName(tempNameInput.trim());
+    setPlayerName(updatedName);
+    setIsEditModalOpen(false);
   };
 
-  const calculateXpProgress = (xp: number = 0) => {
-    return (xp % 100);
-  };
+  const calculateLevel = (xp: number = 0) => Math.floor(xp / 100) + 1;
+  const calculateXpProgress = (xp: number = 0) => (xp % 100);
 
   return (
     <View style={styles.container}>
@@ -82,7 +94,19 @@ export default function UserProfileScreen({ onBack }: Props) {
               <View style={styles.avatarCircle}>
                 <Text style={styles.avatarText}>🎙️</Text>
               </View>
-              <Text style={styles.userName}>VibeSpeaker Cyber</Text>
+
+              {/* KHU VỰC HIỂN THỊ TÊN & NÚT ĐỔI TÊN */}
+              <TouchableOpacity 
+                style={styles.nameContainer}
+                onPress={() => {
+                  setTempNameInput(playerName);
+                  setIsEditModalOpen(true);
+                }}
+              >
+                <Text style={styles.userName}>{playerName || 'TẠO MÃ TÊN SINH VIÊN'}</Text>
+                <Text style={styles.editBadge}>✏️ ĐỔI TÊN</Text>
+              </TouchableOpacity>
+
               <Text style={styles.userTitle}>🏆 CẤP ĐỘ {calculateLevel(profile.totalXp)} • CYBER PHONETICIAN</Text>
 
               {/* THANH TIẾN TRÌNH XP */}
@@ -146,6 +170,36 @@ export default function UserProfileScreen({ onBack }: Props) {
           </>
         ) : null}
       </ScrollView>
+
+      {/* MODAL POPUP ĐẶT / ĐỔI TÊN MÃ SINH VIÊN */}
+      <Modal visible={isEditModalOpen} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox}>
+            <Text style={styles.modalTitle}>🎮 ĐẶT MÃ TÊN CYBER PLAYER</Text>
+            <Text style={styles.modalSubTitle}>
+              Cú pháp chuẩn: [Mã Lớp] - [Họ Tên]{'\n'}(VD: K48_ENG_NguyenVanA)
+            </Text>
+
+            <TextInput
+              style={styles.modalInput}
+              value={tempNameInput}
+              onChangeText={setTempNameInput}
+              placeholder="Nhập mã tên sinh viên..."
+              placeholderTextColor="#666"
+              autoCapitalize="characters"
+            />
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={styles.cancelBtn} onPress={() => setIsEditModalOpen(false)}>
+                <Text style={styles.cancelBtnText}>HỦY</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.saveBtn} onPress={handleSaveName}>
+                <Text style={styles.saveBtnText}>LƯU TÊN</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -159,7 +213,9 @@ const styles = StyleSheet.create({
   avatarCard: { backgroundColor: '#0D0620', padding: 20, borderRadius: 16, borderWidth: 2, borderColor: '#00FFFF', width: '100%', alignItems: 'center', marginBottom: 15 },
   avatarCircle: { width: 60, height: 60, borderRadius: 30, backgroundColor: '#1A0B2E', justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#FF007F', marginBottom: 10 },
   avatarText: { fontSize: 28 },
-  userName: { color: '#FFF', fontSize: 16, fontWeight: '900', marginBottom: 4 },
+  nameContainer: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#1A0B2E', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, borderWidth: 1, borderColor: '#FF007F', marginBottom: 6 },
+  userName: { color: '#FFF', fontSize: 15, fontWeight: '900' },
+  editBadge: { color: '#00FFFF', fontSize: 9, fontWeight: 'bold' },
   userTitle: { color: '#FFD700', fontSize: 10, fontWeight: 'bold', marginBottom: 12 },
   xpProgressBg: { width: '100%', height: 10, backgroundColor: '#1A0B2E', borderRadius: 5, overflow: 'hidden', marginBottom: 6 },
   xpProgressFill: { height: '100%', backgroundColor: '#39FF14' },
@@ -174,5 +230,17 @@ const styles = StyleSheet.create({
   stationName: { color: '#FFF', fontSize: 11, fontWeight: 'bold' },
   stationStatus: { color: '#39FF14', fontSize: 10, fontWeight: 'bold' },
   refreshBtn: { backgroundColor: '#1A0B2E', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#00FFFF', width: '100%', alignItems: 'center' },
-  refreshText: { color: '#00FFFF', fontSize: 10, fontWeight: '900' }
+  refreshText: { color: '#00FFFF', fontSize: 10, fontWeight: '900' },
+  
+  // MODAL STYLES
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+  modalBox: { backgroundColor: '#0D0620', borderRadius: 16, borderWidth: 2, borderColor: '#00FFFF', padding: 20, width: '100%', maxWidth: 360, alignItems: 'center' },
+  modalTitle: { color: '#00FFFF', fontSize: 14, fontWeight: '900', marginBottom: 6 },
+  modalSubTitle: { color: '#AAAABB', fontSize: 10, textAlign: 'center', marginBottom: 16 },
+  modalInput: { backgroundColor: '#1A0B2E', borderWidth: 1, borderColor: '#FF007F', borderRadius: 8, color: '#FFF', width: '100%', padding: 12, fontSize: 13, fontWeight: 'bold', marginBottom: 20 },
+  modalActions: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', gap: 10 },
+  cancelBtn: { flex: 1, backgroundColor: '#221133', padding: 12, borderRadius: 8, alignItems: 'center' },
+  cancelBtnText: { color: '#AAAABB', fontSize: 11, fontWeight: 'bold' },
+  saveBtn: { flex: 1, backgroundColor: '#00FFFF', padding: 12, borderRadius: 8, alignItems: 'center' },
+  saveBtnText: { color: '#05020D', fontSize: 11, fontWeight: '900' }
 });

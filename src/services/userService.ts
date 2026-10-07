@@ -14,10 +14,52 @@ export interface UserStats {
   lastActive: string;
 }
 
+export interface UserProgress {
+  totalXp: number;
+  streakDays: number;
+  totalDrillsCompleted: number;
+  completedStations: number[];
+}
+
+// Lấy tên đã lưu trong LocalStorage
+export const getStoredPlayerName = (): string => {
+  return localStorage.getItem('vibe_player_name') || localStorage.getItem('vibe_display_name') || '';
+};
+
+// Lưu tên người dùng / mã tên sinh viên
+export const savePlayerName = async (newName: string): Promise<string> => {
+  localStorage.setItem('vibe_player_name', newName);
+  localStorage.setItem('vibe_display_name', newName);
+
+  const uid = auth.currentUser?.uid || 'GUEST_USER';
+  try {
+    if (db && uid !== 'GUEST_USER') {
+      const userRef = doc(db, 'users', uid);
+      await setDoc(userRef, { displayName: newName }, { merge: true });
+    }
+  } catch (e) {
+    console.warn('Không thể đồng bộ tên lên DB:', e);
+  }
+  return newName;
+};
+
+export const getUserProgress = async (): Promise<UserProgress> => {
+  const xp = parseInt(localStorage.getItem('vibe_xp') || '180', 10);
+  const streak = parseInt(localStorage.getItem('vibe_streak') || '3', 10);
+  const drills = parseInt(localStorage.getItem('vibe_s1_count') || '12', 10);
+
+  return {
+    totalXp: xp,
+    streakDays: streak,
+    totalDrillsCompleted: drills,
+    completedStations: [1, 2]
+  };
+};
+
 export const getUserStats = async (uid: string): Promise<UserStats> => {
   const localFallback: UserStats = {
     uid,
-    displayName: auth.currentUser?.displayName || 'CyberWarrior',
+    displayName: getStoredPlayerName() || auth.currentUser?.displayName || 'CyberWarrior',
     totalXp: parseInt(localStorage.getItem('vibe_xp') || '150', 10),
     level: parseInt(localStorage.getItem('vibe_level') || '2', 10),
     streak: parseInt(localStorage.getItem('vibe_streak') || '3', 10),
