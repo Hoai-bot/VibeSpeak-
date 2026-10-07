@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
 
-// Import 3 dịch vụ thi đấu Local + Groq AI
+// Import các dịch vụ thi đấu Local + Groq AI
 import { getInstantSoloTopic, generateSoloTopic } from '../services/arena/soloService';
 import { getInstantRelayChallenge, generateRelayChallenge } from '../services/arena/relayService';
 import { getInstantRoleplayScenario, generateRoleplayScenario } from '../services/arena/roleplayService';
@@ -14,12 +14,19 @@ interface Props {
   onBack: () => void;
 }
 
+type PlayerTurn = 1 | 2;
+
 export default function Station2Screen({ onBack }: Props) {
   const [cefrLevel, setCefrLevel] = useState<string>('A1');
   const [mode, setMode] = useState<'solo' | 'relay' | 'roleplay'>('solo');
   const [exercise, setExercise] = useState<any>(null);
 
-  // 🎙 State cho Thu âm & Chấm điểm
+  // ⏱ State quản lý Lượt đấu & Đồng hồ đếm ngược 15s cho 2 người chơi
+  const [activePlayer, setActivePlayer] = useState<PlayerTurn>(1);
+  const [turnTimer, setTurnTimer] = useState<number>(15);
+  const [isGameActive, setIsGameActive] = useState<boolean>(false);
+
+  // 🎙 State cho Thu âm & Chấm điểm AI
   const [isRecording, setIsRecording] = useState<boolean>(false);
   const [isEvaluating, setIsEvaluating] = useState<boolean>(false);
   const [evalResult, setEvalResult] = useState<AssessmentResult | null>(null);
@@ -27,11 +34,39 @@ export default function Station2Screen({ onBack }: Props) {
 
   const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
 
+  // ⏱ BỘ ĐỒNG HỒ ĐẾM NGƯỢC CHUYỂN LƯỢT TỰ ĐỘNG (15s/LƯỢT)
+  useEffect(() => {
+    let timerInterval: NodeJS.Timeout | null = null;
+
+    if (isGameActive && turnTimer > 0) {
+      timerInterval = setInterval(() => {
+        setTurnTimer((prev) => prev - 1);
+      }, 1000);
+    } else if (turnTimer === 0 && isGameActive) {
+      // Hết 15s tự động chuyển lượt cho Player tiếp theo
+      handleSwitchTurn();
+    }
+
+    return () => {
+      if (timerInterval) clearInterval(timerInterval);
+    };
+  }, [isGameActive, turnTimer]);
+
+  // Hàm chuyển lượt nói & Reset lại đồng hồ 15s
+  const handleSwitchTurn = () => {
+    const nextPlayer = activePlayer === 1 ? 2 : 1;
+    setActivePlayer(nextPlayer);
+    setTurnTimer(15);
+  };
+
   // ⚡ Tải bài thi đấu tức thì (0.01s) từ Local + Gọi Groq AI ngầm
   const loadNewExercise = async (selectedMode = mode, selectedLevel = cefrLevel) => {
     setEvalResult(null);
-    let instantData: any = null;
+    setIsGameActive(false);
+    setActivePlayer(1);
+    setTurnTimer(15);
 
+    let instantData: any = null;
     if (selectedMode === 'solo') {
       instantData = getInstantSoloTopic(selectedLevel);
     } else if (selectedMode === 'relay') {
@@ -42,7 +77,6 @@ export default function Station2Screen({ onBack }: Props) {
 
     setExercise(instantData);
 
-    // Gọi ngầm Groq AI để lấy bài mới độc bản
     try {
       let aiData: any = null;
       if (selectedMode === 'solo') aiData = await generateSoloTopic(selectedLevel);
@@ -51,7 +85,7 @@ export default function Station2Screen({ onBack }: Props) {
 
       if (aiData) setExercise(aiData);
     } catch (e) {
-      // Giữ nguyên dữ liệu Local nếu Groq AI timeout
+      // Giữ dữ liệu Local fallback
     }
   };
 
@@ -59,7 +93,7 @@ export default function Station2Screen({ onBack }: Props) {
     loadNewExercise(mode, cefrLevel);
   }, [mode, cefrLevel]);
 
-  // 🎙 HÀM BẮT ĐẦU THU ÂM BÀI NÓI
+  // 🎙 HÀM BẮT ĐẦU THU ÂM
   const startRecording = async () => {
     try {
       setEvalResult(null);
@@ -72,15 +106,12 @@ export default function Station2Screen({ onBack }: Props) {
         const audioBlob = new Blob(chunks, { type: 'audio/webm' });
         setIsEvaluating(true);
 
-        // Lấy chuỗi câu hỏi đề bài làm promptEn gửi sang AI chấm điểm Task Fulfillment
         const targetPrompt = exercise?.promptEn || exercise?.contextEn || exercise?.scenarioTitle || '';
-        
-        // Gọi dịch vụ chấm điểm AI chính xác
         const result = await evaluateSpeaking(audioBlob, cefrLevel, undefined, targetPrompt);
+        
         setEvalResult(result);
         setIsEvaluating(false);
 
-        // Dọn dẹp micro stream
         stream.getTracks().forEach(track => track.stop());
       };
 
@@ -88,16 +119,17 @@ export default function Station2Screen({ onBack }: Props) {
       setMediaRecorder(recorder);
       setIsRecording(true);
     } catch (err) {
-      alert("Thiết bị không hỗ trợ Micro hoặc ứng dụng chưa được cấp quyền thu âm!");
+      alert("Thiết bị chưa được cấp quyền micro!");
     }
   };
 
-  // 🛑 HÀM DỪNG THU ÂM VÀ GỬI AI CHẤM ĐIỂM
-  const stopRecording = () => {
+  // 🛑 DỪNG THU ÂM VÀ CHUYỂN LƯỢT NÓI
+  const stopRecordingAndSwitch = () => {
     if (mediaRecorder && isRecording) {
       mediaRecorder.stop();
       setIsRecording(false);
     }
+    handleSwitchTurn();
   };
 
   return (
@@ -149,7 +181,7 @@ export default function Station2Screen({ onBack }: Props) {
           </TouchableOpacity>
         </View>
 
-        {/* CARD ĐỀ THI ĐẤU CHÍNH */}
+        {/* CARD THI ĐẤU CHÍNH */}
         <View style={styles.box}>
           <Text style={styles.boxTitle}>📌 SÀN ĐẤU {mode.toUpperCase()} [{cefrLevel}]</Text>
 
@@ -157,41 +189,73 @@ export default function Station2Screen({ onBack }: Props) {
             <View style={{ width: '100%', alignItems: 'center' }}>
               <Text style={styles.scenarioTitle}>{exercise.title || exercise.topic || exercise.scenarioTitle}</Text>
               
-              <Text style={styles.promptText}>
-                🎯 "{exercise.promptEn || exercise.contextEn || exercise.initialAiMessage || ''}"
-              </Text>
-              
-              {(exercise.promptVi || exercise.contextVi || exercise.goalVi) && (
-                <Text style={styles.promptViText}>
-                  👉 Dịch: "{exercise.promptVi || exercise.contextVi || exercise.goalVi}"
+              {/* THANH ĐỒNG HỒ ĐẾM NGƯỢC THỜI GIAN LƯỢT (DÀNH CHO RELAY VÀ ROLEPLAY) */}
+              {(mode === 'relay' || mode === 'roleplay') && (
+                <View style={styles.timerBox}>
+                  <Text style={styles.timerLabel}>⏱️ THỜI GIAN LƯỢT NÓI HIỆN TẠI:</Text>
+                  <Text style={[styles.timerValue, turnTimer <= 5 && { color: '#FF0055' }]}>
+                    00:{turnTimer < 10 ? `0${turnTimer}` : turnTimer}
+                  </Text>
+                </View>
+              )}
+
+              {/* KHU VỰC PHÂN VAI VÀ HIỂN THỊ CHI TIẾT 2 NGƯỜI CHƠI */}
+              {(mode === 'relay' || mode === 'roleplay') && (
+                <View style={styles.playersRow}>
+                  {/* PLAYER 1 */}
+                  <View style={[styles.playerCard, activePlayer === 1 && styles.activePlayerCard]}>
+                    <Text style={styles.playerTag}>👤 PLAYER 1</Text>
+                    <Text style={styles.roleText}>
+                      🎭 Vai: {exercise.player1En || exercise.userRoleEn || 'Khách hàng'}
+                    </Text>
+                    {activePlayer === 1 && <Text style={styles.turnIndicator}>👉 ĐẾN LƯỢT NÓI!</Text>}
+                  </View>
+
+                  {/* PLAYER 2 / AI */}
+                  <View style={[styles.playerCard, activePlayer === 2 && styles.activePlayerCard]}>
+                    <Text style={styles.playerTag}>
+                      {mode === 'roleplay' ? '🤖 AI PARTNER' : '👤 PLAYER 2'}
+                    </Text>
+                    <Text style={styles.roleText}>
+                      🎭 Vai: {exercise.player2En || exercise.aiRoleEn || 'Đầu bếp / Thu ngân'}
+                    </Text>
+                    {activePlayer === 2 && <Text style={styles.turnIndicator}>👉 ĐẾN LƯỢT NÓI!</Text>}
+                  </View>
+                </View>
+              )}
+
+              {/* KỊCH BẢN / CÂU HỎI ĐỀ BÀI */}
+              <View style={styles.scriptBox}>
+                <Text style={styles.promptText}>
+                  🎯 "{exercise.promptEn || exercise.contextEn || exercise.initialAiMessage || ''}"
                 </Text>
-              )}
+                {(exercise.promptVi || exercise.contextVi || exercise.goalVi) && (
+                  <Text style={styles.promptViText}>
+                    👉 Dịch: "{exercise.promptVi || exercise.contextVi || exercise.goalVi}"
+                  </Text>
+                )}
+              </View>
 
-              {/* Chi tiết cho chế độ Relay (Phân vai Player 1 & Player 2) */}
-              {mode === 'relay' && (
-                <View style={styles.relayDetails}>
-                  <Text style={styles.pLabel}>👤 Player 1: {exercise.player1En}</Text>
-                  <Text style={styles.pLabel}>👤 Player 2: {exercise.player2En}</Text>
-                </View>
-              )}
-
-              {/* Chi tiết cho chế độ Roleplay (Phân vai AI & User) */}
-              {mode === 'roleplay' && (
-                <View style={styles.relayDetails}>
-                  <Text style={styles.pLabel}>🤖 Vai AI: {exercise.aiRoleEn}</Text>
-                  <Text style={styles.pLabel}>👤 Vai Người Chơi: {exercise.userRoleEn}</Text>
-                  <Text style={styles.pLabel}>🎯 Mục Tiêu: {exercise.goalEn}</Text>
-                </View>
-              )}
-
-              {/* 🎙 NÚT THU ÂM BÀI NÓI (THI ĐẤU) */}
-              {!isEvaluating ? (
+              {/* 🎙 KHU VỰC THAO TÁC THU ÂM & CHUYỂN LƯỢT */}
+              {!isGameActive && (mode === 'relay' || mode === 'roleplay') ? (
+                <TouchableOpacity 
+                  style={styles.startBtn} 
+                  onPress={() => {
+                    setIsGameActive(true);
+                    setTurnTimer(15);
+                  }}
+                >
+                  <Text style={styles.startBtnText}>🚀 BẮT ĐẦU VÒNG ĐẤU 2 NGƯỜI</Text>
+                </TouchableOpacity>
+              ) : !isEvaluating ? (
                 <TouchableOpacity 
                   style={[styles.recordBtn, isRecording && styles.recordingBtnActive]} 
-                  onPress={isRecording ? stopRecording : startRecording}
+                  onPress={isRecording ? stopRecordingAndSwitch : startRecording}
                 >
                   <Text style={styles.recordBtnText}>
-                    {isRecording ? '🛑 DỪNG & GỬI AI CHẤM ĐIỂM' : '🎙 BẤM MICRO ĐỂ NÓI'}
+                    {isRecording 
+                      ? '🛑 DỪNG & CHUYỂN LƯỢT CHO BẠN BÊN CẠNH' 
+                      : `🎙 LƯỢT PLAYER ${activePlayer}: BẤM ĐỂ THU ÂM`}
                   </Text>
                 </TouchableOpacity>
               ) : (
@@ -201,30 +265,25 @@ export default function Station2Screen({ onBack }: Props) {
                 </View>
               )}
 
-              {/* 🏆 HIỂN THỊ KẾT QUẢ CHẤM ĐIỂM CHI TIẾT */}
+              {/* 🏆 HIỂN THỊ KẾT QUẢ AI CHẤM ĐIỂM */}
               {evalResult && (
                 <View style={styles.evalBox}>
                   <Text style={styles.evalScore}>🏆 ĐIỂM BÀI NÓI: {evalResult.score}/100</Text>
-                  <Text style={styles.transcriptText}>💬 Văn bản bóc tách: "{evalResult.transcript}"</Text>
+                  <Text style={styles.transcriptText}>💬 AI nghe được: "{evalResult.transcript}"</Text>
                   
-                  {/* Bảng điểm 3 tiêu chí */}
                   <View style={styles.scoreRow}>
-                    <Text style={styles.scoreDetail}>Ý đề bài: {evalResult.content}/100</Text>
+                    <Text style={styles.scoreDetail}>Nội dung: {evalResult.content}/100</Text>
                     <Text style={styles.scoreDetail}>Ngữ pháp: {evalResult.grammar}/100</Text>
                     <Text style={styles.scoreDetail}>Từ vựng: {evalResult.vocabulary}/100</Text>
                   </View>
 
                   <Text style={styles.feedbackText}>💡 Nhận xét: {evalResult.detailedFeedback}</Text>
-
-                  {evalResult.missingRequirements && evalResult.missingRequirements.length > 0 && (
-                    <Text style={styles.missingText}>⚠️ Ý còn thiếu: {evalResult.missingRequirements.join(', ')}</Text>
-                  )}
                 </View>
               )}
 
               {/* Nút đổi trận đấu mới */}
               <TouchableOpacity style={styles.nextBtn} onPress={() => loadNewExercise()}>
-                <Text style={styles.nextBtnText}>🔄 BẮT ĐẦU VÒNG ĐẤU MỚI</Text>
+                <Text style={styles.nextBtnText}>🔄 TẢI TRẬN ĐẤU MỚI</Text>
               </TouchableOpacity>
             </View>
           ) : (
@@ -255,21 +314,33 @@ const styles = StyleSheet.create({
   modeTextActive: { color: '#000' },
   box: { backgroundColor: '#0D0620', padding: 18, borderRadius: 16, borderWidth: 2, borderColor: '#00FFFF', width: '100%', alignItems: 'center', marginBottom: 20 },
   boxTitle: { color: '#FFD700', fontSize: 11, fontWeight: '900', marginBottom: 12 },
-  scenarioTitle: { color: '#39FF14', fontSize: 13, fontWeight: '900', marginBottom: 6, textAlign: 'center' },
-  promptText: { color: '#FFF', fontSize: 13, fontWeight: '800', textAlign: 'center', lineHeight: 18, marginBottom: 8 },
-  promptViText: { color: '#FFD700', fontSize: 11, fontWeight: '600', textAlign: 'center', marginBottom: 10, fontStyle: 'italic' },
-  relayDetails: { backgroundColor: '#130A2A', padding: 10, borderRadius: 8, width: '100%', marginVertical: 8, borderWidth: 1, borderColor: '#332255' },
-  pLabel: { color: '#E0E0FF', fontSize: 11, fontWeight: '700', marginVertical: 2 },
-  recordBtn: { backgroundColor: '#FF0055', paddingVertical: 12, paddingHorizontal: 16, borderRadius: 10, marginTop: 15, width: '100%', alignItems: 'center' },
+  scenarioTitle: { color: '#39FF14', fontSize: 13, fontWeight: '900', marginBottom: 10, textAlign: 'center' },
+  
+  // TIMER & ROLE STYLES
+  timerBox: { backgroundColor: '#120826', padding: 8, borderRadius: 8, borderWidth: 1, borderColor: '#00FFFF', alignItems: 'center', width: '100%', marginBottom: 12 },
+  timerLabel: { color: '#AAAABB', fontSize: 9, fontWeight: 'bold' },
+  timerValue: { color: '#39FF14', fontSize: 20, fontWeight: '900', marginTop: 2 },
+  playersRow: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginBottom: 12 },
+  playerCard: { flex: 0.48, backgroundColor: '#0D0620', padding: 8, borderRadius: 8, borderWidth: 1, borderColor: '#332255' },
+  activePlayerCard: { borderColor: '#FF007F', borderWidth: 2, backgroundColor: '#1A0B2E' },
+  playerTag: { color: '#00FFFF', fontSize: 9, fontWeight: '900' },
+  roleText: { color: '#FFD700', fontSize: 9, fontWeight: 'bold', marginTop: 3 },
+  turnIndicator: { color: '#39FF14', fontSize: 8, fontWeight: '900', marginTop: 4 },
+  scriptBox: { backgroundColor: '#130A2A', padding: 10, borderRadius: 8, width: '100%', borderWidth: 1, borderColor: '#332255', marginBottom: 12 },
+  promptText: { color: '#FFF', fontSize: 12, fontWeight: '800', textAlign: 'center', lineHeight: 16 },
+  promptViText: { color: '#FFD700', fontSize: 10, fontWeight: '600', textAlign: 'center', marginTop: 4, fontStyle: 'italic' },
+  
+  startBtn: { backgroundColor: '#FF007F', paddingVertical: 12, paddingHorizontal: 16, borderRadius: 10, width: '100%', alignItems: 'center', marginVertical: 10 },
+  startBtnText: { color: '#FFF', fontSize: 11, fontWeight: '900' },
+  recordBtn: { backgroundColor: '#FF0055', paddingVertical: 12, paddingHorizontal: 16, borderRadius: 10, marginTop: 10, width: '100%', alignItems: 'center' },
   recordingBtnActive: { backgroundColor: '#FF3300' },
   recordBtnText: { color: '#FFF', fontSize: 11, fontWeight: '900' },
-  evalBox: { backgroundColor: '#130A2A', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#39FF14', width: '100%', marginTop: 15 },
+  evalBox: { backgroundColor: '#130A2A', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#39FF14', width: '100%', marginTop: 12 },
   evalScore: { color: '#39FF14', fontSize: 12, fontWeight: '900', marginBottom: 4 },
-  transcriptText: { color: '#FFF', fontSize: 11, fontStyle: 'italic', marginBottom: 6 },
+  transcriptText: { color: '#FFF', fontSize: 10, fontStyle: 'italic', marginBottom: 6 },
   scoreRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6, backgroundColor: '#05020D', padding: 6, borderRadius: 6 },
-  scoreDetail: { color: '#00FFFF', fontSize: 10, fontWeight: 'bold' },
-  feedbackText: { color: '#FFD700', fontSize: 11, marginTop: 4 },
-  missingText: { color: '#FF3366', fontSize: 10, marginTop: 4, fontWeight: 'bold' },
+  scoreDetail: { color: '#00FFFF', fontSize: 9, fontWeight: 'bold' },
+  feedbackText: { color: '#FFD700', fontSize: 10, marginTop: 4 },
   nextBtn: { backgroundColor: '#39FF14', paddingVertical: 12, paddingHorizontal: 16, borderRadius: 10, marginTop: 12, width: '100%', alignItems: 'center' },
   nextBtnText: { color: '#000', fontSize: 11, fontWeight: '900' }
 });
