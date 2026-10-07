@@ -34,30 +34,32 @@ export default function Station2Screen({ onBack }: Props) {
 
   const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
 
-  // ⏱ BỘ ĐỒNG HỒ ĐẾM NGƯỢC CHUYỂN LƯỢT TỰ ĐỘNG (15s/LƯỢT)
+  // 1. HÀM CHUYỂN LƯỢT CHUẨN: BẮT BỘC RESET TIMER VỀ 15S NGAY LẬP TỨC
+  const handleSwitchTurn = () => {
+    setActivePlayer((prevPlayer) => (prevPlayer === 1 ? 2 : 1));
+    setTurnTimer(15); // Đảm bảo gán lại 15 giây cho Player mới
+  };
+
+  // 2. BỘ ĐỒNG HỒ ĐẾM NGƯỢC AN TOÀN (CHỐNG KẸT 0S KHÓA TỰ ĐỘNG)
   useEffect(() => {
     let timerInterval: NodeJS.Timeout | null = null;
 
-    if (isGameActive && turnTimer > 0) {
-      timerInterval = setInterval(() => {
-        setTurnTimer((prev) => prev - 1);
-      }, 1000);
-    } else if (turnTimer === 0 && isGameActive) {
-      // Hết 15s tự động chuyển lượt cho Player tiếp theo
-      handleSwitchTurn();
+    if (isGameActive && isRecording) {
+      // Chỉ đếm ngược khi người chơi ĐANG BẤM MICRO THU ÂM
+      if (turnTimer > 0) {
+        timerInterval = setInterval(() => {
+          setTurnTimer((prev) => prev - 1);
+        }, 1000);
+      } else if (turnTimer === 0) {
+        // Hết 15s tự động dừng thu âm và đổi lượt
+        stopRecordingAndSwitch();
+      }
     }
 
     return () => {
       if (timerInterval) clearInterval(timerInterval);
     };
-  }, [isGameActive, turnTimer]);
-
-  // Hàm chuyển lượt nói & Reset lại đồng hồ 15s
-  const handleSwitchTurn = () => {
-    const nextPlayer = activePlayer === 1 ? 2 : 1;
-    setActivePlayer(nextPlayer);
-    setTurnTimer(15);
-  };
+  }, [isGameActive, isRecording, turnTimer]);
 
   // ⚡ Tải bài thi đấu tức thì (0.01s) từ Local + Gọi Groq AI ngầm
   const loadNewExercise = async (selectedMode = mode, selectedLevel = cefrLevel) => {
@@ -192,7 +194,7 @@ export default function Station2Screen({ onBack }: Props) {
               {/* THANH ĐỒNG HỒ ĐẾM NGƯỢC THỜI GIAN LƯỢT (DÀNH CHO RELAY VÀ ROLEPLAY) */}
               {(mode === 'relay' || mode === 'roleplay') && (
                 <View style={styles.timerBox}>
-                  <Text style={styles.timerLabel}>⏱️ THỜI GIAN LƯỢT NÓI HIỆN TẠI:</Text>
+                  <Text style={styles.timerLabel}>⏱ THỜI GIAN: {turnTimer}s {isRecording ? '(ĐANG THU ÂM)' : '(BẤM MICRO ĐỂ CHẠY)'}</Text>
                   <Text style={[styles.timerValue, turnTimer <= 5 && { color: '#FF0055' }]}>
                     00:{turnTimer < 10 ? `0${turnTimer}` : turnTimer}
                   </Text>
