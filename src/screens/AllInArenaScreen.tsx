@@ -36,9 +36,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
   const [hasRecordedTurn1, setHasRecordedTurn1] = useState<boolean>(false);
   const [hasRecordedTurn2, setHasRecordedTurn2] = useState<boolean>(false);
 
-  // 🎯 1. BỔ SUNG STATE LƯU URL BẢN THU ÂM TỪ BLOB
   const [recordedAudioUrl, setRecordedAudioUrl] = useState<string | null>(null);
-
   const [micPermissionModal, setMicPermissionModal] = useState<boolean>(false);
   const [result, setResult] = useState<AssessmentResult | null>(null);
 
@@ -99,6 +97,15 @@ export default function AllInArenaScreen({ onBack }: Props) {
     audioChunksRef.current = [];
   };
 
+  // 🎯 FIX CHÍNH: TỰ ĐỘNG RESET ĐỒNG HỒ MỖI KHI ĐỔI LƯỢT HOẶC MỞ TRẬN NÓI MỚI
+  useEffect(() => {
+    if (battleState === 'battling') {
+      const turnAllocatedTime = getTimeForCurrentTurn(cefrLevel, mode);
+      setTimeLeft(turnAllocatedTime);
+    }
+  }, [currentTurn, battleState]);
+
+  // BỘ ĐỒNG HỒ ĐẾM NGƯỢC THEO THỜI GIAN THỰC TẾ
   useEffect(() => {
     if (!isTimerActive) return;
 
@@ -113,8 +120,11 @@ export default function AllInArenaScreen({ onBack }: Props) {
           }
           setIsRecording(false);
 
+          // Tự động nhảy lượt 2 nếu hết giờ ở lượt 1
           if (mode !== 'solo' && currentTurn === 1) {
-            setCurrentTurn(2);
+            setTimeout(() => {
+              setCurrentTurn(2);
+            }, 100);
           }
           return 0;
         }
@@ -235,6 +245,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
     });
   };
 
+  // 🎯 FIX CHÍNH: BẤM DỪNG THU ÂM SẼ TỰ CHUYỂN TANG LƯỢT 2 VÀ MỞ LẠI TIMER 15S CHUẨN
   const handleToggleRecord = async () => {
     if (!isRecording) {
       try {
@@ -294,6 +305,13 @@ export default function AllInArenaScreen({ onBack }: Props) {
       if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
         mediaRecorderRef.current.stop();
       }
+
+      // Nếu đang ở Lượt 1 (Relay/Roleplay) -> Bấm dừng sẽ tự động nhảy sang Lượt 2
+      if (mode !== 'solo' && currentTurn === 1) {
+        setTimeout(() => {
+          setCurrentTurn(2);
+        }, 150);
+      }
     }
   };
 
@@ -326,7 +344,6 @@ export default function AllInArenaScreen({ onBack }: Props) {
       return;
     }
 
-    // 🎯 2. TẠO URL ÂM THANH TỪ BLOB ĐỂ NGHE LẠI Ở MÀN HÌNH KẾT QUẢ
     if (typeof window !== 'undefined' && window.URL) {
       const audioUrl = URL.createObjectURL(activeBlob);
       setRecordedAudioUrl(audioUrl);
@@ -400,10 +417,8 @@ export default function AllInArenaScreen({ onBack }: Props) {
     </View>
   );
 
-  // 🎯 Lọc danh sách từ bị warning/error
   const incorrectWords = result?.wordAnalysis?.filter(item => item.status === 'warning' || item.status === 'error') || [];
 
-  // 🎯 Sửa nhận xét AI: Đổi "mẫu câu" thành "chủ đề"
   const formattedFeedback = (result?.detailedFeedback || '')
     .replace(/đối với mẫu câu/g, 'đối với chủ đề')
     .replace(/mẫu câu/g, 'chủ đề');
@@ -539,7 +554,6 @@ export default function AllInArenaScreen({ onBack }: Props) {
             </Text>
             <Text style={styles.scoreText}>⚡ TỔNG ĐIỂM TRẬN ĐẤU: {result.score} / 100 ĐIỂM</Text>
 
-            {/* 🎙 1. TRANSCRIPT / LỜI NÓI THỰC TẾ CỦA BẠN */}
             <View style={styles.userTranscriptBox}>
               <Text style={styles.userTranscriptTitle}>🎙 BÀI NÓI THỰC TẾ CỦA BẠN (TRANSCRIPT):</Text>
               <Text style={styles.userTranscriptContent}>
@@ -547,7 +561,6 @@ export default function AllInArenaScreen({ onBack }: Props) {
               </Text>
             </View>
 
-            {/* 🎧 3. HIỂN THỊ CẢ RECORDED AUDIO URL VÀ RESULT.AUDIOURL */}
             {(recordedAudioUrl || result.audioUrl) && (
               <View style={styles.nativeAudioContainer}>
                 <Text style={styles.nativeAudioLabel}>🎧 NGHE LẠI BẢN THU CỦA BẠN:</Text>
@@ -555,7 +568,6 @@ export default function AllInArenaScreen({ onBack }: Props) {
               </View>
             )}
 
-            {/* 📝 2. CHỈ HIỂN THỊ CÁC TỪ BỊ PHÁT ÂM SAI / CẦN CẢI THIỆN */}
             <View style={styles.scriptBox}>
               <Text style={styles.scriptLabel}>📝 TỪ CẦN CẢI THIỆN PHÁT ÂM:</Text>
               <View style={styles.wordBadgeContainer}>
