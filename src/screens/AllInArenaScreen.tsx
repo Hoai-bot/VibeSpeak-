@@ -12,9 +12,8 @@ interface Props {
 }
 
 export default function AllInArenaScreen({ onBack }: Props) {
-  const [mode, setMode] = useState<'solo' | 'relay' | 'roleplay'>('solo');
-  const [cefrLevel, setCefrLevel] = useState<string>('B2');
-  const [opponentType, setOpponentType] = useState<'bot' | 'pvp'>('bot');
+  const [mode, setMode] = useState<'solo' | 'relay' | 'roleplay'>('roleplay');
+  const [cefrLevel, setCefrLevel] = useState<string>('A1');
   const [loading, setLoading] = useState<boolean>(true);
 
   const [soloTopic, setSoloTopic] = useState<SoloTopic | null>(null);
@@ -22,21 +21,17 @@ export default function AllInArenaScreen({ onBack }: Props) {
   const [roleplayScenario, setRoleplayScenario] = useState<RoleplayScenario | null>(null);
 
   const [topicKey, setTopicKey] = useState<number>(0);
-
   const [battleState, setBattleState] = useState<'idle' | 'searching' | 'battling' | 'analyzing' | 'ended'>('idle');
-  const [currentTurn, setCurrentTurn] = useState<1 | 2>(1);
-  const [matchedOpponent, setMatchedOpponent] = useState<string>('');
-  const [timeLeft, setTimeLeft] = useState<number>(30);
   
+  // ⏱ CỐ ĐỊNH THỜI GIAN TOÀN BỘ BÀI HỘI THOẠI
+  const [timeLeft, setTimeLeft] = useState<number>(60);
   const [isTimerActive, setIsTimerActive] = useState<boolean>(false);
   const [isRecording, setIsRecording] = useState<boolean>(false);
   
-  const [recordedTurn1, setRecordedTurn1] = useState<Blob | null>(null);
-  const [recordedTurn2, setRecordedTurn2] = useState<Blob | null>(null);
-  const [hasRecordedTurn1, setHasRecordedTurn1] = useState<boolean>(false);
-  const [hasRecordedTurn2, setHasRecordedTurn2] = useState<boolean>(false);
+  const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
+  const [hasRecorded, setHasRecorded] = useState<boolean>(false);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
 
-  const [recordedAudioUrl, setRecordedAudioUrl] = useState<string | null>(null);
   const [micPermissionModal, setMicPermissionModal] = useState<boolean>(false);
   const [result, setResult] = useState<AssessmentResult | null>(null);
 
@@ -47,16 +42,14 @@ export default function AllInArenaScreen({ onBack }: Props) {
 
   const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
 
-  const getFullTimeForLevel = (level: string) => {
-    if (level === 'A1' || level === 'A2') return 20;
-    if (level === 'B1' || level === 'B2') return 40;
-    return 60;
-  };
-
-  const getTimeForCurrentTurn = (level: string, currentMode: string) => {
-    const total = getFullTimeForLevel(level);
-    if (currentMode === 'solo') return total;
-    return Math.floor(total / 2);
+  // 🎯 QUY ĐỊNH THỜI GIAN TỔNG NÓI CHO CẢ BÀI HỘI THOẠI CỦA 2 BẠN
+  const getTotalTimeForScenario = (level: string, currentMode: string) => {
+    if (currentMode === 'roleplay' || currentMode === 'relay') {
+      if (level === 'A1' || level === 'A2') return 45; // 45s cho A1-A2
+      if (level === 'B1' || level === 'B2') return 75; // 75s cho B1-B2
+      return 90; // 90s cho C1-C2
+    }
+    return 30; // Solo
   };
 
   const handleLevelChange = (newLevel: string) => {
@@ -85,25 +78,16 @@ export default function AllInArenaScreen({ onBack }: Props) {
     }
     
     setBattleState('idle');
-    setCurrentTurn(1);
     setIsRecording(false);
     setIsTimerActive(false);
-    setRecordedTurn1(null);
-    setRecordedTurn2(null);
-    setHasRecordedTurn1(false);
-    setHasRecordedTurn2(false);
-    setRecordedAudioUrl(null);
+    setRecordedBlob(null);
+    setHasRecorded(false);
+    setAudioUrl(null);
     setResult(null);
     audioChunksRef.current = [];
   };
 
-  useEffect(() => {
-    if (battleState === 'battling') {
-      const turnAllocatedTime = getTimeForCurrentTurn(cefrLevel, mode);
-      setTimeLeft(turnAllocatedTime);
-    }
-  }, [currentTurn, battleState]);
-
+  // ĐỒNG HỒ ĐẾM NGƯỢC CỐ ĐỊNH CHO CẢ BÀI HỘI THOẠI
   useEffect(() => {
     if (!isTimerActive) return;
 
@@ -117,12 +101,6 @@ export default function AllInArenaScreen({ onBack }: Props) {
             try { mediaRecorderRef.current.stop(); } catch (e) {}
           }
           setIsRecording(false);
-
-          if (mode !== 'solo' && currentTurn === 1) {
-            setTimeout(() => {
-              setCurrentTurn(2);
-            }, 150);
-          }
           return 0;
         }
         return prev - 1;
@@ -132,11 +110,10 @@ export default function AllInArenaScreen({ onBack }: Props) {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [isTimerActive, mode, currentTurn]);
+  }, [isTimerActive]);
 
   const loadModeData = async (selectedMode: string, level: string) => {
     const currentRequestId = ++requestIdRef.current;
-    
     setLoading(true);
     resetBattleState();
 
@@ -149,39 +126,27 @@ export default function AllInArenaScreen({ onBack }: Props) {
     try {
       if (selectedMode === 'solo') {
         const data = await generateSoloTopic(level);
-        if (currentRequestId === requestIdRef.current) {
-          setSoloTopic(data);
-          setTopicKey(Date.now());
-        }
+        if (currentRequestId === requestIdRef.current) setSoloTopic(data);
       } else if (selectedMode === 'relay') {
         const data = await generateRelayChallenge(level);
-        if (currentRequestId === requestIdRef.current) {
-          setRelayChallenge(data);
-          setTopicKey(Date.now());
-        }
+        if (currentRequestId === requestIdRef.current) setRelayChallenge(data);
       } else {
         const data = await generateRoleplayScenario(level);
-        if (currentRequestId === requestIdRef.current) {
-          setRoleplayScenario(data);
-          setTopicKey(Date.now());
-        }
+        if (currentRequestId === requestIdRef.current) setRoleplayScenario(data);
       }
+      setTopicKey(Date.now());
     } catch (err) {
       console.error("Lỗi tải đề Trạm 2:", err);
     } finally {
-      if (currentRequestId === requestIdRef.current) {
-        setLoading(false);
-      }
+      if (currentRequestId === requestIdRef.current) setLoading(false);
     }
   };
 
   const handleRefreshTopic = () => {
     if (loading) return;
-
     if (mode === 'solo') clearSoloTopicHistory();
     else if (mode === 'relay') clearRelayHistory();
     else clearRoleplayHistory();
-
     loadModeData(mode, cefrLevel);
   };
 
@@ -195,21 +160,14 @@ export default function AllInArenaScreen({ onBack }: Props) {
     setBattleState('searching');
     
     setTimeout(() => {
-      if (opponentType === 'bot') {
-        setMatchedOpponent('🤖 CYBER BOT [' + cefrLevel + ']');
-      } else {
-        const fakeUsernames = ['CyberKnight99', 'NeonSpeaker', 'VibeMaster', 'EchoRider'];
-        setMatchedOpponent('👤 ' + fakeUsernames[Math.floor(Math.random() * fakeUsernames.length)] + ' [' + cefrLevel + ']');
-      }
-      
-      setCurrentTurn(1);
       setBattleState('battling');
       setIsTimerActive(false);
-      const allocatedTime = getTimeForCurrentTurn(cefrLevel, mode);
+      const allocatedTime = getTotalTimeForScenario(cefrLevel, mode);
       setTimeLeft(allocatedTime);
-    }, 1500);
+    }, 1000);
   };
 
+  // 🎙 THU ÂM TOÀN BỘ CUỘC HỘI THOẠI TRONG 1 LẦN BẤM
   const handleToggleRecord = async () => {
     if (!isRecording) {
       try {
@@ -235,18 +193,15 @@ export default function AllInArenaScreen({ onBack }: Props) {
 
           mediaRecorder.onstop = () => {
             const mimeType = mediaRecorder.mimeType || 'audio/webm';
-            const recordedBlob = new Blob(audioChunksRef.current, { type: mimeType });
+            const blob = new Blob(audioChunksRef.current, { type: mimeType });
             
-            if (recordedBlob.size > 800) {
-              if (currentTurn === 1) {
-                setRecordedTurn1(recordedBlob);
-                setHasRecordedTurn1(true);
-              } else {
-                setRecordedTurn2(recordedBlob);
-                setHasRecordedTurn2(true);
-              }
+            if (blob.size > 800) {
+              const url = URL.createObjectURL(blob);
+              setRecordedBlob(blob);
+              setHasRecorded(true);
+              setAudioUrl(url);
             } else {
-              alert("⚠️ Ghi âm quá ngắn hoặc chưa rõ giọng nói! Vui lòng bấm thu âm lại.");
+              alert("⚠️ Ghi âm chưa rõ! Vui lòng bấm thu âm lại.");
             }
 
             stream.getTracks().forEach((track) => track.stop());
@@ -264,31 +219,15 @@ export default function AllInArenaScreen({ onBack }: Props) {
       setIsTimerActive(false);
 
       if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-        try {
-          mediaRecorderRef.current.stop();
-        } catch (e) {
-          console.warn("MediaRecorder stopped");
-        }
-      }
-
-      if (mode !== 'solo' && currentTurn === 1) {
-        setTimeout(() => {
-          setCurrentTurn(2);
-        }, 200);
+        try { mediaRecorderRef.current.stop(); } catch (e) {}
       }
     }
   };
 
   const getCurrentPromptText = () => {
-    if (mode === 'solo' && soloTopic) {
-      return soloTopic.promptEn;
-    }
-    if (mode === 'relay' && relayChallenge) {
-      return `${relayChallenge.topic}: ${relayChallenge.contextEn}`;
-    }
-    if (mode === 'roleplay' && roleplayScenario) {
-      return `${roleplayScenario.scenarioTitle} - Goal: ${roleplayScenario.goalEn}`;
-    }
+    if (mode === 'solo' && soloTopic) return soloTopic.promptEn;
+    if (mode === 'relay' && relayChallenge) return `${relayChallenge.topic}: ${relayChallenge.contextEn}`;
+    if (mode === 'roleplay' && roleplayScenario) return `Roleplay Context: ${roleplayScenario.scenarioTitle} - Goal: ${roleplayScenario.goalEn}`;
     return 'General speaking challenge';
   };
 
@@ -304,41 +243,28 @@ export default function AllInArenaScreen({ onBack }: Props) {
 
     await new Promise((resolve) => setTimeout(resolve, 200));
 
-    let finalBlobToSubmit: Blob | null = null;
-
-    if (recordedTurn1 && recordedTurn2) {
-      finalBlobToSubmit = new Blob([recordedTurn1, recordedTurn2], { type: recordedTurn1.type });
-    } else {
-      finalBlobToSubmit = recordedTurn1 || recordedTurn2;
-    }
-
-    if (!finalBlobToSubmit || finalBlobToSubmit.size <= 800) {
-      alert("🔒 Chưa ghi nhận bản thu âm giọng nói! Vui lòng bấm nút Micro nói trước khi nộp.");
+    if (!recordedBlob || recordedBlob.size <= 800) {
+      alert("🔒 Chưa ghi nhận bài nói! Vui lòng bấm Micro thu âm cuộc hội thoại trước khi nộp.");
       return;
-    }
-
-    if (typeof window !== 'undefined' && window.URL) {
-      const audioUrl = URL.createObjectURL(finalBlobToSubmit);
-      setRecordedAudioUrl(audioUrl);
     }
 
     setBattleState('analyzing');
 
     try {
       const targetPrompt = getCurrentPromptText();
-      const evalData = await evaluateSpeaking(finalBlobToSubmit, cefrLevel, undefined, targetPrompt);
+      const evalData = await evaluateSpeaking(recordedBlob, cefrLevel, undefined, targetPrompt);
       
       setResult(evalData);
       setBattleState('ended');
       updateUserProgress(2, evalData.isWin ? 50 : 10, evalData.isWin);
     } catch (err) {
       console.error("Lỗi chấm điểm:", err);
-      alert("⚠️ Lỗi kết nối chấm điểm. Vui lòng thử nộp lại!");
+      alert("⚠️ Lỗi kết nối chấm điểm. Vui lòng nộp lại!");
       setBattleState('battling');
     }
   };
 
-  const isSubmitDisabled = !hasRecordedTurn1 && !isRecording;
+  const isSubmitDisabled = !hasRecorded && !isRecording;
 
   const renderTopicContent = () => (
     <View style={{ width: '100%', alignItems: 'center' }}>
@@ -346,9 +272,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
         <>
           <Text style={styles.topicTitle}>{soloTopic.title}</Text>
           <Text style={styles.promptText}>"{soloTopic.promptEn}"</Text>
-          {soloTopic.promptVi && (
-            <Text style={styles.translationText}>💡 Dịch: "{soloTopic.promptVi}"</Text>
-          )}
+          {soloTopic.promptVi && <Text style={styles.translationText}>💡 Dịch: "{soloTopic.promptVi}"</Text>}
         </>
       )}
 
@@ -356,47 +280,32 @@ export default function AllInArenaScreen({ onBack }: Props) {
         <>
           <Text style={styles.topicTitle}>📌 {relayChallenge.topic}</Text>
           <Text style={styles.promptText}>💡 Bối cảnh: "{relayChallenge.contextEn}"</Text>
-          {relayChallenge.contextVi && (
-            <Text style={styles.translationText}>👉 Dịch: "{relayChallenge.contextVi}"</Text>
-          )}
-          <View style={{ marginTop: 8, width: '100%', backgroundColor: '#130A2A', padding: 8, borderRadius: 8 }}>
-            <Text style={styles.guidelineText}>👤 P1: {relayChallenge.player1En}</Text>
-            {relayChallenge.player1Vi && (
-              <Text style={styles.translationText}>👉 {relayChallenge.player1Vi}</Text>
-            )}
-            <Text style={[styles.guidelineText, { marginTop: 4 }]}>👤 P2: {relayChallenge.player2En}</Text>
-            {relayChallenge.player2Vi && (
-              <Text style={styles.translationText}>👉 {relayChallenge.player2Vi}</Text>
-            )}
+          <View style={styles.roleCardBox}>
+            <Text style={styles.roleTitleP1}>👤 GỢI Ý PLAYER 1: {relayChallenge.player1En}</Text>
+            <Text style={styles.roleTitleP2}>👤 GỢI Ý PLAYER 2: {relayChallenge.player2En}</Text>
           </View>
         </>
       )}
 
       {mode === 'roleplay' && roleplayScenario && (
         <>
-          <Text style={styles.topicTitle}>🎭 {roleplayScenario.scenarioTitle}</Text>
-          <Text style={styles.roleText}>
-            🤖 AI: {roleplayScenario.aiRoleEn} {roleplayScenario.aiRoleVi ? `(${roleplayScenario.aiRoleVi})` : ''} 
-            {'  |  '}
-            👤 Bạn: {roleplayScenario.userRoleEn} {roleplayScenario.userRoleVi ? `(${roleplayScenario.userRoleVi})` : ''}
-          </Text>
-          <Text style={styles.promptText}>💬 Mở đầu: "{roleplayScenario.initialAiMessage}"</Text>
-          <Text style={styles.promptText}>🎯 Mục tiêu: {roleplayScenario.goalEn}</Text>
-          {roleplayScenario.goalVi && (
-            <Text style={styles.translationText}>👉 Dịch: {roleplayScenario.goalVi}</Text>
-          )}
+          <Text style={styles.topicTitle}>🎭 TÌNH HUỐNG: {roleplayScenario.scenarioTitle}</Text>
+          <Text style={styles.promptText}>🏬 Bối cảnh cuộc hội thoại: "{roleplayScenario.goalEn}"</Text>
+          {roleplayScenario.goalVi && <Text style={styles.translationText}>👉 Dịch: "{roleplayScenario.goalVi}"</Text>}
+          
+          <View style={styles.roleCardBox}>
+            <View style={styles.roleItem}>
+              <Text style={styles.roleTitleP1}>👤 VAI 1 (Player 1): {roleplayScenario.userRoleEn || 'Phục vụ / Waiter'}</Text>
+            </View>
+            <View style={[styles.roleItem, { marginTop: 6 }]}>
+              <Text style={styles.roleTitleP2}>👥 VAI 2 (Player 2): {roleplayScenario.aiRoleEn || 'Khách hàng / Customer'}</Text>
+            </View>
+            <Text style={styles.roleGuideNote}>💡 2 bạn tự do đóng vai tương tác trực tiếp với nhau và cùng ghi âm 1 lần!</Text>
+          </View>
         </>
       )}
     </View>
   );
-
-  const incorrectWords = result?.wordAnalysis?.filter(item => item.status === 'warning' || item.status === 'error') || [];
-
-  const formattedFeedback = (result?.detailedFeedback || '')
-    .replace(/đối với mẫu câu/g, 'đối với chủ đề')
-    .replace(/mẫu câu/g, 'chủ đề');
-
-  const finalAudioSrc = recordedAudioUrl || (result ? result.audioUrl : '') || '';
 
   return (
     <View style={styles.container}>
@@ -404,34 +313,24 @@ export default function AllInArenaScreen({ onBack }: Props) {
         <TouchableOpacity onPress={onBack} style={styles.backBtn}>
           <Text style={styles.backText}>🔙 QUAY LẠI MAP</Text>
         </TouchableOpacity>
-        <Text style={styles.title}>⚔️ TRẠM 2: ALL-IN ARENA</Text>
+        <Text style={styles.title}>⚔️ TRẠM 2: VOCABULARY & ROLEPLAY ARENA</Text>
       </View>
 
       <ScrollView contentContainerStyle={{ alignItems: 'center', width: '100%', paddingBottom: 30 }}>
-        <Text style={styles.sectionLabel}>1. CHỌN DẠNG BÀI ĐẤU TRƯỜNG:</Text>
+        <Text style={styles.sectionLabel}>1. CHỌN CHẾ ĐỘ THI ĐẤU:</Text>
         <View style={styles.tabRow}>
           <TouchableOpacity style={[styles.modeTab, mode === 'solo' && styles.modeTabActive]} onPress={() => handleModeChange('solo')}>
-            <Text style={[styles.modeTabText, mode === 'solo' && styles.modeTextActive]}>🔥 SOLO PULSE</Text>
+            <Text style={[styles.modeTabText, mode === 'solo' && styles.modeTextActive]}>🔥 SOLO</Text>
           </TouchableOpacity>
           <TouchableOpacity style={[styles.modeTab, mode === 'relay' && styles.modeTabActive]} onPress={() => handleModeChange('relay')}>
             <Text style={[styles.modeTabText, mode === 'relay' && styles.modeTextActive]}>🤝 RELAY 2P</Text>
           </TouchableOpacity>
           <TouchableOpacity style={[styles.modeTab, mode === 'roleplay' && styles.modeTabActive]} onPress={() => handleModeChange('roleplay')}>
-            <Text style={[styles.modeTabText, mode === 'roleplay' && styles.modeTextActive]}>🎭 ROLEPLAY</Text>
+            <Text style={[styles.modeTabText, mode === 'roleplay' && styles.modeTextActive]}>🎭 ROLEPLAY 2P</Text>
           </TouchableOpacity>
         </View>
 
-        <Text style={styles.sectionLabel}>2. CHỌN ĐỐI THỦ THÁCH ĐẤU:</Text>
-        <View style={styles.opponentRow}>
-          <TouchableOpacity style={[styles.opponentBtn, opponentType === 'bot' && styles.opponentBtnActive]} onPress={() => setOpponentType('bot')}>
-            <Text style={[styles.opponentText, opponentType === 'bot' && styles.opponentTextActive]}>🤖 ĐẤU BOT AI</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.opponentBtn, opponentType === 'pvp' && styles.opponentBtnActivePvP]} onPress={() => setOpponentType('pvp')}>
-            <Text style={[styles.opponentText, opponentType === 'pvp' && styles.opponentTextActive]}>👥 ĐẤU NGƯỜI THẬT</Text>
-          </TouchableOpacity>
-        </View>
-
-        <Text style={styles.sectionLabel}>3. CHỌN LEVEL:</Text>
+        <Text style={styles.sectionLabel}>2. CHỌN LEVEL CEFR:</Text>
         <View style={styles.cefrRow}>
           {CEFR_LEVELS.map((lvl) => (
             <TouchableOpacity key={lvl} style={[styles.cefrBadge, cefrLevel === lvl && styles.cefrBadgeActive]} onPress={() => handleLevelChange(lvl)}>
@@ -442,30 +341,15 @@ export default function AllInArenaScreen({ onBack }: Props) {
 
         {battleState === 'idle' && (
           <View style={styles.box} key={topicKey}>
-            <Text style={styles.boxTitle}>⚡ {mode.toUpperCase()} [{cefrLevel}]</Text>
-            {loading ? (
-              <ActivityIndicator size="small" color="#FF007F" style={{ marginVertical: 15 }} />
-            ) : (
-              renderTopicContent()
-            )}
+            <Text style={styles.boxTitle}>⚡ TÌNH HUỐNG {mode.toUpperCase()} [{cefrLevel}]</Text>
+            {loading ? <ActivityIndicator size="small" color="#FF007F" style={{ marginVertical: 15 }} /> : renderTopicContent()}
 
-            <TouchableOpacity 
-              style={[styles.refreshBtn, loading && styles.refreshBtnDisabled]} 
-              onPress={handleRefreshTopic} 
-              disabled={loading}
-            >
-              {loading ? (
-                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                  <ActivityIndicator size="small" color="#00FFFF" style={{ marginRight: 8 }} />
-                  <Text style={styles.refreshBtnText}>⏳ AI ĐANG SINH ĐỀ MỚI ({cefrLevel})...</Text>
-                </View>
-              ) : (
-                <Text style={styles.refreshBtnText}>🔄 ĐỔI ĐỀ MỚI KHÔNG LẶP</Text>
-              )}
+            <TouchableOpacity style={[styles.refreshBtn, loading && styles.refreshBtnDisabled]} onPress={handleRefreshTopic} disabled={loading}>
+              <Text style={styles.refreshBtnText}>🔄 ĐỔI TÌNH HUỐNG MỚI</Text>
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.startBtn} onPress={startMatch} disabled={loading}>
-              <Text style={styles.startBtnText}>⚔️ BẮT ĐẦU ĐẤU</Text>
+              <Text style={styles.startBtnText}>⚔️ BẮT ĐẦU THI ĐẤU CẶP</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -473,44 +357,36 @@ export default function AllInArenaScreen({ onBack }: Props) {
         {battleState === 'searching' && (
           <View style={styles.box}>
             <ActivityIndicator size="large" color="#FF007F" style={{ marginBottom: 15 }} />
-            <Text style={styles.searchingText}>🔍 ĐANG KẾT NỐI ĐỐI THỦ [{cefrLevel}]...</Text>
+            <Text style={styles.searchingText}>🔍 ĐANG MỞ SÀN ĐẤU ROLEPLAY...</Text>
           </View>
         )}
 
         {battleState === 'battling' && (
           <View style={styles.box}>
             <View style={styles.battleHeader}>
-              <Text style={styles.opponentName}>⚔️ VS {matchedOpponent}</Text>
+              <Text style={styles.opponentName}>🎭 SÀN ĐẤU CẶP (TỰ ĐỐI ĐÁP)</Text>
               <Text style={styles.timerText}>
-                {isRecording ? `🔴 ĐANG THU ÂM: ${timeLeft}s` : `⏱ THỜI GIAN: ${timeLeft}s (BẤM MICRO ĐỂ CHẠY)`}
+                {isRecording ? `🔴 ĐANG THU ÂM HỘI THOẠI: ${timeLeft}s` : `⏱ TỔNG THỜI GIAN NÓI: ${timeLeft}s`}
               </Text>
             </View>
 
             <View style={styles.promptDisplayContainer}>
-              <Text style={styles.promptDisplayTitle}>📌 ĐỀ BÀI THI ĐẤU (ĐỌC KHI NÓI):</Text>
               {renderTopicContent()}
             </View>
 
-            {mode !== 'solo' && (
-              <View style={styles.turnBadge}>
-                <Text style={styles.turnBadgeText}>
-                  {currentTurn === 1 ? '👉 LƯỢT PLAYER 1 (NÓI PHẦN P1)' : '👉 LƯỢT PLAYER 2 / BOT (NÓI PHẦN P2)'}
-                </Text>
-              </View>
-            )}
-
+            {/* BẤM MICRO THU ÂM TOÀN BỘ CUỘC HỘI THOẠI */}
             <TouchableOpacity style={[styles.recordToggleBtn, isRecording && styles.recordToggleBtnActive]} onPress={handleToggleRecord}>
               <Text style={styles.recordToggleText}>
                 {isRecording 
-                  ? `🛑 DỪNG THU ÂM (LƯỢT ${currentTurn})` 
-                  : (currentTurn === 1 ? hasRecordedTurn1 : hasRecordedTurn2) 
-                    ? `✅ ĐÃ CÓ BẢN THU (BẤM ĐỂ THU LẠI)` 
-                    : `🎙 BẤM MICRO ĐỂ BẮT ĐẦU NÓI`}
+                  ? `🛑 DỪNG THU ÂM (HOÀN THÀNH HỘI THOẠI)` 
+                  : hasRecorded 
+                    ? `✅ ĐÃ THU ÂM XONG HỘI THOẠI (BẤM ĐỂ THU LẠI)` 
+                    : `🎙 BẤM MICRO ĐỂ CẢ 2 BẠN BẮT ĐẦU NÓI`}
               </Text>
             </TouchableOpacity>
 
             <TouchableOpacity style={[styles.submitBtn, isSubmitDisabled && styles.submitBtnDisabled]} onPress={handleSubmitBattleAnswer} disabled={isSubmitDisabled}>
-              <Text style={styles.submitBtnText}>⚡ NỘP BÀI & CHẤM ĐIỂM AI</Text>
+              <Text style={styles.submitBtnText}>⚡ NỘP BÀI HỘI THOẠI & AI CHẤM ĐIỂM</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -518,89 +394,40 @@ export default function AllInArenaScreen({ onBack }: Props) {
         {battleState === 'analyzing' && (
           <View style={styles.box}>
             <ActivityIndicator size="large" color="#39FF14" style={{ marginBottom: 15 }} />
-            <Text style={styles.searchingText}>⚡ GROQ AI ĐANG BÓC TÁCH VÀ CHẤM ĐIỂM BÀI NÓI...</Text>
+            <Text style={styles.searchingText}>⚡ GROQ AI ĐANG BÓC TÁCH & CHẤM ĐIỂM TOÀN BỘ BÀI HỘI THOẠI...</Text>
           </View>
         )}
 
         {battleState === 'ended' && result && (
           <View style={styles.box}>
             <Text style={[styles.resultTitle, { color: result.isWin ? '#39FF14' : '#FF0055' }]}>
-              {result.isWin ? '🎉 BẠN ĐÃ CHIẾN THẮNG!' : '💀 THẤT BẠI TRONG TRẬN ĐẤU'}
+              {result.isWin ? '🎉 BÀI HỘI THOẠI ĐẠT CHUẨN XUẤT SẮC!' : '💡 CẦN CẢI THIỆN PHẢN XẠ PHÁT ÂM'}
             </Text>
-            <Text style={styles.scoreText}>⚡ TỔNG ĐIỂM TRẬN ĐẤU: {result.score} / 100 ĐIỂM</Text>
+            <Text style={styles.scoreText}>⚡ TỔNG ĐIỂM CẶP ROLEPLAY: {result.score} / 100 ĐIỂM</Text>
 
-            <View style={styles.userTranscriptBox}>
-              <Text style={styles.userTranscriptTitle}>🎙 BÀI NÓI THỰC TẾ CỦA BẠN (TRANSCRIPT):</Text>
-              <Text style={styles.userTranscriptContent}>
-                "{result.transcript || "(Chưa nhận diện được giọng nói)"}"
-              </Text>
-            </View>
-
-            {/* FIX TRIỆT ĐỂ LỖI REACT ERROR #130 CHO TRÌNH DUYỆT WEB */}
-            {finalAudioSrc ? (
-              <View style={styles.nativeAudioContainer}>
-                <Text style={styles.nativeAudioLabel}>🎧 NGHE LẠI BẢN THU CỦA BẠN:</Text>
-                {React.createElement('audio', {
-                  controls: true,
-                  src: finalAudioSrc,
-                  style: { width: '100%', marginTop: '6px' }
-                })}
-              </View>
-            ) : null}
-
-            <View style={styles.scriptBox}>
-              <Text style={styles.scriptLabel}>📝 TỪ CẦN CẢI THIỆN PHÁT ÂM:</Text>
-              <View style={styles.wordBadgeContainer}>
-                {incorrectWords.length > 0 ? (
-                  incorrectWords.map((item, idx) => (
-                    <Text 
-                      key={idx} 
-                      style={[
-                        styles.wordChip,
-                        item.status === 'warning' && styles.wordWarning,
-                        item.status === 'error' && styles.wordError,
-                      ]}
-                    >
-                      {item.word}{' '}
-                    </Text>
-                  ))
-                ) : (
-                  <Text style={{ color: result.score >= 95 ? '#39FF14' : '#FFD700', fontSize: 11, fontWeight: 'bold' }}>
-                    {result.score >= 95 
-                      ? '🎉 Xuất sắc! Bạn phát âm chuẩn xác hoàn hảo từng từ.' 
-                      : '💡 Không có từ bị lỗi phát âm nặng, nhưng bạn cần cải thiện ngữ điệu và độ trôi chảy.'}
-                  </Text>
-                )}
-              </View>
-              <Text style={styles.wordLegendText}>
-                Chú thích: <Text style={{ color: '#FFD700' }}>● Cần cải thiện</Text> | <Text style={{ color: '#FF0055' }}>● Bị sai/ngắc ứ</Text>
-              </Text>
-              <Text style={styles.wordCountText}>📊 Số từ phản xạ thực tế: {result.wordCount} từ</Text>
-            </View>
-
-            <Text style={styles.breakdownHeaderLabel}>📊 PHÂN TÍCH CHI TIẾT 6 TIÊU CHÍ:</Text>
-            <View style={styles.breakdownCard}>
-              <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>🎯 1. Đáp ứng ý đề bài (Task):</Text><Text style={[styles.breakdownValue, result.content < 60 && { color: '#FF0055' }]}>{result.content}/100</Text></View>
-              <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>🗣 2. Phát âm:</Text><Text style={styles.breakdownValue}>{result.pronunciation}/100</Text></View>
-              <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>📚 3. Ngữ pháp:</Text><Text style={styles.breakdownValue}>{result.grammar}/100</Text></View>
-              <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>🔤 4. Từ vựng:</Text><Text style={styles.breakdownValue}>{result.vocabulary}/100</Text></View>
-              <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>⚡ 5. Phản xạ:</Text><Text style={styles.breakdownValue}>{result.reflexes}/100</Text></View>
-              <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>🌊 6. Trôi chảy:</Text><Text style={styles.breakdownValue}>{result.fluency}/100</Text></View>
-            </View>
-
-            {result.missingRequirements && result.missingRequirements.length > 0 && (
-              <View style={styles.missingBox}>
-                <Text style={styles.missingTitle}>⚠️ Ý CÒN THIẾU TRONG BÀI NÓI:</Text>
-                {result.missingRequirements.map((req, idx) => (
-                  <Text key={idx} style={styles.missingItem}>• {req}</Text>
-                ))}
+            {/* NGHE LẠI TOÀN BỘ BÀI HỘI THOẠI */}
+            {audioUrl && (
+              <View style={styles.audioPlayerSection}>
+                <Text style={styles.audioSectionTitle}>🎧 NGHE LẠI CẢ CUỘC HỘI THOẠI CỦA 2 BẠN:</Text>
+                {React.createElement('audio', { controls: true, src: audioUrl, style: { width: '100%', marginTop: '6px' } })}
               </View>
             )}
 
-            <Text style={styles.feedbackText}>💡 Nhận xét AI: {formattedFeedback}</Text>
+            <View style={styles.userTranscriptBox}>
+              <Text style={styles.userTranscriptTitle}>🎙 TOÀN BỘ LỜI NÓI HỘI THOẠI AI BÓC TÁCH:</Text>
+              <Text style={styles.userTranscriptContent}>"{result.transcript}"</Text>
+            </View>
+
+            <View style={styles.breakdownCard}>
+              <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>🎯 Tương tác tình huống:</Text><Text style={styles.breakdownValue}>{result.content}/100</Text></View>
+              <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>🗣 Phát âm:</Text><Text style={styles.breakdownValue}>{result.pronunciation}/100</Text></View>
+              <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>🔤 Từ vựng ngữ pháp:</Text><Text style={styles.breakdownValue}>{result.vocabulary}/100</Text></View>
+            </View>
+
+            <Text style={styles.feedbackText}>💡 Nhận xét AI cho Giáo Viên cộng điểm thưởng: {result.detailedFeedback}</Text>
 
             <TouchableOpacity style={styles.startBtn} onPress={() => loadModeData(mode, cefrLevel)}>
-              <Text style={styles.startBtnText}>🔄 TÌM TRẬN ĐẤU MỚI</Text>
+              <Text style={styles.startBtnText}>🔄 BẮT ĐẦU TÌNH HUỐNG MỚI</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -609,15 +436,10 @@ export default function AllInArenaScreen({ onBack }: Props) {
       <Modal visible={micPermissionModal} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalBox}>
-            <Text style={styles.modalTitle}>🎙 QUYỀN MICRO BỊ CHẶN!</Text>
-            <Text style={styles.modalText}>
-              Trình duyệt đang chặn quyền Micro. Để tham gia thi đấu:
-              {'\n\n'}1. Bấm vào biểu tượng 🔒 **Ổ khóa** hoặc 🎙 **Micro** trên thanh địa chỉ trình duyệt.
-              {'\n'}2. Chọn **Cho phép (Allow)** Microphone.
-              {'\n'}3. Tải lại trang và bấm thu âm lại.
-            </Text>
+            <Text style={styles.modalTitle}>🎙 CẤP QUYỀN MICROPHONE!</Text>
+            <Text style={styles.modalText}>Vui lòng bấm cho phép Micro trên trình duyệt để thu âm.</Text>
             <TouchableOpacity style={styles.modalCloseBtn} onPress={() => setMicPermissionModal(false)}>
-              <Text style={styles.modalCloseText}>ĐÃ HỂU & ĐÓNG</Text>
+              <Text style={styles.modalCloseText}>ĐÃ HỂU</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -631,19 +453,13 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 15 },
   backBtn: { padding: 8, backgroundColor: '#0D0620', borderRadius: 8, borderWidth: 1, borderColor: '#FF007F' },
   backText: { color: '#FF007F', fontSize: 10, fontWeight: 'bold' },
-  title: { color: '#FF007F', fontSize: 12, fontWeight: '900' },
+  title: { color: '#FF007F', fontSize: 11, fontWeight: '900' },
   sectionLabel: { color: '#FFD700', fontSize: 10, fontWeight: 'bold', alignSelf: 'flex-start', marginBottom: 6 },
   tabRow: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginBottom: 12 },
   modeTab: { backgroundColor: '#0D0620', paddingVertical: 8, borderRadius: 8, borderWidth: 1, borderColor: '#332255', width: '32%', alignItems: 'center' },
   modeTabActive: { backgroundColor: '#FF007F', borderColor: '#FF007F' },
   modeTabText: { color: '#8888AA', fontSize: 9, fontWeight: '900' },
   modeTextActive: { color: '#FFF' },
-  opponentRow: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginBottom: 12 },
-  opponentBtn: { backgroundColor: '#0D0620', paddingVertical: 10, borderRadius: 8, borderWidth: 1, borderColor: '#332255', width: '48%', alignItems: 'center' },
-  opponentBtnActive: { backgroundColor: '#00FFFF', borderColor: '#00FFFF' },
-  opponentBtnActivePvP: { backgroundColor: '#FF007F', borderColor: '#FF007F' },
-  opponentText: { color: '#AAAABB', fontSize: 10, fontWeight: '900' },
-  opponentTextActive: { color: '#000' },
   cefrRow: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginBottom: 15 },
   cefrBadge: { backgroundColor: '#0D0620', paddingVertical: 6, paddingHorizontal: 10, borderRadius: 6, borderWidth: 1, borderColor: '#332255' },
   cefrBadgeActive: { backgroundColor: '#39FF14', borderColor: '#39FF14' },
@@ -651,23 +467,23 @@ const styles = StyleSheet.create({
   cefrTextActive: { color: '#000' },
   box: { backgroundColor: '#0D0620', padding: 18, borderRadius: 16, borderWidth: 2, borderColor: '#FF007F', width: '100%', alignItems: 'center', marginBottom: 20 },
   boxTitle: { color: '#FFD700', fontSize: 11, fontWeight: '900', marginBottom: 12 },
-  topicTitle: { color: '#00FFFF', fontSize: 13, fontWeight: '900', marginBottom: 6 },
-  promptText: { color: '#FFF', fontSize: 13, fontWeight: '800', textAlign: 'center', lineHeight: 18, marginBottom: 4 },
-  guidelineText: { color: '#FFF', fontSize: 11, fontWeight: '700', textAlign: 'center' },
-  roleText: { color: '#FFD700', fontSize: 11, fontWeight: '800', marginBottom: 8, textAlign: 'center' },
-  translationText: { color: '#00FFFF', fontSize: 11, fontStyle: 'italic', textAlign: 'center', marginBottom: 8 },
+  topicTitle: { color: '#00FFFF', fontSize: 13, fontWeight: '900', marginBottom: 6, textAlign: 'center' },
+  promptText: { color: '#FFF', fontSize: 12, fontWeight: '800', textAlign: 'center', lineHeight: 18, marginBottom: 4 },
+  translationText: { color: '#FFD700', fontSize: 10, fontStyle: 'italic', textAlign: 'center', marginBottom: 8 },
+  roleCardBox: { backgroundColor: '#130A2A', padding: 10, borderRadius: 8, width: '100%', marginTop: 8, borderWidth: 1, borderColor: '#00FFFF' },
+  roleItem: { width: '100%' },
+  roleTitleP1: { color: '#00FFFF', fontSize: 11, fontWeight: '900' },
+  roleTitleP2: { color: '#FF007F', fontSize: 11, fontWeight: '900' },
+  roleGuideNote: { color: '#39FF14', fontSize: 9, fontWeight: 'bold', marginTop: 8, textAlign: 'center' },
   promptDisplayContainer: { width: '100%', backgroundColor: '#130A2A', padding: 10, borderRadius: 10, borderWidth: 1, borderColor: '#00FFFF', marginBottom: 12 },
-  promptDisplayTitle: { color: '#FFD700', fontSize: 10, fontWeight: 'bold', marginBottom: 6, textAlign: 'center' },
-  turnBadge: { backgroundColor: '#1A0B2E', paddingVertical: 6, paddingHorizontal: 10, borderRadius: 6, borderWidth: 1, borderColor: '#39FF14', marginBottom: 10 },
-  turnBadgeText: { color: '#39FF14', fontSize: 10, fontWeight: 'bold', textAlign: 'center' },
   searchingText: { color: '#00FFFF', fontSize: 11, fontWeight: 'bold', textAlign: 'center' },
   refreshBtn: { backgroundColor: '#1A0B2E', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#00FFFF', width: '100%', alignItems: 'center', marginTop: 8, marginBottom: 12 },
-  refreshBtnDisabled: { opacity: 0.5, borderColor: '#555577' },
+  refreshBtnDisabled: { opacity: 0.5 },
   refreshBtnText: { color: '#00FFFF', fontSize: 10, fontWeight: 'bold' },
   startBtn: { backgroundColor: '#FF007F', padding: 14, borderRadius: 12, width: '100%', alignItems: 'center' },
   startBtnText: { color: '#FFF', fontSize: 11, fontWeight: '900' },
   battleHeader: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginBottom: 10, alignItems: 'center' },
-  opponentName: { color: '#00FFFF', fontSize: 11, fontWeight: '900' },
+  opponentName: { color: '#00FFFF', fontSize: 10, fontWeight: '900' },
   timerText: { color: '#39FF14', fontSize: 10, fontWeight: '900' },
   recordToggleBtn: { backgroundColor: '#1A0B2E', padding: 12, borderRadius: 10, borderWidth: 2, borderColor: '#FF007F', width: '100%', alignItems: 'center', marginBottom: 10 },
   recordToggleBtnActive: { backgroundColor: '#FF0055', borderColor: '#FF0055' },
@@ -675,34 +491,22 @@ const styles = StyleSheet.create({
   submitBtn: { backgroundColor: '#39FF14', padding: 14, borderRadius: 12, width: '100%', alignItems: 'center' },
   submitBtnDisabled: { backgroundColor: '#224422', opacity: 0.2 },
   submitBtnText: { color: '#000', fontSize: 11, fontWeight: '900' },
-  resultTitle: { fontSize: 15, fontWeight: '900', marginBottom: 6 },
-  scoreText: { color: '#FFD700', fontSize: 13, fontWeight: '900', marginBottom: 10 },
-  userTranscriptBox: { width: '100%', backgroundColor: '#1A0B2E', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#00FFFF', marginBottom: 12 },
-  userTranscriptTitle: { color: '#00FFFF', fontSize: 10, fontWeight: 'bold', marginBottom: 4 },
-  userTranscriptContent: { color: '#39FF14', fontSize: 11, fontWeight: 'bold', lineHeight: 16 },
-  nativeAudioContainer: { width: '100%', backgroundColor: '#1A0B2E', padding: 10, borderRadius: 10, borderWidth: 1, borderColor: '#00FFFF', marginBottom: 12, alignItems: 'center' },
-  nativeAudioLabel: { color: '#00FFFF', fontSize: 10, fontWeight: 'bold' },
-  scriptBox: { backgroundColor: '#1A0B2E', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#332255', width: '100%', marginBottom: 12 },
-  scriptLabel: { color: '#FFD700', fontSize: 10, fontWeight: 'bold', marginBottom: 6 },
-  wordBadgeContainer: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 8 },
-  wordChip: { fontSize: 12, fontWeight: '800', lineHeight: 18 },
-  wordWarning: { color: '#FFD700' },
-  wordError: { color: '#FF0055' },
-  wordLegendText: { color: '#AAAABB', fontSize: 9, marginBottom: 4 },
-  wordCountText: { color: '#00FFFF', fontSize: 9, fontWeight: 'bold' },
-  breakdownHeaderLabel: { color: '#FFD700', fontSize: 10, fontWeight: 'bold', alignSelf: 'flex-start', marginBottom: 6 },
-  breakdownCard: { backgroundColor: '#120826', padding: 12, borderRadius: 10, width: '100%', marginBottom: 12, borderWidth: 1, borderColor: '#FF007F' },
-  breakdownRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4, borderBottomWidth: 1, borderBottomColor: '#221133' },
-  breakdownLabel: { color: '#AAAABB', fontSize: 10 },
-  breakdownValue: { color: '#39FF14', fontSize: 10, fontWeight: 'bold' },
-  missingBox: { backgroundColor: '#2A081A', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#FF0055', width: '100%', marginBottom: 12 },
-  missingTitle: { color: '#FF0055', fontSize: 10, fontWeight: 'bold', marginBottom: 4 },
-  missingItem: { color: '#FFD700', fontSize: 10, marginVertical: 2 },
-  feedbackText: { color: '#FFF', fontSize: 11, textAlign: 'center', lineHeight: 16, marginBottom: 15 },
+  resultTitle: { fontSize: 13, fontWeight: '900', marginBottom: 6, textAlign: 'center' },
+  scoreText: { color: '#FFD700', fontSize: 12, fontWeight: '900', marginBottom: 10 },
+  audioPlayerSection: { width: '100%', backgroundColor: '#1A0B2E', padding: 10, borderRadius: 10, borderWidth: 1, borderColor: '#00FFFF', marginBottom: 12, alignItems: 'center' },
+  audioSectionTitle: { color: '#00FFFF', fontSize: 10, fontWeight: 'bold', marginBottom: 4 },
+  userTranscriptBox: { width: '100%', backgroundColor: '#1A0B2E', padding: 10, borderRadius: 10, borderWidth: 1, borderColor: '#332255', marginBottom: 12 },
+  userTranscriptTitle: { color: '#FFD700', fontSize: 9, fontWeight: 'bold', marginBottom: 4 },
+  userTranscriptContent: { color: '#39FF14', fontSize: 10, fontWeight: 'bold', lineHeight: 15 },
+  breakdownCard: { backgroundColor: '#120826', padding: 10, borderRadius: 10, width: '100%', marginBottom: 12, borderWidth: 1, borderColor: '#FF007F' },
+  breakdownRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 },
+  breakdownLabel: { color: '#AAAABB', fontSize: 9 },
+  breakdownValue: { color: '#39FF14', fontSize: 9, fontWeight: 'bold' },
+  feedbackText: { color: '#FFF', fontSize: 10, textAlign: 'center', lineHeight: 15, marginBottom: 15 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(5, 2, 13, 0.85)', justifyContent: 'center', alignItems: 'center', padding: 20 },
   modalBox: { backgroundColor: '#0D0620', padding: 20, borderRadius: 16, borderWidth: 2, borderColor: '#FF007F', width: '100%', alignItems: 'center' },
-  modalTitle: { color: '#FF007F', fontSize: 13, fontWeight: '900', marginBottom: 10 },
-  modalText: { color: '#FFF', fontSize: 11, lineHeight: 18, marginBottom: 15, textAlign: 'left' },
-  modalCloseBtn: { backgroundColor: '#00FFFF', paddingVertical: 10, paddingHorizontal: 20, borderRadius: 8 },
-  modalCloseText: { color: '#000', fontSize: 10, fontWeight: '900' }
+  modalTitle: { color: '#FF007F', fontSize: 12, fontWeight: '900', marginBottom: 10 },
+  modalText: { color: '#FFF', fontSize: 10, textAlign: 'center', marginBottom: 15 },
+  modalCloseBtn: { backgroundColor: '#00FFFF', paddingVertical: 8, paddingHorizontal: 16, borderRadius: 8 },
+  modalCloseText: { color: '#000', fontSize: 9, fontWeight: '900' }
 });
