@@ -10,6 +10,7 @@ import Station1Screen from '../screens/Station1Screen';
 import AllInArenaScreen from '../screens/AllInArenaScreen';
 import ShadowBossScreen from '../screens/ShadowBossScreen';
 import Station4Screen from '../screens/Station4Screen';
+import TeacherDashboardScreen from '../screens/TeacherDashboardScreen';
 
 export default function AppNavigator() {
   const [currentScreen, setCurrentScreen] = useState<string>('map');
@@ -25,6 +26,8 @@ export default function AppNavigator() {
       setCurrentScreen('station3');
     } else if (idStr === '4' || idStr.includes('station4')) {
       setCurrentScreen('station4');
+    } else if (idStr.includes('teacher') || idStr.includes('admin')) {
+      setCurrentScreen('teacher');
     }
   };
 
@@ -62,6 +65,10 @@ export default function AppNavigator() {
 
       {currentScreen === 'station4' && (
         <Station4Screen onBack={() => setCurrentScreen('map')} />
+      )}
+
+      {currentScreen === 'teacher' && (
+        <TeacherDashboardScreen onBack={() => setCurrentScreen('map')} />
       )}
     </View>
   );
