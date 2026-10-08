@@ -5,7 +5,7 @@ import { generateSoloTopic, clearSoloTopicHistory, SoloTopic } from '../services
 import { generateRelayChallenge, clearRelayHistory, RelayChallenge } from '../services/arena/relayService';
 import { generateRoleplayScenario, clearRoleplayHistory, RoleplayScenario } from '../services/arena/roleplayService';
 import { evaluateSpeaking, AssessmentResult } from '../services/arena/assessmentService';
-import { updateUserProgress } from '../services/userService';
+import { updateUserProgress, saveSubmissionForTeacher } from '../services/userService';
 
 interface Props {
   onBack: () => void;
@@ -257,6 +257,18 @@ export default function AllInArenaScreen({ onBack }: Props) {
       setResult(evalData);
       setBattleState('ended');
       updateUserProgress(2, evalData.isWin ? 50 : 10, evalData.isWin);
+
+      // 🎯 ĐỒNG BỘ DỮ LIỆU SANG TRANG BẢNG ĐIỂM GIÁO VIÊN
+      saveSubmissionForTeacher({
+        studentName: 'Sinh viên VibeSpeak',
+        pairName: mode === 'roleplay' ? 'Cặp đấu Roleplay 2P' : 'Bài thi đấu cá nhân',
+        mode: mode,
+        cefrLevel: cefrLevel,
+        score: evalData.score || 85,
+        transcript: evalData.transcript || '',
+        audioUrl: audioUrl || undefined,
+        feedback: evalData.detailedFeedback || 'Bài làm đạt yêu cầu',
+      });
     } catch (err) {
       console.error("Lỗi chấm điểm:", err);
       alert("⚠️ Lỗi kết nối chấm điểm. Vui lòng nộp lại!");
@@ -374,7 +386,6 @@ export default function AllInArenaScreen({ onBack }: Props) {
               {renderTopicContent()}
             </View>
 
-            {/* BẤM MICRO THU ÂM TOÀN BỘ CUỘC HỘI THOẠI */}
             <TouchableOpacity style={[styles.recordToggleBtn, isRecording && styles.recordToggleBtnActive]} onPress={handleToggleRecord}>
               <Text style={styles.recordToggleText}>
                 {isRecording 
@@ -405,7 +416,6 @@ export default function AllInArenaScreen({ onBack }: Props) {
             </Text>
             <Text style={styles.scoreText}>⚡ TỔNG ĐIỂM CẶP ROLEPLAY: {result.score} / 100 ĐIỂM</Text>
 
-            {/* NGHE LẠI TOÀN BỘ BÀI HỘI THOẠI */}
             {audioUrl && (
               <View style={styles.audioPlayerSection}>
                 <Text style={styles.audioSectionTitle}>🎧 NGHE LẠI CẢ CUỘC HỘI THOẠI CỦA 2 BẠN:</Text>
