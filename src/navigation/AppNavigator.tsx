@@ -26,7 +26,7 @@ export default function AppNavigator() {
       setCurrentScreen('station3');
     } else if (idStr === '4' || idStr.includes('station4')) {
       setCurrentScreen('station4');
-    } else if (idStr.includes('teacher') || idStr.includes('admin')) {
+    } else if (idStr === 'teacher' || idStr.includes('teacher') || idStr.includes('admin')) {
       setCurrentScreen('teacher');
     }
   };
