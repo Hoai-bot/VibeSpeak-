@@ -77,16 +77,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       try {
         const groq = new Groq({ apiKey });
 
-        const uint8Array = new Uint8Array(
-          audioBuffer.buffer,
-          audioBuffer.byteOffset,
-          audioBuffer.byteLength
-        );
-
         const rawContentType = (req.headers['content-type'] as string) || '';
         const mimeType = rawContentType.includes('audio') ? rawContentType.split(';')[0] : 'audio/webm';
 
-        const audioFile = new File([uint8Array], 'recording.webm', { type: mimeType });
+        // 🎯 CHUYỂN DẠNG BUFFER ĐỂ KHÔNG BỊ LỖI TYPESCRIPT BUILD TRÊN VERCEL
+        const audioBufferData = Buffer.from(audioBuffer);
+        const audioFile = new File([audioBufferData as unknown as BlobPart], 'recording.webm', { type: mimeType });
 
         // 1. Whisper STT
         const transcription = await groq.audio.transcriptions.create({
