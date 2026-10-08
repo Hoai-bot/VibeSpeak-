@@ -21,6 +21,62 @@ export interface UserProgress {
   completedStations: number[];
 }
 
+// 🎯 INTERFACE CHO BÀI NỘP ROLEPLAY / LƯỢT ĐẤU CỦA GIÁO VIÊN
+export interface RoleplaySubmission {
+  id: string;
+  studentName: string;
+  pairName: string;
+  mode: string;
+  cefrLevel: string;
+  score: number;
+  transcript: string;
+  audioUrl?: string;
+  feedback: string;
+  timestamp: string;
+}
+
+const STORAGE_KEY_SUBMISSIONS = 'vibespeak_teacher_submissions';
+
+// 🎯 HÀM LƯU BÀI NỘP DÀNH CHO BẢNG ĐIỂM GIÁO VIÊN
+export const saveSubmissionForTeacher = (
+  submission: Omit<RoleplaySubmission, 'id' | 'timestamp'>
+) => {
+  try {
+    const existing = getSubmissionsForTeacher();
+    const newEntry: RoleplaySubmission = {
+      ...submission,
+      id: Date.now().toString(),
+      timestamp: new Date().toLocaleString('vi-VN'),
+    };
+    const updated = [newEntry, ...existing];
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(STORAGE_KEY_SUBMISSIONS, JSON.stringify(updated));
+    }
+  } catch (e) {
+    console.error('Lỗi lưu điểm cho giáo viên:', e);
+  }
+};
+
+// 🎯 HÀM LẤY DANH SÁCH BÀI NỘP CỦA SINH VIÊN DÀNH CHO GIÁO VIÊN
+export const getSubmissionsForTeacher = (): RoleplaySubmission[] => {
+  try {
+    if (typeof window !== 'undefined') {
+      const data = localStorage.getItem(STORAGE_KEY_SUBMISSIONS);
+      return data ? JSON.parse(data) : [];
+    }
+  } catch (e) {
+    console.error('Lỗi lấy danh sách điểm:', e);
+  }
+  return [];
+};
+
+// 🎯 HÀM XÓA LỊCH SỬ BÀI NỘP KHI CẦN REFRESH LỚP HỌC MỚI
+export const clearTeacherSubmissions = () => {
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem(STORAGE_KEY_SUBMISSIONS);
+  }
+};
+
 // Lấy tên đã lưu trong LocalStorage
 export const getStoredPlayerName = (): string => {
   return localStorage.getItem('vibe_player_name') || localStorage.getItem('vibe_display_name') || '';
