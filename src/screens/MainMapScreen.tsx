@@ -10,7 +10,7 @@ interface Props {
 export default function MainMapScreen({ onSelectStation, onOpenProfile }: Props) {
   return (
     <View style={styles.container}>
-      {/* HEADER GIAO DIỆN CÓ CẢ NÚT HỒ SƠ VÀ BẢNG ĐIỂM GIÁO VIÊN */}
+      {/* HEADER GIAO DIỆN CHÍNH CÓ NÚT HỒ SƠ VÀ BẢNG ĐIỂM GIÁO VIÊN */}
       <View style={styles.header}>
         <TouchableOpacity style={styles.profileBtn} onPress={onOpenProfile}>
           <Text style={styles.profileBtnText}>👤 HỒ SƠ CHIẾN BINH</Text>
@@ -26,26 +26,27 @@ export default function MainMapScreen({ onSelectStation, onOpenProfile }: Props)
 
       <ScrollView contentContainerStyle={styles.mapContainer}>
         <Text style={styles.mapTitle}>🗺 BẢN ĐỒ ĐẤU TRƯỜNG VIBESPEAK</Text>
-        <Text style={styles.mapSubtitle}>Dành cho Lớp Chế biến Món ăn (Culinary Arts)</Text>
+        <Text style={styles.mapSubtitle}>Luyện Phản Xạ Phát Âm Tiếng Anh Chuẩn CEFR (A1 - C2)</Text>
 
+        {/* DANH SÁCH CÁC TRẠM HỌC TẬP CHUẨN CEFR A1 - C2 */}
         <TouchableOpacity style={styles.stationCard} onPress={() => onSelectStation(1)}>
-          <Text style={styles.stationTitle}>🔥 TRẠM 1: DRILL ARENA</Text>
-          <Text style={styles.stationDesc}>Luyện từ vựng phát âm chuẩn từng từ theo chủ đề Nghề Bếp</Text>
+          <Text style={styles.stationTitle}>🔥 TRẠM 1: DRILL ARENA (A1 - A2)</Text>
+          <Text style={styles.stationDesc}>Luyện từ vựng, âm tiết & mẫu câu giao tiếp căn bản chuẩn phát âm</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={[styles.stationCard, styles.station2Card]} onPress={() => onSelectStation(2)}>
           <Text style={styles.stationTitle}>⚔️ TRẠM 2: ALL-IN ARENA (SOLO / RELAY / ROLEPLAY)</Text>
-          <Text style={styles.stationDesc}>Thi đấu hội thoại phản xạ cặp đôi & Tự do đóng vai tình huống mở</Text>
+          <Text style={styles.stationDesc}>Thi đấu hội thoại phản xạ cặp đôi & Tự do đóng vai tình huống mở (A1 - C2)</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.stationCard} onPress={() => onSelectStation(3)}>
-          <Text style={styles.stationTitle}>👑 TRẠM 3: SHADOW BOSS RAID</Text>
-          <Text style={styles.stationDesc}>Đánh Boss ngữ điệu Shadowing phản xạ tốc độ cao</Text>
+          <Text style={styles.stationTitle}>👑 TRẠM 3: SHADOW BOSS RAID (B1 - B2)</Text>
+          <Text style={styles.stationDesc}>Luyện Shadowing khớp nhịp điệu, ngữ điệu và tốc độ nói tự nhiên</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.stationCard} onPress={() => onSelectStation(4)}>
-          <Text style={styles.stationTitle}>⚡ TRẠM 4: SPEAKING EXPRESS</Text>
-          <Text style={styles.stationDesc}>Phản xạ nhanh tình huống nhà hàng khách sạn A1 - C2</Text>
+          <Text style={styles.stationTitle}>⚡ TRẠM 4: SPEAKING EXPRESS (B2 - C2)</Text>
+          <Text style={styles.stationDesc}>Phản xạ nhanh tình huống giao tiếp phức tạp & lập luận chuyên sâu</Text>
         </TouchableOpacity>
       </ScrollView>
     </View>
