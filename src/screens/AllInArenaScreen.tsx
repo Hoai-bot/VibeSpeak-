@@ -12,7 +12,7 @@ interface Props {
 }
 
 export default function AllInArenaScreen({ onBack }: Props) {
-  const [mode, setMode] = useState<'solo' | 'relay' | 'roleplay'>('roleplay');
+  const [mode, setMode] = useState<'solo' | 'relay' | 'roleplay'>('solo');
   const [cefrLevel, setCefrLevel] = useState<string>('A1');
   const [loading, setLoading] = useState<boolean>(true);
 
@@ -23,8 +23,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
   const [topicKey, setTopicKey] = useState<number>(0);
   const [battleState, setBattleState] = useState<'idle' | 'searching' | 'battling' | 'analyzing' | 'ended'>('idle');
   
-  // ⏱ CỐ ĐỊNH THỜI GIAN TOÀN BỘ BÀI HỘI THOẠI
-  const [timeLeft, setTimeLeft] = useState<number>(60);
+  const [timeLeft, setTimeLeft] = useState<number>(30);
   const [isTimerActive, setIsTimerActive] = useState<boolean>(false);
   const [isRecording, setIsRecording] = useState<boolean>(false);
   
@@ -42,12 +41,11 @@ export default function AllInArenaScreen({ onBack }: Props) {
 
   const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
 
-  // 🎯 QUY ĐỊNH THỜI GIAN TỔNG NÓI CHO CẢ BÀI HỘI THOẠI CỦA 2 BẠN
   const getTotalTimeForScenario = (level: string, currentMode: string) => {
     if (currentMode === 'roleplay' || currentMode === 'relay') {
-      if (level === 'A1' || level === 'A2') return 45; // 45s cho A1-A2
-      if (level === 'B1' || level === 'B2') return 75; // 75s cho B1-B2
-      return 90; // 90s cho C1-C2
+      if (level === 'A1' || level === 'A2') return 45;
+      if (level === 'B1' || level === 'B2') return 75;
+      return 90;
     }
     return 30; // Solo
   };
@@ -87,7 +85,6 @@ export default function AllInArenaScreen({ onBack }: Props) {
     audioChunksRef.current = [];
   };
 
-  // ĐỒNG HỒ ĐẾM NGƯỢC CỐ ĐỊNH CHO CẢ BÀI HỘI THOẠI
   useEffect(() => {
     if (!isTimerActive) return;
 
@@ -164,10 +161,9 @@ export default function AllInArenaScreen({ onBack }: Props) {
       setIsTimerActive(false);
       const allocatedTime = getTotalTimeForScenario(cefrLevel, mode);
       setTimeLeft(allocatedTime);
-    }, 1000);
+    }, 800);
   };
 
-  // 🎙 THU ÂM TOÀN BỘ CUỘC HỘI THOẠI TRONG 1 LẦN BẤM
   const handleToggleRecord = async () => {
     if (!isRecording) {
       try {
@@ -244,7 +240,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
     await new Promise((resolve) => setTimeout(resolve, 200));
 
     if (!recordedBlob || recordedBlob.size <= 800) {
-      alert("🔒 Chưa ghi nhận bài nói! Vui lòng bấm Micro thu âm cuộc hội thoại trước khi nộp.");
+      alert("🔒 Chưa ghi nhận bài nói! Vui lòng bấm Micro thu âm trước khi nộp.");
       return;
     }
 
@@ -258,10 +254,9 @@ export default function AllInArenaScreen({ onBack }: Props) {
       setBattleState('ended');
       updateUserProgress(2, evalData.isWin ? 50 : 10, evalData.isWin);
 
-      // 🎯 ĐỒNG BỘ DỮ LIỆU SANG TRANG BẢNG ĐIỂM GIÁO VIÊN
       saveSubmissionForTeacher({
         studentName: 'Sinh viên VibeSpeak',
-        pairName: mode === 'roleplay' ? 'Cặp đấu Roleplay 2P' : 'Bài thi đấu cá nhân',
+        pairName: mode === 'solo' ? 'Bài thi cá nhân (Solo)' : mode === 'roleplay' ? 'Cặp đấu Roleplay 2P' : 'Cặp đấu Relay 2P',
         mode: mode,
         cefrLevel: cefrLevel,
         score: evalData.score || 85,
@@ -361,7 +356,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.startBtn} onPress={startMatch} disabled={loading}>
-              <Text style={styles.startBtnText}>⚔️ BẮT ĐẦU THI ĐẤU CẶP</Text>
+              <Text style={styles.startBtnText}>{mode === 'solo' ? '⚔️ BẮT ĐẦU THI ĐẤU' : '⚔️ BẮT ĐẦU THI ĐẤU CẶP'}</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -369,16 +364,16 @@ export default function AllInArenaScreen({ onBack }: Props) {
         {battleState === 'searching' && (
           <View style={styles.box}>
             <ActivityIndicator size="large" color="#FF007F" style={{ marginBottom: 15 }} />
-            <Text style={styles.searchingText}>🔍 ĐANG MỞ SÀN ĐẤU ROLEPLAY...</Text>
+            <Text style={styles.searchingText}>🔍 ĐANG MỞ SÀN ĐẤU {mode.toUpperCase()}...</Text>
           </View>
         )}
 
         {battleState === 'battling' && (
           <View style={styles.box}>
             <View style={styles.battleHeader}>
-              <Text style={styles.opponentName}>🎭 SÀN ĐẤU CẶP (TỰ ĐỐI ĐÁP)</Text>
+              <Text style={styles.opponentName}>{mode === 'solo' ? '🔥 CHẾ ĐỘ SOLO' : '🎭 SÀN ĐẤU CẶP (TỰ ĐỐI ĐÁP)'}</Text>
               <Text style={styles.timerText}>
-                {isRecording ? `🔴 ĐANG THU ÂM HỘI THOẠI: ${timeLeft}s` : `⏱ TỔNG THỜI GIAN NÓI: ${timeLeft}s`}
+                {isRecording ? `🔴 ĐANG THU ÂM: ${timeLeft}s` : `⏱ THỜI GIAN: ${timeLeft}s`}
               </Text>
             </View>
 
@@ -386,18 +381,21 @@ export default function AllInArenaScreen({ onBack }: Props) {
               {renderTopicContent()}
             </View>
 
+            {/* NÚT THU ÂM ĐIỀU CHỈNH CHUẨN XÁC THEO MỖI CHẾ ĐỘ */}
             <TouchableOpacity style={[styles.recordToggleBtn, isRecording && styles.recordToggleBtnActive]} onPress={handleToggleRecord}>
               <Text style={styles.recordToggleText}>
                 {isRecording 
-                  ? `🛑 DỪNG THU ÂM (HOÀN THÀNH HỘI THOẠI)` 
+                  ? `🛑 DỪNG THU ÂM (ĐÃ HOÀN THÀNH)` 
                   : hasRecorded 
-                    ? `✅ ĐÃ THU ÂM XONG HỘI THOẠI (BẤM ĐỂ THU LẠI)` 
-                    : `🎙 BẤM MICRO ĐỂ CẢ 2 BẠN BẮT ĐẦU NÓI`}
+                    ? `✅ ĐÃ CÓ BẢN THU (BẤM ĐỂ THU LẠI)` 
+                    : mode === 'solo' 
+                      ? `🎙 BẤM GHI ÂM NÓI` 
+                      : `🎙 BẤM MICRO ĐỂ CẢ 2 BẠN BẮT ĐẦU NÓI`}
               </Text>
             </TouchableOpacity>
 
             <TouchableOpacity style={[styles.submitBtn, isSubmitDisabled && styles.submitBtnDisabled]} onPress={handleSubmitBattleAnswer} disabled={isSubmitDisabled}>
-              <Text style={styles.submitBtnText}>⚡ NỘP BÀI HỘI THOẠI & AI CHẤM ĐIỂM</Text>
+              <Text style={styles.submitBtnText}>⚡ NỘP BÀI & AI CHẤM ĐIỂM</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -405,26 +403,26 @@ export default function AllInArenaScreen({ onBack }: Props) {
         {battleState === 'analyzing' && (
           <View style={styles.box}>
             <ActivityIndicator size="large" color="#39FF14" style={{ marginBottom: 15 }} />
-            <Text style={styles.searchingText}>⚡ GROQ AI ĐANG BÓC TÁCH & CHẤM ĐIỂM TOÀN BỘ BÀI HỘI THOẠI...</Text>
+            <Text style={styles.searchingText}>⚡ GROQ AI ĐANG BÓC TÁCH & CHẤM ĐIỂM BÀI NÓI...</Text>
           </View>
         )}
 
         {battleState === 'ended' && result && (
           <View style={styles.box}>
             <Text style={[styles.resultTitle, { color: result.isWin ? '#39FF14' : '#FF0055' }]}>
-              {result.isWin ? '🎉 BÀI HỘI THOẠI ĐẠT CHUẨN XUẤT SẮC!' : '💡 CẦN CẢI THIỆN PHẢN XẠ PHÁT ÂM'}
+              {result.isWin ? '🎉 BÀI THI ĐẤU ĐẠT CHUẨN XUẤT SẮC!' : '💡 CẦN CẢI THIỆN PHẢN XẠ PHÁT ÂM'}
             </Text>
-            <Text style={styles.scoreText}>⚡ TỔNG ĐIỂM CẶP ROLEPLAY: {result.score} / 100 ĐIỂM</Text>
+            <Text style={styles.scoreText}>⚡ TỔNG ĐIỂM {mode.toUpperCase()}: {result.score} / 100 ĐIỂM</Text>
 
             {audioUrl && (
               <View style={styles.audioPlayerSection}>
-                <Text style={styles.audioSectionTitle}>🎧 NGHE LẠI CẢ CUỘC HỘI THOẠI CỦA 2 BẠN:</Text>
+                <Text style={styles.audioSectionTitle}>🎧 NGHE LẠI BẢN THU ÂM:</Text>
                 {React.createElement('audio', { controls: true, src: audioUrl, style: { width: '100%', marginTop: '6px' } })}
               </View>
             )}
 
             <View style={styles.userTranscriptBox}>
-              <Text style={styles.userTranscriptTitle}>🎙 TOÀN BỘ LỜI NÓI HỘI THOẠI AI BÓC TÁCH:</Text>
+              <Text style={styles.userTranscriptTitle}>🎙 LỜI NÓI AI BÓC TÁCH:</Text>
               <Text style={styles.userTranscriptContent}>"{result.transcript}"</Text>
             </View>
 
@@ -434,7 +432,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
               <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>🔤 Từ vựng ngữ pháp:</Text><Text style={styles.breakdownValue}>{result.vocabulary}/100</Text></View>
             </View>
 
-            <Text style={styles.feedbackText}>💡 Nhận xét AI cho Giáo Viên cộng điểm thưởng: {result.detailedFeedback}</Text>
+            <Text style={styles.feedbackText}>💡 Nhận xét AI: {result.detailedFeedback}</Text>
 
             <TouchableOpacity style={styles.startBtn} onPress={() => loadModeData(mode, cefrLevel)}>
               <Text style={styles.startBtnText}>🔄 BẮT ĐẦU TÌNH HUỐNG MỚI</Text>
