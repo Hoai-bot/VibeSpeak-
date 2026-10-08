@@ -14,6 +14,7 @@ interface Props {
 export default function AllInArenaScreen({ onBack }: Props) {
   const [mode, setMode] = useState<'solo' | 'relay' | 'roleplay'>('solo');
   const [cefrLevel, setCefrLevel] = useState<string>('A1');
+  const [opponentType, setOpponentType] = useState<'bot' | 'pvp'>('pvp');
   const [loading, setLoading] = useState<boolean>(true);
 
   const [soloTopic, setSoloTopic] = useState<SoloTopic | null>(null);
@@ -256,7 +257,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
 
       saveSubmissionForTeacher({
         studentName: 'Sinh viên VibeSpeak',
-        pairName: mode === 'solo' ? 'Bài thi cá nhân (Solo)' : mode === 'roleplay' ? 'Cặp đấu Roleplay 2P' : 'Cặp đấu Relay 2P',
+        pairName: mode === 'solo' ? `Solo [${opponentType.toUpperCase()}]` : mode === 'roleplay' ? `Roleplay [${opponentType.toUpperCase()}]` : `Relay [${opponentType.toUpperCase()}]`,
         mode: mode,
         cefrLevel: cefrLevel,
         score: evalData.score || 85,
@@ -337,7 +338,25 @@ export default function AllInArenaScreen({ onBack }: Props) {
           </TouchableOpacity>
         </View>
 
-        <Text style={styles.sectionLabel}>2. CHỌN LEVEL CEFR:</Text>
+        {/* 🤖 KHÔI PHỤC NÚT CHỌN ĐỐI THỦ (BOT AI / ĐẤU CẶP THẬT) */}
+        <Text style={styles.sectionLabel}>2. CHỌN ĐỐI THỦ THÁCH ĐẤU:</Text>
+        <View style={styles.opponentRow}>
+          <TouchableOpacity 
+            style={[styles.opponentBtn, opponentType === 'bot' && styles.opponentBtnActive]} 
+            onPress={() => setOpponentType('bot')}
+          >
+            <Text style={[styles.opponentText, opponentType === 'bot' && styles.opponentTextActive]}>🤖 ĐẤU BOT AI</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={[styles.opponentBtn, opponentType === 'pvp' && styles.opponentBtnActivePvP]} 
+            onPress={() => setOpponentType('pvp')}
+          >
+            <Text style={[styles.opponentText, opponentType === 'pvp' && styles.opponentTextActive]}>👥 ĐẤU CẶP THẬT</Text>
+          </TouchableOpacity>
+        </View>
+
+        <Text style={styles.sectionLabel}>3. CHỌN LEVEL CEFR:</Text>
         <View style={styles.cefrRow}>
           {CEFR_LEVELS.map((lvl) => (
             <TouchableOpacity key={lvl} style={[styles.cefrBadge, cefrLevel === lvl && styles.cefrBadgeActive]} onPress={() => handleLevelChange(lvl)}>
@@ -348,7 +367,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
 
         {battleState === 'idle' && (
           <View style={styles.box} key={topicKey}>
-            <Text style={styles.boxTitle}>⚡ TÌNH HUỐNG {mode.toUpperCase()} [{cefrLevel}]</Text>
+            <Text style={styles.boxTitle}>⚡ TÌNH HUỐNG {mode.toUpperCase()} [{cefrLevel}] ({opponentType.toUpperCase()})</Text>
             {loading ? <ActivityIndicator size="small" color="#FF007F" style={{ marginVertical: 15 }} /> : renderTopicContent()}
 
             <TouchableOpacity style={[styles.refreshBtn, loading && styles.refreshBtnDisabled]} onPress={handleRefreshTopic} disabled={loading}>
@@ -364,14 +383,14 @@ export default function AllInArenaScreen({ onBack }: Props) {
         {battleState === 'searching' && (
           <View style={styles.box}>
             <ActivityIndicator size="large" color="#FF007F" style={{ marginBottom: 15 }} />
-            <Text style={styles.searchingText}>🔍 ĐANG MỞ SÀN ĐẤU {mode.toUpperCase()}...</Text>
+            <Text style={styles.searchingText}>🔍 ĐANG MỞ SÀN ĐẤU {mode.toUpperCase()} [{opponentType.toUpperCase()}]...</Text>
           </View>
         )}
 
         {battleState === 'battling' && (
           <View style={styles.box}>
             <View style={styles.battleHeader}>
-              <Text style={styles.opponentName}>{mode === 'solo' ? '🔥 CHẾ ĐỘ SOLO' : '🎭 SÀN ĐẤU CẶP (TỰ ĐỐI ĐÁP)'}</Text>
+              <Text style={styles.opponentName}>{mode === 'solo' ? '🔥 CHẾ ĐỘ SOLO' : `🎭 SÀN ĐẤU CẶP (${opponentType === 'bot' ? '🤖 ĐẤU BOT' : '👥 ĐẤU THẬT'})`}</Text>
               <Text style={styles.timerText}>
                 {isRecording ? `🔴 ĐANG THU ÂM: ${timeLeft}s` : `⏱ THỜI GIAN: ${timeLeft}s`}
               </Text>
@@ -381,7 +400,6 @@ export default function AllInArenaScreen({ onBack }: Props) {
               {renderTopicContent()}
             </View>
 
-            {/* NÚT THU ÂM ĐIỀU CHỈNH CHUẨN XÁC THEO MỖI CHẾ ĐỘ */}
             <TouchableOpacity style={[styles.recordToggleBtn, isRecording && styles.recordToggleBtnActive]} onPress={handleToggleRecord}>
               <Text style={styles.recordToggleText}>
                 {isRecording 
@@ -410,7 +428,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
         {battleState === 'ended' && result && (
           <View style={styles.box}>
             <Text style={[styles.resultTitle, { color: result.isWin ? '#39FF14' : '#FF0055' }]}>
-              {result.isWin ? '🎉 BÀI THI ĐẤU ĐẠT CHUẨN XUẤT SẮC!' : '💡 CẦN CẢI THIỆN PHẢN XẠ PHÁT ÂM'}
+              {result.isWin ? '🎉 BÀI THI ĐẤU ĐẠT CHUẨN XUẤT SẮC!' : '💡 CẦN CẢI THIỆN PHẢR XẠ PHÁT ÂM'}
             </Text>
             <Text style={styles.scoreText}>⚡ TỔNG ĐIỂM {mode.toUpperCase()}: {result.score} / 100 ĐIỂM</Text>
 
@@ -468,6 +486,12 @@ const styles = StyleSheet.create({
   modeTabActive: { backgroundColor: '#FF007F', borderColor: '#FF007F' },
   modeTabText: { color: '#8888AA', fontSize: 9, fontWeight: '900' },
   modeTextActive: { color: '#FFF' },
+  opponentRow: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginBottom: 12 },
+  opponentBtn: { backgroundColor: '#0D0620', paddingVertical: 10, borderRadius: 8, borderWidth: 1, borderColor: '#332255', width: '48%', alignItems: 'center' },
+  opponentBtnActive: { backgroundColor: '#00FFFF', borderColor: '#00FFFF' },
+  opponentBtnActivePvP: { backgroundColor: '#FF007F', borderColor: '#FF007F' },
+  opponentText: { color: '#AAAABB', fontSize: 10, fontWeight: '900' },
+  opponentTextActive: { color: '#000' },
   cefrRow: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginBottom: 15 },
   cefrBadge: { backgroundColor: '#0D0620', paddingVertical: 6, paddingHorizontal: 10, borderRadius: 6, borderWidth: 1, borderColor: '#332255' },
   cefrBadgeActive: { backgroundColor: '#39FF14', borderColor: '#39FF14' },
