@@ -1,7 +1,7 @@
 // src/screens/TeacherDashboardScreen.tsx
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, TextInput, Alert } from 'react-native';
-import { getSubmissionsForTeacher, clearTeacherSubmissions, RoleplaySubmission } from '../services/userService';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, TextInput } from 'react-native';
+import { fetchSubmissionsFromCloud, RoleplaySubmission } from '../services/userService';
 
 interface Props {
   onBack: () => void;
@@ -21,8 +21,8 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
     }
   }, [isAuthenticated]);
 
-  const loadData = () => {
-    const data = getSubmissionsForTeacher();
+  const loadData = async () => {
+    const data = await fetchSubmissionsFromCloud();
     setSubmissions(data);
   };
 
@@ -49,7 +49,7 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `Bang_Diem_VibeSpeak_Lop_Culinary_${Date.now()}.csv`);
+    link.setAttribute('download', `Bang_Diem_VibeSpeak_Cloud_${Date.now()}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -91,7 +91,7 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
         <TouchableOpacity onPress={onBack} style={styles.backBtn}>
           <Text style={styles.backText}>🔙 MAP chính</Text>
         </TouchableOpacity>
-        <Text style={styles.title}>📊 BẢNG ĐIỂM GIÁO VIÊN (24 SV)</Text>
+        <Text style={styles.title}>📊 BẢNG ĐIỂM GIÁO VIÊN (CLOUD REALTIME)</Text>
       </View>
 
       <View style={styles.actionBar}>
@@ -118,7 +118,7 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
       <ScrollView style={{ width: '100%' }} contentContainerStyle={{ paddingBottom: 30 }}>
         {filteredData.length === 0 ? (
           <View style={styles.emptyBox}>
-            <Text style={styles.emptyText}>📋 Chưa có bài nộp nào từ sinh viên.</Text>
+            <Text style={styles.emptyText}>📋 Chưa có bài nộp nào từ sinh viên trên Cloud.</Text>
           </View>
         ) : (
           filteredData.map((item, index) => (

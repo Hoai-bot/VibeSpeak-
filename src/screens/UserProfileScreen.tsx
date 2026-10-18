@@ -1,76 +1,27 @@
 // src/screens/UserProfileScreen.tsx
-import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, TextInput, Modal, Alert } from 'react-native';
-import { getUserProgress, savePlayerName, getStoredPlayerName, UserProgress } from '../services/userService';
+import React, { useEffect, useState } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
+import { fetchSubmissionsFromCloud, RoleplaySubmission } from '../services/userService';
 
 interface Props {
   onBack: () => void;
 }
 
 export default function UserProfileScreen({ onBack }: Props) {
-  const [profile, setProfile] = useState<UserProgress | null>(null);
+  const [myHistory, setMyHistory] = useState<RoleplaySubmission[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
-  
-  // State quản lý tên / mã tên sinh viên
-  const [playerName, setPlayerName] = useState<string>('');
-  const [isEditModalOpen, setIsEditModalOpen] = useState<boolean>(false);
-  const [tempNameInput, setTempNameInput] = useState<string>('');
-
-  const loadUserData = async () => {
-    setLoading(true);
-
-    // Lấy tên hiện tại
-    const currentName = getStoredPlayerName();
-    setPlayerName(currentName);
-
-    // Bọc Safety Timeout để chống kẹt xoay vòng tròn quá 1.5s
-    const timeoutPromise = new Promise<UserProgress>((resolve) => {
-      setTimeout(() => {
-        resolve({
-          totalXp: 180,
-          streakDays: 3,
-          totalDrillsCompleted: 12,
-          completedStations: [1, 2]
-        });
-      }, 1500);
-    });
-
-    try {
-      const data = await Promise.race([getUserProgress(), timeoutPromise]);
-      setProfile(data || {
-        totalXp: 100,
-        streakDays: 1,
-        totalDrillsCompleted: 5,
-        completedStations: [1]
-      });
-    } catch (error) {
-      setProfile({
-        totalXp: 120,
-        streakDays: 1,
-        totalDrillsCompleted: 6,
-        completedStations: [1]
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
 
   useEffect(() => {
-    loadUserData();
+    loadMyHistory();
   }, []);
 
-  // Hàm xử lý lưu tên mới
-  const handleSaveName = async () => {
-    if (!tempNameInput.trim()) {
-      return;
-    }
-    const updatedName = await savePlayerName(tempNameInput.trim());
-    setPlayerName(updatedName);
-    setIsEditModalOpen(false);
+  const loadMyHistory = async () => {
+    setLoading(true);
+    const allData = await fetchSubmissionsFromCloud();
+    // Lấy 5 bài nộp mới nhất của người dùng
+    setMyHistory(allData.slice(0, 5));
+    setLoading(false);
   };
-
-  const calculateLevel = (xp: number = 0) => Math.floor(xp / 100) + 1;
-  const calculateXpProgress = (xp: number = 0) => (xp % 100);
 
   return (
     <View style={styles.container}>
@@ -78,169 +29,62 @@ export default function UserProfileScreen({ onBack }: Props) {
         <TouchableOpacity onPress={onBack} style={styles.backBtn}>
           <Text style={styles.backText}>🔙 QUAY LẠI MAP</Text>
         </TouchableOpacity>
-        <Text style={styles.title}>👤 HỒ SƠ CHIẾN BINH VIBESPEAK</Text>
+        <Text style={styles.title}>👤 HỒ SƠ CHIẾN BINH</Text>
       </View>
 
-      <ScrollView contentContainerStyle={{ alignItems: 'center', width: '100%', paddingBottom: 30 }}>
-        {loading ? (
-          <View style={{ alignItems: 'center', marginTop: 50 }}>
-            <ActivityIndicator size="large" color="#00FFFF" style={{ marginBottom: 15 }} />
-            <Text style={{ color: '#00FFFF', fontSize: 11, fontWeight: 'bold' }}>⚡ ĐANG TẢI DỮ LIỆU HỒ SƠ...</Text>
-          </View>
-        ) : profile ? (
-          <>
-            {/* CARD THÔNG TIN THÀNH VIÊN */}
-            <View style={styles.avatarCard}>
-              <View style={styles.avatarCircle}>
-                <Text style={styles.avatarText}>🎙️</Text>
-              </View>
-
-              {/* KHU VỰC HIỂN THỊ TÊN & NÚT ĐỔI TÊN */}
-              <TouchableOpacity 
-                style={styles.nameContainer}
-                onPress={() => {
-                  setTempNameInput(playerName);
-                  setIsEditModalOpen(true);
-                }}
-              >
-                <Text style={styles.userName}>{playerName || 'TẠO MÃ TÊN SINH VIÊN'}</Text>
-                <Text style={styles.editBadge}>✏️ ĐỔI TÊN</Text>
-              </TouchableOpacity>
-
-              <Text style={styles.userTitle}>🏆 CẤP ĐỘ {calculateLevel(profile.totalXp)} • CYBER PHONETICIAN</Text>
-
-              {/* THANH TIẾN TRÌNH XP */}
-              <View style={styles.xpProgressBg}>
-                <View style={[styles.xpProgressFill, { width: `${calculateXpProgress(profile.totalXp)}%` }]} />
-              </View>
-              <Text style={styles.xpText}>
-                ⚡ {profile.totalXp} XP (Còn {100 - calculateXpProgress(profile.totalXp)} XP để lên Cấp {calculateLevel(profile.totalXp) + 1})
-              </Text>
-            </View>
-
-            {/* CHỈ SỐ THI ĐẤU & CHUỖI STREAK */}
-            <View style={styles.statsRow}>
-              <View style={styles.statBox}>
-                <Text style={styles.statValue}>🔥 {profile.streakDays || 1}</Text>
-                <Text style={styles.statLabel}>CHUỖI NGÀY HỌC</Text>
-              </View>
-
-              <View style={styles.statBox}>
-                <Text style={styles.statValue}>🎯 {profile.totalDrillsCompleted || 0}</Text>
-                <Text style={styles.statLabel}>BÀI TẬP HOÀN THÀNH</Text>
-              </View>
-            </View>
-
-            {/* TIẾN ĐỘ TẠI CÁC TRẠM */}
-            <Text style={styles.sectionTitle}>🎯 TIẾN ĐỘ THỰC HÀNH CÁC TRẠM:</Text>
-
-            <View style={styles.stationProgressCard}>
-              <View style={styles.stationRow}>
-                <Text style={styles.stationName}>🎯 Trạm 1: Drill Arena</Text>
-                <Text style={styles.stationStatus}>
-                  {profile.completedStations?.includes(1) ? '✅ Đã chinh phục' : '🔄 Đang rèn luyện'}
-                </Text>
-              </View>
-
-              <View style={styles.stationRow}>
-                <Text style={styles.stationName}>⚔️ Trạm 2: All-In Arena</Text>
-                <Text style={styles.stationStatus}>
-                  {profile.completedStations?.includes(2) ? '✅ Đã chinh phục' : '🔄 Đang rèn luyện'}
-                </Text>
-              </View>
-
-              <View style={styles.stationRow}>
-                <Text style={styles.stationName}>👹 Trạm 3: Shadow Boss Raid</Text>
-                <Text style={styles.stationStatus}>
-                  {profile.completedStations?.includes(3) ? '✅ Đã hạ gục Boss' : '🔄 Đang khiêu chiến'}
-                </Text>
-              </View>
-
-              <View style={styles.stationRow}>
-                <Text style={styles.stationName}>📻 Trạm 4: Ghost Transmission</Text>
-                <Text style={styles.stationStatus}>
-                  {profile.completedStations?.includes(4) ? '✅ Giải mã thành công' : '🔄 Đang dò tín hiệu'}
-                </Text>
-              </View>
-            </View>
-
-            <TouchableOpacity style={styles.refreshBtn} onPress={loadUserData}>
-              <Text style={styles.refreshText}>🔄 CẬP NHẬT TIẾN ĐỘ MỚI NHẤT</Text>
-            </TouchableOpacity>
-          </>
-        ) : null}
-      </ScrollView>
-
-      {/* MODAL POPUP ĐẶT / ĐỔI TÊN MÃ SINH VIÊN */}
-      <Modal visible={isEditModalOpen} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalBox}>
-            <Text style={styles.modalTitle}>🎮 ĐẶT MÃ TÊN CYBER PLAYER</Text>
-            <Text style={styles.modalSubTitle}>
-              Cú pháp chuẩn: [Mã Lớp] - [Họ Tên]{'\n'}(VD: K48_ENG_NguyenVanA)
-            </Text>
-
-            <TextInput
-              style={styles.modalInput}
-              value={tempNameInput}
-              onChangeText={setTempNameInput}
-              placeholder="Nhập mã tên sinh viên..."
-              placeholderTextColor="#666"
-              autoCapitalize="characters"
-            />
-
-            <View style={styles.modalActions}>
-              <TouchableOpacity style={styles.cancelBtn} onPress={() => setIsEditModalOpen(false)}>
-                <Text style={styles.cancelBtnText}>HỦY</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.saveBtn} onPress={handleSaveName}>
-                <Text style={styles.saveBtnText}>LƯU TÊN</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
+      <ScrollView contentContainerStyle={{ paddingBottom: 30 }}>
+        {/* THÔNG TIN CHIẾN BINH */}
+        <View style={styles.profileBox}>
+          <Text style={styles.userName}>🎖 CHIẾN BINH VIBESPEAK</Text>
+          <Text style={styles.userSub}>Cấp độ phản xạ: CEFR Practitioner (A1 - C2)</Text>
         </View>
-      </Modal>
+
+        {/* BẢNG LỊCH SỬ CỦA TÔI */}
+        <View style={styles.historySection}>
+          <Text style={styles.sectionTitle}>📜 LỊCH SỬ 5 BÀI THI GẦN NHẤT CỦA TÔI</Text>
+
+          {loading ? (
+            <Text style={styles.loadingText}>⏳ Đang tải lịch sử thi đấu từ Cloud...</Text>
+          ) : myHistory.length === 0 ? (
+            <Text style={styles.emptyText}>Chưa có bài thi nào được ghi nhận. Hãy vào các Trạm để luyện tập nhé!</Text>
+          ) : (
+            myHistory.map((item, index) => (
+              <View key={item.id || index} style={styles.historyCard}>
+                <View style={styles.cardHeader}>
+                  <Text style={styles.modeText}>⚔️ [{item.mode.toUpperCase()} - {item.cefrLevel}]</Text>
+                  <Text style={styles.scoreBadge}>{item.score} ĐIỂM</Text>
+                </View>
+
+                <Text style={styles.timeText}>⏱ {item.timestamp}</Text>
+                <Text style={styles.transcriptText}>💬 "{item.transcript}"</Text>
+                <Text style={styles.feedbackText}>💡 AI nhận xét: {item.feedback}</Text>
+              </View>
+            ))
+          )}
+        </View>
+      </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#05020D', padding: 20, paddingTop: 50 },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 15 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
   backBtn: { padding: 8, backgroundColor: '#0D0620', borderRadius: 8, borderWidth: 1, borderColor: '#00FFFF' },
   backText: { color: '#00FFFF', fontSize: 10, fontWeight: 'bold' },
-  title: { color: '#00FFFF', fontSize: 11, fontWeight: '900' },
-  avatarCard: { backgroundColor: '#0D0620', padding: 20, borderRadius: 16, borderWidth: 2, borderColor: '#00FFFF', width: '100%', alignItems: 'center', marginBottom: 15 },
-  avatarCircle: { width: 60, height: 60, borderRadius: 30, backgroundColor: '#1A0B2E', justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#FF007F', marginBottom: 10 },
-  avatarText: { fontSize: 28 },
-  nameContainer: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#1A0B2E', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, borderWidth: 1, borderColor: '#FF007F', marginBottom: 6 },
-  userName: { color: '#FFF', fontSize: 15, fontWeight: '900' },
-  editBadge: { color: '#00FFFF', fontSize: 9, fontWeight: 'bold' },
-  userTitle: { color: '#FFD700', fontSize: 10, fontWeight: 'bold', marginBottom: 12 },
-  xpProgressBg: { width: '100%', height: 10, backgroundColor: '#1A0B2E', borderRadius: 5, overflow: 'hidden', marginBottom: 6 },
-  xpProgressFill: { height: '100%', backgroundColor: '#39FF14' },
-  xpText: { color: '#AAAABB', fontSize: 9, fontWeight: 'bold' },
-  statsRow: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginBottom: 15 },
-  statBox: { backgroundColor: '#0D0620', padding: 14, borderRadius: 12, borderWidth: 1, borderColor: '#FF007F', width: '48%', alignItems: 'center' },
-  statValue: { color: '#FFD700', fontSize: 16, fontWeight: '900', marginBottom: 4 },
-  statLabel: { color: '#AAAABB', fontSize: 9, fontWeight: 'bold' },
-  sectionTitle: { color: '#FFD700', fontSize: 10, fontWeight: 'bold', alignSelf: 'flex-start', marginBottom: 8 },
-  stationProgressCard: { backgroundColor: '#120826', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#332255', width: '100%', marginBottom: 15 },
-  stationRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#221133' },
-  stationName: { color: '#FFF', fontSize: 11, fontWeight: 'bold' },
-  stationStatus: { color: '#39FF14', fontSize: 10, fontWeight: 'bold' },
-  refreshBtn: { backgroundColor: '#1A0B2E', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#00FFFF', width: '100%', alignItems: 'center' },
-  refreshText: { color: '#00FFFF', fontSize: 10, fontWeight: '900' },
-  
-  // MODAL STYLES
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', alignItems: 'center', padding: 20 },
-  modalBox: { backgroundColor: '#0D0620', borderRadius: 16, borderWidth: 2, borderColor: '#00FFFF', padding: 20, width: '100%', maxWidth: 360, alignItems: 'center' },
-  modalTitle: { color: '#00FFFF', fontSize: 14, fontWeight: '900', marginBottom: 6 },
-  modalSubTitle: { color: '#AAAABB', fontSize: 10, textAlign: 'center', marginBottom: 16 },
-  modalInput: { backgroundColor: '#1A0B2E', borderWidth: 1, borderColor: '#FF007F', borderRadius: 8, color: '#FFF', width: '100%', padding: 12, fontSize: 13, fontWeight: 'bold', marginBottom: 20 },
-  modalActions: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', gap: 10 },
-  cancelBtn: { flex: 1, backgroundColor: '#221133', padding: 12, borderRadius: 8, alignItems: 'center' },
-  cancelBtnText: { color: '#AAAABB', fontSize: 11, fontWeight: 'bold' },
-  saveBtn: { flex: 1, backgroundColor: '#00FFFF', padding: 12, borderRadius: 8, alignItems: 'center' },
-  saveBtnText: { color: '#05020D', fontSize: 11, fontWeight: '900' }
+  title: { color: '#FF007F', fontSize: 14, fontWeight: '900' },
+  profileBox: { backgroundColor: '#130628', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#FF007F', marginBottom: 20 },
+  userName: { color: '#00FFFF', fontSize: 14, fontWeight: '900', marginBottom: 4 },
+  userSub: { color: '#AAAABB', fontSize: 10 },
+  historySection: { backgroundColor: '#0D0620', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#332255' },
+  sectionTitle: { color: '#FFD700', fontSize: 11, fontWeight: '900', marginBottom: 12 },
+  loadingText: { color: '#AAAABB', fontSize: 10, fontStyle: 'italic' },
+  emptyText: { color: '#666688', fontSize: 10, fontStyle: 'italic' },
+  historyCard: { backgroundColor: '#130A2A', padding: 12, borderRadius: 8, marginBottom: 10, borderWidth: 1, borderColor: '#221144' },
+  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  modeText: { color: '#00FFFF', fontSize: 10, fontWeight: 'bold' },
+  scoreBadge: { color: '#39FF14', fontSize: 11, fontWeight: '900' },
+  timeText: { color: '#666688', fontSize: 8, marginVertical: 3 },
+  transcriptText: { color: '#FFF', fontSize: 10, fontStyle: 'italic', marginVertical: 3 },
+  feedbackText: { color: '#FFD700', fontSize: 9, marginTop: 2 }
 });
