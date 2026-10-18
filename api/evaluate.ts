@@ -76,13 +76,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (apiKey) {
       try {
         const groq = new Groq({ apiKey });
-
         const rawContentType = (req.headers['content-type'] as string) || '';
         const mimeType = rawContentType.includes('audio') ? rawContentType.split(';')[0] : 'audio/webm';
 
-        // 🎯 CHUYỂN DẠNG BUFFER ĐỂ KHÔNG BỊ LỖI TYPESCRIPT BUILD TRÊN VERCEL
+        // 🎯 FIX CHUYỂN BUFFER SANG FORM-DATA FILE CHUẨN VERCEL SERVERLESS
         const audioBufferData = Buffer.from(audioBuffer);
-        const audioFile = new File([audioBufferData as unknown as BlobPart], 'recording.webm', { type: mimeType });
+        const audioFile = await Groq.toFile(audioBufferData, 'recording.webm', { type: mimeType });
 
         // 1. Whisper STT
         const transcription = await groq.audio.transcriptions.create({
@@ -97,8 +96,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           .replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, '')
           .trim();
 
-      } catch (aiError) {
-        console.warn('⚠️ Groq Whisper STT error:', aiError);
+      } catch (aiError: any) {
+        console.warn('⚠️ Groq Whisper STT error:', aiError?.message || aiError);
       }
     }
 
@@ -119,7 +118,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    // 2. Chấm điểm bằng Llama 3
+    // 2. Chấm điểm bằng Llama 3.1
     if (apiKey && userTranscript.length > 0) {
       try {
         const groq = new Groq({ apiKey });
@@ -131,7 +130,7 @@ Target Level: ${currentLevel}.
 Evaluate user's shadowing accuracy against the target Boss phrase: "${targetPhrase}".
 Instructions:
 - Check how well user matched the words, rhythm, and pronunciation of the target phrase.
-- Feedback MUST be in Vietnamese, brief, and focus strictly on shadowing accuracy and pronunciation. NEVER tell user to add more sentences.
+- Feedback MUST be in Vietnamese, brief, and focus strictly on shadowing accuracy and pronunciation.
 
 Return ONLY JSON matching schema:
 {
@@ -153,10 +152,9 @@ Target Level: ${currentLevel}.
 Situation Prompt: "${targetPhrase}".
 
 CRITICAL SCORING RULES FOR STATION 4 BASED ON CEFR LEVEL:
-- For A1-A2 Level: Short, natural, and accurate responses (e.g., "You're welcome", "I like blue", "Yes, please") MUST score 85-100 points! Do NOT expect long sentences for A1-A2.
-- For B1-B2 Level: Answers should contain 1-2 clear sentences with logical reasoning (80-95 points).
-- For C1-C2 Level: Answers should use sophisticated vocabulary and sharp argument (85-100 points).
-- Give high scores for valid, fluent, and naturally pronounced answers.
+- For A1-A2 Level: Short, natural, and accurate responses MUST score 85-100 points!
+- For B1-B2 Level: Answers should contain 1-2 clear sentences (80-95 points).
+- For C1-C2 Level: Answers should use sophisticated vocabulary (85-100 points).
 
 Return ONLY JSON matching schema:
 {
@@ -193,19 +191,20 @@ Return ONLY JSON matching schema:
 }`;
         }
 
+        // 🎯 FIX MODEL GROQ MỚI (llama-3.1-8b-instant)
         const completion = await groq.chat.completions.create({
           messages: [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: `Target Prompt: "${targetPhrase}"\nUser Answer: "${userTranscript}"` }
           ],
-          model: 'llama3-8b-8192',
+          model: 'llama-3.1-8b-instant',
           temperature: 0.2,
           response_format: { type: 'json_object' }
         });
 
         evalResult = JSON.parse(completion.choices[0]?.message?.content || '{}');
-      } catch (e) {
-        console.warn('⚠️ Lỗi Llama LLM, chuyển sang Dynamic Fallback Engine:', e);
+      } catch (e: any) {
+        console.warn('⚠️ Lỗi Llama LLM, chuyển sang Dynamic Fallback Engine:', e?.message || e);
       }
     }
 
@@ -222,7 +221,6 @@ Return ONLY JSON matching schema:
         ];
 
         const isExactMatchReflex = commonReflexPhrases.some(phrase => userTextLower.includes(phrase));
-
         let baseScore = 80;
         
         if (currentLevel === 'A1' || currentLevel === 'A2') {
@@ -232,7 +230,7 @@ Return ONLY JSON matching schema:
           if (wordCount >= 6) baseScore = 88;
           else if (wordCount >= 3) baseScore = 80;
           else baseScore = 70;
-        } else { // C1, C2
+        } else {
           if (wordCount >= 10) baseScore = 90;
           else if (wordCount >= 5) baseScore = 80;
           else baseScore = 65;
@@ -302,7 +300,7 @@ Return ONLY JSON matching schema:
     return res.status(500).json({
       success: false,
       error: 'Lỗi máy chủ chấm điểm AI',
-      details: error?.message || error,
+      details: error?.message || String(error),
     });
   }
 }
