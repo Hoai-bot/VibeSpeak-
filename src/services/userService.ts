@@ -20,9 +20,46 @@ export interface RoleplaySubmission {
   timestamp: string;
 }
 
-const STORAGE_KEY = 'vibespeak_teacher_submissions';
+export interface UserProgress {
+  score: number;
+  completedStations: string[];
+  totalSubmissions: number;
+}
 
-// 1. LƯU BÀI NỘP (Vừa lưu Local, vừa đẩy vĩnh viễn lên Supabase Cloud)
+const STORAGE_KEY = 'vibespeak_teacher_submissions';
+const PROGRESS_KEY = 'vibespeak_user_progress';
+
+// 1. QUẢN LÝ TIẾN TRÌNH NGƯỜI DÙNG (CẬP NHẬT ĐIỂM VÀ TRẠM)
+export function updateUserProgress(newScore: number, stationId?: string | number): UserProgress {
+  try {
+    const raw = localStorage.getItem(PROGRESS_KEY);
+    let progress: UserProgress = raw ? JSON.parse(raw) : { score: 0, completedStations: [], totalSubmissions: 0 };
+
+    progress.score += newScore;
+    progress.totalSubmissions += 1;
+
+    if (stationId && !progress.completedStations.includes(String(stationId))) {
+      progress.completedStations.push(String(stationId));
+    }
+
+    localStorage.setItem(PROGRESS_KEY, JSON.stringify(progress));
+    return progress;
+  } catch (e) {
+    console.warn('Lỗi cập nhật tiến trình người dùng:', e);
+    return { score: newScore, completedStations: [], totalSubmissions: 1 };
+  }
+}
+
+export function getUserProgress(): UserProgress {
+  try {
+    const raw = localStorage.getItem(PROGRESS_KEY);
+    return raw ? JSON.parse(raw) : { score: 0, completedStations: [], totalSubmissions: 0 };
+  } catch {
+    return { score: 0, completedStations: [], totalSubmissions: 0 };
+  }
+}
+
+// 2. LƯU BÀI NỘP (Vừa lưu Local, vừa đẩy vĩnh viễn lên Supabase Cloud)
 export async function saveRoleplaySubmission(submission: Omit<RoleplaySubmission, 'id' | 'timestamp'>) {
   const timestamp = new Date().toLocaleString('vi-VN');
   const newSubmission: RoleplaySubmission = {
@@ -62,7 +99,7 @@ export async function saveRoleplaySubmission(submission: Omit<RoleplaySubmission
   return newSubmission;
 }
 
-// 2. LẤY TẤT CẢ BÀI NỘP CHO GIÁO VIÊN (Lấy trực tiếp từ Supabase Cloud)
+// 3. LẤY TẤT CẢ BÀI NỘP CHO GIÁO VIÊN (Lấy trực tiếp từ Supabase Cloud)
 export async function fetchSubmissionsFromCloud(): Promise<RoleplaySubmission[]> {
   try {
     const { data, error } = await supabase
