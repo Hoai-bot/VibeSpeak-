@@ -29,7 +29,7 @@ export interface UserProgress {
 const STORAGE_KEY = 'vibespeak_teacher_submissions';
 const PROGRESS_KEY = 'vibespeak_user_progress';
 
-// 1. QUẢN LÝ TIẾN TRÌNH NGƯỜI DÙNG (CẬP NHẬT ĐIỂM VÀ TRẠM)
+// 1. QUẢN LÝ TIẾN TRÌNH NGƯỜI DÙNG
 export function updateUserProgress(newScore: number, stationId?: string | number): UserProgress {
   try {
     const raw = localStorage.getItem(PROGRESS_KEY);
@@ -98,6 +98,9 @@ export async function saveRoleplaySubmission(submission: Omit<RoleplaySubmission
 
   return newSubmission;
 }
+
+// 🎯 BỔ SUNG ALIAS ĐỂ KHÔNG BỊ LỖI MÀN HÌNH CHẤM ĐIỂM
+export const saveSubmissionForTeacher = saveRoleplaySubmission;
 
 // 3. LẤY TẤT CẢ BÀI NỘP CHO GIÁO VIÊN (Lấy trực tiếp từ Supabase Cloud)
 export async function fetchSubmissionsFromCloud(): Promise<RoleplaySubmission[]> {
