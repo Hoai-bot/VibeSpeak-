@@ -14,6 +14,7 @@ export interface RoleplaySubmission {
   timestamp: string;
 }
 
+// 🎯 HÀM LƯU BÀI NỘP TRẠM 2 CHUẨN XỬ LÝ AUDIO URL
 export const saveSubmissionToCloud = async (submission: RoleplaySubmission) => {
   try {
     if (!supabase) return;
@@ -27,24 +28,32 @@ export const saveSubmissionToCloud = async (submission: RoleplaySubmission) => {
 
     const formattedFeedback = `[${currentMode} - ${level} | ${displayName}]: ${submission.feedback || ''}`;
 
+    // Đảm bảo audioUrl không bị null hoặc empty string
+    const validAudioUrl = submission.audioUrl && submission.audioUrl.length > 10 
+      ? submission.audioUrl 
+      : '';
+
     const { error } = await supabase.from('assessment_results').insert([
       {
         user_id: userId,
         score: submission.score || 0,
         transcript: submission.transcript || '',
         feedback: formattedFeedback,
-        audio_url: submission.audioUrl || '',
+        audio_url: validAudioUrl,
       },
     ]);
 
     if (error) {
-      console.error("❌ Lỗi insert dữ liệu lên Supabase:", error);
+      console.error("❌ Lỗi insert dữ liệu Trạm 2 lên Supabase:", error);
+    } else {
+      console.log("✅ Đã lưu bài nộp Trạm 2 kèm file Audio thành công!");
     }
   } catch (err) {
     console.warn("⚠️ Lỗi saveSubmissionToCloud:", err);
   }
 };
 
+// 🎯 HÀM TẢI BÀI NỘP VỀ BẢNG GIÁO VIÊN KÈM AUDIO CHUẨN
 export const fetchSubmissionsFromCloud = async (): Promise<RoleplaySubmission[]> => {
   try {
     if (!supabase) return [];
@@ -98,7 +107,7 @@ export const fetchSubmissionsFromCloud = async (): Promise<RoleplaySubmission[]>
         mode: String(mode || 'TRẠM 2').toUpperCase(),
         cefrLevel: String(cefrLevel || 'A1').toUpperCase(),
         transcript: item.transcript || '',
-        audioUrl: item.audio_url || '',
+        audioUrl: item.audio_url || '', // 👈 Nạp nguyên vẹn audio_url
         feedback: cleanFeedback,
         timestamp: item.created_at ? new Date(item.created_at).toLocaleString('vi-VN') : '',
       };
@@ -107,41 +116,4 @@ export const fetchSubmissionsFromCloud = async (): Promise<RoleplaySubmission[]>
     console.warn("⚠️ Lỗi fetchSubmissionsFromCloud:", err);
   }
   return [];
-};
-
-// 🎯 HÀM LẤY BẢNG XẾP HẠNG AN TOÀN (CHỐNG SẬP MÀN HÌNH)
-export const fetchTopLeaderboard = async () => {
-  try {
-    if (!supabase) return [];
-
-    const { data, error } = await supabase
-      .from('assessment_results')
-      .select('score, created_at, user_id, feedback')
-      .order('score', { ascending: false })
-      .limit(20);
-
-    if (error || !data) return [];
-
-    return data.map((item: any, idx: number) => {
-      let name = 'Chiến binh';
-      let cleanFeedback = item.feedback || '';
-
-      if (cleanFeedback && cleanFeedback.includes('|') && cleanFeedback.includes(']:')) {
-        const parts = cleanFeedback.split(']:')[0].split('|');
-        if (parts.length > 1 && parts[1].trim()) {
-          name = parts[1].trim();
-        }
-      }
-
-      return {
-        rank: idx + 1,
-        name: String(name || 'Chiến binh'),
-        score: Number(item.score) || 0,
-        date: item.created_at ? new Date(item.created_at).toLocaleDateString('vi-VN') : ''
-      };
-    });
-  } catch (e) {
-    console.warn("⚠️ Lỗi fetchTopLeaderboard:", e);
-    return [];
-  }
 };
