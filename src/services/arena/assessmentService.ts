@@ -1,5 +1,4 @@
 // src/services/arena/assessmentService.ts
-import { supabase } from '@/lib/supabaseClient';
 
 export interface AssessmentResult {
   score: number;
@@ -25,7 +24,7 @@ export const evaluateSpeaking = async (
   userId?: string
 ): Promise<AssessmentResult> => {
   try {
-    // 📱 1. TỰ ĐỘNG XÁC ĐỊNH ĐUÔI FILE CHUẨN TƯƠNG THÍCH ĐIỆN THOẠI VÀ TRÌNH DUYỆT WEB
+    // 📱 1. Xác định định dạng file âm thanh
     const mimeType = audioBlob.type || 'audio/webm';
     let ext = 'webm';
 
@@ -37,13 +36,12 @@ export const evaluateSpeaking = async (
       ext = 'ogg';
     }
 
-    // Tạo URL query parameters
     const queryParams = new URLSearchParams({
       cefrLevel,
       promptEn: targetPrompt || userText || '',
     });
 
-    // 🎯 2. GỬI LÊN API VỚI BODY LÀ RAW BLOB VÀ HEADERS CONTENT-TYPE RÕ RÀNG
+    // 🎯 2. Gửi request sang API evaluate
     const response = await fetch(`/api/evaluate?${queryParams.toString()}`, {
       method: 'POST',
       headers: {
@@ -58,7 +56,6 @@ export const evaluateSpeaking = async (
 
     const data = await response.json();
 
-    // 🚨 3. BẢO VỆ CHẶT CHẼ: Nếu Backend xác định không có chữ (transcript rỗng hoặc score = 0)
     if (!data.transcript || data.transcript.trim() === '' || data.score === 0) {
       return {
         score: 0,
@@ -76,48 +73,52 @@ export const evaluateSpeaking = async (
       };
     }
 
-    // 🔊 4. UPLOAD FILE AUDIO LÊN SUPABASE STORAGE (BUCKET 'recordings') VÀ LẤY PUBLIC URL
+    // 🔊 3. Dynamic Import Supabase Client an toàn khi Build Web
     let publicAudioUrl = '';
     try {
-      const filePath = `student_audios/${userId || 'guest'}_${Date.now()}.${ext}`;
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('recordings')
-        .upload(filePath, audioBlob, {
-          contentType: mimeType,
-          upsert: true,
-        });
+      // Tự động tìm supabaseClient trong lib hoặc utils
+      const supabaseModule = await import('@/lib/supabaseClient').catch(() => null) 
+                           || await import('@/lib/supabase').catch(() => null);
 
-      if (!uploadError && uploadData) {
-        const { data: urlData } = supabase.storage
-          .from('recordings')
-          .getPublicUrl(uploadData.path);
+      if (supabaseModule) {
+        const supabase = supabaseModule.supabase || supabaseModule.default;
+        if (supabase && supabase.storage) {
+          const filePath = `student_audios/${userId || 'guest'}_${Date.now()}.${ext}`;
+          
+          const { data: uploadData, error: uploadError } = await supabase.storage
+            .from('recordings')
+            .upload(filePath, audioBlob, {
+              contentType: mimeType,
+              upsert: true,
+            });
 
-        publicAudioUrl = urlData.publicUrl;
-      } else {
-        console.warn("Không thể upload file audio lên Supabase Storage:", uploadError);
+          if (!uploadError && uploadData) {
+            const { data: urlData } = supabase.storage
+              .from('recordings')
+              .getPublicUrl(uploadData.path);
+
+            publicAudioUrl = urlData?.publicUrl || '';
+          }
+
+          // 💾 4. Lưu kết quả bài thi vào Supabase Database
+          if (userId && publicAudioUrl) {
+            await supabase.from('assessment_results').insert([
+              {
+                user_id: userId,
+                score: data.score ?? 0,
+                transcript: data.transcript,
+                feedback: data.detailedFeedback || "Đánh giá hoàn tất.",
+                audio_url: publicAudioUrl,
+              },
+            ]);
+          }
+        }
       }
     } catch (storageErr) {
-      console.warn("Lỗi upload storage:", storageErr);
+      console.warn("Lỗi upload storage/database:", storageErr);
     }
 
-    // 💾 5. LƯU KẾT QUẢ VÀO BẢNG assessment_results DÀNH CHO BẢNG ĐIỂM GIÁO VIÊN
-    if (userId) {
-      try {
-        await supabase.from('assessment_results').insert([
-          {
-            user_id: userId,
-            score: data.score ?? 0,
-            transcript: data.transcript,
-            feedback: data.detailedFeedback || "Đánh giá hoàn tất.",
-            audio_url: publicAudioUrl,
-          },
-        ]);
-      } catch (dbErr) {
-        console.error("Lỗi lưu kết quả vào database:", dbErr);
-      }
-    }
-
-    // 🎯 6. TRẢ VỀ KẾT QUẢ ĐẦY ĐỦ
+    // 🎯 5. Trả kết quả
     return {
       score: data.score ?? 0,
       isWin: data.isWin ?? (data.score >= 60),
