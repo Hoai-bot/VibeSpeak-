@@ -13,7 +13,7 @@ export interface RoleplaySubmission {
   timestamp: string;
 }
 
-// 🎯 HÀM LƯU BÀI NỘP TRẠM 2 VÀO SUPABASE CLOUD
+// 🎯 HÀM LƯU BÀI NỘP TRẠM 2 LÊN SUPABASE CLOUD (KÈM AUDIO URL)
 export const saveSubmissionToCloud = async (submission: RoleplaySubmission) => {
   try {
     const supabaseModule = await import('../lib/supabaseClient').catch(() => null)
@@ -30,7 +30,7 @@ export const saveSubmissionToCloud = async (submission: RoleplaySubmission) => {
         const level = (submission.cefrLevel || 'A1').toUpperCase();
         let displayName = submission.pairName || submission.studentName || 'Sinh viên';
 
-        // Đóng gói Header chuẩn: [MODE - LEVEL | DISPLAY_NAME]: Feedback
+        // Đóng gói Header thông tin chuẩn
         const formattedFeedback = `[${currentMode} - ${level} | ${displayName}]: ${submission.feedback || ''}`;
 
         const { error } = await supabase.from('assessment_results').insert([
@@ -39,12 +39,12 @@ export const saveSubmissionToCloud = async (submission: RoleplaySubmission) => {
             score: submission.score || 0,
             transcript: submission.transcript || '',
             feedback: formattedFeedback,
-            audio_url: submission.audioUrl || '',
+            audio_url: submission.audioUrl || '', // 👈 Đảm bảo lưu đúng đường dẫn audio
           },
         ]);
 
         if (error) {
-          console.error("❌ Lỗi insert dữ liệu Supabase:", error);
+          console.error("❌ Lỗi insert dữ liệu Trạm 2 lên Supabase:", error);
         }
       }
     }
@@ -53,7 +53,7 @@ export const saveSubmissionToCloud = async (submission: RoleplaySubmission) => {
   }
 };
 
-// 🎯 HÀM TẢI BÀI NỘP VỀ BẢNG GIÁO VIÊN
+// 🎯 HÀM TẢI TẤT CẢ BÀI NỘP VỀ BẢNG GIÁO VIÊN
 export const fetchSubmissionsFromCloud = async (): Promise<RoleplaySubmission[]> => {
   try {
     const supabaseModule = await import('../lib/supabaseClient').catch(() => null)
@@ -81,7 +81,7 @@ export const fetchSubmissionsFromCloud = async (): Promise<RoleplaySubmission[]>
 
         if (!error && results) {
           return results.map((item: any) => {
-            let mode = 'SOLO';
+            let mode = 'TRẠM 2';
             let cefrLevel = 'A1';
             let playerName = profileMap[item.user_id] || 'Sinh viên';
             let cleanFeedback = item.feedback || '';
@@ -94,7 +94,7 @@ export const fetchSubmissionsFromCloud = async (): Promise<RoleplaySubmission[]>
               const tagParts = headerTag.split(' | ');
               const metaParts = tagParts[0].split(' - ');
 
-              mode = (metaParts[0] || 'SOLO').trim().toUpperCase();
+              mode = (metaParts[0] || 'TRẠM 2').trim().toUpperCase();
               cefrLevel = (metaParts[1] || 'A1').trim();
 
               if (tagParts.length > 1 && tagParts[1].trim()) {

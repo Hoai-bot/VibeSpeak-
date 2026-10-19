@@ -30,7 +30,6 @@ export default function Station2Screen({ onBack }: Props) {
   const [customTopicInput, setCustomTopicInput] = useState<string>('');
   const [isUsingCustomTopic, setIsUsingCustomTopic] = useState<boolean>(false);
 
-  // ⏱ HÀM TÍNH SỐ GIÂY TỰ ĐỘNG THEO TRÌNH ĐỘ CEFR
   const getTimerByLevel = (level: string): number => {
     switch (level.toUpperCase()) {
       case 'A1': return 15;
@@ -88,19 +87,16 @@ export default function Station2Screen({ onBack }: Props) {
     fetchUser();
   }, []);
 
-  // Đổi lượt nói và cài đặt lại thời gian chuẩn cho Level hiện tại
   const handleSwitchTurn = () => {
     setActivePlayer((prevPlayer) => (prevPlayer === 1 ? 2 : 1));
     setTurnTimer(getTimerByLevel(cefrLevel));
   };
 
-  // Cập nhật lại số giây đồng hồ khi chọn Level mới
   const handleSelectLevel = (lvl: string) => {
     setCefrLevel(lvl);
     setTurnTimer(getTimerByLevel(lvl));
   };
 
-  // ⏱ BỘ ĐỒNG HỒ ĐẾM GIÂY CHẠY CHUẨN
   useEffect(() => {
     let timerInterval: NodeJS.Timeout | null = null;
 
@@ -189,7 +185,16 @@ export default function Station2Screen({ onBack }: Props) {
     }
   }, [mode, cefrLevel]);
 
-  // 🎙 THU ÂM VÀ CHẤM ĐIỂM DÙNG CHO SOLO VÀ ĐÔI
+  // 🎯 HÀM CHUYỂN BLOB THÀNH DATA URL ĐỂ LƯU VĨNH VIỄN
+  const blobToDataURL = (blob: Blob): Promise<string> => {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.readAsDataURL(blob);
+    });
+  };
+
+  // 🎙 THU ÂM CHUNG VÀ TỰ ĐỘNG ĐÓNG GÓI LƯU FILE ÂM THANH VỀ SUPABASE
   const startFullRecording = async () => {
     try {
       setEvalResult(null);
@@ -214,6 +219,14 @@ export default function Station2Screen({ onBack }: Props) {
 
         const targetPrompt = exercise?.promptEn || exercise?.contextEn || exercise?.scenarioTitle || '';
         const result = await evaluateSpeaking(fullAudioBlob, cefrLevel, undefined, targetPrompt, userId);
+        
+        // 🎯 TỰ ĐỘNG CHUYỂN BLOB ÂM THANH THÀNH DATA URL HOẶC LẤY URL TỪ RESULT
+        let finalAudioUrl = result.audioUrl || '';
+        if (!finalAudioUrl || finalAudioUrl.length < 5) {
+          finalAudioUrl = await blobToDataURL(fullAudioBlob);
+        }
+
+        result.audioUrl = finalAudioUrl;
         setEvalResult(result);
 
         let p1Score = result.score;
@@ -246,6 +259,7 @@ export default function Station2Screen({ onBack }: Props) {
           feedbackDetail = `[ĐỘC LẬP: Vai 1 = ${p1Score}đ, Vai 2 = ${p2Score}đ | TỔNG CẶP = ${totalAvgScore}đ]: ${result.detailedFeedback}`;
         }
 
+        // 🎯 ĐỒNG BỘ NẠP LÊN CLOUD CẢ FILE THU ÂM ÂM THANH
         await saveSubmissionToCloud({
           studentName: pairDisplayName,
           pairName: pairDisplayName,
@@ -253,7 +267,7 @@ export default function Station2Screen({ onBack }: Props) {
           mode: mode,
           cefrLevel: cefrLevel,
           transcript: result.transcript,
-          audioUrl: result.audioUrl,
+          audioUrl: finalAudioUrl, // 👈 Đã đảm bảo gửi link audio đầy đủ
           feedback: feedbackDetail,
           timestamp: new Date().toLocaleTimeString('vi-VN')
         });
@@ -356,7 +370,6 @@ export default function Station2Screen({ onBack }: Props) {
             <View style={{ width: '100%', alignItems: 'center' }}>
               <Text style={styles.scenarioTitle}>{exercise.title || exercise.topic}</Text>
               
-              {/* ⏱ THỜI GIAN HIỂN THỊ TỰ ĐỘNG THAY ĐỔI THEO CEFR LEVEL */}
               <View style={styles.timerBox}>
                 <Text style={styles.timerLabel}>
                   ⏱ THỜI GIAN LƯỢT [{cefrLevel}]: {turnTimer}s {isRecording ? '(ĐANG THU ÂM)' : '(SẴN SÀNG)'}
@@ -366,7 +379,6 @@ export default function Station2Screen({ onBack }: Props) {
                 </Text>
               </View>
 
-              {/* BẢNG PHÂN VAI DÀNH CHO RELAY VÀ ROLEPLAY */}
               {(mode === 'relay' || mode === 'roleplay') && (
                 <View style={styles.playersRow}>
                   <View style={[styles.playerCard, activePlayer === 1 && styles.activePlayerCard]}>
@@ -389,7 +401,6 @@ export default function Station2Screen({ onBack }: Props) {
                 </View>
               )}
 
-              {/* BẢNG ĐIỂM TỔNG CẶP ĐẤU */}
               {currentAvgScore !== null && mode !== 'solo' && (
                 <View style={styles.totalScoreBox}>
                   <Text style={styles.totalScoreText}>🌟 ĐIỂM TỔNG TRUNG BÌNH CẶP ĐẤU: {currentAvgScore} / 100 ĐIỂM</Text>
@@ -400,7 +411,6 @@ export default function Station2Screen({ onBack }: Props) {
                 <Text style={styles.promptText}>🎯 "{exercise.promptEn || exercise.contextEn || ''}"</Text>
               </View>
 
-              {/* NÚT THU ÂM */}
               {!isRecording && !isEvaluating ? (
                 <TouchableOpacity style={styles.startBtn} onPress={startFullRecording}>
                   <Text style={styles.startBtnText}>
@@ -426,11 +436,10 @@ export default function Station2Screen({ onBack }: Props) {
               ) : (
                 <View style={{ marginVertical: 15, alignItems: 'center' }}>
                   <ActivityIndicator size="small" color="#00FFFF" />
-                  <Text style={{ color: '#00FFFF', fontSize: 11, marginTop: 5 }}>🤖 AI đang phân tích bài nói...</Text>
+                  <Text style={{ color: '#00FFFF', fontSize: 11, marginTop: 5 }}>🤖 AI đang phân tích bài nói & lưu âm thanh...</Text>
                 </View>
               )}
 
-              {/* HIỂN THỊ KẾT QUẢ AI CHẤM ĐIỂM */}
               {evalResult && (
                 <View style={styles.evalBox}>
                   <Text style={styles.evalScore}>🏆 ĐIỂM BÀI NÓI: {evalResult.score}/100</Text>
