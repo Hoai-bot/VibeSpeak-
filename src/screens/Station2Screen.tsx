@@ -23,7 +23,6 @@ interface PlayerResult {
 }
 
 export default function Station2Screen({ onBack }: Props) {
-  // 👤 STATE DÀNH CHO THÔNG TIN SINH VIÊN
   const [studentNameInput, setStudentNameInput] = useState<string>('');
   const [studentCodeInput, setStudentCodeInput] = useState<string>('');
 
@@ -59,6 +58,10 @@ export default function Station2Screen({ onBack }: Props) {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const audioStreamRef = useRef<MediaStream | null>(null);
+  
+  // 🎯 BỘ NHẬN DẠNG GIỌNG NÓI THỜI GIAN THỰC (SPEECH RECOGNITION)
+  const recognitionRef = useRef<any>(null);
+  const realTranscriptRef = useRef<string>('');
 
   const [userId, setUserId] = useState<string | undefined>(undefined);
 
@@ -190,9 +193,8 @@ export default function Station2Screen({ onBack }: Props) {
     });
   };
 
-  // 🎙 THU ÂM VÀ GỬI THÔNG TIN TÊN + MSSV LÊN CLOUD
+  // 🎙 BẮT ĐẦU THU ÂM VÀ BÓC TÁCH GIỌNG NÓI THỜI GIAN THỰC
   const startFullRecording = async () => {
-    // ⚠️ KIỂM TRA BẮT BUỘC ĐIỀN TÊN VÀ MSSV TRƯỚC KHÍ BẮT ĐẦU
     if (!studentNameInput.trim() || !studentCodeInput.trim()) {
       alert("⚠️ Vui lòng điền đầy đủ TỌA ĐỘ SINH VIÊN (Họ tên & Mã số sinh viên) ở phía trên trước khi bắt đầu thu âm!");
       return;
@@ -202,7 +204,31 @@ export default function Station2Screen({ onBack }: Props) {
       setEvalResult(null);
       setTurnTimer(getTimerByLevel(cefrLevel));
       audioChunksRef.current = [];
+      realTranscriptRef.current = '';
 
+      // 1. KÍCH HOẠT NHẬN DẠNG GIỌNG NÓI TIẾNG ANH (SPEECH RECOGNITION)
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        const recognition = new SpeechRecognition();
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang = 'en-US';
+
+        recognition.onresult = (event: any) => {
+          let currentSpeech = '';
+          for (let i = event.resultIndex; i < event.results.length; ++i) {
+            currentSpeech += event.results[i][0].transcript;
+          }
+          if (currentSpeech.trim()) {
+            realTranscriptRef.current = currentSpeech.trim();
+          }
+        };
+
+        recognition.start();
+        recognitionRef.current = recognition;
+      }
+
+      // 2. KÍCH HOẠT MICRO THU ÂM FILE WEBM
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       audioStreamRef.current = stream;
 
@@ -219,8 +245,16 @@ export default function Station2Screen({ onBack }: Props) {
         const fullAudioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
         setIsEvaluating(true);
 
+        // Dừng nhận dạng giọng nói
+        if (recognitionRef.current) {
+          try { recognitionRef.current.stop(); } catch (e) {}
+        }
+
         const targetPrompt = exercise?.promptEn || exercise?.contextEn || exercise?.scenarioTitle || '';
-        const result = await evaluateSpeaking(fullAudioBlob, cefrLevel, undefined, targetPrompt, userId);
+        const capturedSpeech = realTranscriptRef.current || '';
+
+        // Gửi sang AI chấm điểm kèm Lời thoại thực tế vừa thu âm
+        const result = await evaluateSpeaking(fullAudioBlob, cefrLevel, undefined, targetPrompt, userId, capturedSpeech);
         
         let finalAudioUrl = result.audioUrl || '';
         if (!finalAudioUrl || finalAudioUrl.length < 5) {
@@ -247,7 +281,6 @@ export default function Station2Screen({ onBack }: Props) {
           });
         }
 
-        // 🎯 TẠO TÊN ĐẦY ĐỦ KÈM MSSV
         const studentIdentifier = `${studentNameInput.trim()} (MSSV: ${studentCodeInput.trim()})`;
         let pairDisplayName = studentIdentifier;
         let feedbackDetail = result.detailedFeedback;
@@ -312,7 +345,7 @@ export default function Station2Screen({ onBack }: Props) {
 
       <ScrollView contentContainerStyle={{ alignItems: 'center', width: '100%', paddingBottom: 30 }}>
         
-        {/* 🎓 KHU VỰC NHẬP THÔNG TIN SINH VIÊN (BẮT BUỘC) */}
+        {/* KHU VỰC NHẬP THÔNG TIN SINH VIÊN */}
         <View style={styles.studentInfoCard}>
           <Text style={styles.studentInfoTitle}>🎓 THÔNG TIN SINH VIÊN BẮT BUỘC (ĐỂ TÍNH ĐIỂM):</Text>
           <View style={{ flexDirection: 'row', gap: 8, width: '100%' }}>
@@ -459,7 +492,7 @@ export default function Station2Screen({ onBack }: Props) {
               ) : (
                 <View style={{ marginVertical: 15, alignItems: 'center' }}>
                   <ActivityIndicator size="small" color="#00FFFF" />
-                  <Text style={{ color: '#00FFFF', fontSize: 11, marginTop: 5 }}>🤖 AI đang phân tích bài nói & lưu âm thanh...</Text>
+                  <Text style={{ color: '#00FFFF', fontSize: 11, marginTop: 5 }}>🤖 AI đang phân tích âm thanh & bóc tách lời thoại...</Text>
                 </View>
               )}
 
@@ -502,12 +535,9 @@ const styles = StyleSheet.create({
   backBtn: { padding: 8, backgroundColor: '#0D0620', borderRadius: 8, borderWidth: 1, borderColor: '#00FFFF' },
   backText: { color: '#00FFFF', fontSize: 10, fontWeight: 'bold' },
   title: { color: '#00FFFF', fontSize: 12, fontWeight: '900' },
-  
-  // KHUNG ĐIỀN TÊN VÀ MSSV
   studentInfoCard: { backgroundColor: '#120826', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#00FFFF', width: '100%', marginBottom: 12 },
   studentInfoTitle: { color: '#00FFFF', fontSize: 10, fontWeight: '900', marginBottom: 8 },
   infoInput: { backgroundColor: '#0D0620', color: '#FFF', padding: 8, borderRadius: 6, borderWidth: 1, borderColor: '#332255', fontSize: 11 },
-
   customTopicCard: { backgroundColor: '#130A2A', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#FFD700', width: '100%', marginBottom: 15 },
   customTopicTitle: { color: '#FFD700', fontSize: 10, fontWeight: '900', marginBottom: 6 },
   topicInput: { backgroundColor: '#0D0620', color: '#FFF', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#332255', fontSize: 11, minHeight: 45, marginBottom: 8, textAlignVertical: 'top' },
