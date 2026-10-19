@@ -1,147 +1,139 @@
 // src/services/userService.ts
-import { createClient } from '@supabase/supabase-js';
-
-const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://hdifryokbfssibhsnpja.supabase.co';
-const SUPABASE_ANON_KEY =
-  process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ||
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhkaWZyeW9rYmZzc2liaHNucGphIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgyMDI5MTUsImV4cCI6MjEwMzc3ODkxNX0.z0Cq9HGZkGHW4xBVlUxT3O7AnDiE7HxM0h8EeuqaG_A';
-
-export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 export interface RoleplaySubmission {
   id?: string;
   studentName?: string;
   pairName?: string;
+  score: number;
   mode: string;
   cefrLevel: string;
-  score: number;
   transcript: string;
-  feedback: string;
   audioUrl?: string;
+  feedback: string;
   timestamp: string;
 }
 
-export interface UserProgress {
-  score: number;
-  completedStations: string[];
-  totalSubmissions: number;
-}
-
-const PROGRESS_KEY = 'vibespeak_user_progress';
-
-export function updateUserProgress(newScore: number, stationId?: string | number): UserProgress {
+// 🎯 HÀM LƯU BÀI NỘP LÊN SUPABASE (BÓC TÁCH CHI TIẾT PHÂN VAI RELAY & ROLEPLAY)
+export const saveSubmissionToCloud = async (submission: RoleplaySubmission) => {
   try {
-    const raw = localStorage.getItem(PROGRESS_KEY);
-    let progress: UserProgress = raw ? JSON.parse(raw) : { score: 0, completedStations: [], totalSubmissions: 0 };
+    const supabaseModule = await import('../lib/supabaseClient').catch(() => null)
+                         || await import('../lib/supabase').catch(() => null)
+                         || await import('@/lib/supabaseClient').catch(() => null);
 
-    progress.score += newScore;
-    progress.totalSubmissions += 1;
+    if (supabaseModule) {
+      const supabase = supabaseModule.supabase || supabaseModule.default;
+      if (supabase) {
+        const { data: userData } = await supabase.auth.getUser();
+        const userId = userData?.user?.id;
 
-    if (stationId && !progress.completedStations.includes(String(stationId))) {
-      progress.completedStations.push(String(stationId));
+        const currentMode = (submission.mode || 'SOLO').toUpperCase();
+        let displayName = submission.pairName || submission.studentName || 'Sinh viên';
+
+        // Tự động gán nhãn chuẩn theo phân vai nếu chưa nhận được chuỗi tên
+        if (currentMode === 'RELAY' && (displayName === 'Sinh viên' || displayName.toLowerCase().includes('bot'))) {
+          displayName = 'Vinh (Person 1) & An (Person 2)';
+        } else if (currentMode === 'ROLEPLAY' && (displayName === 'Sinh viên' || displayName.toLowerCase().includes('bot'))) {
+          displayName = 'Sinh viên (Vai 1) & AI Partner (Vai 2)';
+        }
+
+        // Đóng gói Header thông tin: [MODE - LEVEL | PHÂN VAI DISPLAY]: Nội dung nhận xét
+        const formattedFeedback = `[${currentMode} - ${submission.cefrLevel || 'A1'} | ${displayName}]: ${submission.feedback || ''}`;
+
+        const { error } = await supabase.from('assessment_results').insert([
+          {
+            user_id: userId || null,
+            score: submission.score || 0,
+            transcript: submission.transcript || '',
+            feedback: formattedFeedback,
+            audio_url: submission.audioUrl || '',
+          },
+        ]);
+
+        if (error) {
+          console.error("Lỗi lưu bài nộp Supabase:", error);
+        }
+      }
     }
-
-    localStorage.setItem(PROGRESS_KEY, JSON.stringify(progress));
-    return progress;
-  } catch (e) {
-    console.warn('Lỗi cập nhật tiến trình:', e);
-    return { score: newScore, completedStations: [], totalSubmissions: 1 };
-  }
-}
-
-export function getUserProgress(): UserProgress {
-  try {
-    const raw = localStorage.getItem(PROGRESS_KEY);
-    return raw ? JSON.parse(raw) : { score: 0, completedStations: [], totalSubmissions: 0 };
-  } catch {
-    return { score: 0, completedStations: [], totalSubmissions: 0 };
-  }
-}
-
-// 🎯 LƯU BÀI NỘP TRỰC TIẾP LÊN SUPABASE CLOUD
-export async function saveRoleplaySubmission(submission: Omit<RoleplaySubmission, 'id' | 'timestamp'>) {
-  try {
-    const { data, error } = await supabase.from('submissions').insert([
-      {
-        student_name: submission.studentName || 'Sinh viên',
-        pair_name: submission.pairName || '',
-        mode: submission.mode,
-        cefr_level: submission.cefrLevel,
-        score: submission.score,
-        transcript: submission.transcript,
-        feedback: submission.feedback,
-        audio_url: submission.audioUrl || '',
-      },
-    ]).select();
-
-    if (error) {
-      console.error('Lỗi đẩy dữ liệu lên Supabase:', error.message);
-    }
-    return data;
   } catch (err) {
-    console.error('Không thể kết nối Supabase Cloud:', err);
+    console.warn("Lỗi saveSubmissionToCloud:", err);
   }
-}
+};
 
-export const saveSubmissionForTeacher = saveRoleplaySubmission;
-
-// 🎯 LẤY DỮ LIỆU BÀI NỘP REALTIME TỪ CLOUD CHO GIÁO VIÊN
-export async function fetchSubmissionsFromCloud(): Promise<RoleplaySubmission[]> {
+// 🎯 HÀM TẢI DỮ LIỆU BẢNG GIÁO VIÊN (HIỂN THỊ ĐÚNG CHUẨN PHÂN VAI VÀ CHẾ ĐỘ)
+export const fetchSubmissionsFromCloud = async (): Promise<RoleplaySubmission[]> => {
   try {
-    const { data, error } = await supabase
-      .from('submissions')
-      .select('*')
-      .order('created_at', { ascending: false });
+    const supabaseModule = await import('../lib/supabaseClient').catch(() => null)
+                         || await import('../lib/supabase').catch(() => null)
+                         || await import('@/lib/supabaseClient').catch(() => null);
 
-    if (error || !data) {
-      console.error('Lỗi lấy bài từ Supabase:', error?.message);
-      return [];
+    if (supabaseModule) {
+      const supabase = supabaseModule.supabase || supabaseModule.default;
+      if (supabase) {
+        const { data: results, error } = await supabase
+          .from('assessment_results')
+          .select('id, score, transcript, feedback, audio_url, created_at, user_id')
+          .order('created_at', { ascending: false });
+
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('id, full_name, student_code');
+
+        const profileMap: Record<string, string> = {};
+        if (profiles) {
+          profiles.forEach((p: any) => {
+            profileMap[p.id] = p.full_name || p.student_code || 'Sinh viên';
+          });
+        }
+
+        if (!error && results) {
+          return results.map((item: any) => {
+            let mode = 'SOLO';
+            let cefrLevel = 'A1';
+            let playerName = profileMap[item.user_id] || 'Sinh viên';
+            let cleanFeedback = item.feedback || '';
+
+            // Bóc tách thông tin từ Header [MODE - LEVEL | PHÂN VAI]:
+            if (cleanFeedback.startsWith('[') && cleanFeedback.includes(']:')) {
+              const parts = cleanFeedback.split(']:');
+              const headerTag = parts[0].replace('[', '');
+              cleanFeedback = parts.slice(1).join(']:').trim();
+
+              const tagParts = headerTag.split(' | ');
+              const metaParts = tagParts[0].split(' - ');
+
+              mode = (metaParts[0] || 'SOLO').trim().toUpperCase();
+              cefrLevel = (metaParts[1] || 'A1').trim();
+
+              if (tagParts.length > 1 && tagParts[1].trim()) {
+                playerName = tagParts[1].trim();
+              }
+            }
+
+            // Định dạng hiển thị mặc định theo phân vai nếu tên người dùng mặc định
+            if (mode === 'RELAY' && (playerName === 'Sinh viên' || playerName.toLowerCase().includes('bot'))) {
+              playerName = 'Vinh (Person 1) & An (Person 2)';
+            } else if (mode === 'ROLEPLAY' && (playerName === 'Sinh viên' || playerName.toLowerCase().includes('bot'))) {
+              playerName = 'Sinh viên (Vai 1) & AI Partner (Vai 2)';
+            }
+
+            return {
+              id: item.id,
+              studentName: playerName,
+              pairName: playerName,
+              score: item.score || 0,
+              mode: mode,
+              cefrLevel: cefrLevel,
+              transcript: item.transcript || '',
+              audioUrl: item.audio_url || '',
+              feedback: cleanFeedback,
+              timestamp: item.created_at ? new Date(item.created_at).toLocaleString('vi-VN') : '',
+            };
+          });
+        }
+      }
     }
-
-    return data.map((item: any) => ({
-      id: item.id,
-      studentName: item.student_name,
-      pairName: item.pair_name,
-      mode: item.mode,
-      cefrLevel: item.cefr_level,
-      score: item.score,
-      transcript: item.transcript,
-      feedback: item.feedback,
-      audioUrl: item.audio_url,
-      timestamp: new Date(item.created_at).toLocaleString('vi-VN'),
-    }));
-  } catch (e) {
-    console.error('Lỗi kết nối Supabase:', e);
-    return [];
+  } catch (err) {
+    console.warn("Lỗi fetchSubmissionsFromCloud:", err);
   }
-}
-
-// 🎯 LẤY TOP 5 BẢNG VÀNG (LEADERBOARD)
-export async function fetchTopLeaderboard(): Promise<RoleplaySubmission[]> {
-  try {
-    const { data, error } = await supabase
-      .from('submissions')
-      .select('*')
-      .order('score', { ascending: false })
-      .limit(5);
-
-    if (error || !data) {
-      return [];
-    }
-
-    return data.map((item: any) => ({
-      id: item.id,
-      studentName: item.student_name,
-      pairName: item.pair_name,
-      mode: item.mode,
-      cefrLevel: item.cefr_level,
-      score: item.score,
-      transcript: item.transcript,
-      feedback: item.feedback,
-      audioUrl: item.audio_url,
-      timestamp: new Date(item.created_at).toLocaleString('vi-VN'),
-    }));
-  } catch (e) {
-    return [];
-  }
-}
+  return [];
+};
