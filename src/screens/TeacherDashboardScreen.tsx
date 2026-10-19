@@ -48,14 +48,31 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
                 <Text style={styles.scoreText}>{item.score} ĐIỂM</Text>
               </View>
 
-              <Text style={styles.metaText}>⏱ {item.timestamp} | [{item.mode.toUpperCase()} - {item.cefrLevel}]</Text>
+              <Text style={styles.metaText}>⏱ {item.timestamp} | [{(item.mode || 'SOLO').toUpperCase()} - {item.cefrLevel || 'A1'}]</Text>
               <Text style={styles.transcriptText}>💬 "{item.transcript}"</Text>
 
-              {/* PHÁT AUDIO BÀI THU ÂM */}
+              {/* 🎧 PHÁT AUDIO BÀI THU ÂM AN TOÀN CHO WEB & STREAMING NGUYÊN FILE */}
               {item.audioUrl && item.audioUrl.length > 0 ? (
                 <View style={styles.audioBox}>
-                  <Text style={styles.audioLabel}>🎧 Nghe lại bài thu âm:</Text>
-                  <audio controls src={item.audioUrl} style={{ width: '100%', marginTop: 5 }} />
+                  <Text style={styles.audioLabel}>🎧 Nghe lại bài thu âm của sinh viên:</Text>
+                  
+                  {/* Trình phát Audio HTML5 chuẩn Metadata */}
+                  {React.createElement('audio', {
+                    controls: true,
+                    preload: 'metadata',
+                    src: item.audioUrl,
+                    style: { width: '100%', marginTop: 6, height: 36 }
+                  })}
+
+                  {/* Nút tải về trực tiếp phòng trường hợp đường truyền yếu */}
+                  {typeof window !== 'undefined' && (
+                    <TouchableOpacity 
+                      style={styles.downloadBtn}
+                      onPress={() => window.open(item.audioUrl, '_blank')}
+                    >
+                      <Text style={styles.downloadBtnText}>📥 MỞ FILE ÂM THANH GỐC / TẢI VỀ MÁY</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
               ) : (
                 <Text style={styles.noAudioText}>⚠️ Không có file ghi âm đính kèm</Text>
@@ -85,8 +102,10 @@ const styles = StyleSheet.create({
   scoreText: { color: '#39FF14', fontSize: 12, fontWeight: '900' },
   metaText: { color: '#8888AA', fontSize: 9, marginVertical: 4 },
   transcriptText: { color: '#FFF', fontSize: 10, fontStyle: 'italic', marginBottom: 6 },
-  audioBox: { backgroundColor: '#130A2A', padding: 8, borderRadius: 8, marginVertical: 6 },
+  audioBox: { backgroundColor: '#130A2A', padding: 10, borderRadius: 8, marginVertical: 6, borderWidth: 1, borderColor: '#00FFFF' },
   audioLabel: { color: '#FFD700', fontSize: 9, fontWeight: 'bold' },
+  downloadBtn: { marginTop: 8, paddingVertical: 4, paddingHorizontal: 8, backgroundColor: '#1A0B2E', borderRadius: 4, borderWidth: 1, borderColor: '#39FF14', alignSelf: 'flex-start' },
+  downloadBtnText: { color: '#39FF14', fontSize: 8, fontWeight: 'bold' },
   noAudioText: { color: '#666688', fontSize: 8, fontStyle: 'italic', marginVertical: 4 },
   feedbackText: { color: '#FFD700', fontSize: 9, marginTop: 4 }
 });
