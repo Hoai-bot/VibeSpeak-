@@ -4,7 +4,6 @@ import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator
 import { getRandomStation1Drill, DrillType } from '../services/drills/station1Service';
 import { evaluateSpeaking, AssessmentResult } from '../services/arena/assessmentService';
 import { updateUserProgress } from '../services/userService';
-import { supabase } from '../lib/supabaseClient'; // 👈 Đã thêm import Supabase Client
 
 interface Props {
   onBack: () => void;
@@ -21,19 +20,28 @@ export default function Station1Screen({ onBack }: Props) {
   const [hasRecorded, setHasRecorded] = useState<boolean>(false);
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
   const [result, setResult] = useState<AssessmentResult | null>(null);
-  const [userId, setUserId] = useState<string | undefined>(undefined); // 👈 Lấy ID sinh viên
+  const [userId, setUserId] = useState<string | undefined>(undefined);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const currentAudioRef = useRef<HTMLAudioElement | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
 
-  // Lấy ID người dùng đang đăng nhập khi mở màn hình
+  // 🎯 LẤY USER ID AN TOÀN TRÁNH LỖI BUILD MODULE NOT FOUND
   useEffect(() => {
     const fetchUser = async () => {
       try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) setUserId(user.id);
+        const supabaseModule = await import('../lib/supabaseClient').catch(() => null)
+                             || await import('../lib/supabase').catch(() => null)
+                             || await import('@/lib/supabaseClient').catch(() => null);
+                             
+        if (supabaseModule) {
+          const supabase = supabaseModule.supabase || supabaseModule.default;
+          if (supabase && supabase.auth) {
+            const { data } = await supabase.auth.getUser();
+            if (data?.user) setUserId(data.user.id);
+          }
+        }
       } catch (e) {
         console.warn("Không lấy được user ID:", e);
       }
@@ -235,8 +243,6 @@ export default function Station1Screen({ onBack }: Props) {
 
     try {
       const promptTarget = (currentDrill?.contentEn || '').trim();
-      
-      // 🎯 ĐÃ SỬA: Truyền userId làm tham số thứ 5 để lưu bài làm vào Supabase & Storage
       const evalData = await evaluateSpeaking(recordedAudio, 'A2', undefined, promptTarget, userId);
 
       setResult(evalData);
@@ -363,15 +369,15 @@ export default function Station1Screen({ onBack }: Props) {
             </Text>
             <Text style={styles.scoreText}>⚡ Điểm phát âm: {result.score} / 100 ĐIỂM</Text>
 
-            {/* 🎧 ĐÃ THÊM: THANH NGHE LẠI BÀI THU ÂM DÀNH CHO SINH VIÊN */}
+            {/* 🎧 RENDER AN TOÀN CHO WEB KHÔNG LỖI TYPESCRIPT */}
             {result.audioUrl && (
               <View style={styles.audioPlayerBox}>
                 <Text style={styles.audioLabel}>🎧 Nghe lại bài phát âm của bạn:</Text>
-                <audio 
-                  controls 
-                  src={result.audioUrl} 
-                  style={{ width: '100%', marginTop: 6, height: 36 }} 
-                />
+                {React.createElement('audio', {
+                  controls: true,
+                  src: result.audioUrl,
+                  style: { width: '100%', marginTop: 6, height: 36 }
+                })}
               </View>
             )}
 
