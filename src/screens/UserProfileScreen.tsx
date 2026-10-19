@@ -9,7 +9,7 @@ interface Props {
 
 export default function UserProfileScreen({ onBack }: Props) {
   const [myHistory, setMyHistory] = useState<RoleplaySubmission[]>([]);
-  const [leaderboard, setLeaderboard] = useState<RoleplaySubmission[]>([]);
+  const [leaderboard, setLeaderboard] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState<'history' | 'leaderboard'>('history');
   const [loading, setLoading] = useState<boolean>(true);
 
@@ -19,12 +19,17 @@ export default function UserProfileScreen({ onBack }: Props) {
 
   const loadData = async () => {
     setLoading(true);
-    const historyData = await fetchSubmissionsFromCloud();
-    const topData = await fetchTopLeaderboard();
+    try {
+      const historyData = await fetchSubmissionsFromCloud();
+      const topData = await fetchTopLeaderboard();
 
-    setMyHistory(historyData.slice(0, 5));
-    setLeaderboard(topData);
-    setLoading(false);
+      setMyHistory(historyData ? historyData.slice(0, 10) : []);
+      setLeaderboard(topData || []);
+    } catch (e) {
+      console.warn("⚠️ Lỗi loadData UserProfileScreen:", e);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -56,7 +61,7 @@ export default function UserProfileScreen({ onBack }: Props) {
             style={[styles.tabBtn, activeTab === 'leaderboard' && styles.tabBtnActiveLeaderboard]} 
             onPress={() => setActiveTab('leaderboard')}
           >
-            <Text style={[styles.tabText, activeTab === 'leaderboard' && styles.tabTextActive]}>🏆 TOP 5 BẢNG VÀNG</Text>
+            <Text style={[styles.tabText, activeTab === 'leaderboard' && styles.tabTextActive]}>🏆 TOP BẢNG VÀNG</Text>
           </TouchableOpacity>
         </View>
 
@@ -68,36 +73,54 @@ export default function UserProfileScreen({ onBack }: Props) {
             {myHistory.length === 0 ? (
               <Text style={styles.emptyText}>Chưa có bài thi nào. Hãy vào các Trạm để thi đấu ngay!</Text>
             ) : (
-              myHistory.map((item, index) => (
-                <View key={item.id || index} style={styles.historyCard}>
-                  <View style={styles.cardHeader}>
-                    <Text style={styles.modeText}>⚔️ [{item.mode.toUpperCase()} - {item.cefrLevel}]</Text>
-                    <Text style={styles.scoreBadge}>{item.score} ĐIỂM</Text>
+              myHistory.map((item, index) => {
+                // 🛡️ CHUYỂN ĐỔI CHUỖI AN TOÀN TRÁNH TRẮNG MÀN HÌNH
+                const safeMode = String(item?.mode || 'SOLO').toUpperCase();
+                const safeLevel = String(item?.cefrLevel || 'A1').toUpperCase();
+
+                return (
+                  <View key={item?.id || index} style={styles.historyCard}>
+                    <View style={styles.cardHeader}>
+                      <Text style={styles.modeText}>⚔️ [{safeMode} - {safeLevel}]</Text>
+                      <Text style={styles.scoreBadge}>{item?.score || 0} ĐIỂM</Text>
+                    </View>
+                    <Text style={styles.timeText}>⏱ {item?.timestamp || 'Mới đây'}</Text>
+                    <Text style={styles.transcriptText}>💬 "{item?.transcript || 'Không có lời thoại'}"</Text>
+                    <Text style={styles.feedbackText}>💡 AI nhận xét: {item?.feedback || 'Chưa có nhận xét'}</Text>
                   </View>
-                  <Text style={styles.timeText}>⏱ {item.timestamp}</Text>
-                  <Text style={styles.transcriptText}>💬 "{item.transcript}"</Text>
-                  <Text style={styles.feedbackText}>💡 AI nhận xét: {item.feedback}</Text>
-                </View>
-              ))
+                );
+              })
             )}
           </View>
         ) : (
-          /* PHẦN TOP 5 BẢNG VÀNG LỚP HỌC */
+          /* PHẦN TOP BẢNG VÀNG LỚP HỌC */
           <View style={styles.sectionContainer}>
-            {leaderboard.map((item, index) => (
-              <View key={item.id || index} style={styles.leaderboardCard}>
-                <View style={styles.rankBadge}>
-                  <Text style={styles.rankText}>#{index + 1}</Text>
-                </View>
+            {leaderboard.length === 0 ? (
+              <Text style={styles.emptyText}>Chưa có dữ liệu Bảng vàng.</Text>
+            ) : (
+              leaderboard.map((item, index) => {
+                // 🛡️ BỌC ÉP KIỂU CHUỖI AN TOÀN
+                const displayName = String(item?.name || item?.pairName || item?.studentName || 'Chiến binh');
+                const displayRank = item?.rank || (index + 1);
 
-                <View style={{ flex: 1, marginLeft: 10 }}>
-                  <Text style={styles.leaderName}>👤 {item.pairName || item.studentName || 'Chiến binh'}</Text>
-                  <Text style={styles.leaderMeta}>⚔️ Mode: {item.mode.toUpperCase()} - {item.cefrLevel}</Text>
-                </View>
+                return (
+                  <View key={item?.id || index} style={styles.leaderboardCard}>
+                    <View style={styles.rankBadge}>
+                      <Text style={styles.rankText}>#{displayRank}</Text>
+                    </View>
 
-                <Text style={styles.leaderScore}>{item.score} ĐIỂM</Text>
-              </View>
-            ))}
+                    <View style={{ flex: 1, marginLeft: 10 }}>
+                      <Text style={styles.leaderName}>👤 {displayName}</Text>
+                      <Text style={styles.leaderMeta}>
+                        ⏱ Ngày ghi danh: {item?.date || item?.timestamp || 'Realtime'}
+                      </Text>
+                    </View>
+
+                    <Text style={styles.leaderScore}>{item?.score || 0} ĐIỂM</Text>
+                  </View>
+                );
+              })
+            )}
           </View>
         )}
       </ScrollView>
@@ -121,7 +144,7 @@ const styles = StyleSheet.create({
   tabText: { color: '#8888AA', fontSize: 10, fontWeight: '900' },
   tabTextActive: { color: '#000' },
   loadingText: { color: '#AAAABB', fontSize: 10, fontStyle: 'italic', textAlign: 'center', marginTop: 20 },
-  emptyText: { color: '#666688', fontSize: 10, fontStyle: 'italic', textAlign: 'center' },
+  emptyText: { color: '#666688', fontSize: 10, fontStyle: 'italic', textAlign: 'center', marginTop: 15 },
   sectionContainer: { width: '100%' },
   historyCard: { backgroundColor: '#130A2A', padding: 12, borderRadius: 8, marginBottom: 10, borderWidth: 1, borderColor: '#221144' },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
