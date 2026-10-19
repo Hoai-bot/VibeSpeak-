@@ -13,7 +13,7 @@ export interface RoleplaySubmission {
   timestamp: string;
 }
 
-// 🎯 HÀM LƯU BÀI NỘP LÊN SUPABASE (BÓC TÁCH CHI TIẾT PHÂN VAI RELAY & ROLEPLAY)
+// 🎯 HÀM LƯU BÀI NỘP TRẠM 2 (RELAY, ROLEPLAY, SOLO) LÊN SUPABASE
 export const saveSubmissionToCloud = async (submission: RoleplaySubmission) => {
   try {
     const supabaseModule = await import('../lib/supabaseClient').catch(() => null)
@@ -27,17 +27,11 @@ export const saveSubmissionToCloud = async (submission: RoleplaySubmission) => {
         const userId = userData?.user?.id;
 
         const currentMode = (submission.mode || 'SOLO').toUpperCase();
+        const level = (submission.cefrLevel || 'A1').toUpperCase();
         let displayName = submission.pairName || submission.studentName || 'Sinh viên';
 
-        // Tự động gán nhãn chuẩn theo phân vai nếu chưa nhận được chuỗi tên
-        if (currentMode === 'RELAY' && (displayName === 'Sinh viên' || displayName.toLowerCase().includes('bot'))) {
-          displayName = 'Vinh (Person 1) & An (Person 2)';
-        } else if (currentMode === 'ROLEPLAY' && (displayName === 'Sinh viên' || displayName.toLowerCase().includes('bot'))) {
-          displayName = 'Sinh viên (Vai 1) & AI Partner (Vai 2)';
-        }
-
-        // Đóng gói Header thông tin: [MODE - LEVEL | PHÂN VAI DISPLAY]: Nội dung nhận xét
-        const formattedFeedback = `[${currentMode} - ${submission.cefrLevel || 'A1'} | ${displayName}]: ${submission.feedback || ''}`;
+        // Chuẩn hóa định dạng lưu trữ
+        const formattedFeedback = `[${currentMode} - ${level} | ${displayName}]: ${submission.feedback || ''}`;
 
         const { error } = await supabase.from('assessment_results').insert([
           {
@@ -50,16 +44,16 @@ export const saveSubmissionToCloud = async (submission: RoleplaySubmission) => {
         ]);
 
         if (error) {
-          console.error("Lỗi lưu bài nộp Supabase:", error);
+          console.error("❌ Lỗi insert dữ liệu Trạm 2 lên Supabase:", error);
         }
       }
     }
   } catch (err) {
-    console.warn("Lỗi saveSubmissionToCloud:", err);
+    console.warn("⚠️ Lỗi saveSubmissionToCloud:", err);
   }
 };
 
-// 🎯 HÀM TẢI DỮ LIỆU BẢNG GIÁO VIÊN (HIỂN THỊ ĐÚNG CHUẨN PHÂN VAI VÀ CHẾ ĐỘ)
+// 🎯 HÀM TẢI DỮ LIỆU VỀ BẢNG GIÁO VIÊN
 export const fetchSubmissionsFromCloud = async (): Promise<RoleplaySubmission[]> => {
   try {
     const supabaseModule = await import('../lib/supabaseClient').catch(() => null)
@@ -92,7 +86,7 @@ export const fetchSubmissionsFromCloud = async (): Promise<RoleplaySubmission[]>
             let playerName = profileMap[item.user_id] || 'Sinh viên';
             let cleanFeedback = item.feedback || '';
 
-            // Bóc tách thông tin từ Header [MODE - LEVEL | PHÂN VAI]:
+            // Bóc tách thông tin [MODE - LEVEL | PLAYER_NAME]: Feedback
             if (cleanFeedback.startsWith('[') && cleanFeedback.includes(']:')) {
               const parts = cleanFeedback.split(']:');
               const headerTag = parts[0].replace('[', '');
@@ -107,13 +101,6 @@ export const fetchSubmissionsFromCloud = async (): Promise<RoleplaySubmission[]>
               if (tagParts.length > 1 && tagParts[1].trim()) {
                 playerName = tagParts[1].trim();
               }
-            }
-
-            // Định dạng hiển thị mặc định theo phân vai nếu tên người dùng mặc định
-            if (mode === 'RELAY' && (playerName === 'Sinh viên' || playerName.toLowerCase().includes('bot'))) {
-              playerName = 'Vinh (Person 1) & An (Person 2)';
-            } else if (mode === 'ROLEPLAY' && (playerName === 'Sinh viên' || playerName.toLowerCase().includes('bot'))) {
-              playerName = 'Sinh viên (Vai 1) & AI Partner (Vai 2)';
             }
 
             return {
@@ -133,7 +120,7 @@ export const fetchSubmissionsFromCloud = async (): Promise<RoleplaySubmission[]>
       }
     }
   } catch (err) {
-    console.warn("Lỗi fetchSubmissionsFromCloud:", err);
+    console.warn("⚠️ Lỗi fetchSubmissionsFromCloud:", err);
   }
   return [];
 };
