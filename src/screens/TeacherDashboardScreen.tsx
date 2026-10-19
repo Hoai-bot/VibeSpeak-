@@ -1,6 +1,6 @@
 // src/screens/TeacherDashboardScreen.tsx
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, TextInput } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
 import { fetchSubmissionsFromCloud, RoleplaySubmission } from '../services/userService';
 
 interface Props {
@@ -8,172 +8,60 @@ interface Props {
 }
 
 export default function TeacherDashboardScreen({ onBack }: Props) {
-  const [pin, setPin] = useState<string>('');
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [submissions, setSubmissions] = useState<RoleplaySubmission[]>([]);
-  const [filterMode, setFilterMode] = useState<string>('all');
-
-  const TEACHER_PIN = '2026';
+  const [loading, setLoading] = useState<boolean>(false);
 
   useEffect(() => {
-    if (isAuthenticated) {
-      loadData();
-    }
-  }, [isAuthenticated]);
+    loadData();
+  }, []);
 
   const loadData = async () => {
+    setLoading(true);
     const data = await fetchSubmissionsFromCloud();
     setSubmissions(data);
+    setLoading(false);
   };
-
-  const handleVerifyPin = () => {
-    if (pin === TEACHER_PIN) {
-      setIsAuthenticated(true);
-    } else {
-      alert('❌ Mã PIN không chính xác! Vui lòng thử lại.');
-    }
-  };
-
-  // 📊 CÁC CHỈ SỐ THỐNG KÊ ANALYTICS
-  const totalCount = submissions.length;
-  const avgScore = totalCount > 0 ? Math.round(submissions.reduce((acc, s) => acc + (s.score || 0), 0) / totalCount) : 0;
-  const passRate = totalCount > 0 ? Math.round((submissions.filter(s => s.score >= 60).length / totalCount) * 100) : 0;
-  const excellentCount = submissions.filter(s => s.score >= 85).length;
-
-  const handleExportCSV = () => {
-    if (submissions.length === 0) {
-      alert('Chưa có dữ liệu bài làm để xuất!');
-      return;
-    }
-
-    let csvContent = 'data:text/csv;charset=utf-8,STT,Thoi Gian,Nguoi Choi / Cap Dau,Che Do,Level,Diem So,Nhan Xet AI\n';
-    submissions.forEach((item, index) => {
-      const row = `"${index + 1}","${item.timestamp}","${item.pairName || item.studentName}","${item.mode}","${item.cefrLevel}","${item.score}","${item.feedback.replace(/"/g, '""')}"`;
-      csvContent += row + '\n';
-    });
-
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `Bang_Diem_VibeSpeak_Cloud_${Date.now()}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  if (!isAuthenticated) {
-    return (
-      <View style={styles.loginContainer}>
-        <TouchableOpacity onPress={onBack} style={styles.backBtnHeader}>
-          <Text style={styles.backText}>🔙 QUAY LẠI APP</Text>
-        </TouchableOpacity>
-        <Text style={styles.loginTitle}>🔐 ĐẦU VÀO GIÁO VIÊN & QUẢN LÝ</Text>
-        <Text style={styles.loginSub}>Nhập mã PIN để xem Bảng điểm và Quản lý Lớp học:</Text>
-        
-        <TextInput
-          style={styles.pinInput}
-          placeholder="Nhập mã PIN (Mặc định: 2026)"
-          placeholderTextColor="#666688"
-          secureTextEntry
-          keyboardType="numeric"
-          value={pin}
-          onChangeText={setPin}
-        />
-
-        <TouchableOpacity style={styles.loginBtn} onPress={handleVerifyPin}>
-          <Text style={styles.loginBtnText}>🔓 XÁC NHẬN TRUY CẬP</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
-  const filteredData = filterMode === 'all' 
-    ? submissions 
-    : submissions.filter(s => s.mode.toLowerCase() === filterMode.toLowerCase());
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack} style={styles.backBtn}>
-          <Text style={styles.backText}>🔙 MAP chính</Text>
+          <Text style={styles.backText}>🔙 QUAY LẠI MAP</Text>
         </TouchableOpacity>
         <Text style={styles.title}>📊 BẢNG ĐIỂM GIÁO VIÊN (REALTIME)</Text>
       </View>
 
-      {/* 📊 THANH THỐNG KÊ ANALYTICS LỚP HỌC */}
-      <View style={styles.analyticsBar}>
-        <View style={styles.analyticsItem}>
-          <Text style={styles.analyticsVal}>{totalCount}</Text>
-          <Text style={styles.analyticsLbl}>BÀI NỘP</Text>
-        </View>
-        <View style={styles.analyticsItem}>
-          <Text style={[styles.analyticsVal, { color: '#FFD700' }]}>{avgScore}</Text>
-          <Text style={styles.analyticsLbl}>ĐIỂM TB</Text>
-        </View>
-        <View style={styles.analyticsItem}>
-          <Text style={[styles.analyticsVal, { color: '#39FF14' }]}>{passRate}%</Text>
-          <Text style={styles.analyticsLbl}>ĐẠT CHUẨN</Text>
-        </View>
-        <View style={styles.analyticsItem}>
-          <Text style={[styles.analyticsVal, { color: '#00FFFF' }]}>{excellentCount}</Text>
-          <Text style={styles.analyticsLbl}>XUẤT SẮC</Text>
-        </View>
-      </View>
+      <TouchableOpacity style={styles.refreshBtn} onPress={loadData} disabled={loading}>
+        <Text style={styles.refreshBtnText}>{loading ? '⏳ ĐANG TẢI DỮ LIỆU MỚI...' : '🔄 CẬP NHẬT DỮ LIỆU MỚI NHẤT'}</Text>
+      </TouchableOpacity>
 
-      <View style={styles.actionBar}>
-        <View style={styles.filterGroup}>
-          <TouchableOpacity 
-            style={[styles.filterBtn, filterMode === 'all' && styles.filterBtnActive]} 
-            onPress={() => setFilterMode('all')}
-          >
-            <Text style={styles.filterText}>Tất cả ({submissions.length})</Text>
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={[styles.filterBtn, filterMode === 'roleplay' && styles.filterBtnActive]} 
-            onPress={() => setFilterMode('roleplay')}
-          >
-            <Text style={styles.filterText}>Roleplay</Text>
-          </TouchableOpacity>
-        </View>
-
-        <TouchableOpacity style={styles.exportBtn} onPress={handleExportCSV}>
-          <Text style={styles.exportBtnText}>📥 XUẤT EXCEL / CSV</Text>
-        </TouchableOpacity>
-      </View>
-
-      <ScrollView style={{ width: '100%' }} contentContainerStyle={{ paddingBottom: 30 }}>
-        {filteredData.length === 0 ? (
-          <View style={styles.emptyBox}>
-            <Text style={styles.emptyText}>📋 Chưa có bài nộp nào từ sinh viên trên Cloud.</Text>
-          </View>
+      <ScrollView contentContainerStyle={{ paddingBottom: 30 }}>
+        {loading ? (
+          <ActivityIndicator size="large" color="#00FFFF" style={{ marginTop: 30 }} />
+        ) : submissions.length === 0 ? (
+          <Text style={styles.emptyText}>Chưa có bài nộp nào trên Supabase Cloud.</Text>
         ) : (
-          filteredData.map((item, index) => (
-            <View key={item.id || index} style={styles.scoreCard}>
+          submissions.map((item, index) => (
+            <View key={item.id || index} style={styles.card}>
               <View style={styles.cardHeader}>
-                <Text style={styles.studentName}>👤 {item.pairName || item.studentName || 'Cặp Sinh Viên'}</Text>
-                <Text style={styles.scoreBadge}>{item.score} ĐIỂM</Text>
+                <Text style={styles.studentName}>👤 {item.pairName || item.studentName}</Text>
+                <Text style={styles.scoreText}>{item.score} ĐIỂM</Text>
               </View>
 
-              <View style={styles.infoRow}>
-                <Text style={styles.metaText}>⏱ {item.timestamp}</Text>
-                <Text style={styles.levelTag}>[CHẾ ĐỘ: {item.mode.toUpperCase()} - {item.cefrLevel}]</Text>
-              </View>
+              <Text style={styles.metaText}>⏱ {item.timestamp} | [{item.mode.toUpperCase()} - {item.cefrLevel}]</Text>
+              <Text style={styles.transcriptText}>💬 "{item.transcript}"</Text>
 
-              <Text style={styles.transcriptLabel}>💬 Lời thoại ghi nhận:</Text>
-              <Text style={styles.transcriptText}>"{item.transcript}"</Text>
-
-              {item.audioUrl && (
-                <View style={styles.audioContainer}>
-                  <Text style={styles.audioTitle}>🎧 Nghe lại bài thu âm hội thoại:</Text>
-                  {React.createElement('audio', {
-                    controls: true,
-                    src: item.audioUrl,
-                    style: { width: '100%', marginTop: '4px' }
-                  })}
+              {/* PHÁT AUDIO BÀI THU ÂM */}
+              {item.audioUrl && item.audioUrl.length > 0 ? (
+                <View style={styles.audioBox}>
+                  <Text style={styles.audioLabel}>🎧 Nghe lại bài thu âm:</Text>
+                  <audio controls src={item.audioUrl} style={{ width: '100%', marginTop: 5 }} />
                 </View>
+              ) : (
+                <Text style={styles.noAudioText}>⚠️ Không có file ghi âm đính kèm</Text>
               )}
 
-              <Text style={styles.feedbackText}>💡 AI Đánh giá: {item.feedback}</Text>
+              <Text style={styles.feedbackText}>💡 Nhận xét: {item.feedback}</Text>
             </View>
           ))
         )}
@@ -184,40 +72,21 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#05020D', padding: 20, paddingTop: 50 },
-  loginContainer: { flex: 1, backgroundColor: '#05020D', justifyContent: 'center', alignItems: 'center', padding: 20 },
-  backBtnHeader: { position: 'absolute', top: 50, left: 20, padding: 8, backgroundColor: '#0D0620', borderRadius: 8 },
-  loginTitle: { color: '#00FFFF', fontSize: 14, fontWeight: '900', marginBottom: 10 },
-  loginSub: { color: '#AAAABB', fontSize: 11, textAlign: 'center', marginBottom: 20 },
-  pinInput: { backgroundColor: '#130A2A', borderWidth: 1, borderColor: '#00FFFF', borderRadius: 8, padding: 12, color: '#FFF', width: '80%', textAlign: 'center', fontSize: 14, marginBottom: 15 },
-  loginBtn: { backgroundColor: '#FF007F', paddingVertical: 12, paddingHorizontal: 30, borderRadius: 8 },
-  loginBtnText: { color: '#FFF', fontSize: 11, fontWeight: '900' },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
   backBtn: { padding: 8, backgroundColor: '#0D0620', borderRadius: 8, borderWidth: 1, borderColor: '#FF007F' },
   backText: { color: '#FF007F', fontSize: 10, fontWeight: 'bold' },
   title: { color: '#00FFFF', fontSize: 12, fontWeight: '900' },
-  analyticsBar: { flexDirection: 'row', justifyContent: 'space-between', backgroundColor: '#130A2A', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#00FFFF', marginBottom: 15 },
-  analyticsItem: { alignItems: 'center', flex: 1 },
-  analyticsVal: { color: '#FFF', fontSize: 14, fontWeight: '900' },
-  analyticsLbl: { color: '#AAAABB', fontSize: 8, fontWeight: 'bold', marginTop: 2 },
-  actionBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15, width: '100%' },
-  filterGroup: { flexDirection: 'row' },
-  filterBtn: { backgroundColor: '#130A2A', paddingVertical: 6, paddingHorizontal: 10, borderRadius: 6, marginRight: 6, borderWidth: 1, borderColor: '#332255' },
-  filterBtnActive: { backgroundColor: '#FF007F', borderColor: '#FF007F' },
-  filterText: { color: '#FFF', fontSize: 9, fontWeight: 'bold' },
-  exportBtn: { backgroundColor: '#39FF14', paddingVertical: 8, paddingHorizontal: 12, borderRadius: 6 },
-  exportBtnText: { color: '#000', fontSize: 9, fontWeight: '900' },
-  emptyBox: { backgroundColor: '#0D0620', padding: 30, borderRadius: 12, width: '100%', alignItems: 'center', marginTop: 20 },
-  emptyText: { color: '#8888AA', fontSize: 11 },
-  scoreCard: { backgroundColor: '#0D0620', padding: 14, borderRadius: 12, borderWidth: 1, borderColor: '#332255', marginBottom: 12, width: '100%' },
-  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
+  refreshBtn: { backgroundColor: '#39FF14', padding: 12, borderRadius: 8, alignItems: 'center', marginBottom: 15 },
+  refreshBtnText: { color: '#000', fontSize: 10, fontWeight: '900' },
+  emptyText: { color: '#AAAABB', textAlign: 'center', marginTop: 20 },
+  card: { backgroundColor: '#0D0620', padding: 14, borderRadius: 12, borderWidth: 1, borderColor: '#332255', marginBottom: 10 },
+  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   studentName: { color: '#00FFFF', fontSize: 12, fontWeight: '900' },
-  scoreBadge: { color: '#39FF14', fontSize: 12, fontWeight: '900' },
-  infoRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
-  metaText: { color: '#8888AA', fontSize: 9 },
-  levelTag: { color: '#FFD700', fontSize: 9, fontWeight: 'bold' },
-  transcriptLabel: { color: '#AAAABB', fontSize: 9, fontWeight: 'bold' },
-  transcriptText: { color: '#FFF', fontSize: 10, fontStyle: 'italic', marginVertical: 4 },
-  audioContainer: { backgroundColor: '#130A2A', padding: 8, borderRadius: 8, marginTop: 6, marginBottom: 8 },
-  audioTitle: { color: '#00FFFF', fontSize: 9, fontWeight: 'bold' },
-  feedbackText: { color: '#FFD700', fontSize: 9, lineHeight: 14 }
+  scoreText: { color: '#39FF14', fontSize: 12, fontWeight: '900' },
+  metaText: { color: '#8888AA', fontSize: 9, marginVertical: 4 },
+  transcriptText: { color: '#FFF', fontSize: 10, fontStyle: 'italic', marginBottom: 6 },
+  audioBox: { backgroundColor: '#130A2A', padding: 8, borderRadius: 8, marginVertical: 6 },
+  audioLabel: { color: '#FFD700', fontSize: 9, fontWeight: 'bold' },
+  noAudioText: { color: '#666688', fontSize: 8, fontStyle: 'italic', marginVertical: 4 },
+  feedbackText: { color: '#FFD700', fontSize: 9, marginTop: 4 }
 });
