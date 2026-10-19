@@ -2,7 +2,9 @@
 import { createClient } from '@supabase/supabase-js';
 
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://hdifryokbfssibhsnpja.supabase.co';
-const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || 'YOUR_ANON_KEY_HERE';
+const SUPABASE_ANON_KEY =
+  process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ||
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhkaWZyeW9rYmZzc2liaHNucGphIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgyMDI5MTUsImV4cCI6MjEwMzc3ODkxNX0.z0Cq9HGZkGHW4xBVlUxT3O7AnDiE7HxM0h8EeuqaG_A';
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -27,7 +29,6 @@ export interface UserProgress {
 
 const PROGRESS_KEY = 'vibespeak_user_progress';
 
-// 🎯 1. BỔ SUNG HÀM CẬP NHẬT TIẾN TRÌNH NGƯỜI DÙNG (ĐÃ FIX LỖI TYPEERROR)
 export function updateUserProgress(newScore: number, stationId?: string | number): UserProgress {
   try {
     const raw = localStorage.getItem(PROGRESS_KEY);
@@ -57,7 +58,7 @@ export function getUserProgress(): UserProgress {
   }
 }
 
-// 🎯 2. LƯU BÀI NỘP TRỰC TIẾP LÊN SUPABASE CLOUD
+// 🎯 LƯU BÀI NỘP TRỰC TIẾP LÊN SUPABASE CLOUD
 export async function saveRoleplaySubmission(submission: Omit<RoleplaySubmission, 'id' | 'timestamp'>) {
   try {
     const { data, error } = await supabase.from('submissions').insert([
@@ -84,7 +85,7 @@ export async function saveRoleplaySubmission(submission: Omit<RoleplaySubmission
 
 export const saveSubmissionForTeacher = saveRoleplaySubmission;
 
-// 🎯 3. LẤY TRỰC TIẾP BÀI THI MỚI NHẤT TỪ CLOUD CHO GIÁO VIÊN
+// 🎯 LẤY DỮ LIỆU BÀI NỘP REALTIME TỪ CLOUD CHO GIÁO VIÊN
 export async function fetchSubmissionsFromCloud(): Promise<RoleplaySubmission[]> {
   try {
     const { data, error } = await supabase
@@ -115,7 +116,7 @@ export async function fetchSubmissionsFromCloud(): Promise<RoleplaySubmission[]>
   }
 }
 
-// 🎯 4. LẤY TOP 5 LEADERBOARD BẢNG VÀNG
+// 🎯 LẤY TOP 5 BẢNG VÀNG (LEADERBOARD)
 export async function fetchTopLeaderboard(): Promise<RoleplaySubmission[]> {
   try {
     const { data, error } = await supabase
