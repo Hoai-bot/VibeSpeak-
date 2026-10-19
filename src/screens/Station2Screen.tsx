@@ -23,6 +23,10 @@ interface PlayerResult {
 }
 
 export default function Station2Screen({ onBack }: Props) {
+  // 👤 STATE DÀNH CHO THÔNG TIN SINH VIÊN
+  const [studentNameInput, setStudentNameInput] = useState<string>('');
+  const [studentCodeInput, setStudentCodeInput] = useState<string>('');
+
   const [cefrLevel, setCefrLevel] = useState<string>('A1');
   const [mode, setMode] = useState<'solo' | 'relay' | 'roleplay'>('solo');
   const [exercise, setExercise] = useState<any>(null);
@@ -57,26 +61,19 @@ export default function Station2Screen({ onBack }: Props) {
   const audioStreamRef = useRef<MediaStream | null>(null);
 
   const [userId, setUserId] = useState<string | undefined>(undefined);
-  const [userName, setUserName] = useState<string>('Sinh viên');
 
   const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
 
   useEffect(() => {
     const fetchUser = async () => {
       try {
-        const supabaseModule = await import('../lib/supabaseClient').catch(() => null)
-                             || await import('../lib/supabase').catch(() => null)
-                             || await import('@/lib/supabaseClient').catch(() => null);
-                             
-        if (supabaseModule) {
-          const supabase = supabaseModule.supabase || supabaseModule.default;
-          if (supabase && supabase.auth) {
-            const { data } = await supabase.auth.getUser();
-            if (data?.user) {
-              setUserId(data.user.id);
-              if (data.user.user_metadata?.full_name) {
-                setUserName(data.user.user_metadata.full_name);
-              }
+        const supabaseModule = await import('../utils/supabase').catch(() => null);
+        if (supabaseModule && supabaseModule.supabase) {
+          const { data } = await supabaseModule.supabase.auth.getUser();
+          if (data?.user) {
+            setUserId(data.user.id);
+            if (data.user.user_metadata?.full_name) {
+              setStudentNameInput(data.user.user_metadata.full_name);
             }
           }
         }
@@ -185,7 +182,6 @@ export default function Station2Screen({ onBack }: Props) {
     }
   }, [mode, cefrLevel]);
 
-  // 🎯 HÀM CHUYỂN BLOB THÀNH DATA URL ĐỂ LƯU VĨNH VIỄN
   const blobToDataURL = (blob: Blob): Promise<string> => {
     return new Promise((resolve) => {
       const reader = new FileReader();
@@ -194,8 +190,14 @@ export default function Station2Screen({ onBack }: Props) {
     });
   };
 
-  // 🎙 THU ÂM CHUNG VÀ TỰ ĐỘNG ĐÓNG GÓI LƯU FILE ÂM THANH VỀ SUPABASE
+  // 🎙 THU ÂM VÀ GỬI THÔNG TIN TÊN + MSSV LÊN CLOUD
   const startFullRecording = async () => {
+    // ⚠️ KIỂM TRA BẮT BUỘC ĐIỀN TÊN VÀ MSSV TRƯỚC KHÍ BẮT ĐẦU
+    if (!studentNameInput.trim() || !studentCodeInput.trim()) {
+      alert("⚠️ Vui lòng điền đầy đủ TỌA ĐỘ SINH VIÊN (Họ tên & Mã số sinh viên) ở phía trên trước khi bắt đầu thu âm!");
+      return;
+    }
+
     try {
       setEvalResult(null);
       setTurnTimer(getTimerByLevel(cefrLevel));
@@ -220,7 +222,6 @@ export default function Station2Screen({ onBack }: Props) {
         const targetPrompt = exercise?.promptEn || exercise?.contextEn || exercise?.scenarioTitle || '';
         const result = await evaluateSpeaking(fullAudioBlob, cefrLevel, undefined, targetPrompt, userId);
         
-        // 🎯 TỰ ĐỘNG CHUYỂN BLOB ÂM THANH THÀNH DATA URL HOẶC LẤY URL TỪ RESULT
         let finalAudioUrl = result.audioUrl || '';
         if (!finalAudioUrl || finalAudioUrl.length < 5) {
           finalAudioUrl = await blobToDataURL(fullAudioBlob);
@@ -246,28 +247,29 @@ export default function Station2Screen({ onBack }: Props) {
           });
         }
 
-        let pairDisplayName = userName || 'Sinh viên';
+        // 🎯 TẠO TÊN ĐẦY ĐỦ KÈM MSSV
+        const studentIdentifier = `${studentNameInput.trim()} (MSSV: ${studentCodeInput.trim()})`;
+        let pairDisplayName = studentIdentifier;
         let feedbackDetail = result.detailedFeedback;
 
         if (mode === 'relay') {
-          pairDisplayName = `Vinh (P1: ${p1Score}đ) & An (P2: ${p2Score}đ) | Điểm tổng: ${totalAvgScore}đ`;
+          pairDisplayName = `${studentIdentifier} & Bạn đấu | Điểm tổng: ${totalAvgScore}đ`;
           feedbackDetail = `[ĐỘC LẬP: P1 = ${p1Score}đ, P2 = ${p2Score}đ | TỔNG CẶP = ${totalAvgScore}đ]: ${result.detailedFeedback}`;
         } else if (mode === 'roleplay') {
           const r1 = exercise?.userRoleEn || 'Vai 1';
           const r2 = exercise?.aiRoleEn || 'Vai 2';
-          pairDisplayName = `${userName} (${r1}: ${p1Score}đ) & AI (${r2}: ${p2Score}đ) | Điểm tổng: ${totalAvgScore}đ`;
+          pairDisplayName = `${studentIdentifier} (${r1}: ${p1Score}đ) & AI (${r2}: ${p2Score}đ) | Điểm tổng: ${totalAvgScore}đ`;
           feedbackDetail = `[ĐỘC LẬP: Vai 1 = ${p1Score}đ, Vai 2 = ${p2Score}đ | TỔNG CẶP = ${totalAvgScore}đ]: ${result.detailedFeedback}`;
         }
 
-        // 🎯 ĐỒNG BỘ NẠP LÊN CLOUD CẢ FILE THU ÂM ÂM THANH
         await saveSubmissionToCloud({
-          studentName: pairDisplayName,
+          studentName: studentIdentifier,
           pairName: pairDisplayName,
           score: totalAvgScore,
           mode: mode,
           cefrLevel: cefrLevel,
           transcript: result.transcript,
-          audioUrl: finalAudioUrl, // 👈 Đã đảm bảo gửi link audio đầy đủ
+          audioUrl: finalAudioUrl,
           feedback: feedbackDetail,
           timestamp: new Date().toLocaleTimeString('vi-VN')
         });
@@ -310,6 +312,27 @@ export default function Station2Screen({ onBack }: Props) {
 
       <ScrollView contentContainerStyle={{ alignItems: 'center', width: '100%', paddingBottom: 30 }}>
         
+        {/* 🎓 KHU VỰC NHẬP THÔNG TIN SINH VIÊN (BẮT BUỘC) */}
+        <View style={styles.studentInfoCard}>
+          <Text style={styles.studentInfoTitle}>🎓 THÔNG TIN SINH VIÊN BẮT BUỘC (ĐỂ TÍNH ĐIỂM):</Text>
+          <View style={{ flexDirection: 'row', gap: 8, width: '100%' }}>
+            <TextInput
+              style={[styles.infoInput, { flex: 1.2 }]}
+              placeholder="Họ và Tên sinh viên *"
+              placeholderTextColor="#666688"
+              value={studentNameInput}
+              onChangeText={setStudentNameInput}
+            />
+            <TextInput
+              style={[styles.infoInput, { flex: 0.8 }]}
+              placeholder="Mã số SV (MSSV) *"
+              placeholderTextColor="#666688"
+              value={studentCodeInput}
+              onChangeText={setStudentCodeInput}
+            />
+          </View>
+        </View>
+
         {/* Ô NHẬP CHỦ ĐỀ GIÁO VIÊN */}
         <View style={styles.customTopicCard}>
           <Text style={styles.customTopicTitle}>📌 NHẬP CHỦ ĐỀ SÁCH GIÁO KHOA (GIÁO VIÊN GIAO BÀI):</Text>
@@ -382,7 +405,7 @@ export default function Station2Screen({ onBack }: Props) {
               {(mode === 'relay' || mode === 'roleplay') && (
                 <View style={styles.playersRow}>
                   <View style={[styles.playerCard, activePlayer === 1 && styles.activePlayerCard]}>
-                    <Text style={styles.playerTag}>{mode === 'relay' ? '👤 PLAYER 1 (VINH)' : '👤 PLAYER 1'}</Text>
+                    <Text style={styles.playerTag}>{mode === 'relay' ? '👤 PLAYER 1' : '👤 PLAYER 1'}</Text>
                     <Text style={styles.roleText}>🎭 Vai: {exercise.player1En || exercise.userRoleEn || 'Vai 1'}</Text>
                     <Text style={styles.playerScoreTag}>
                       🏆 Điểm độc lập: {playerScores.p1Score !== undefined ? `${playerScores.p1Score}đ` : 'Chưa đấu'}
@@ -391,7 +414,7 @@ export default function Station2Screen({ onBack }: Props) {
                   </View>
 
                   <View style={[styles.playerCard, activePlayer === 2 && styles.activePlayerCard]}>
-                    <Text style={styles.playerTag}>{mode === 'roleplay' ? '🤖 AI PARTNER' : '👤 PLAYER 2 (AN)'}</Text>
+                    <Text style={styles.playerTag}>{mode === 'roleplay' ? '🤖 AI PARTNER' : '👤 PLAYER 2'}</Text>
                     <Text style={styles.roleText}>🎭 Vai: {exercise.player2En || exercise.aiRoleEn || 'Vai 2'}</Text>
                     <Text style={styles.playerScoreTag}>
                       🏆 Điểm độc lập: {playerScores.p2Score !== undefined ? `${playerScores.p2Score}đ` : 'Chưa đấu'}
@@ -479,6 +502,12 @@ const styles = StyleSheet.create({
   backBtn: { padding: 8, backgroundColor: '#0D0620', borderRadius: 8, borderWidth: 1, borderColor: '#00FFFF' },
   backText: { color: '#00FFFF', fontSize: 10, fontWeight: 'bold' },
   title: { color: '#00FFFF', fontSize: 12, fontWeight: '900' },
+  
+  // KHUNG ĐIỀN TÊN VÀ MSSV
+  studentInfoCard: { backgroundColor: '#120826', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#00FFFF', width: '100%', marginBottom: 12 },
+  studentInfoTitle: { color: '#00FFFF', fontSize: 10, fontWeight: '900', marginBottom: 8 },
+  infoInput: { backgroundColor: '#0D0620', color: '#FFF', padding: 8, borderRadius: 6, borderWidth: 1, borderColor: '#332255', fontSize: 11 },
+
   customTopicCard: { backgroundColor: '#130A2A', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#FFD700', width: '100%', marginBottom: 15 },
   customTopicTitle: { color: '#FFD700', fontSize: 10, fontWeight: '900', marginBottom: 6 },
   topicInput: { backgroundColor: '#0D0620', color: '#FFF', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#332255', fontSize: 11, minHeight: 45, marginBottom: 8, textAlignVertical: 'top' },
