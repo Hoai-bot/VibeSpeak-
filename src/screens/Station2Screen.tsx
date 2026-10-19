@@ -30,8 +30,21 @@ export default function Station2Screen({ onBack }: Props) {
   const [customTopicInput, setCustomTopicInput] = useState<string>('');
   const [isUsingCustomTopic, setIsUsingCustomTopic] = useState<boolean>(false);
 
+  // ⏱ HÀM TÍNH SỐ GIÂY TỰ ĐỘNG THEO TRÌNH ĐỘ CEFR
+  const getTimerByLevel = (level: string): number => {
+    switch (level.toUpperCase()) {
+      case 'A1': return 15;
+      case 'A2': return 20;
+      case 'B1': return 25;
+      case 'B2': return 30;
+      case 'C1': return 40;
+      case 'C2': return 60;
+      default: return 15;
+    }
+  };
+
   const [activePlayer, setActivePlayer] = useState<PlayerTurn>(1);
-  const [turnTimer, setTurnTimer] = useState<number>(15);
+  const [turnTimer, setTurnTimer] = useState<number>(getTimerByLevel('A1'));
   const [isGameActive, setIsGameActive] = useState<boolean>(false);
 
   const [isRecording, setIsRecording] = useState<boolean>(false);
@@ -75,11 +88,19 @@ export default function Station2Screen({ onBack }: Props) {
     fetchUser();
   }, []);
 
+  // Đổi lượt nói và cài đặt lại thời gian chuẩn cho Level hiện tại
   const handleSwitchTurn = () => {
     setActivePlayer((prevPlayer) => (prevPlayer === 1 ? 2 : 1));
-    setTurnTimer(15);
+    setTurnTimer(getTimerByLevel(cefrLevel));
   };
 
+  // Cập nhật lại số giây đồng hồ khi chọn Level mới
+  const handleSelectLevel = (lvl: string) => {
+    setCefrLevel(lvl);
+    setTurnTimer(getTimerByLevel(lvl));
+  };
+
+  // ⏱ BỘ ĐỒNG HỒ ĐẾM GIÂY CHẠY CHUẨN
   useEffect(() => {
     let timerInterval: NodeJS.Timeout | null = null;
 
@@ -114,6 +135,7 @@ export default function Station2Screen({ onBack }: Props) {
     setPlayerScores({});
     setIsGameActive(false);
     setActivePlayer(1);
+    setTurnTimer(getTimerByLevel(cefrLevel));
 
     const customExercise = {
       title: `📚 CHỦ ĐỀ GIÁO VIÊN YÊU CẦU [${cefrLevel}]`,
@@ -142,7 +164,7 @@ export default function Station2Screen({ onBack }: Props) {
     setPlayerScores({});
     setIsGameActive(false);
     setActivePlayer(1);
-    setTurnTimer(15);
+    setTurnTimer(getTimerByLevel(selectedLevel));
 
     let instantData: any = null;
     if (selectedMode === 'solo') instantData = getInstantSoloTopic(selectedLevel);
@@ -167,10 +189,11 @@ export default function Station2Screen({ onBack }: Props) {
     }
   }, [mode, cefrLevel]);
 
-  // 🎙 THU ÂM VÀ CHẤM ĐIỂM CHUẨN XÁC THEO CHẾ ĐỘ
+  // 🎙 THU ÂM VÀ CHẤM ĐIỂM DÙNG CHO SOLO VÀ ĐÔI
   const startFullRecording = async () => {
     try {
       setEvalResult(null);
+      setTurnTimer(getTimerByLevel(cefrLevel));
       audioChunksRef.current = [];
 
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -193,16 +216,14 @@ export default function Station2Screen({ onBack }: Props) {
         const result = await evaluateSpeaking(fullAudioBlob, cefrLevel, undefined, targetPrompt, userId);
         setEvalResult(result);
 
-        // 🎯 TÍNH ĐIỂM ĐỘC LẬP VÀ ĐIỂM TỔNG TÍNH TRUNG BÌNH CHUẨN XÁC (S1 + S2) / 2
         let p1Score = result.score;
         let p2Score = result.score;
         let totalAvgScore = result.score;
 
         if (mode !== 'solo') {
-          // Trường hợp ví dụ: P1 = 15đ, P2 = 17đ -> Trung bình = 16đ
           p1Score = Math.max(0, result.score - 1);
           p2Score = Math.min(100, result.score + 1);
-          totalAvgScore = Math.round((p1Score + p2Score) / 2); // 🎯 Đã sửa công thức trung bình cộng chuẩn
+          totalAvgScore = Math.round((p1Score + p2Score) / 2);
 
           setPlayerScores({
             p1Score: p1Score,
@@ -307,7 +328,7 @@ export default function Station2Screen({ onBack }: Props) {
             <TouchableOpacity 
               key={lvl} 
               style={[styles.cefrBadge, cefrLevel === lvl && styles.cefrBadgeActive]} 
-              onPress={() => setCefrLevel(lvl)}
+              onPress={() => handleSelectLevel(lvl)}
             >
               <Text style={[styles.cefrText, cefrLevel === lvl && styles.cefrTextActive]}>{lvl}</Text>
             </TouchableOpacity>
@@ -335,16 +356,17 @@ export default function Station2Screen({ onBack }: Props) {
             <View style={{ width: '100%', alignItems: 'center' }}>
               <Text style={styles.scenarioTitle}>{exercise.title || exercise.topic}</Text>
               
-              {(mode === 'relay' || mode === 'roleplay') && (
-                <View style={styles.timerBox}>
-                  <Text style={styles.timerLabel}>⏱ THỜI GIAN LƯỢT P{activePlayer}: {turnTimer}s {isRecording ? '(ĐANG THU ÂM CHUNG)' : ''}</Text>
-                  <Text style={[styles.timerValue, turnTimer <= 5 && { color: '#FF0055' }]}>
-                    00:{turnTimer < 10 ? `0${turnTimer}` : turnTimer}
-                  </Text>
-                </View>
-              )}
+              {/* ⏱ THỜI GIAN HIỂN THỊ TỰ ĐỘNG THAY ĐỔI THEO CEFR LEVEL */}
+              <View style={styles.timerBox}>
+                <Text style={styles.timerLabel}>
+                  ⏱ THỜI GIAN LƯỢT [{cefrLevel}]: {turnTimer}s {isRecording ? '(ĐANG THU ÂM)' : '(SẴN SÀNG)'}
+                </Text>
+                <Text style={[styles.timerValue, turnTimer <= 5 && { color: '#FF0055' }]}>
+                  00:{turnTimer < 10 ? `0${turnTimer}` : turnTimer}
+                </Text>
+              </View>
 
-              {/* BẢNG ĐIỂM ĐỘC LẬP TỪNG PLAYER (DÀNH CHO RELAY VÀ ROLEPLAY) */}
+              {/* BẢNG PHÂN VAI DÀNH CHO RELAY VÀ ROLEPLAY */}
               {(mode === 'relay' || mode === 'roleplay') && (
                 <View style={styles.playersRow}>
                   <View style={[styles.playerCard, activePlayer === 1 && styles.activePlayerCard]}>
@@ -367,7 +389,7 @@ export default function Station2Screen({ onBack }: Props) {
                 </View>
               )}
 
-              {/* BẢNG ĐIỂM TỔNG TRUNG BÌNH CẶP ĐẤU */}
+              {/* BẢNG ĐIỂM TỔNG CẶP ĐẤU */}
               {currentAvgScore !== null && mode !== 'solo' && (
                 <View style={styles.totalScoreBox}>
                   <Text style={styles.totalScoreText}>🌟 ĐIỂM TỔNG TRUNG BÌNH CẶP ĐẤU: {currentAvgScore} / 100 ĐIỂM</Text>
@@ -378,13 +400,13 @@ export default function Station2Screen({ onBack }: Props) {
                 <Text style={styles.promptText}>🎯 "{exercise.promptEn || exercise.contextEn || ''}"</Text>
               </View>
 
-              {/* 🎯 TỰ ĐỘNG THÍCH ỨNG TÊN NÚT THEO CHẾ ĐỘ CHƠI (SOLO VS RELAY/ROLEPLAY) */}
+              {/* NÚT THU ÂM */}
               {!isRecording && !isEvaluating ? (
                 <TouchableOpacity style={styles.startBtn} onPress={startFullRecording}>
                   <Text style={styles.startBtnText}>
                     {mode === 'solo' 
-                      ? '🎙 BẤM ĐỂ BẮT ĐẦU THU ÂM BÀI NÓI SOLO' 
-                      : '🎙 BẤM ĐỂ BẮT ĐẦU THU ÂM CHUNG (CẢ 2 LƯỢT)'}
+                      ? `🎙 BẤM THU ÂM SOLO (${getTimerByLevel(cefrLevel)}s)` 
+                      : `🎙 BẤM THU ÂM CHUNG (${getTimerByLevel(cefrLevel)}s / LƯỢT)`}
                   </Text>
                 </TouchableOpacity>
               ) : isRecording ? (
