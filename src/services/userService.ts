@@ -1,5 +1,5 @@
 // src/services/userService.ts
-import { supabase } from '../utils/supabase'; // 👈 Đã sửa đường dẫn trỏ đúng vào utils/supabase
+import { supabase } from '../utils/supabase';
 
 export interface RoleplaySubmission {
   id?: string;
@@ -14,13 +14,10 @@ export interface RoleplaySubmission {
   timestamp: string;
 }
 
-// 🎯 HÀM LƯU BÀI NỘP TRẠM 2 LÊN SUPABASE CLOUD (KÈM AUDIO URL)
+// 🎯 HÀM LƯU BÀI NỘP TRẠM 2 LÊN SUPABASE CLOUD
 export const saveSubmissionToCloud = async (submission: RoleplaySubmission) => {
   try {
-    if (!supabase) {
-      console.warn("⚠️ Supabase client chưa được khởi tạo!");
-      return;
-    }
+    if (!supabase) return;
 
     const { data: userData } = await supabase.auth.getUser();
     const userId = userData?.user?.id || null;
@@ -29,7 +26,6 @@ export const saveSubmissionToCloud = async (submission: RoleplaySubmission) => {
     const level = (submission.cefrLevel || 'A1').toUpperCase();
     let displayName = submission.pairName || submission.studentName || 'Sinh viên';
 
-    // Đóng gói Header thông tin chuẩn: [MODE - LEVEL | PHÂN VAI]: Nội dung nhận xét
     const formattedFeedback = `[${currentMode} - ${level} | ${displayName}]: ${submission.feedback || ''}`;
 
     const { error } = await supabase.from('assessment_results').insert([
@@ -43,7 +39,7 @@ export const saveSubmissionToCloud = async (submission: RoleplaySubmission) => {
     ]);
 
     if (error) {
-      console.error("❌ Lỗi insert dữ liệu Trạm 2 lên Supabase:", error);
+      console.error("❌ Lỗi insert dữ liệu lên Supabase:", error);
     } else {
       console.log("✅ Đã lưu bài nộp Trạm 2 lên Supabase Cloud thành công!");
     }
@@ -52,38 +48,41 @@ export const saveSubmissionToCloud = async (submission: RoleplaySubmission) => {
   }
 };
 
-// 🎯 HÀM TẢI TẤT CẢ BÀI NỘP VỀ BẢNG GIÁO VIÊN
+// 🎯 HÀM TẢI BÀI NỘP TRẠM 2 CHO BẢNG GIÁO VIÊN (CÓ TIMEOUT 5S CHỐNG ĐƠ)
 export const fetchSubmissionsFromCloud = async (): Promise<RoleplaySubmission[]> => {
   try {
-    if (!supabase) {
-      console.warn("⚠️ Supabase client chưa được khởi tạo!");
-      return [];
-    }
+    if (!supabase) return [];
 
-    const { data: results, error } = await supabase
+    const timeoutPromise = new Promise<null>((_, reject) =>
+      setTimeout(() => reject(new Error("Request Timeout")), 5000)
+    );
+
+    const queryPromise = supabase
       .from('assessment_results')
       .select('id, score, transcript, feedback, audio_url, created_at, user_id')
       .order('created_at', { ascending: false });
 
-    const { data: profiles } = await supabase
-      .from('profiles')
-      .select('id, full_name, student_code');
+    const response: any = await Promise.race([queryPromise, timeoutPromise]);
+    const results = response?.data;
 
-    const profileMap: Record<string, string> = {};
-    if (profiles) {
-      profiles.forEach((p: any) => {
-        profileMap[p.id] = p.full_name || p.student_code || 'Sinh viên';
-      });
-    }
+    if (results) {
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, full_name, student_code');
 
-    if (!error && results) {
+      const profileMap: Record<string, string> = {};
+      if (profiles) {
+        profiles.forEach((p: any) => {
+          profileMap[p.id] = p.full_name || p.student_code || 'Sinh viên';
+        });
+      }
+
       return results.map((item: any) => {
         let mode = 'TRẠM 2';
         let cefrLevel = 'A1';
         let playerName = profileMap[item.user_id] || 'Sinh viên';
         let cleanFeedback = item.feedback || '';
 
-        // Bóc tách thông tin từ Header [MODE - LEVEL | PLAYER_NAME]: Feedback
         if (cleanFeedback.startsWith('[') && cleanFeedback.includes(']:')) {
           const parts = cleanFeedback.split(']:');
           const headerTag = parts[0].replace('[', '');
@@ -113,11 +112,42 @@ export const fetchSubmissionsFromCloud = async (): Promise<RoleplaySubmission[]>
           timestamp: item.created_at ? new Date(item.created_at).toLocaleString('vi-VN') : '',
         };
       });
-    } else if (error) {
-      console.error("❌ Lỗi lấy dữ liệu từ Supabase:", error);
     }
   } catch (err) {
-    console.warn("⚠️ Lỗi fetchSubmissionsFromCloud:", err);
+    console.warn("⚠️ Timeout / Lỗi fetchSubmissionsFromCloud:", err);
   }
   return [];
+};
+
+// 🎯 HÀM TẢI BẢNG XẾP HẠNG (KHẮC PHỤC LỖI fetchTopLeaderboard is not a function)
+export const fetchTopLeaderboard = async () => {
+  try {
+    if (!supabase) return [];
+
+    const { data, error } = await supabase
+      .from('assessment_results')
+      .select('score, created_at, user_id, feedback')
+      .order('score', { ascending: false })
+      .limit(10);
+
+    if (error || !data) return [];
+
+    return data.map((item: any, idx: number) => {
+      let name = 'Chiến binh';
+      if (item.feedback && item.feedback.includes('|') && item.feedback.includes(']:')) {
+        const parts = item.feedback.split(']:')[0].split('|');
+        if (parts.length > 1) name = parts[1].trim();
+      }
+
+      return {
+        rank: idx + 1,
+        name: name,
+        score: item.score || 0,
+        date: item.created_at ? new Date(item.created_at).toLocaleDateString('vi-VN') : ''
+      };
+    });
+  } catch (e) {
+    console.warn("⚠️ Lỗi fetchTopLeaderboard:", e);
+    return [];
+  }
 };
