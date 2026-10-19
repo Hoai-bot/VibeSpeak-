@@ -31,8 +31,31 @@ export default function Station2Screen({ onBack }: Props) {
   const [isEvaluating, setIsEvaluating] = useState<boolean>(false);
   const [evalResult, setEvalResult] = useState<AssessmentResult | null>(null);
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
+  const [userId, setUserId] = useState<string | undefined>(undefined); // 👈 Lấy ID sinh viên
 
   const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
+
+  // 🎯 LẤY USER ID AN TOÀN TRÁNH LỖI BUILD MODULE NOT FOUND
+  useEffect(() => {
+    const fetchUser = async () => {
+      try {
+        const supabaseModule = await import('../lib/supabaseClient').catch(() => null)
+                             || await import('../lib/supabase').catch(() => null)
+                             || await import('@/lib/supabaseClient').catch(() => null);
+                             
+        if (supabaseModule) {
+          const supabase = supabaseModule.supabase || supabaseModule.default;
+          if (supabase && supabase.auth) {
+            const { data } = await supabase.auth.getUser();
+            if (data?.user) setUserId(data.user.id);
+          }
+        }
+      } catch (e) {
+        console.warn("Không lấy được user ID:", e);
+      }
+    };
+    fetchUser();
+  }, []);
 
   // 1. HÀM CHUYỂN LƯỢT CHUẨN: BẮT BỘC RESET TIMER VỀ 15S NGAY LẬP TỨC
   const handleSwitchTurn = () => {
@@ -45,13 +68,11 @@ export default function Station2Screen({ onBack }: Props) {
     let timerInterval: NodeJS.Timeout | null = null;
 
     if (isGameActive && isRecording) {
-      // Chỉ đếm ngược khi người chơi ĐANG BẤM MICRO THU ÂM
       if (turnTimer > 0) {
         timerInterval = setInterval(() => {
           setTurnTimer((prev) => prev - 1);
         }, 1000);
       } else if (turnTimer === 0) {
-        // Hết 15s tự động dừng thu âm và đổi lượt
         stopRecordingAndSwitch();
       }
     }
@@ -109,7 +130,9 @@ export default function Station2Screen({ onBack }: Props) {
         setIsEvaluating(true);
 
         const targetPrompt = exercise?.promptEn || exercise?.contextEn || exercise?.scenarioTitle || '';
-        const result = await evaluateSpeaking(audioBlob, cefrLevel, undefined, targetPrompt);
+        
+        // 🎯 ĐÃ SỬA: Truyền userId làm tham số thứ 5 để lưu bài làm vào Supabase & Storage
+        const result = await evaluateSpeaking(audioBlob, cefrLevel, undefined, targetPrompt, userId);
         
         setEvalResult(result);
         setIsEvaluating(false);
@@ -256,7 +279,9 @@ export default function Station2Screen({ onBack }: Props) {
                 >
                   <Text style={styles.recordBtnText}>
                     {isRecording 
-                      ? '🛑 DỪNG & CHUYỂN LƯỢT CHO BẠN BÊN CẠNH' 
+                      ? '🛑 DỪNG & NỘP BÀI NÓI' 
+                      : mode === 'solo' 
+                      ? '🎙 BẤM ĐỂ BẮT ĐẦU THU ÂM' 
                       : `🎙 LƯỢT PLAYER ${activePlayer}: BẤM ĐỂ THU ÂM`}
                   </Text>
                 </TouchableOpacity>
@@ -271,6 +296,19 @@ export default function Station2Screen({ onBack }: Props) {
               {evalResult && (
                 <View style={styles.evalBox}>
                   <Text style={styles.evalScore}>🏆 ĐIỂM BÀI NÓI: {evalResult.score}/100</Text>
+
+                  {/* 🎧 RENDER AN TOÀN CHO WEB KHÔNG LỖI TYPESCRIPT */}
+                  {evalResult.audioUrl && (
+                    <View style={styles.audioPlayerBox}>
+                      <Text style={styles.audioLabel}>🎧 Nghe lại bài thu âm vừa nộp:</Text>
+                      {React.createElement('audio', {
+                        controls: true,
+                        src: evalResult.audioUrl,
+                        style: { width: '100%', marginTop: 6, height: 36 }
+                      })}
+                    </View>
+                  )}
+
                   <Text style={styles.transcriptText}>💬 AI nghe được: "{evalResult.transcript}"</Text>
                   
                   <View style={styles.scoreRow}>
@@ -339,6 +377,8 @@ const styles = StyleSheet.create({
   recordBtnText: { color: '#FFF', fontSize: 11, fontWeight: '900' },
   evalBox: { backgroundColor: '#130A2A', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#39FF14', width: '100%', marginTop: 12 },
   evalScore: { color: '#39FF14', fontSize: 12, fontWeight: '900', marginBottom: 4 },
+  audioPlayerBox: { backgroundColor: '#1A0B2E', padding: 8, borderRadius: 8, width: '100%', marginBottom: 8, borderWidth: 1, borderColor: '#00FFFF' },
+  audioLabel: { color: '#00FFFF', fontSize: 10, fontWeight: 'bold' },
   transcriptText: { color: '#FFF', fontSize: 10, fontStyle: 'italic', marginBottom: 6 },
   scoreRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6, backgroundColor: '#05020D', padding: 6, borderRadius: 6 },
   scoreDetail: { color: '#00FFFF', fontSize: 9, fontWeight: 'bold' },
