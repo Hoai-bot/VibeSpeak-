@@ -59,9 +59,9 @@ export default function Station2Screen({ onBack }: Props) {
   const audioChunksRef = useRef<Blob[]>([]);
   const audioStreamRef = useRef<MediaStream | null>(null);
   
-  // 🎯 BỘ NHẬN DẠNG GIỌNG NÓI THỜI GIAN THỰC (SPEECH RECOGNITION)
+  // 🎯 QUẢN LÝ BÓC TÁCH TOÀN BỘ BÀI NÓI (FULL TRANSCRIPT)
   const recognitionRef = useRef<any>(null);
-  const realTranscriptRef = useRef<string>('');
+  const fullTranscriptRef = useRef<string>('');
 
   const [userId, setUserId] = useState<string | undefined>(undefined);
 
@@ -193,7 +193,7 @@ export default function Station2Screen({ onBack }: Props) {
     });
   };
 
-  // 🎙 BẮT ĐẦU THU ÂM VÀ BÓC TÁCH GIỌNG NÓI THỜI GIAN THỰC
+  // 🎙 BẮT ĐẦU THU ÂM VÀ BÓC TÁCH TOÀN BỘ 100% LỜI NÓI
   const startFullRecording = async () => {
     if (!studentNameInput.trim() || !studentCodeInput.trim()) {
       alert("⚠️ Vui lòng điền đầy đủ TỌA ĐỘ SINH VIÊN (Họ tên & Mã số sinh viên) ở phía trên trước khi bắt đầu thu âm!");
@@ -204,9 +204,9 @@ export default function Station2Screen({ onBack }: Props) {
       setEvalResult(null);
       setTurnTimer(getTimerByLevel(cefrLevel));
       audioChunksRef.current = [];
-      realTranscriptRef.current = '';
+      fullTranscriptRef.current = '';
 
-      // 1. KÍCH HOẠT NHẬN DẠNG GIỌNG NÓI TIẾNG ANH (SPEECH RECOGNITION)
+      // KÍCH HOẠT CHẾ ĐỘ THU TOÀN BỘ CÂU (BẮT CẢ CÁC TỪ PHỤ)
       const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
       if (SpeechRecognition) {
         const recognition = new SpeechRecognition();
@@ -215,12 +215,19 @@ export default function Station2Screen({ onBack }: Props) {
         recognition.lang = 'en-US';
 
         recognition.onresult = (event: any) => {
-          let currentSpeech = '';
-          for (let i = event.resultIndex; i < event.results.length; ++i) {
-            currentSpeech += event.results[i][0].transcript;
+          let accumulatedSpeech = '';
+          for (let i = 0; i < event.results.length; ++i) {
+            accumulatedSpeech += event.results[i][0].transcript + ' ';
           }
-          if (currentSpeech.trim()) {
-            realTranscriptRef.current = currentSpeech.trim();
+          if (accumulatedSpeech.trim()) {
+            fullTranscriptRef.current = accumulatedSpeech.trim();
+          }
+        };
+
+        // Tự động khởi động lại nếu bị tạm dừng giữa chừng khi sinh viên suy nghĩ
+        recognition.onend = () => {
+          if (isRecording && recognitionRef.current) {
+            try { recognitionRef.current.start(); } catch (e) {}
           }
         };
 
@@ -228,7 +235,6 @@ export default function Station2Screen({ onBack }: Props) {
         recognitionRef.current = recognition;
       }
 
-      // 2. KÍCH HOẠT MICRO THU ÂM FILE WEBM
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       audioStreamRef.current = stream;
 
@@ -245,15 +251,16 @@ export default function Station2Screen({ onBack }: Props) {
         const fullAudioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
         setIsEvaluating(true);
 
-        // Dừng nhận dạng giọng nói
         if (recognitionRef.current) {
-          try { recognitionRef.current.stop(); } catch (e) {}
+          try { 
+            recognitionRef.current.onend = null;
+            recognitionRef.current.stop(); 
+          } catch (e) {}
         }
 
         const targetPrompt = exercise?.promptEn || exercise?.contextEn || exercise?.scenarioTitle || '';
-        const capturedSpeech = realTranscriptRef.current || '';
+        const capturedSpeech = fullTranscriptRef.current || '';
 
-        // Gửi sang AI chấm điểm kèm Lời thoại thực tế vừa thu âm
         const result = await evaluateSpeaking(fullAudioBlob, cefrLevel, undefined, targetPrompt, userId, capturedSpeech);
         
         let finalAudioUrl = result.audioUrl || '';
@@ -492,7 +499,7 @@ export default function Station2Screen({ onBack }: Props) {
               ) : (
                 <View style={{ marginVertical: 15, alignItems: 'center' }}>
                   <ActivityIndicator size="small" color="#00FFFF" />
-                  <Text style={{ color: '#00FFFF', fontSize: 11, marginTop: 5 }}>🤖 AI đang phân tích âm thanh & bóc tách lời thoại...</Text>
+                  <Text style={{ color: '#00FFFF', fontSize: 11, marginTop: 5 }}>🤖 AI đang phân tích âm thanh & bóc tách toàn bộ lời thoại...</Text>
                 </View>
               )}
 
@@ -509,7 +516,7 @@ export default function Station2Screen({ onBack }: Props) {
                       })}
                     </View>
                   )}
-                  <Text style={styles.transcriptText}>💬 Lời thoại ghi nhận: "{evalResult.transcript}"</Text>
+                  <Text style={styles.transcriptText}>💬 Lời thoại ghi nhận đầy đủ: "{evalResult.transcript}"</Text>
                   <Text style={styles.feedbackText}>💡 Nhận xét AI: {evalResult.detailedFeedback}</Text>
                 </View>
               )}

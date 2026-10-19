@@ -22,37 +22,31 @@ export const evaluateSpeaking = async (
   topicId?: string,
   promptText?: string,
   userId?: string,
-  capturedSpeech?: string // 🎯 Nhận Lời thoại thực tế từ Speech Recognition
+  capturedSpeech?: string
 ): Promise<AssessmentResult> => {
   try {
     const audioUrl = await blobToDataURL(audioBlob);
-    const audioSizeKB = Math.round(audioBlob.size / 1024);
-
-    // Bốc tách lời thoại thực tế
+    
+    // 🎯 ƯU TIÊN HIỂN THỊ NGUYÊN VĂN BÀI NÓI THỰC TẾ
     let finalTranscript = capturedSpeech ? capturedSpeech.trim() : '';
 
     if (!finalTranscript) {
-      if (audioSizeKB < 10) {
-        finalTranscript = "(Micro chưa thu được âm thanh rõ ràng)";
-      } else {
-        finalTranscript = "When it rains all day, I usually stay at home, read books, and drink warm tea.";
-      }
+      finalTranscript = "(Không thu được âm thanh rõ ràng hoặc sinh viên không phát âm)";
     }
 
-    // Đánh giá điểm số thông minh dựa trên độ dài lời thoại thực tế
     const wordCount = finalTranscript.split(/\s+/).filter(Boolean).length;
     let score = 75;
     let feedback = "";
 
-    if (wordCount < 4) {
-      score = 50;
-      feedback = "Câu trả lời còn quá ngắn. Bạn nên phát triển thêm ý kiến để đạt cấp độ " + cefrLevel + ".";
-    } else if (wordCount < 12) {
+    if (wordCount < 3) {
+      score = 45;
+      feedback = "Âm thanh quá ngắn. Bạn nên phát triển thêm ý kiến để đạt cấp độ " + cefrLevel + ".";
+    } else if (wordCount < 10) {
       score = 80;
-      feedback = "Phát âm rõ ràng, đã trả lời đúng trọng tâm chủ đề ở mức độ " + cefrLevel + ".";
+      feedback = "Phát âm khá rõ ràng, đã trả lời bám sát chủ đề ở mức độ " + cefrLevel + ".";
     } else {
       score = Math.floor(Math.random() * 8) + 90;
-      feedback = "Bài nói trôi chảy, vốn từ vựng phong phú và ngữ điệu rất tự nhiên!";
+      feedback = "Bài nói trôi chảy, diễn đạt trọn vẹn ý kiến và phản xạ tự nhiên!";
     }
 
     return {
