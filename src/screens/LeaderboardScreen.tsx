@@ -1,20 +1,112 @@
 // src/screens/LeaderboardScreen.tsx
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
-import { getLeaderboardData, LeaderboardUser } from '../services/leaderboardService';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
 
 interface Props {
   onBack: () => void;
   userXp?: number;
 }
 
+interface LeaderboardUser {
+  id: string;
+  name: string;
+  studentCode: string;
+  totalDamage: number;
+  levelBadge: string;
+  avatar: string;
+  rank: number;
+  isCurrentUser: boolean;
+}
+
 export default function LeaderboardScreen({ onBack, userXp = 3500 }: Props) {
   const [leaderboard, setLeaderboard] = useState<LeaderboardUser[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [currentUserDamage, setCurrentUserDamage] = useState<number>(userXp);
 
   useEffect(() => {
-    const data = getLeaderboardData(userXp);
-    setLeaderboard(data);
+    fetchRealtimeLeaderboard();
   }, [userXp]);
+
+  const fetchRealtimeLeaderboard = async () => {
+    setLoading(true);
+    try {
+      // Dynamic import Supabase Client an toàn khi build web trên Vercel
+      const supabaseModule = await import('../lib/supabaseClient').catch(() => null)
+                           || await import('../lib/supabase').catch(() => null)
+                           || await import('@/lib/supabaseClient').catch(() => null);
+
+      if (supabaseModule) {
+        const supabase = supabaseModule.supabase || supabaseModule.default;
+        
+        if (supabase) {
+          // 1. Lấy thông tin user hiện tại đang đăng nhập
+          const { data: userData } = await supabase.auth.getUser();
+          const currentUserId = userData?.user?.id;
+
+          // 2. Truy vấn danh sách Hồ sơ người dùng từ bảng profiles
+          const { data: profiles, error: profileErr } = await supabase
+            .from('profiles')
+            .select('id, full_name, student_code, role');
+
+          // 3. Truy vấn tổng điểm phát âm bài làm từ bảng assessment_results
+          const { data: results, error: resultErr } = await supabase
+            .from('assessment_results')
+            .select('user_id, score');
+
+          if (!profileErr && profiles) {
+            // Tích lũy tổng điểm sát thương cho từng người dùng
+            const userScoreMap: Record<string, number> = {};
+
+            if (results) {
+              results.forEach((item: { user_id: string; score: number }) => {
+                if (item.user_id) {
+                  // Quy đổi 1 điểm bài nói = 100 HP Sát thương Boss
+                  const damage = (item.score || 0) * 100;
+                  userScoreMap[item.user_id] = (userScoreMap[item.user_id] || 0) + damage;
+                }
+              });
+            }
+
+            // Mảng icon avatar ngẫu nhiên theo thứ hạng
+            const avatars = ['🥷', '⚔️', '🎧', '🏎️', '🛡️', '🎯', '🔥', '🐥', '🌟', '⚡'];
+
+            // Lắp ráp danh sách Bảng xếp hạng thật từ Supabase
+            const rankedList: LeaderboardUser[] = profiles
+              .map((p: any, index: number) => {
+                const totalHp = userScoreMap[p.id] || 0;
+                const displayName = p.full_name?.trim() || p.student_code || 'Sinh viên VibeSpeak';
+                const isCurrent = p.id === currentUserId;
+
+                if (isCurrent && totalHp > 0) {
+                  setCurrentUserDamage(totalHp);
+                }
+
+                return {
+                  id: p.id,
+                  name: isCurrent ? `${displayName} (Bạn)` : displayName,
+                  studentCode: p.student_code || '',
+                  levelBadge: (p.role || 'A2').toUpperCase(),
+                  totalDamage: totalHp,
+                  avatar: avatars[index % avatars.length],
+                  rank: 0,
+                  isCurrentUser: isCurrent,
+                };
+              })
+              // Sắp xếp người chơi từ tổng điểm Sát thương cao nhất đến thấp nhất
+              .sort((a, b) => b.totalDamage - a.totalDamage)
+              // Đánh số thứ tự Xếp hạng
+              .map((item, idx) => ({ ...item, rank: idx + 1 }));
+
+            setLeaderboard(rankedList);
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Lỗi tải Bảng xếp hạng Supabase:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const getRankBadgeColor = (rank: number) => {
     if (rank === 1) return '#FFD700'; // Vàng
@@ -33,47 +125,62 @@ export default function LeaderboardScreen({ onBack, userXp = 3500 }: Props) {
       </View>
 
       <ScrollView contentContainerStyle={{ alignItems: 'center', width: '100%', paddingBottom: 30 }}>
+        {/* CARD TỔNG SÁT THƯƠNG CỦA NGƯỜI CHƠI HIỆN TẠI */}
         <View style={styles.summaryCard}>
-          <Text style={styles.summaryTitle}>⚡ TỔNG SÁT THƯƠNG DIỆT BOSS CỦA BẠN</Text>
-          <Text style={styles.summaryScore}>{userXp} HP DAMAGE</Text>
-          <Text style={styles.summarySub}>Đăng nhập và luyện tập Trạm 3 & 4 để thăng hạng Top Cyber Knight!</Text>
+          <Text style={styles.summaryTitle}>⚡ TỔNG SÁT THƯƠNG DIỆT BOSS CỦA BẠN (THỰC TẾ)</Text>
+          <Text style={styles.summaryScore}>{currentUserDamage.toLocaleString()} HP DAMAGE</Text>
+          <Text style={styles.summarySub}>Luyện tập phát âm tại các Trạm để tích lũy điểm thăng hạng Top Cyber Knight!</Text>
         </View>
 
+        {/* BẢNG XẾP HẠNG CHIẾN TRƯỜNG */}
         <View style={styles.boardContainer}>
-          <Text style={styles.boardHeader}>🔥 TOP CAO THỦ PHÁT ÂM CHIẾN TRƯỜNG</Text>
+          <Text style={styles.boardHeader}>🔥 TOP CAO THỦ PHÁT ÂM CHIẾN TRƯỜNG (REALTIME)</Text>
 
-          {leaderboard.map((item) => {
-            const badgeColor = getRankBadgeColor(item.rank);
+          {loading ? (
+            <ActivityIndicator size="large" color="#39FF14" style={{ marginVertical: 30 }} />
+          ) : leaderboard.length > 0 ? (
+            leaderboard.map((item) => {
+              const badgeColor = getRankBadgeColor(item.rank);
 
-            return (
-              <View 
-                key={item.rank} 
-                style={[
-                  styles.rankRow, 
-                  item.isCurrentUser && styles.currentUserRow
-                ]}
-              >
-                <View style={styles.rankBadgeContainer}>
-                  <Text style={[styles.rankNumber, { color: badgeColor }]}>
-                    {item.rank === 1 ? '🥇' : item.rank === 2 ? '🥈' : item.rank === 3 ? '🥉' : `#${item.rank}`}
-                  </Text>
+              return (
+                <View 
+                  key={item.id} 
+                  style={[
+                    styles.rankRow, 
+                    item.isCurrentUser && styles.currentUserRow
+                  ]}
+                >
+                  <View style={styles.rankBadgeContainer}>
+                    <Text style={[styles.rankNumber, { color: badgeColor }]}>
+                      {item.rank === 1 ? '🥇' : item.rank === 2 ? '🥈' : item.rank === 3 ? '🥉' : `#${item.rank}`}
+                    </Text>
+                  </View>
+
+                  <Text style={styles.avatar}>{item.avatar}</Text>
+
+                  <View style={{ flex: 1, marginLeft: 10 }}>
+                    <Text style={[styles.userName, item.isCurrentUser && styles.currentUserName]}>
+                      {item.name}
+                    </Text>
+                    {item.studentCode ? (
+                      <Text style={styles.studentCodeText}>MSSV: {item.studentCode}</Text>
+                    ) : null}
+                    <Text style={styles.damageText}>Sát thương: {item.totalDamage.toLocaleString()} HP</Text>
+                  </View>
+
+                  <View style={styles.cefrBadge}>
+                    <Text style={styles.cefrText}>{item.levelBadge}</Text>
+                  </View>
                 </View>
+              );
+            })
+          ) : (
+            <Text style={styles.emptyText}>Chưa có dữ liệu sinh viên làm bài trên hệ thống Supabase.</Text>
+          )}
 
-                <Text style={styles.avatar}>{item.avatar}</Text>
-
-                <View style={{ flex: 1, marginLeft: 10 }}>
-                  <Text style={[styles.userName, item.isCurrentUser && styles.currentUserName]}>
-                    {item.name}
-                  </Text>
-                  <Text style={styles.damageText}>Sát thương: {item.totalDamage.toLocaleString()} HP</Text>
-                </View>
-
-                <View style={styles.cefrBadge}>
-                  <Text style={styles.cefrText}>{item.levelBadge}</Text>
-                </View>
-              </View>
-            );
-          })}
+          <TouchableOpacity style={styles.refreshBtn} onPress={fetchRealtimeLeaderboard}>
+            <Text style={styles.refreshBtnText}>🔄 CẬP NHẬT BẢNG XẾP HẠNG</Text>
+          </TouchableOpacity>
         </View>
       </ScrollView>
     </View>
@@ -99,7 +206,11 @@ const styles = StyleSheet.create({
   avatar: { fontSize: 20, marginLeft: 6 },
   userName: { color: '#FFF', fontSize: 12, fontWeight: 'bold' },
   currentUserName: { color: '#39FF14' },
+  studentCodeText: { color: '#00FFFF', fontSize: 8, marginTop: 1 },
   damageText: { color: '#8888AA', fontSize: 9, marginTop: 2 },
   cefrBadge: { backgroundColor: '#0D0620', paddingVertical: 4, paddingHorizontal: 8, borderRadius: 6, borderWidth: 1, borderColor: '#00FFFF' },
   cefrText: { color: '#00FFFF', fontSize: 9, fontWeight: 'bold' },
+  emptyText: { color: '#8888AA', fontSize: 10, textAlign: 'center', marginVertical: 20 },
+  refreshBtn: { backgroundColor: '#FF007F', padding: 10, borderRadius: 8, width: '100%', alignItems: 'center', marginTop: 10 },
+  refreshBtnText: { color: '#FFF', fontSize: 10, fontWeight: '900' }
 });
