@@ -7,7 +7,7 @@ import MainMapScreen from '../screens/MainMapScreen';
 import UserProfileScreen from '../screens/UserProfileScreen';
 
 import Station1Screen from '../screens/Station1Screen';
-import AllInArenaScreen from '../screens/AllInArenaScreen';
+import Station2Screen from '../screens/Station2Screen'; // 👈 Đã đổi sang Station2Screen
 import ShadowBossScreen from '../screens/ShadowBossScreen';
 import Station4Screen from '../screens/Station4Screen';
 import TeacherDashboardScreen from '../screens/TeacherDashboardScreen';
@@ -56,7 +56,7 @@ export default function AppNavigator() {
       )}
 
       {currentScreen === 'station2' && (
-        <AllInArenaScreen onBack={() => setCurrentScreen('map')} />
+        <Station2Screen onBack={() => setCurrentScreen('map')} /> // 👈 Đã gắn đúng màn hình Trạm 2
       )}
 
       {currentScreen === 'station3' && (
