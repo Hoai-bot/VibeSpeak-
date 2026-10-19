@@ -14,7 +14,6 @@ export interface RoleplaySubmission {
   timestamp: string;
 }
 
-// 🎯 HÀM LƯU BÀI NỘP TRẠM 2 LÊN SUPABASE CLOUD
 export const saveSubmissionToCloud = async (submission: RoleplaySubmission) => {
   try {
     if (!supabase) return;
@@ -22,8 +21,8 @@ export const saveSubmissionToCloud = async (submission: RoleplaySubmission) => {
     const { data: userData } = await supabase.auth.getUser();
     const userId = userData?.user?.id || null;
 
-    const currentMode = (submission.mode || 'SOLO').toUpperCase();
-    const level = (submission.cefrLevel || 'A1').toUpperCase();
+    const currentMode = String(submission.mode || 'SOLO').toUpperCase();
+    const level = String(submission.cefrLevel || 'A1').toUpperCase();
     let displayName = submission.pairName || submission.studentName || 'Sinh viên';
 
     const formattedFeedback = `[${currentMode} - ${level} | ${displayName}]: ${submission.feedback || ''}`;
@@ -40,86 +39,77 @@ export const saveSubmissionToCloud = async (submission: RoleplaySubmission) => {
 
     if (error) {
       console.error("❌ Lỗi insert dữ liệu lên Supabase:", error);
-    } else {
-      console.log("✅ Đã lưu bài nộp Trạm 2 lên Supabase Cloud thành công!");
     }
   } catch (err) {
     console.warn("⚠️ Lỗi saveSubmissionToCloud:", err);
   }
 };
 
-// 🎯 HÀM TẢI BÀI NỘP TRẠM 2 CHO BẢNG GIÁO VIÊN (CÓ TIMEOUT 5S CHỐNG ĐƠ)
 export const fetchSubmissionsFromCloud = async (): Promise<RoleplaySubmission[]> => {
   try {
     if (!supabase) return [];
 
-    const timeoutPromise = new Promise<null>((_, reject) =>
-      setTimeout(() => reject(new Error("Request Timeout")), 5000)
-    );
-
-    const queryPromise = supabase
+    const { data: results, error } = await supabase
       .from('assessment_results')
       .select('id, score, transcript, feedback, audio_url, created_at, user_id')
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .limit(50);
 
-    const response: any = await Promise.race([queryPromise, timeoutPromise]);
-    const results = response?.data;
+    if (error || !results) return [];
 
-    if (results) {
-      const { data: profiles } = await supabase
-        .from('profiles')
-        .select('id, full_name, student_code');
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('id, full_name, student_code');
 
-      const profileMap: Record<string, string> = {};
-      if (profiles) {
-        profiles.forEach((p: any) => {
-          profileMap[p.id] = p.full_name || p.student_code || 'Sinh viên';
-        });
-      }
-
-      return results.map((item: any) => {
-        let mode = 'TRẠM 2';
-        let cefrLevel = 'A1';
-        let playerName = profileMap[item.user_id] || 'Sinh viên';
-        let cleanFeedback = item.feedback || '';
-
-        if (cleanFeedback.startsWith('[') && cleanFeedback.includes(']:')) {
-          const parts = cleanFeedback.split(']:');
-          const headerTag = parts[0].replace('[', '');
-          cleanFeedback = parts.slice(1).join(']:').trim();
-
-          const tagParts = headerTag.split(' | ');
-          const metaParts = tagParts[0].split(' - ');
-
-          mode = (metaParts[0] || 'TRẠM 2').trim().toUpperCase();
-          cefrLevel = (metaParts[1] || 'A1').trim();
-
-          if (tagParts.length > 1 && tagParts[1].trim()) {
-            playerName = tagParts[1].trim();
-          }
-        }
-
-        return {
-          id: item.id,
-          studentName: playerName,
-          pairName: playerName,
-          score: item.score || 0,
-          mode: mode,
-          cefrLevel: cefrLevel,
-          transcript: item.transcript || '',
-          audioUrl: item.audio_url || '',
-          feedback: cleanFeedback,
-          timestamp: item.created_at ? new Date(item.created_at).toLocaleString('vi-VN') : '',
-        };
+    const profileMap: Record<string, string> = {};
+    if (profiles) {
+      profiles.forEach((p: any) => {
+        profileMap[p.id] = p.full_name || p.student_code || 'Sinh viên';
       });
     }
+
+    return results.map((item: any) => {
+      let mode = 'TRẠM 2';
+      let cefrLevel = 'A1';
+      let playerName = profileMap[item.user_id] || 'Sinh viên';
+      let cleanFeedback = item.feedback || '';
+
+      if (cleanFeedback && cleanFeedback.startsWith('[') && cleanFeedback.includes(']:')) {
+        const parts = cleanFeedback.split(']:');
+        const headerTag = parts[0].replace('[', '');
+        cleanFeedback = parts.slice(1).join(']:').trim();
+
+        const tagParts = headerTag.split(' | ');
+        const metaParts = tagParts[0].split(' - ');
+
+        mode = String(metaParts[0] || 'TRẠM 2').trim().toUpperCase();
+        cefrLevel = String(metaParts[1] || 'A1').trim().toUpperCase();
+
+        if (tagParts.length > 1 && tagParts[1].trim()) {
+          playerName = tagParts[1].trim();
+        }
+      }
+
+      return {
+        id: item.id || String(Math.random()),
+        studentName: playerName || 'Sinh viên',
+        pairName: playerName || 'Sinh viên',
+        score: Number(item.score) || 0,
+        mode: String(mode || 'TRẠM 2').toUpperCase(),
+        cefrLevel: String(cefrLevel || 'A1').toUpperCase(),
+        transcript: item.transcript || '',
+        audioUrl: item.audio_url || '',
+        feedback: cleanFeedback,
+        timestamp: item.created_at ? new Date(item.created_at).toLocaleString('vi-VN') : '',
+      };
+    });
   } catch (err) {
-    console.warn("⚠️ Timeout / Lỗi fetchSubmissionsFromCloud:", err);
+    console.warn("⚠️ Lỗi fetchSubmissionsFromCloud:", err);
   }
   return [];
 };
 
-// 🎯 HÀM TẢI BẢNG XẾP HẠNG (KHẮC PHỤC LỖI fetchTopLeaderboard is not a function)
+// 🎯 HÀM LẤY BẢNG XẾP HẠNG AN TOÀN (CHỐNG SẬP MÀN HÌNH)
 export const fetchTopLeaderboard = async () => {
   try {
     if (!supabase) return [];
@@ -128,21 +118,25 @@ export const fetchTopLeaderboard = async () => {
       .from('assessment_results')
       .select('score, created_at, user_id, feedback')
       .order('score', { ascending: false })
-      .limit(10);
+      .limit(20);
 
     if (error || !data) return [];
 
     return data.map((item: any, idx: number) => {
       let name = 'Chiến binh';
-      if (item.feedback && item.feedback.includes('|') && item.feedback.includes(']:')) {
-        const parts = item.feedback.split(']:')[0].split('|');
-        if (parts.length > 1) name = parts[1].trim();
+      let cleanFeedback = item.feedback || '';
+
+      if (cleanFeedback && cleanFeedback.includes('|') && cleanFeedback.includes(']:')) {
+        const parts = cleanFeedback.split(']:')[0].split('|');
+        if (parts.length > 1 && parts[1].trim()) {
+          name = parts[1].trim();
+        }
       }
 
       return {
         rank: idx + 1,
-        name: name,
-        score: item.score || 0,
+        name: String(name || 'Chiến binh'),
+        score: Number(item.score) || 0,
         date: item.created_at ? new Date(item.created_at).toLocaleDateString('vi-VN') : ''
       };
     });
