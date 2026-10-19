@@ -7,8 +7,9 @@ import { getInstantSoloTopic, generateSoloTopic } from '../services/arena/soloSe
 import { getInstantRelayChallenge, generateRelayChallenge } from '../services/arena/relayService';
 import { getInstantRoleplayScenario, generateRoleplayScenario } from '../services/arena/roleplayService';
 
-// Import dịch vụ chấm điểm thu âm tập trung
+// Import dịch vụ chấm điểm thu âm tập trung & dịch vụ lưu cloud
 import { evaluateSpeaking, AssessmentResult } from '../services/arena/assessmentService';
+import { saveSubmissionToCloud } from '../services/userService';
 
 interface Props {
   onBack: () => void;
@@ -31,11 +32,12 @@ export default function Station2Screen({ onBack }: Props) {
   const [isEvaluating, setIsEvaluating] = useState<boolean>(false);
   const [evalResult, setEvalResult] = useState<AssessmentResult | null>(null);
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
-  const [userId, setUserId] = useState<string | undefined>(undefined); // 👈 Lấy ID sinh viên
+  const [userId, setUserId] = useState<string | undefined>(undefined);
+  const [userName, setUserName] = useState<string>('Sinh viên');
 
   const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
 
-  // 🎯 LẤY USER ID AN TOÀN TRÁNH LỖI BUILD MODULE NOT FOUND
+  // 🎯 LẤY USER ID & TÊN AN TOÀN TỪ SUPABASE AUTH
   useEffect(() => {
     const fetchUser = async () => {
       try {
@@ -47,7 +49,12 @@ export default function Station2Screen({ onBack }: Props) {
           const supabase = supabaseModule.supabase || supabaseModule.default;
           if (supabase && supabase.auth) {
             const { data } = await supabase.auth.getUser();
-            if (data?.user) setUserId(data.user.id);
+            if (data?.user) {
+              setUserId(data.user.id);
+              if (data.user.user_metadata?.full_name) {
+                setUserName(data.user.user_metadata.full_name);
+              }
+            }
           }
         }
       } catch (e) {
@@ -60,10 +67,10 @@ export default function Station2Screen({ onBack }: Props) {
   // 1. HÀM CHUYỂN LƯỢT CHUẨN: BẮT BỘC RESET TIMER VỀ 15S NGAY LẬP TỨC
   const handleSwitchTurn = () => {
     setActivePlayer((prevPlayer) => (prevPlayer === 1 ? 2 : 1));
-    setTurnTimer(15); // Đảm bảo gán lại 15 giây cho Player mới
+    setTurnTimer(15);
   };
 
-  // 2. BỘ ĐỒNG HỒ ĐẾM NGƯỢC AN TOÀN (CHỐNG KẸT 0S KHÓA TỰ ĐỘNG)
+  // 2. BỘ ĐỒNG HỒ ĐẾM NGƯỢC AN TOÀN
   useEffect(() => {
     let timerInterval: NodeJS.Timeout | null = null;
 
@@ -82,7 +89,7 @@ export default function Station2Screen({ onBack }: Props) {
     };
   }, [isGameActive, isRecording, turnTimer]);
 
-  // ⚡ Tải bài thi đấu tức thì (0.01s) từ Local + Gọi Groq AI ngầm
+  // ⚡ Tải bài thi đấu tức thì từ Local + Gọi Groq AI ngầm
   const loadNewExercise = async (selectedMode = mode, selectedLevel = cefrLevel) => {
     setEvalResult(null);
     setIsGameActive(false);
@@ -131,12 +138,37 @@ export default function Station2Screen({ onBack }: Props) {
 
         const targetPrompt = exercise?.promptEn || exercise?.contextEn || exercise?.scenarioTitle || '';
         
-        // 🎯 ĐÃ SỬA: Truyền userId làm tham số thứ 5 để lưu bài làm vào Supabase & Storage
+        // 🎯 ĐÁNH GIÁ PHÁT ÂM BẰNG GROQ WHISPER AI
         const result = await evaluateSpeaking(audioBlob, cefrLevel, undefined, targetPrompt, userId);
-        
         setEvalResult(result);
-        setIsEvaluating(false);
 
+        // 🎯 TỰ ĐỘNG TẠO TÊN PHÂN VAI THEO ĐÚNG CHẾ ĐỘ THI ĐẤU
+        let roleplayPairName = userName || 'Sinh viên';
+
+        if (mode === 'roleplay' && exercise) {
+          const role1 = exercise.userRoleEn || exercise.userRoleVi || 'Vai 1';
+          const role2 = exercise.aiRoleEn || exercise.aiRoleVi || 'Vai 2';
+          roleplayPairName = `${userName || 'Sinh viên'} (${role1}) & AI (${role2})`;
+        } else if (mode === 'relay' && exercise) {
+          const p1Role = exercise.player1En || 'Person 1';
+          const p2Role = exercise.player2En || 'Person 2';
+          roleplayPairName = `Vinh (${p1Role}) & An (${p2Role})`;
+        }
+
+        // 🎯 TỰ ĐỘNG ĐỒNG BỘ TÊN VÀ KẾT QUẢ SANG CLOUD BẢNG GIÁO VIÊN
+        await saveSubmissionToCloud({
+          studentName: roleplayPairName,
+          pairName: roleplayPairName,
+          score: result.score,
+          mode: mode,
+          cefrLevel: cefrLevel,
+          transcript: result.transcript,
+          audioUrl: result.audioUrl,
+          feedback: result.detailedFeedback,
+          timestamp: new Date().toLocaleTimeString('vi-VN')
+        });
+
+        setIsEvaluating(false);
         stream.getTracks().forEach(track => track.stop());
       };
 
@@ -214,7 +246,7 @@ export default function Station2Screen({ onBack }: Props) {
             <View style={{ width: '100%', alignItems: 'center' }}>
               <Text style={styles.scenarioTitle}>{exercise.title || exercise.topic || exercise.scenarioTitle}</Text>
               
-              {/* THANH ĐỒNG HỒ ĐẾM NGƯỢC THỜI GIAN LƯỢT (DÀNH CHO RELAY VÀ ROLEPLAY) */}
+              {/* THANH ĐỒNG HỒ ĐẾM NGƯỢC THỜI GIAN LƯỢT (RELAY VÀ ROLEPLAY) */}
               {(mode === 'relay' || mode === 'roleplay') && (
                 <View style={styles.timerBox}>
                   <Text style={styles.timerLabel}>⏱ THỜI GIAN: {turnTimer}s {isRecording ? '(ĐANG THU ÂM)' : '(BẤM MICRO ĐỂ CHẠY)'}</Text>
@@ -227,22 +259,24 @@ export default function Station2Screen({ onBack }: Props) {
               {/* KHU VỰC PHÂN VAI VÀ HIỂN THỊ CHI TIẾT 2 NGƯỜI CHƠI */}
               {(mode === 'relay' || mode === 'roleplay') && (
                 <View style={styles.playersRow}>
-                  {/* PLAYER 1 */}
+                  {/* PLAYER 1 / VAI 1 */}
                   <View style={[styles.playerCard, activePlayer === 1 && styles.activePlayerCard]}>
-                    <Text style={styles.playerTag}>👤 PLAYER 1</Text>
+                    <Text style={styles.playerTag}>
+                      {mode === 'relay' ? '👤 PLAYER 1 (VINH)' : '👤 PLAYER 1'}
+                    </Text>
                     <Text style={styles.roleText}>
-                      🎭 Vai: {exercise.player1En || exercise.userRoleEn || 'Khách hàng'}
+                      🎭 Vai: {exercise.player1En || exercise.userRoleEn || 'Vai 1'}
                     </Text>
                     {activePlayer === 1 && <Text style={styles.turnIndicator}>👉 ĐẾN LƯỢT NÓI!</Text>}
                   </View>
 
-                  {/* PLAYER 2 / AI */}
+                  {/* PLAYER 2 / VAI 2 / AI */}
                   <View style={[styles.playerCard, activePlayer === 2 && styles.activePlayerCard]}>
                     <Text style={styles.playerTag}>
-                      {mode === 'roleplay' ? '🤖 AI PARTNER' : '👤 PLAYER 2'}
+                      {mode === 'roleplay' ? '🤖 AI PARTNER' : '👤 PLAYER 2 (AN)'}
                     </Text>
                     <Text style={styles.roleText}>
-                      🎭 Vai: {exercise.player2En || exercise.aiRoleEn || 'Đầu bếp / Thu ngân'}
+                      🎭 Vai: {exercise.player2En || exercise.aiRoleEn || 'Vai 2'}
                     </Text>
                     {activePlayer === 2 && <Text style={styles.turnIndicator}>👉 ĐẾN LƯỢT NÓI!</Text>}
                   </View>
@@ -288,7 +322,7 @@ export default function Station2Screen({ onBack }: Props) {
               ) : (
                 <View style={{ marginVertical: 15, alignItems: 'center' }}>
                   <ActivityIndicator size="small" color="#00FFFF" />
-                  <Text style={{ color: '#00FFFF', fontSize: 11, marginTop: 5 }}>🤖 AI đang phân tích bài nói...</Text>
+                  <Text style={{ color: '#00FFFF', fontSize: 11, marginTop: 5 }}>🤖 AI đang phân tích bài nói & đồng bộ Cloud...</Text>
                 </View>
               )}
 
@@ -297,7 +331,6 @@ export default function Station2Screen({ onBack }: Props) {
                 <View style={styles.evalBox}>
                   <Text style={styles.evalScore}>🏆 ĐIỂM BÀI NÓI: {evalResult.score}/100</Text>
 
-                  {/* 🎧 RENDER AN TOÀN CHO WEB KHÔNG LỖI TYPESCRIPT */}
                   {evalResult.audioUrl && (
                     <View style={styles.audioPlayerBox}>
                       <Text style={styles.audioLabel}>🎧 Nghe lại bài thu âm vừa nộp:</Text>
