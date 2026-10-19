@@ -1,6 +1,6 @@
 // src/screens/AllInArenaScreen.tsx
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, Modal } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, Modal, TextInput } from 'react-native';
 import { generateSoloTopic, clearSoloTopicHistory, SoloTopic } from '../services/arena/soloService';
 import { generateRelayChallenge, clearRelayHistory, RelayChallenge } from '../services/arena/relayService';
 import { generateRoleplayScenario, clearRoleplayHistory, RoleplayScenario } from '../services/arena/roleplayService';
@@ -34,6 +34,12 @@ export default function AllInArenaScreen({ onBack }: Props) {
 
   const [micPermissionModal, setMicPermissionModal] = useState<boolean>(false);
   const [result, setResult] = useState<AssessmentResult | null>(null);
+
+  // 🎯 POP-UP QUẢN LÝ TÊN / MÃ SINH VIÊN
+  const [showIdentityModal, setShowIdentityModal] = useState<boolean>(false);
+  const [studentNameInput, setStudentNameInput] = useState<string>('');
+  const [pairNameInput, setPairNameInput] = useState<string>('');
+  const [pendingEvalData, setPendingEvalData] = useState<AssessmentResult | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -83,6 +89,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
     setHasRecorded(false);
     setAudioUrl(null);
     setResult(null);
+    setPendingEvalData(null);
     audioChunksRef.current = [];
   };
 
@@ -252,24 +259,46 @@ export default function AllInArenaScreen({ onBack }: Props) {
       const evalData = await evaluateSpeaking(recordedBlob, cefrLevel, undefined, targetPrompt);
       
       setResult(evalData);
+      setPendingEvalData(evalData);
       setBattleState('ended');
-      updateUserProgress(2, evalData.isWin ? 50 : 10, evalData.isWin);
+      updateUserProgress(evalData.score || 85, 2);
 
-      saveSubmissionForTeacher({
-        studentName: 'Sinh viên VibeSpeak',
-        pairName: mode === 'solo' ? `Solo [${opponentType.toUpperCase()}]` : mode === 'roleplay' ? `Roleplay [${opponentType.toUpperCase()}]` : `Relay [${opponentType.toUpperCase()}]`,
-        mode: mode,
-        cefrLevel: cefrLevel,
-        score: evalData.score || 85,
-        transcript: evalData.transcript || '',
-        audioUrl: audioUrl || undefined,
-        feedback: evalData.detailedFeedback || 'Bài làm đạt yêu cầu',
-      });
+      // Bật Pop-up để sinh viên nhập tên trước khi gửi bài
+      setShowIdentityModal(true);
     } catch (err) {
       console.error("Lỗi chấm điểm:", err);
       alert("⚠️ Lỗi kết nối chấm điểm. Vui lòng nộp lại!");
       setBattleState('battling');
     }
+  };
+
+  // 🎯 XÁC NHẬN GỬI BÀI VỚI DỰ DỮ LIỆU ĐỊNH DANH ĐẦY ĐỦ
+  const handleConfirmSubmissionWithIdentity = async () => {
+    if (opponentType === 'pvp' && !pairNameInput.trim()) {
+      alert("Vui lòng nhập Tên Cặp đấu (Ví dụ: Tuấn & Lan)!");
+      return;
+    }
+    if (opponentType === 'bot' && !studentNameInput.trim()) {
+      alert("Vui lòng nhập Tên hoặc Mã Sinh Viên!");
+      return;
+    }
+
+    const evalData = pendingEvalData || result;
+    if (!evalData) return;
+
+    await saveSubmissionForTeacher({
+      studentName: studentNameInput.trim() || 'Sinh viên VibeSpeak',
+      pairName: opponentType === 'pvp' ? pairNameInput.trim() : `Solo [${opponentType.toUpperCase()}]`,
+      mode: mode,
+      cefrLevel: cefrLevel,
+      score: evalData.score || 85,
+      transcript: evalData.transcript || '',
+      audioUrl: audioUrl || undefined,
+      feedback: evalData.detailedFeedback || 'Bài làm đạt yêu cầu',
+    });
+
+    setShowIdentityModal(false);
+    alert("✅ Đã ghi nhận điểm thành công lên Bảng điểm Giáo viên!");
   };
 
   const isSubmitDisabled = !hasRecorded && !isRecording;
@@ -338,7 +367,6 @@ export default function AllInArenaScreen({ onBack }: Props) {
           </TouchableOpacity>
         </View>
 
-        {/* 🤖 KHÔI PHỤC NÚT CHỌN ĐỐI THỦ (BOT AI / ĐẤU CẶP THẬT) */}
         <Text style={styles.sectionLabel}>2. CHỌN ĐỐI THỦ THÁCH ĐẤU:</Text>
         <View style={styles.opponentRow}>
           <TouchableOpacity 
@@ -428,7 +456,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
         {battleState === 'ended' && result && (
           <View style={styles.box}>
             <Text style={[styles.resultTitle, { color: result.isWin ? '#39FF14' : '#FF0055' }]}>
-              {result.isWin ? '🎉 BÀI THI ĐẤU ĐẠT CHUẨN XUẤT SẮC!' : '💡 CẦN CẢI THIỆN PHẢR XẠ PHÁT ÂM'}
+              {result.isWin ? '🎉 BÀI THI ĐẤU ĐẠT CHUẨN XUẤT SẮC!' : '💡 CẦN CẢI THIỆN PHẢN XẠ PHÁT ÂM'}
             </Text>
             <Text style={styles.scoreText}>⚡ TỔNG ĐIỂM {mode.toUpperCase()}: {result.score} / 100 ĐIỂM</Text>
 
@@ -458,6 +486,42 @@ export default function AllInArenaScreen({ onBack }: Props) {
           </View>
         )}
       </ScrollView>
+
+      {/* 🎯 MODAL POP-UP YÊU CẦU NHẬP ĐỊNH DANH SINH VIÊN / CẶP ĐẤU */}
+      <Modal visible={showIdentityModal} transparent animationType="slide">
+        <View style={styles.identityOverlay}>
+          <View style={styles.identityBox}>
+            <Text style={styles.identityTitle}>🎖 XÁC NHẬN NỘP BÀI LÊN BẢNG ĐIỂM</Text>
+            <Text style={styles.identitySub}>
+              {opponentType === 'pvp' 
+                ? 'Nhập Tên Cặp đấu để Giáo viên ghi nhận điểm chung:' 
+                : 'Nhập Mã Sinh Viên / Họ Tên để Giáo viên ghi nhận điểm:'}
+            </Text>
+
+            {opponentType === 'pvp' ? (
+              <TextInput
+                style={styles.identityInput}
+                placeholder="Ví dụ: K18 - Tuấn & Lan"
+                placeholderTextColor="#666688"
+                value={pairNameInput}
+                onChangeText={setPairNameInput}
+              />
+            ) : (
+              <TextInput
+                style={styles.identityInput}
+                placeholder="Ví dụ: 210045 - Nguyễn Văn A"
+                placeholderTextColor="#666688"
+                value={studentNameInput}
+                onChangeText={setStudentNameInput}
+              />
+            )}
+
+            <TouchableOpacity style={styles.identityConfirmBtn} onPress={handleConfirmSubmissionWithIdentity}>
+              <Text style={styles.identityConfirmText}>🚀 XÁC NHẬN GỬI LÊN BẢNG ĐIỂM</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       <Modal visible={micPermissionModal} transparent animationType="fade">
         <View style={styles.modalOverlay}>
@@ -540,5 +604,12 @@ const styles = StyleSheet.create({
   modalTitle: { color: '#FF007F', fontSize: 12, fontWeight: '900', marginBottom: 10 },
   modalText: { color: '#FFF', fontSize: 10, textAlign: 'center', marginBottom: 15 },
   modalCloseBtn: { backgroundColor: '#00FFFF', paddingVertical: 8, paddingHorizontal: 16, borderRadius: 8 },
-  modalCloseText: { color: '#000', fontSize: 9, fontWeight: '900' }
+  modalCloseText: { color: '#000', fontSize: 9, fontWeight: '900' },
+  identityOverlay: { flex: 1, backgroundColor: 'rgba(5, 2, 13, 0.9)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+  identityBox: { backgroundColor: '#0D0620', padding: 20, borderRadius: 16, borderWidth: 2, borderColor: '#00FFFF', width: '100%', alignItems: 'center' },
+  identityTitle: { color: '#00FFFF', fontSize: 12, fontWeight: '900', marginBottom: 6 },
+  identitySub: { color: '#AAAABB', fontSize: 10, textAlign: 'center', marginBottom: 15 },
+  identityInput: { backgroundColor: '#130A2A', borderWidth: 1, borderColor: '#00FFFF', borderRadius: 8, padding: 12, color: '#FFF', width: '100%', fontSize: 12, marginBottom: 15 },
+  identityConfirmBtn: { backgroundColor: '#39FF14', paddingVertical: 12, paddingHorizontal: 20, borderRadius: 8, width: '100%', alignItems: 'center' },
+  identityConfirmText: { color: '#000', fontSize: 10, fontWeight: '900' }
 });
