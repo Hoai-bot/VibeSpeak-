@@ -23,6 +23,9 @@ export const evaluateSpeaking = async (
   targetPrompt?: string,
   userId?: string
 ): Promise<AssessmentResult> => {
+  // Tạo Local Blob URL dự phòng cho máy sinh viên nghe lại ngay tức thì
+  const localAudioUrl = typeof window !== 'undefined' ? URL.createObjectURL(audioBlob) : '';
+
   try {
     // 📱 1. Xác định định dạng file âm thanh
     const mimeType = audioBlob.type || 'audio/webm';
@@ -69,6 +72,7 @@ export const evaluateSpeaking = async (
         content: 0,
         fluency: 0,
         detailedFeedback: data.detailedFeedback || "❌ AI không nhận diện được giọng nói. Hãy kiểm tra Micro và đọc to rõ ràng hơn!",
+        audioUrl: localAudioUrl,
         wordAnalysis: [],
       };
     }
@@ -76,41 +80,49 @@ export const evaluateSpeaking = async (
     // 🔊 3. Dynamic Import Supabase Client an toàn khi Build Web
     let publicAudioUrl = '';
     try {
-      // Tự động tìm supabaseClient trong lib hoặc utils
       const supabaseModule = await import('@/lib/supabaseClient').catch(() => null) 
                            || await import('@/lib/supabase').catch(() => null);
 
       if (supabaseModule) {
         const supabase = supabaseModule.supabase || supabaseModule.default;
-        if (supabase && supabase.storage) {
-          const filePath = `student_audios/${userId || 'guest'}_${Date.now()}.${ext}`;
-          
-          const { data: uploadData, error: uploadError } = await supabase.storage
-            .from('recordings')
-            .upload(filePath, audioBlob, {
-              contentType: mimeType,
-              upsert: true,
-            });
-
-          if (!uploadError && uploadData) {
-            const { data: urlData } = supabase.storage
+        if (supabase) {
+          // A. Upload Storage
+          if (supabase.storage) {
+            const filePath = `student_audios/${userId || 'guest'}_${Date.now()}.${ext}`;
+            
+            const { data: uploadData, error: uploadError } = await supabase.storage
               .from('recordings')
-              .getPublicUrl(uploadData.path);
+              .upload(filePath, audioBlob, {
+                contentType: mimeType,
+                upsert: true,
+              });
 
-            publicAudioUrl = urlData?.publicUrl || '';
+            if (!uploadError && uploadData) {
+              const { data: urlData } = supabase.storage
+                .from('recordings')
+                .getPublicUrl(uploadData.path);
+
+              publicAudioUrl = urlData?.publicUrl || '';
+            } else {
+              console.warn("Upload Storage error:", uploadError);
+            }
           }
 
-          // 💾 4. Lưu kết quả bài thi vào Supabase Database
-          if (userId && publicAudioUrl) {
-            await supabase.from('assessment_results').insert([
+          // 💾 B. Luôn luôn lưu kết quả bài làm vào Database (không phụ thuộc vào publicAudioUrl)
+          if (userId) {
+            const { error: dbError } = await supabase.from('assessment_results').insert([
               {
                 user_id: userId,
                 score: data.score ?? 0,
                 transcript: data.transcript,
                 feedback: data.detailedFeedback || "Đánh giá hoàn tất.",
-                audio_url: publicAudioUrl,
+                audio_url: publicAudioUrl || localAudioUrl, // Nếu upload trễ thì dùng URL dự phòng
               },
             ]);
+
+            if (dbError) {
+              console.error("Lỗi lưu DB assessment_results:", dbError);
+            }
           }
         }
       }
@@ -118,7 +130,7 @@ export const evaluateSpeaking = async (
       console.warn("Lỗi upload storage/database:", storageErr);
     }
 
-    // 🎯 5. Trả kết quả
+    // 🎯 4. Trả kết quả về UI (Ưu tiên public URL, nếu rỗng sẽ dùng local Blob URL cho sinh viên nghe lại)
     return {
       score: data.score ?? 0,
       isWin: data.isWin ?? (data.score >= 60),
@@ -131,7 +143,7 @@ export const evaluateSpeaking = async (
       content: data.content ?? 0,
       fluency: data.fluency ?? 0,
       detailedFeedback: data.detailedFeedback || "Đánh giá hoàn tất.",
-      audioUrl: publicAudioUrl,
+      audioUrl: publicAudioUrl || localAudioUrl,
       wordAnalysis: data.wordAnalysis || [],
     };
   } catch (error) {
@@ -148,6 +160,7 @@ export const evaluateSpeaking = async (
       content: 0,
       fluency: 0,
       detailedFeedback: "⚠️ Không thể kết nối đến máy chủ chấm điểm. Vui lòng thử lại!",
+      audioUrl: localAudioUrl,
       wordAnalysis: [],
     };
   }
