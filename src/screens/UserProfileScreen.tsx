@@ -1,7 +1,7 @@
 // src/screens/UserProfileScreen.tsx
 import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
-import { fetchSubmissionsFromCloud, fetchTopLeaderboard, RoleplaySubmission } from '../services/userService';
+import { fetchUserSubmissions, fetchTopLeaderboard, RoleplaySubmission } from '../services/userService';
 
 interface Props {
   onBack: () => void;
@@ -20,7 +20,8 @@ export default function UserProfileScreen({ onBack }: Props) {
   const loadData = async () => {
     setLoading(true);
     try {
-      const historyData = await fetchSubmissionsFromCloud();
+      // 🎯 Gọi hàm fetchUserSubmissions để nạp cả bài thi từ LocalStorage và Cloud
+      const historyData = await fetchUserSubmissions();
       const topData = await fetchTopLeaderboard();
 
       setMyHistory(historyData ? historyData.slice(0, 10) : []);
@@ -66,7 +67,7 @@ export default function UserProfileScreen({ onBack }: Props) {
         </View>
 
         {loading ? (
-          <Text style={styles.loadingText}>⏳ Đang đồng bộ dữ liệu từ Supabase Cloud...</Text>
+          <Text style={styles.loadingText}>⏳ Đang đồng bộ dữ liệu lịch sử...</Text>
         ) : activeTab === 'history' ? (
           /* PHẦN LỊCH SỬ CỦA TÔI */
           <View style={styles.sectionContainer}>
@@ -74,7 +75,6 @@ export default function UserProfileScreen({ onBack }: Props) {
               <Text style={styles.emptyText}>Chưa có bài thi nào. Hãy vào các Trạm để thi đấu ngay!</Text>
             ) : (
               myHistory.map((item, index) => {
-                // 🛡️ CHUYỂN ĐỔI CHUỖI AN TOÀN TRÁNH TRẮNG MÀN HÌNH
                 const safeMode = String(item?.mode || 'SOLO').toUpperCase();
                 const safeLevel = String(item?.cefrLevel || 'A1').toUpperCase();
 
@@ -99,7 +99,6 @@ export default function UserProfileScreen({ onBack }: Props) {
               <Text style={styles.emptyText}>Chưa có dữ liệu Bảng vàng.</Text>
             ) : (
               leaderboard.map((item, index) => {
-                // 🛡️ BỌC ÉP KIỂU CHUỖI AN TOÀN
                 const displayName = String(item?.name || item?.pairName || item?.studentName || 'Chiến binh');
                 const displayRank = item?.rank || (index + 1);
 

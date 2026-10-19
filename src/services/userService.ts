@@ -14,9 +14,23 @@ export interface RoleplaySubmission {
   timestamp: string;
 }
 
-// 🎯 HÀM LƯU BÀI NỘP TRẠM 2 CHUẨN XỬ LÝ AUDIO URL
+const LOCAL_HISTORY_KEY = 'vibespeak_user_submissions_history';
+
+// 🎯 HÀM LƯU BÀI NỘP TRẠM 2 (LƯU CẢ SUPABASE VÀ LOCALSTORAGE)
 export const saveSubmissionToCloud = async (submission: RoleplaySubmission) => {
   try {
+    // 1. Lưu ngay vào localStorage cho người chơi tự do xem lại lịch sử cá nhân
+    try {
+      const existingLocal = localStorage.getItem(LOCAL_HISTORY_KEY);
+      const historyList: RoleplaySubmission[] = existingLocal ? JSON.parse(existingLocal) : [];
+      historyList.unshift(submission);
+      // Giữ tối đa 20 bài làm gần nhất ở máy local
+      localStorage.setItem(LOCAL_HISTORY_KEY, JSON.stringify(historyList.slice(0, 20)));
+    } catch (e) {
+      console.warn("⚠️ Không thể lưu lịch sử vào localStorage:", e);
+    }
+
+    // 2. Gửi dữ liệu lên Supabase Cloud
     if (!supabase) return;
 
     const { data: userData } = await supabase.auth.getUser();
@@ -27,11 +41,7 @@ export const saveSubmissionToCloud = async (submission: RoleplaySubmission) => {
     let displayName = submission.pairName || submission.studentName || 'Sinh viên';
 
     const formattedFeedback = `[${currentMode} - ${level} | ${displayName}]: ${submission.feedback || ''}`;
-
-    // Đảm bảo audioUrl không bị null hoặc empty string
-    const validAudioUrl = submission.audioUrl && submission.audioUrl.length > 10 
-      ? submission.audioUrl 
-      : '';
+    const validAudioUrl = submission.audioUrl && submission.audioUrl.length > 10 ? submission.audioUrl : '';
 
     const { error } = await supabase.from('assessment_results').insert([
       {
@@ -46,14 +56,33 @@ export const saveSubmissionToCloud = async (submission: RoleplaySubmission) => {
     if (error) {
       console.error("❌ Lỗi insert dữ liệu Trạm 2 lên Supabase:", error);
     } else {
-      console.log("✅ Đã lưu bài nộp Trạm 2 kèm file Audio thành công!");
+      console.log("✅ Đã lưu bài nộp Trạm 2 lên Supabase Cloud thành công!");
     }
   } catch (err) {
     console.warn("⚠️ Lỗi saveSubmissionToCloud:", err);
   }
 };
 
-// 🎯 HÀM TẢI BÀI NỘP VỀ BẢNG GIÁO VIÊN KÈM AUDIO CHUẨN
+// 🎯 HÀM TẢI LỊCH SỬ CỦA NGƯỜI CHƠI (TỰ ĐỘNG CHỌN LOCAL/CLOUD)
+export const fetchUserSubmissions = async (): Promise<RoleplaySubmission[]> => {
+  // 1. Ưu tiên đọc lịch sử từ localStorage của trình duyệt hiện tại
+  try {
+    const localData = localStorage.getItem(LOCAL_HISTORY_KEY);
+    if (localData) {
+      const parsed: RoleplaySubmission[] = JSON.parse(localData);
+      if (parsed && parsed.length > 0) {
+        return parsed;
+      }
+    }
+  } catch (e) {
+    console.warn("⚠️ Không đọc được localStorage:", e);
+  }
+
+  // 2. Fallback nếu không có localStorage: Lấy từ Supabase Cloud
+  return await fetchSubmissionsFromCloud();
+};
+
+// 🎯 HÀM TẢI TẤT CẢ BÀI NỘP CHO BẢNG GIÁO VIÊN
 export const fetchSubmissionsFromCloud = async (): Promise<RoleplaySubmission[]> => {
   try {
     if (!supabase) return [];
@@ -107,7 +136,7 @@ export const fetchSubmissionsFromCloud = async (): Promise<RoleplaySubmission[]>
         mode: String(mode || 'TRẠM 2').toUpperCase(),
         cefrLevel: String(cefrLevel || 'A1').toUpperCase(),
         transcript: item.transcript || '',
-        audioUrl: item.audio_url || '', // 👈 Nạp nguyên vẹn audio_url
+        audioUrl: item.audio_url || '',
         feedback: cleanFeedback,
         timestamp: item.created_at ? new Date(item.created_at).toLocaleString('vi-VN') : '',
       };
@@ -116,4 +145,41 @@ export const fetchSubmissionsFromCloud = async (): Promise<RoleplaySubmission[]>
     console.warn("⚠️ Lỗi fetchSubmissionsFromCloud:", err);
   }
   return [];
+};
+
+// 🎯 HÀM LẤY BẢNG XẾP HẠNG AN TOÀN
+export const fetchTopLeaderboard = async () => {
+  try {
+    if (!supabase) return [];
+
+    const { data, error } = await supabase
+      .from('assessment_results')
+      .select('score, created_at, user_id, feedback')
+      .order('score', { ascending: false })
+      .limit(20);
+
+    if (error || !data) return [];
+
+    return data.map((item: any, idx: number) => {
+      let name = 'Chiến binh';
+      let cleanFeedback = item.feedback || '';
+
+      if (cleanFeedback && cleanFeedback.includes('|') && cleanFeedback.includes(']:')) {
+        const parts = cleanFeedback.split(']:')[0].split('|');
+        if (parts.length > 1 && parts[1].trim()) {
+          name = parts[1].trim();
+        }
+      }
+
+      return {
+        rank: idx + 1,
+        name: String(name || 'Chiến binh'),
+        score: Number(item.score) || 0,
+        date: item.created_at ? new Date(item.created_at).toLocaleDateString('vi-VN') : ''
+      };
+    });
+  } catch (e) {
+    console.warn("⚠️ Lỗi fetchTopLeaderboard:", e);
+    return [];
+  }
 };
