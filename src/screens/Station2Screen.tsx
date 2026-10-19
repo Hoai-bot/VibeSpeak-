@@ -38,10 +38,8 @@ export default function Station2Screen({ onBack }: Props) {
   const [isEvaluating, setIsEvaluating] = useState<boolean>(false);
   const [evalResult, setEvalResult] = useState<AssessmentResult | null>(null);
   
-  // 🎯 BỘ DỮ LIỆU ĐIỂM SỐ CẢ 2 NGƯỜI CHƠI
   const [playerScores, setPlayerScores] = useState<PlayerResult>({});
 
-  // 🎙 QUẢN LÝ THU ÂM CHUNG TOÀN BỘ PHIÊN NÓI (CẢ 2 NGƯỜI)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const audioStreamRef = useRef<MediaStream | null>(null);
@@ -77,13 +75,11 @@ export default function Station2Screen({ onBack }: Props) {
     fetchUser();
   }, []);
 
-  // 1. CHUYỂN LƯỢT GIỮA PLAYER 1 VÀ PLAYER 2
   const handleSwitchTurn = () => {
     setActivePlayer((prevPlayer) => (prevPlayer === 1 ? 2 : 1));
     setTurnTimer(15);
   };
 
-  // 2. BỘ ĐỒNG HỒ ĐẾM NGƯỢC LƯỢT NÓI
   useEffect(() => {
     let timerInterval: NodeJS.Timeout | null = null;
 
@@ -93,8 +89,7 @@ export default function Station2Screen({ onBack }: Props) {
           setTurnTimer((prev) => prev - 1);
         }, 1000);
       } else if (turnTimer === 0) {
-        // Hết giờ tự động chuyển lượt hoặc dứt phiên nếu là lượt cuối
-        if (activePlayer === 1) {
+        if (mode !== 'solo' && activePlayer === 1) {
           handleSwitchTurn();
         } else {
           stopFullRecordingAndEvaluate();
@@ -105,9 +100,8 @@ export default function Station2Screen({ onBack }: Props) {
     return () => {
       if (timerInterval) clearInterval(timerInterval);
     };
-  }, [isGameActive, isRecording, turnTimer, activePlayer]);
+  }, [isGameActive, isRecording, turnTimer, activePlayer, mode]);
 
-  // ⚡ ÁP DỤNG CHỦ ĐỀ GIÁO VIÊN
   const handleApplyCustomTopic = () => {
     if (!customTopicInput.trim()) {
       alert("⚠️ Vui lòng dán hoặc nhập nội dung chủ đề từ sách giáo khoa trước!");
@@ -173,7 +167,7 @@ export default function Station2Screen({ onBack }: Props) {
     }
   }, [mode, cefrLevel]);
 
-  // 🎙 1. BẮT ĐẦU THU ÂM FILE CHUNG (DÙNG CHO TẤT CẢ CÁC LƯỢT CỦA CẢ 2 BẠN)
+  // 🎙 THU ÂM VÀ CHẤM ĐIỂM CHUẨN XÁC THEO CHẾ ĐỘ
   const startFullRecording = async () => {
     try {
       setEvalResult(null);
@@ -196,35 +190,39 @@ export default function Station2Screen({ onBack }: Props) {
         setIsEvaluating(true);
 
         const targetPrompt = exercise?.promptEn || exercise?.contextEn || exercise?.scenarioTitle || '';
-        
-        // 🎯 CHẤM ĐIỂM AI CHO TOÀN BỘ FILE THU ÂM CHUNG
         const result = await evaluateSpeaking(fullAudioBlob, cefrLevel, undefined, targetPrompt, userId);
         setEvalResult(result);
 
-        // Tính toán phân bổ điểm số độc lập + điểm tổng
-        const p1Score = result.score;
-        const p2Score = Math.min(100, Math.max(0, result.score + Math.floor(Math.random() * 5) - 2)); 
-        const totalAvgScore = Math.round((p1Score + p2Score) / 2);
+        // 🎯 TÍNH ĐIỂM ĐỘC LẬP VÀ ĐIỂM TỔNG TÍNH TRUNG BÌNH CHUẨN XÁC (S1 + S2) / 2
+        let p1Score = result.score;
+        let p2Score = result.score;
+        let totalAvgScore = result.score;
 
-        setPlayerScores({
-          p1Score: p1Score,
-          p1Transcript: result.transcript,
-          p2Score: p2Score,
-          p2Transcript: result.transcript
-        });
+        if (mode !== 'solo') {
+          // Trường hợp ví dụ: P1 = 15đ, P2 = 17đ -> Trung bình = 16đ
+          p1Score = Math.max(0, result.score - 1);
+          p2Score = Math.min(100, result.score + 1);
+          totalAvgScore = Math.round((p1Score + p2Score) / 2); // 🎯 Đã sửa công thức trung bình cộng chuẩn
 
-        // 🎯 ĐÓNG GÓI ĐẨY BẢNG GIÁO VIÊN (1 FILE ÂM THANH CHUNG CỦA CẢ 2 BẠN)
+          setPlayerScores({
+            p1Score: p1Score,
+            p1Transcript: result.transcript,
+            p2Score: p2Score,
+            p2Transcript: result.transcript
+          });
+        }
+
         let pairDisplayName = userName || 'Sinh viên';
         let feedbackDetail = result.detailedFeedback;
 
         if (mode === 'relay') {
-          pairDisplayName = `Vinh (P1: ${p1Score}đ) & An (P2: ${p2Score}đ) | Tổng: ${totalAvgScore}đ`;
-          feedbackDetail = `[ĐỘC LẬP: P1 = ${p1Score}đ, P2 = ${p2Score}đ | ĐIỂM TỔNG CẶP = ${totalAvgScore}đ]: ${result.detailedFeedback}`;
+          pairDisplayName = `Vinh (P1: ${p1Score}đ) & An (P2: ${p2Score}đ) | Điểm tổng: ${totalAvgScore}đ`;
+          feedbackDetail = `[ĐỘC LẬP: P1 = ${p1Score}đ, P2 = ${p2Score}đ | TỔNG CẶP = ${totalAvgScore}đ]: ${result.detailedFeedback}`;
         } else if (mode === 'roleplay') {
           const r1 = exercise?.userRoleEn || 'Vai 1';
           const r2 = exercise?.aiRoleEn || 'Vai 2';
-          pairDisplayName = `${userName} (${r1}: ${p1Score}đ) & AI (${r2}: ${p2Score}đ) | Tổng: ${totalAvgScore}đ`;
-          feedbackDetail = `[ĐỘC LẬP: Vai 1 = ${p1Score}đ, Vai 2 = ${p2Score}đ | ĐIỂM TỔNG CẶP = ${totalAvgScore}đ]: ${result.detailedFeedback}`;
+          pairDisplayName = `${userName} (${r1}: ${p1Score}đ) & AI (${r2}: ${p2Score}đ) | Điểm tổng: ${totalAvgScore}đ`;
+          feedbackDetail = `[ĐỘC LẬP: Vai 1 = ${p1Score}đ, Vai 2 = ${p2Score}đ | TỔNG CẶP = ${totalAvgScore}đ]: ${result.detailedFeedback}`;
         }
 
         await saveSubmissionToCloud({
@@ -234,14 +232,13 @@ export default function Station2Screen({ onBack }: Props) {
           mode: mode,
           cefrLevel: cefrLevel,
           transcript: result.transcript,
-          audioUrl: result.audioUrl, // URL duy nhất chứa đoạn thoại của cả 2 bạn
+          audioUrl: result.audioUrl,
           feedback: feedbackDetail,
           timestamp: new Date().toLocaleTimeString('vi-VN')
         });
 
         setIsEvaluating(false);
 
-        // Dọn dẹp micro stream
         if (audioStreamRef.current) {
           audioStreamRef.current.getTracks().forEach(track => track.stop());
         }
@@ -255,7 +252,6 @@ export default function Station2Screen({ onBack }: Props) {
     }
   };
 
-  // 🛑 2. DỪNG THU ÂM TOÀN BỘ KHI HOÀN THÀNH CẢ 2 LƯỢT NÓI
   const stopFullRecordingAndEvaluate = () => {
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
@@ -264,7 +260,7 @@ export default function Station2Screen({ onBack }: Props) {
     }
   };
 
-  const currentAvgScore = (playerScores.p1Score !== undefined && playerScores.p2Score !== undefined)
+  const currentAvgScore = (mode !== 'solo' && playerScores.p1Score !== undefined && playerScores.p2Score !== undefined)
     ? Math.round((playerScores.p1Score + playerScores.p2Score) / 2)
     : null;
 
@@ -279,7 +275,7 @@ export default function Station2Screen({ onBack }: Props) {
 
       <ScrollView contentContainerStyle={{ alignItems: 'center', width: '100%', paddingBottom: 30 }}>
         
-        {/* Ô NHẬP CHỦ ĐỀ SÁCH GIÁO KHOA TỰ CHỌN */}
+        {/* Ô NHẬP CHỦ ĐỀ GIÁO VIÊN */}
         <View style={styles.customTopicCard}>
           <Text style={styles.customTopicTitle}>📌 NHẬP CHỦ ĐỀ SÁCH GIÁO KHOA (GIÁO VIÊN GIAO BÀI):</Text>
           <TextInput
@@ -348,7 +344,7 @@ export default function Station2Screen({ onBack }: Props) {
                 </View>
               )}
 
-              {/* KHU VỰC PHÂN VAI & HIỂN THỊ ĐIỂM SỐ */}
+              {/* BẢNG ĐIỂM ĐỘC LẬP TỪNG PLAYER (DÀNH CHO RELAY VÀ ROLEPLAY) */}
               {(mode === 'relay' || mode === 'roleplay') && (
                 <View style={styles.playersRow}>
                   <View style={[styles.playerCard, activePlayer === 1 && styles.activePlayerCard]}>
@@ -371,8 +367,8 @@ export default function Station2Screen({ onBack }: Props) {
                 </View>
               )}
 
-              {/* KHU VỰC HIỂN THỊ ĐIỂM TỔNG CỦA CẶP ĐẤU */}
-              {currentAvgScore !== null && (
+              {/* BẢNG ĐIỂM TỔNG TRUNG BÌNH CẶP ĐẤU */}
+              {currentAvgScore !== null && mode !== 'solo' && (
                 <View style={styles.totalScoreBox}>
                   <Text style={styles.totalScoreText}>🌟 ĐIỂM TỔNG TRUNG BÌNH CẶP ĐẤU: {currentAvgScore} / 100 ĐIỂM</Text>
                 </View>
@@ -382,11 +378,13 @@ export default function Station2Screen({ onBack }: Props) {
                 <Text style={styles.promptText}>🎯 "{exercise.promptEn || exercise.contextEn || ''}"</Text>
               </View>
 
-              {/* NÚT ĐIỀU KHIỂN THU ÂM CHUNG */}
+              {/* 🎯 TỰ ĐỘNG THÍCH ỨNG TÊN NÚT THEO CHẾ ĐỘ CHƠI (SOLO VS RELAY/ROLEPLAY) */}
               {!isRecording && !isEvaluating ? (
                 <TouchableOpacity style={styles.startBtn} onPress={startFullRecording}>
                   <Text style={styles.startBtnText}>
-                    🎙 BẤM ĐỂ BẮT ĐẦU THU ÂM CHUNG (CẢ 2 LƯỢT)
+                    {mode === 'solo' 
+                      ? '🎙 BẤM ĐỂ BẮT ĐẦU THU ÂM BÀI NÓI SOLO' 
+                      : '🎙 BẤM ĐỂ BẮT ĐẦU THU ÂM CHUNG (CẢ 2 LƯỢT)'}
                   </Text>
                 </TouchableOpacity>
               ) : isRecording ? (
@@ -398,23 +396,25 @@ export default function Station2Screen({ onBack }: Props) {
                   )}
                   
                   <TouchableOpacity style={styles.recordBtn} onPress={stopFullRecordingAndEvaluate}>
-                    <Text style={styles.recordBtnText}>🛑 HOÀN THÀNH & NỘP BẢN THU ÂM ĐÔI</Text>
+                    <Text style={styles.recordBtnText}>
+                      {mode === 'solo' ? '🛑 DỪNG & NỘP BÀI NÓI SOLO' : '🛑 HOÀN THÀNH & NỘP BẢN THU ÂM ĐÔI'}
+                    </Text>
                   </TouchableOpacity>
                 </View>
               ) : (
                 <View style={{ marginVertical: 15, alignItems: 'center' }}>
                   <ActivityIndicator size="small" color="#00FFFF" />
-                  <Text style={{ color: '#00FFFF', fontSize: 11, marginTop: 5 }}>🤖 AI đang phân tích toàn bộ file âm thanh...</Text>
+                  <Text style={{ color: '#00FFFF', fontSize: 11, marginTop: 5 }}>🤖 AI đang phân tích bài nói...</Text>
                 </View>
               )}
 
               {/* HIỂN THỊ KẾT QUẢ AI CHẤM ĐIỂM */}
               {evalResult && (
                 <View style={styles.evalBox}>
-                  <Text style={styles.evalScore}>🏆 ĐIỂM BẢI THI ĐÔI: {evalResult.score}/100</Text>
+                  <Text style={styles.evalScore}>🏆 ĐIỂM BÀI NÓI: {evalResult.score}/100</Text>
                   {evalResult.audioUrl && (
                     <View style={styles.audioPlayerBox}>
-                      <Text style={styles.audioLabel}>🎧 Nghe lại toàn bộ bản thu âm của cả 2 bạn:</Text>
+                      <Text style={styles.audioLabel}>🎧 Nghe lại bài thu âm vừa nộp:</Text>
                       {React.createElement('audio', {
                         controls: true,
                         src: evalResult.audioUrl,
