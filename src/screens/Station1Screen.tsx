@@ -4,6 +4,7 @@ import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator
 import { getRandomStation1Drill, DrillType } from '../services/drills/station1Service';
 import { evaluateSpeaking, AssessmentResult } from '../services/arena/assessmentService';
 import { updateUserProgress } from '../services/userService';
+import { supabase } from '../lib/supabaseClient'; // 👈 Đã thêm import Supabase Client
 
 interface Props {
   onBack: () => void;
@@ -20,11 +21,25 @@ export default function Station1Screen({ onBack }: Props) {
   const [hasRecorded, setHasRecorded] = useState<boolean>(false);
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
   const [result, setResult] = useState<AssessmentResult | null>(null);
+  const [userId, setUserId] = useState<string | undefined>(undefined); // 👈 Lấy ID sinh viên
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const currentAudioRef = useRef<HTMLAudioElement | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
+
+  // Lấy ID người dùng đang đăng nhập khi mở màn hình
+  useEffect(() => {
+    const fetchUser = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) setUserId(user.id);
+      } catch (e) {
+        console.warn("Không lấy được user ID:", e);
+      }
+    };
+    fetchUser();
+  }, []);
 
   // 🔊 DỪNG TOÀN BỘ ÂM THANH ĐANG PHÁT
   const stopAllAudio = () => {
@@ -152,7 +167,6 @@ export default function Station1Screen({ onBack }: Props) {
         });
         mediaStreamRef.current = stream;
 
-        // Ưu tiên MIME Type được Groq Whisper hỗ trợ tốt nhất
         let mimeType = '';
         if (typeof MediaRecorder !== 'undefined') {
           if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
@@ -179,7 +193,6 @@ export default function Station1Screen({ onBack }: Props) {
           const finalMime = mediaRecorder.mimeType || mimeType || 'audio/webm';
           const blob = new Blob(audioChunksRef.current, { type: finalMime });
 
-          // 🎯 ĐÃ SỬA: Hạ ngưỡng kiểm tra size Blob xuống 800 bytes cho các từ đơn ngắn
           if (blob.size > 800) {
             setRecordedAudio(blob);
             setHasRecorded(true);
@@ -221,11 +234,11 @@ export default function Station1Screen({ onBack }: Props) {
     setIsAnalyzing(true);
 
     try {
-      // 🎯 ĐÃ SỬA: Chỉ truyền DUY NHẤT nội dung tiếng Anh cần đọc, loại bỏ các chữ tiếng Việt thừa gây nhiễu AI
       const promptTarget = (currentDrill?.contentEn || '').trim();
-      const evalData = await evaluateSpeaking(recordedAudio, 'A2', undefined, promptTarget);
+      
+      // 🎯 ĐÃ SỬA: Truyền userId làm tham số thứ 5 để lưu bài làm vào Supabase & Storage
+      const evalData = await evaluateSpeaking(recordedAudio, 'A2', undefined, promptTarget, userId);
 
-      // 🎯 ĐÃ SỬA: Cập nhật kết quả chấm điểm mượt mà, không tự nhảy alert chặn
       setResult(evalData);
       
       if (evalData.isWin) {
@@ -350,6 +363,18 @@ export default function Station1Screen({ onBack }: Props) {
             </Text>
             <Text style={styles.scoreText}>⚡ Điểm phát âm: {result.score} / 100 ĐIỂM</Text>
 
+            {/* 🎧 ĐÃ THÊM: THANH NGHE LẠI BÀI THU ÂM DÀNH CHO SINH VIÊN */}
+            {result.audioUrl && (
+              <View style={styles.audioPlayerBox}>
+                <Text style={styles.audioLabel}>🎧 Nghe lại bài phát âm của bạn:</Text>
+                <audio 
+                  controls 
+                  src={result.audioUrl} 
+                  style={{ width: '100%', marginTop: 6, height: 36 }} 
+                />
+              </View>
+            )}
+
             <View style={styles.scriptBox}>
               <Text style={styles.scriptLabel}>📝 Âm AI nghe được thực tế:</Text>
               <Text style={styles.scriptContent}>"{result.transcript || '(Không nghe rõ từ)'}"</Text>
@@ -393,6 +418,8 @@ const styles = StyleSheet.create({
   submitBtnText: { color: '#000', fontSize: 11, fontWeight: '900' },
   resultTitle: { fontSize: 15, fontWeight: '900', marginBottom: 6 },
   scoreText: { color: '#FFD700', fontSize: 13, fontWeight: '900', marginBottom: 10 },
+  audioPlayerBox: { backgroundColor: '#1A0B2E', padding: 10, borderRadius: 8, width: '100%', marginBottom: 10, borderWidth: 1, borderColor: '#00FFFF' },
+  audioLabel: { color: '#00FFFF', fontSize: 10, fontWeight: 'bold' },
   scriptBox: { backgroundColor: '#1A0B2E', padding: 10, borderRadius: 8, width: '100%', marginBottom: 10 },
   scriptLabel: { color: '#AAAABB', fontSize: 9, fontWeight: 'bold' },
   scriptContent: { color: '#FFF', fontSize: 11, fontStyle: 'italic', marginVertical: 4 },
