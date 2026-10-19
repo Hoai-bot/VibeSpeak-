@@ -13,7 +13,7 @@ export interface RoleplaySubmission {
   timestamp: string;
 }
 
-// 🎯 HÀM LƯU BÀI NỘP TRẠM 2 (RELAY, ROLEPLAY, SOLO) LÊN SUPABASE
+// 🎯 HÀM LƯU BÀI NỘP TRẠM 2 VÀO SUPABASE CLOUD
 export const saveSubmissionToCloud = async (submission: RoleplaySubmission) => {
   try {
     const supabaseModule = await import('../lib/supabaseClient').catch(() => null)
@@ -30,7 +30,7 @@ export const saveSubmissionToCloud = async (submission: RoleplaySubmission) => {
         const level = (submission.cefrLevel || 'A1').toUpperCase();
         let displayName = submission.pairName || submission.studentName || 'Sinh viên';
 
-        // Chuẩn hóa định dạng lưu trữ
+        // Đóng gói Header chuẩn: [MODE - LEVEL | DISPLAY_NAME]: Feedback
         const formattedFeedback = `[${currentMode} - ${level} | ${displayName}]: ${submission.feedback || ''}`;
 
         const { error } = await supabase.from('assessment_results').insert([
@@ -44,7 +44,7 @@ export const saveSubmissionToCloud = async (submission: RoleplaySubmission) => {
         ]);
 
         if (error) {
-          console.error("❌ Lỗi insert dữ liệu Trạm 2 lên Supabase:", error);
+          console.error("❌ Lỗi insert dữ liệu Supabase:", error);
         }
       }
     }
@@ -53,7 +53,7 @@ export const saveSubmissionToCloud = async (submission: RoleplaySubmission) => {
   }
 };
 
-// 🎯 HÀM TẢI DỮ LIỆU VỀ BẢNG GIÁO VIÊN
+// 🎯 HÀM TẢI BÀI NỘP VỀ BẢNG GIÁO VIÊN
 export const fetchSubmissionsFromCloud = async (): Promise<RoleplaySubmission[]> => {
   try {
     const supabaseModule = await import('../lib/supabaseClient').catch(() => null)
@@ -86,7 +86,6 @@ export const fetchSubmissionsFromCloud = async (): Promise<RoleplaySubmission[]>
             let playerName = profileMap[item.user_id] || 'Sinh viên';
             let cleanFeedback = item.feedback || '';
 
-            // Bóc tách thông tin [MODE - LEVEL | PLAYER_NAME]: Feedback
             if (cleanFeedback.startsWith('[') && cleanFeedback.includes(']:')) {
               const parts = cleanFeedback.split(']:');
               const headerTag = parts[0].replace('[', '');

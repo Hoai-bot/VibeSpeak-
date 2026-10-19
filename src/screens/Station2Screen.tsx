@@ -38,7 +38,7 @@ export default function Station2Screen({ onBack }: Props) {
   const [isEvaluating, setIsEvaluating] = useState<boolean>(false);
   const [evalResult, setEvalResult] = useState<AssessmentResult | null>(null);
   
-  // 🎯 ĐIỂM ĐỘC LẬP TỪNG PLAYER (DÙNG CHO CẢ RELAY & ROLEPLAY)
+  // 🎯 BỘ LƯU ĐIỂM ĐỘC LẬP TỪNG NGƯỜI CHƠI
   const [playerScores, setPlayerScores] = useState<PlayerResult>({});
 
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
@@ -114,7 +114,7 @@ export default function Station2Screen({ onBack }: Props) {
       topic: cleanInput,
       promptEn: cleanInput,
       promptVi: "Chủ đề thực hành do Giáo viên chỉ định trực tiếp.",
-      player1En: "Person 1 (Ý kiến chính)",
+      player1En: "Person 1 (Ý chính)",
       player2En: "Person 2 (Phản hồi & Mở rộng)",
       userRoleEn: "Người khởi xướng (Vai 1)",
       aiRoleEn: "Người đối thoại (Vai 2)",
@@ -161,7 +161,7 @@ export default function Station2Screen({ onBack }: Props) {
     }
   }, [mode, cefrLevel]);
 
-  // 🎙 THU ÂM & CHẤM ĐIỂM CẢ ĐỘC LẬP LẪN ĐIỂM TỔNG
+  // 🎙 THU ÂM VÀ LƯU ĐIỂM ĐỘC LẬP TỪNG PERSON / LƯỢT CHƠI
   const startRecording = async () => {
     try {
       const currentPlayerTurn = activePlayer;
@@ -178,45 +178,45 @@ export default function Station2Screen({ onBack }: Props) {
         const result = await evaluateSpeaking(audioBlob, cefrLevel, undefined, targetPrompt, userId);
         setEvalResult(result);
 
-        // 1. LƯU ĐIỂM TỪNG NGƯỜI CHƠI
-        let newScores = { ...playerScores };
+        // 1. CẬP NHẬT ĐIỂM TỪNG LƯỢT VÀO STATE CỦA TRẠM
+        let updatedScores = { ...playerScores };
         if (currentPlayerTurn === 1) {
-          newScores.p1Score = result.score;
-          newScores.p1Transcript = result.transcript;
+          updatedScores.p1Score = result.score;
+          updatedScores.p1Transcript = result.transcript;
         } else {
-          newScores.p2Score = result.score;
-          newScores.p2Transcript = result.transcript;
+          updatedScores.p2Score = result.score;
+          updatedScores.p2Transcript = result.transcript;
         }
-        setPlayerScores(newScores);
+        setPlayerScores(updatedScores);
 
-        // 2. TÍNH ĐIỂM TỔNG TRUNG BÌNH CỦA ĐỘI
-        const s1 = newScores.p1Score !== undefined ? newScores.p1Score : result.score;
-        const s2 = newScores.p2Score !== undefined ? newScores.p2Score : result.score;
-        const totalAvgScore = Math.round((s1 + s2) / 2);
+        // 2. TÍNH ĐIỂM ĐỘC LẬP VÀ ĐIỂM TỔNG
+        const p1Val = updatedScores.p1Score !== undefined ? updatedScores.p1Score : result.score;
+        const p2Val = updatedScores.p2Score !== undefined ? updatedScores.p2Score : result.score;
+        const totalAvg = Math.round((p1Val + p2Val) / 2);
 
-        // 3. ĐÓNG GÓI THÔNG TIN VÀI DIỄN & ĐIỂM SỐ GỬI BẢNG GIÁO VIÊN
-        let pairDisplayName = userName || 'Sinh viên';
-        let feedbackDetail = result.detailedFeedback;
+        // 3. ĐÓNG GÓI CHUẨN ĐỊNH DẠNG ĐẨY LÊN BẢNG GIÁO VIÊN
+        let displayName = userName || 'Sinh viên';
+        let detailedInfo = result.detailedFeedback;
 
         if (mode === 'relay') {
-          pairDisplayName = `Vinh (P1: ${s1}đ) & An (P2: ${s2}đ) | Điểm tổng: ${totalAvgScore}đ`;
-          feedbackDetail = `[ĐỘC LẬP: P1 = ${s1}đ, P2 = ${s2}đ | TỔNG CẶP = ${totalAvgScore}đ] - Nhận xét lượt P${currentPlayerTurn}: ${result.detailedFeedback}`;
+          displayName = `Vinh (P1: ${p1Val}đ) & An (P2: ${p2Val}đ) | Tổng: ${totalAvg}đ`;
+          detailedInfo = `[ĐỘC LẬP: P1 = ${p1Val}đ, P2 = ${p2Val}đ | ĐIỂM TỔNG CẶP = ${totalAvg}đ] - Lượt P${currentPlayerTurn}: ${result.detailedFeedback}`;
         } else if (mode === 'roleplay') {
           const r1 = exercise?.userRoleEn || 'Vai 1';
           const r2 = exercise?.aiRoleEn || 'Vai 2';
-          pairDisplayName = `${userName} (${r1}: ${s1}đ) & AI (${r2}: ${s2}đ) | Điểm tổng: ${totalAvgScore}đ`;
-          feedbackDetail = `[ĐỘC LẬP: Vai 1 = ${s1}đ, Vai 2 = ${s2}đ | TỔNG CẶP = ${totalAvgScore}đ] - Nhận xét lượt P${currentPlayerTurn}: ${result.detailedFeedback}`;
+          displayName = `${userName} (${r1}: ${p1Val}đ) & AI (${r2}: ${p2Val}đ) | Tổng: ${totalAvg}đ`;
+          detailedInfo = `[ĐỘC LẬP: Vai 1 = ${p1Val}đ, Vai 2 = ${p2Val}đ | ĐIỂM TỔNG CẶP = ${totalAvg}đ] - Lượt P${currentPlayerTurn}: ${result.detailedFeedback}`;
         }
 
         await saveSubmissionToCloud({
-          studentName: pairDisplayName,
-          pairName: pairDisplayName,
-          score: totalAvgScore, // Điểm tổng gửi hiển thị
+          studentName: displayName,
+          pairName: displayName,
+          score: totalAvg,
           mode: mode,
           cefrLevel: cefrLevel,
-          transcript: `[Lượt 1]: "${newScores.p1Transcript || ''}" | [Lượt 2]: "${newScores.p2Transcript || result.transcript}"`,
+          transcript: `[Lượt 1]: "${updatedScores.p1Transcript || ''}" | [Lượt 2]: "${updatedScores.p2Transcript || result.transcript}"`,
           audioUrl: result.audioUrl,
-          feedback: feedbackDetail,
+          feedback: detailedInfo,
           timestamp: new Date().toLocaleTimeString('vi-VN')
         });
 
@@ -240,8 +240,7 @@ export default function Station2Screen({ onBack }: Props) {
     handleSwitchTurn();
   };
 
-  // Tính điểm tổng hiển thị trên giao diện học sinh
-  const currentTotalAvg = (playerScores.p1Score !== undefined && playerScores.p2Score !== undefined)
+  const currentAvgScore = (playerScores.p1Score !== undefined && playerScores.p2Score !== undefined)
     ? Math.round((playerScores.p1Score + playerScores.p2Score) / 2)
     : null;
 
@@ -256,7 +255,7 @@ export default function Station2Screen({ onBack }: Props) {
 
       <ScrollView contentContainerStyle={{ alignItems: 'center', width: '100%', paddingBottom: 30 }}>
         
-        {/* Ô NHẬP CHỦ ĐỀ GIÁO VIÊN */}
+        {/* Ô NHẬP CHỦ ĐỀ SÁCH GIÁO KHOA */}
         <View style={styles.customTopicCard}>
           <Text style={styles.customTopicTitle}>📌 NHẬP CHỦ ĐỀ SÁCH GIÁO KHOA (GIÁO VIÊN GIAO BÀI):</Text>
           <TextInput
@@ -325,41 +324,33 @@ export default function Station2Screen({ onBack }: Props) {
                 </View>
               )}
 
-              {/* KHU VỰC PHÂN VAI & HIỂN THỊ ĐIỂM ĐỘC LẬP TỪNG NGƯỜI */}
+              {/* BẢNG ĐIỂM ĐỘC LẬP TỪNG PLAYER */}
               {(mode === 'relay' || mode === 'roleplay') && (
                 <View style={styles.playersRow}>
-                  {/* NGƯỜI CHƠI 1 / VAI 1 */}
                   <View style={[styles.playerCard, activePlayer === 1 && styles.activePlayerCard]}>
-                    <Text style={styles.playerTag}>
-                      {mode === 'relay' ? '👤 PLAYER 1 (VINH)' : '👤 PLAYER 1'}
-                    </Text>
+                    <Text style={styles.playerTag}>{mode === 'relay' ? '👤 PLAYER 1 (VINH)' : '👤 PLAYER 1'}</Text>
                     <Text style={styles.roleText}>🎭 Vai: {exercise.player1En || exercise.userRoleEn || 'Vai 1'}</Text>
-                    
                     <Text style={styles.playerScoreTag}>
-                      🏆 Điểm độc lập: {playerScores.p1Score !== undefined ? `${playerScores.p1Score}đ` : 'Chưa thi'}
+                      🏆 Điểm độc lập: {playerScores.p1Score !== undefined ? `${playerScores.p1Score}đ` : 'Chưa đấu'}
                     </Text>
                     {activePlayer === 1 && <Text style={styles.turnIndicator}>👉 ĐẾN LƯỢT NÓI!</Text>}
                   </View>
 
-                  {/* NGƯỜI CHƠI 2 / VAI 2 */}
                   <View style={[styles.playerCard, activePlayer === 2 && styles.activePlayerCard]}>
-                    <Text style={styles.playerTag}>
-                      {mode === 'roleplay' ? '🤖 AI PARTNER' : '👤 PLAYER 2 (AN)'}
-                    </Text>
+                    <Text style={styles.playerTag}>{mode === 'roleplay' ? '🤖 AI PARTNER' : '👤 PLAYER 2 (AN)'}</Text>
                     <Text style={styles.roleText}>🎭 Vai: {exercise.player2En || exercise.aiRoleEn || 'Vai 2'}</Text>
-                    
                     <Text style={styles.playerScoreTag}>
-                      🏆 Điểm độc lập: {playerScores.p2Score !== undefined ? `${playerScores.p2Score}đ` : 'Chưa thi'}
+                      🏆 Điểm độc lập: {playerScores.p2Score !== undefined ? `${playerScores.p2Score}đ` : 'Chưa đấu'}
                     </Text>
                     {activePlayer === 2 && <Text style={styles.turnIndicator}>👉 ĐẾN LƯỢT NÓI!</Text>}
                   </View>
                 </View>
               )}
 
-              {/* KHU VỰC HIỂN THỊ ĐIỂM TỔNG CỦA CẶP ĐẤU */}
-              {currentTotalAvg !== null && (
+              {/* BẢNG ĐIỂM TỔNG CẶP ĐẤU */}
+              {currentAvgScore !== null && (
                 <View style={styles.totalScoreBox}>
-                  <Text style={styles.totalScoreText}>🌟 ĐIỂM TỔNG CỦA CẶP ĐẤU: {currentTotalAvg} / 100 ĐIỂM</Text>
+                  <Text style={styles.totalScoreText}>🌟 ĐIỂM TỔNG TRUNG BÌNH CẶP ĐẤU: {currentAvgScore} / 100 ĐIỂM</Text>
                 </View>
               )}
 
@@ -391,7 +382,7 @@ export default function Station2Screen({ onBack }: Props) {
                 </View>
               )}
 
-              {/* KẾT QUẢ VÒNG ĐẤU MỚI NHẤT */}
+              {/* HỘP KẾT QUẢ VỪA CHẤM */}
               {evalResult && (
                 <View style={styles.evalBox}>
                   <Text style={styles.evalScore}>🏆 ĐIỂM LƯỢT VỪA NỘP: {evalResult.score}/100</Text>
@@ -462,11 +453,8 @@ const styles = StyleSheet.create({
   roleText: { color: '#FFD700', fontSize: 9, fontWeight: 'bold', marginTop: 3 },
   playerScoreTag: { color: '#39FF14', fontSize: 9, fontWeight: '900', marginTop: 4 },
   turnIndicator: { color: '#FF007F', fontSize: 8, fontWeight: '900', marginTop: 4 },
-  
-  // STYLES DÀNH CHO BẢNG ĐIỂM TỔNG CẶP ĐẤU
   totalScoreBox: { backgroundColor: '#130A2A', padding: 10, borderRadius: 8, width: '100%', borderWidth: 1, borderColor: '#39FF14', alignItems: 'center', marginBottom: 12 },
   totalScoreText: { color: '#39FF14', fontSize: 11, fontWeight: '900' },
-
   scriptBox: { backgroundColor: '#130A2A', padding: 10, borderRadius: 8, width: '100%', borderWidth: 1, borderColor: '#332255', marginBottom: 12 },
   promptText: { color: '#FFF', fontSize: 12, fontWeight: '800', textAlign: 'center', lineHeight: 16 },
   startBtn: { backgroundColor: '#FF007F', paddingVertical: 12, paddingHorizontal: 16, borderRadius: 10, width: '100%', alignItems: 'center', marginVertical: 10 },
