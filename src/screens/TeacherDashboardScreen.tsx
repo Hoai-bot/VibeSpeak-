@@ -34,6 +34,12 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
     }
   };
 
+  // 📊 CÁC CHỈ SỐ THỐNG KÊ ANALYTICS
+  const totalCount = submissions.length;
+  const avgScore = totalCount > 0 ? Math.round(submissions.reduce((acc, s) => acc + (s.score || 0), 0) / totalCount) : 0;
+  const passRate = totalCount > 0 ? Math.round((submissions.filter(s => s.score >= 60).length / totalCount) * 100) : 0;
+  const excellentCount = submissions.filter(s => s.score >= 85).length;
+
   const handleExportCSV = () => {
     if (submissions.length === 0) {
       alert('Chưa có dữ liệu bài làm để xuất!');
@@ -91,7 +97,27 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
         <TouchableOpacity onPress={onBack} style={styles.backBtn}>
           <Text style={styles.backText}>🔙 MAP chính</Text>
         </TouchableOpacity>
-        <Text style={styles.title}>📊 BẢNG ĐIỂM GIÁO VIÊN (CLOUD REALTIME)</Text>
+        <Text style={styles.title}>📊 BẢNG ĐIỂM GIÁO VIÊN (REALTIME)</Text>
+      </View>
+
+      {/* 📊 THANH THỐNG KÊ ANALYTICS LỚP HỌC */}
+      <View style={styles.analyticsBar}>
+        <View style={styles.analyticsItem}>
+          <Text style={styles.analyticsVal}>{totalCount}</Text>
+          <Text style={styles.analyticsLbl}>BÀI NỘP</Text>
+        </View>
+        <View style={styles.analyticsItem}>
+          <Text style={[styles.analyticsVal, { color: '#FFD700' }]}>{avgScore}</Text>
+          <Text style={styles.analyticsLbl}>ĐIỂM TB</Text>
+        </View>
+        <View style={styles.analyticsItem}>
+          <Text style={[styles.analyticsVal, { color: '#39FF14' }]}>{passRate}%</Text>
+          <Text style={styles.analyticsLbl}>ĐẠT CHUẨN</Text>
+        </View>
+        <View style={styles.analyticsItem}>
+          <Text style={[styles.analyticsVal, { color: '#00FFFF' }]}>{excellentCount}</Text>
+          <Text style={styles.analyticsLbl}>XUẤT SẮC</Text>
+        </View>
       </View>
 
       <View style={styles.actionBar}>
@@ -165,10 +191,14 @@ const styles = StyleSheet.create({
   pinInput: { backgroundColor: '#130A2A', borderWidth: 1, borderColor: '#00FFFF', borderRadius: 8, padding: 12, color: '#FFF', width: '80%', textAlign: 'center', fontSize: 14, marginBottom: 15 },
   loginBtn: { backgroundColor: '#FF007F', paddingVertical: 12, paddingHorizontal: 30, borderRadius: 8 },
   loginBtnText: { color: '#FFF', fontSize: 11, fontWeight: '900' },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 15 },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
   backBtn: { padding: 8, backgroundColor: '#0D0620', borderRadius: 8, borderWidth: 1, borderColor: '#FF007F' },
   backText: { color: '#FF007F', fontSize: 10, fontWeight: 'bold' },
   title: { color: '#00FFFF', fontSize: 12, fontWeight: '900' },
+  analyticsBar: { flexDirection: 'row', justifyContent: 'space-between', backgroundColor: '#130A2A', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#00FFFF', marginBottom: 15 },
+  analyticsItem: { alignItems: 'center', flex: 1 },
+  analyticsVal: { color: '#FFF', fontSize: 14, fontWeight: '900' },
+  analyticsLbl: { color: '#AAAABB', fontSize: 8, fontWeight: 'bold', marginTop: 2 },
   actionBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15, width: '100%' },
   filterGroup: { flexDirection: 'row' },
   filterBtn: { backgroundColor: '#130A2A', paddingVertical: 6, paddingHorizontal: 10, borderRadius: 6, marginRight: 6, borderWidth: 1, borderColor: '#332255' },

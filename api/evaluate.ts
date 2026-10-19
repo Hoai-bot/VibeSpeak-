@@ -53,9 +53,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       process.env.GROQ_API ||
       process.env.EXPO_PUBLIC_GROQ_API_KEY;
 
-    if (!audioBuffer || audioBuffer.length < 300) {
+    // 🎯 CHỐNG SPAM AUDIO RỖNG / QUÁ NGẮN (< 1.2s)
+    if (!audioBuffer || audioBuffer.length < 1200) {
       return res.status(200).json({
-        transcript: '(Chưa ghi nhận âm thanh)',
+        transcript: '(Chưa ghi nhận âm thanh rõ ràng)',
         score: 0,
         isWin: false,
         wordCount: 0,
@@ -65,7 +66,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         reflexes: 0,
         content: 0,
         fluency: 0,
-        detailedFeedback: '❌ AI chưa nhận được âm thanh thu âm. Vui lòng bấm nút micro và đọc lại!',
+        detailedFeedback: '❌ Bài thu âm quá ngắn (dưới 1.2s)! Vui lòng giữ micro và đọc trọn vẹn câu trả lời.',
         wordAnalysis: [],
       });
     }
@@ -79,7 +80,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const rawContentType = (req.headers['content-type'] as string) || '';
         const mimeType = rawContentType.includes('audio') ? rawContentType.split(';')[0] : 'audio/webm';
 
-        // 🎯 FIX CHUYỂN BUFFER SANG FORM-DATA FILE CHUẨN VERCEL SERVERLESS
         const audioBufferData = Buffer.from(audioBuffer);
         const audioFile = await Groq.toFile(audioBufferData, 'recording.webm', { type: mimeType });
 
@@ -191,7 +191,6 @@ Return ONLY JSON matching schema:
 }`;
         }
 
-        // 🎯 FIX MODEL GROQ MỚI (llama-3.1-8b-instant)
         const completion = await groq.chat.completions.create({
           messages: [
             { role: 'system', content: systemPrompt },

@@ -1,7 +1,6 @@
 // src/services/userService.ts
 import { createClient } from '@supabase/supabase-js';
 
-// Khởi tạo Supabase Client
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://hdifryokbfssibhsnpja.supabase.co';
 const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || 'YOUR_ANON_KEY_HERE';
 
@@ -45,7 +44,7 @@ export function updateUserProgress(newScore: number, stationId?: string | number
     localStorage.setItem(PROGRESS_KEY, JSON.stringify(progress));
     return progress;
   } catch (e) {
-    console.warn('Lỗi cập nhật tiến trình người dùng:', e);
+    console.warn('Lỗi cập nhật tiến trình:', e);
     return { score: newScore, completedStations: [], totalSubmissions: 1 };
   }
 }
@@ -59,7 +58,7 @@ export function getUserProgress(): UserProgress {
   }
 }
 
-// 2. LƯU BÀI NỘP (Vừa lưu Local, vừa đẩy vĩnh viễn lên Supabase Cloud)
+// 2. LƯU BÀI NỘP (Local + Supabase Realtime DB)
 export async function saveRoleplaySubmission(submission: Omit<RoleplaySubmission, 'id' | 'timestamp'>) {
   const timestamp = new Date().toLocaleString('vi-VN');
   const newSubmission: RoleplaySubmission = {
@@ -68,7 +67,6 @@ export async function saveRoleplaySubmission(submission: Omit<RoleplaySubmission
     timestamp,
   };
 
-  // Lưu tạm vào LocalStorage
   try {
     const existing = getSubmissionsForTeacher();
     existing.unshift(newSubmission);
@@ -77,7 +75,6 @@ export async function saveRoleplaySubmission(submission: Omit<RoleplaySubmission
     console.warn('Lỗi lưu LocalStorage:', e);
   }
 
-  // Đẩy vĩnh viễn lên Supabase Realtime DB
   try {
     const { error } = await supabase.from('submissions').insert([
       {
@@ -99,10 +96,9 @@ export async function saveRoleplaySubmission(submission: Omit<RoleplaySubmission
   return newSubmission;
 }
 
-// 🎯 BỔ SUNG ALIAS ĐỂ KHÔNG BỊ LỖI MÀN HÌNH CHẤM ĐIỂM
 export const saveSubmissionForTeacher = saveRoleplaySubmission;
 
-// 3. LẤY TẤT CẢ BÀI NỘP CHO GIÁO VIÊN (Lấy trực tiếp từ Supabase Cloud)
+// 3. LẤY TẤT CẢ BÀI NỘP CHO GIÁO VIÊN
 export async function fetchSubmissionsFromCloud(): Promise<RoleplaySubmission[]> {
   try {
     const { data, error } = await supabase
@@ -111,7 +107,6 @@ export async function fetchSubmissionsFromCloud(): Promise<RoleplaySubmission[]>
       .order('created_at', { ascending: false });
 
     if (error || !data) {
-      console.warn('Không thể lấy bài từ Cloud, dùng dữ liệu Local:', error?.message);
       return getSubmissionsForTeacher();
     }
 
@@ -132,7 +127,37 @@ export async function fetchSubmissionsFromCloud(): Promise<RoleplaySubmission[]>
   }
 }
 
-// Hàm dự phòng đọc LocalStorage
+// 🏆 4. LẤY TOP 5 BẢNG XẾP HẠNG CAO ĐIỂM NHẤT (LEADERBOARD)
+export async function fetchTopLeaderboard(): Promise<RoleplaySubmission[]> {
+  try {
+    const { data, error } = await supabase
+      .from('submissions')
+      .select('*')
+      .order('score', { ascending: false })
+      .limit(5);
+
+    if (error || !data) {
+      const localData = getSubmissionsForTeacher();
+      return localData.sort((a, b) => b.score - a.score).slice(0, 5);
+    }
+
+    return data.map((item: any) => ({
+      id: item.id,
+      studentName: item.student_name,
+      pairName: item.pair_name,
+      mode: item.mode,
+      cefrLevel: item.cefr_level,
+      score: item.score,
+      transcript: item.transcript,
+      feedback: item.feedback,
+      audioUrl: item.audio_url,
+      timestamp: new Date(item.created_at).toLocaleString('vi-VN'),
+    }));
+  } catch (e) {
+    return getSubmissionsForTeacher().sort((a, b) => b.score - a.score).slice(0, 5);
+  }
+}
+
 export function getSubmissionsForTeacher(): RoleplaySubmission[] {
   try {
     const data = localStorage.getItem(STORAGE_KEY);
