@@ -31,6 +31,7 @@ export default function Station4Screen({ onBack }: Props) {
   const [recordedAudioUrl, setRecordedAudioUrl] = useState<string | null>(null);
 
   const [result, setResult] = useState<AssessmentResult | null>(null);
+  const [userId, setUserId] = useState<string | undefined>(undefined); // 👈 Lấy ID sinh viên
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -38,6 +39,28 @@ export default function Station4Screen({ onBack }: Props) {
   const requestIdRef = useRef<number>(0);
 
   const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
+
+  // 🎯 LẤY USER ID AN TOÀN TRÁNH LỖI BUILD MODULE NOT FOUND
+  useEffect(() => {
+    const fetchUser = async () => {
+      try {
+        const supabaseModule = await import('../lib/supabaseClient').catch(() => null)
+                             || await import('../lib/supabase').catch(() => null)
+                             || await import('@/lib/supabaseClient').catch(() => null);
+                             
+        if (supabaseModule) {
+          const supabase = supabaseModule.supabase || supabaseModule.default;
+          if (supabase && supabase.auth) {
+            const { data } = await supabase.auth.getUser();
+            if (data?.user) setUserId(data.user.id);
+          }
+        }
+      } catch (e) {
+        console.warn("Không lấy được user ID:", e);
+      }
+    };
+    fetchUser();
+  }, []);
 
   const getResultHeader = (score: number) => {
     if (score >= 85) return { title: '🏆 PHẢN HỒI XUẤT SẮC!', color: '#39FF14' };
@@ -229,7 +252,9 @@ export default function Station4Screen({ onBack }: Props) {
 
     try {
       const targetPrompt = (exercise?.promptEn || 'General speaking challenge').trim();
-      const evalData = await evaluateSpeaking(recordedAudio, cefrLevel, '4', targetPrompt);
+      
+      // 🎯 ĐÃ SỬA: Truyền userId làm tham số thứ 5 để đồng bộ bài làm sang Supabase & Storage
+      const evalData = await evaluateSpeaking(recordedAudio, cefrLevel, '4', targetPrompt, userId);
 
       if (!evalData.transcript || evalData.wordCount === 0 || evalData.score === 0) {
         const strictFailedResult: AssessmentResult = {
@@ -328,7 +353,7 @@ export default function Station4Screen({ onBack }: Props) {
                 onPress={() => exercise.promptEn && playPromptTTS(exercise.promptEn)}
               >
                 <Text style={styles.ttsBtnText}>
-                  {isPlayingTTS ? '🔊 ĐANG PHÁT GIỌNG NÓI...' : '🔊 NGHE TÌNH HUỐNG (NATURAL VOICE)'}
+                  {isPlayingTTS ? '🔊 ĐANG PHÁT GIỌNG NÓI...' : '🔊 NGHE TÌNH HU HUỐNG (NATURAL VOICE)'}
                 </Text>
               </TouchableOpacity>
 
@@ -388,10 +413,15 @@ export default function Station4Screen({ onBack }: Props) {
             </Text>
             <Text style={styles.scoreText}>⚡ TỔNG ĐIỂM TRẠM 4: {result.score} / 100 ĐIỂM</Text>
 
+            {/* 🎧 RENDER AN TOÀN CHO WEB KHÔNG LỖI TYPESCRIPT */}
             {(recordedAudioUrl || result.audioUrl) && (
               <View style={styles.nativeAudioContainer}>
                 <Text style={styles.nativeAudioLabel}>🎧 NGHE LẠI BẢN THU PHẢN HỒI CỦA BẠN:</Text>
-                <audio controls src={recordedAudioUrl || result.audioUrl} style={{ width: '100%', marginTop: 6 }} />
+                {React.createElement('audio', {
+                  controls: true,
+                  src: result.audioUrl || recordedAudioUrl,
+                  style: { width: '100%', marginTop: 6, height: 36 }
+                })}
               </View>
             )}
 
