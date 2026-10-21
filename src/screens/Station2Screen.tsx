@@ -7,7 +7,7 @@ import { getInstantRelayChallenge, generateRelayChallenge } from '../services/ar
 import { getInstantRoleplayScenario, generateRoleplayScenario } from '../services/arena/roleplayService';
 
 import { evaluateSpeaking, AssessmentResult } from '../services/arena/assessmentService';
-import { saveSubmissionToCloud } from '../services/userService';
+import { saveSubmissionToCloud, blobToBase64 } from '../services/userService';
 import { supabase } from '../utils/supabase';
 
 interface Props {
@@ -26,6 +26,7 @@ interface PlayerResult {
 export default function Station2Screen({ onBack }: Props) {
   const [studentNameInput, setStudentNameInput] = useState<string>('');
   const [studentCodeInput, setStudentCodeInput] = useState<string>('');
+  const [classNameInput, setClassNameInput] = useState<string>(''); // Ô nhập Tên Lớp
 
   const [cefrLevel, setCefrLevel] = useState<string>('A1');
   const [mode, setMode] = useState<'solo' | 'relay' | 'roleplay'>('solo');
@@ -60,9 +61,7 @@ export default function Station2Screen({ onBack }: Props) {
   const audioChunksRef = useRef<Blob[]>([]);
   const audioStreamRef = useRef<MediaStream | null>(null);
   
-  // 🎯 QUẢN LÝ ĐƯỜNG DẪN AUDIO BỀN VỮNG TRÁNH LỖI PHÁT
   const currentAudioUrlRef = useRef<string>('');
-  
   const recognitionRef = useRef<any>(null);
   const fullTranscriptRef = useRef<string>('');
 
@@ -187,28 +186,18 @@ export default function Station2Screen({ onBack }: Props) {
     }
   }, [mode, cefrLevel]);
 
-  // 🎯 LỰA CHỌN M3U8/MIME TYPE AN TOÀN CHO TẤT CẢ TRÌNH DUYỆT
   const getOptimalMimeType = () => {
     if (typeof MediaRecorder === 'undefined') return '';
-    const candidates = [
-      'audio/webm;codecs=opus',
-      'audio/webm',
-      'audio/mp4',
-      'audio/aac',
-      'audio/ogg'
-    ];
+    const candidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/aac'];
     for (const candidate of candidates) {
-      if (MediaRecorder.isTypeSupported(candidate)) {
-        return candidate;
-      }
+      if (MediaRecorder.isTypeSupported(candidate)) return candidate;
     }
     return '';
   };
 
-  // 🎙 BẮT ĐẦU THU ÂM VỚI QUY TRÌNH BẢO TỒN ÂM THANH TRIỆT ĐỂ
   const startFullRecording = async () => {
     if (!studentNameInput.trim() || !studentCodeInput.trim()) {
-      alert("⚠️ Vui lòng điền đầy đủ TỌA ĐỘ SINH VIÊN (Họ tên & Mã số sinh viên) ở phía trên trước khi bắt đầu thu âm!");
+      alert("⚠️ Vui lòng điền đầy đủ TỌA ĐỘ SINH VIÊN (Họ tên & MSSV) ở phía trên!");
       return;
     }
 
@@ -269,23 +258,20 @@ export default function Station2Screen({ onBack }: Props) {
           } catch (e) {}
         }
 
-        // TẠO BLOB AN TOÀN KHI DỪNG THU ÂM
         const mimeTypeUsed = recorder.mimeType || chosenMime || 'audio/webm';
         const fullAudioBlob = new Blob(audioChunksRef.current, { type: mimeTypeUsed });
 
-        // TẠO ĐƯỜNG DẪN BLOB BỀN VỮNG
-        if (currentAudioUrlRef.current) {
-          try { URL.revokeObjectURL(currentAudioUrlRef.current); } catch (e) {}
-        }
-        const createdAudioUrl = URL.createObjectURL(fullAudioBlob);
-        currentAudioUrlRef.current = createdAudioUrl;
+        // Chuyển âm thanh thành Base64 để máy Giáo viên phát được trực tiếp
+        const base64Audio = await blobToBase64(fullAudioBlob);
+        const localAudioUrl = URL.createObjectURL(fullAudioBlob);
 
         const targetPrompt = exercise?.promptEn || exercise?.contextEn || exercise?.scenarioTitle || '';
         const capturedSpeech = fullTranscriptRef.current || '';
 
+        // Chấm điểm thực tế theo Lời thoại
         const result = await evaluateSpeaking(fullAudioBlob, cefrLevel, undefined, targetPrompt, userId, capturedSpeech);
         
-        result.audioUrl = createdAudioUrl;
+        result.audioUrl = localAudioUrl;
         setEvalResult(result);
 
         let p1Score = result.score;
@@ -319,14 +305,16 @@ export default function Station2Screen({ onBack }: Props) {
           feedbackDetail = `[ĐỘC LẬP: Vai 1 = ${p1Score}đ, Vai 2 = ${p2Score}đ | TỔNG CẶP = ${totalAvgScore}đ]: ${result.detailedFeedback}`;
         }
 
+        // Lưu bài nộp kèm Tên Lớp và chuỗi Base64 Audio
         await saveSubmissionToCloud({
           studentName: studentIdentifier,
           pairName: pairDisplayName,
+          className: classNameInput.trim() || 'LỚP CHUNG',
           score: totalAvgScore,
           mode: mode,
           cefrLevel: cefrLevel,
           transcript: result.transcript,
-          audioUrl: createdAudioUrl,
+          audioUrl: base64Audio, // 🎯 Lưu Base64 cho máy GV phát lại
           feedback: feedbackDetail,
           timestamp: new Date().toLocaleTimeString('vi-VN')
         });
@@ -338,7 +326,7 @@ export default function Station2Screen({ onBack }: Props) {
         }
       };
 
-      recorder.start(200); // Đóng gói dữ liệu liên tục mỗi 200ms
+      recorder.start(200);
       setIsRecording(true);
       setIsGameActive(true);
     } catch (err) {
@@ -369,23 +357,32 @@ export default function Station2Screen({ onBack }: Props) {
 
       <ScrollView contentContainerStyle={{ alignItems: 'center', width: '100%', paddingBottom: 30 }}>
         
-        {/* KHU VỰC NHẬP THÔNG TIN SINH VIÊN */}
+        {/* KHU VỰC NHẬP THÔNG TIN SINH VIÊN & MÃ LỚP */}
         <View style={styles.studentInfoCard}>
-          <Text style={styles.studentInfoTitle}>🎓 THÔNG TIN SINH VIÊN BẮT BUỘC (ĐỂ TÍNH ĐIỂM):</Text>
-          <View style={{ flexDirection: 'row', gap: 8, width: '100%' }}>
+          <Text style={styles.studentInfoTitle}>🎓 THÔNG TIN SINH VIÊN BẮT BUỘC:</Text>
+          <View style={{ flexDirection: 'column', gap: 6, width: '100%' }}>
+            <View style={{ flexDirection: 'row', gap: 8, width: '100%' }}>
+              <TextInput
+                style={[styles.infoInput, { flex: 1.2 }]}
+                placeholder="Họ và Tên sinh viên *"
+                placeholderTextColor="#666688"
+                value={studentNameInput}
+                onChangeText={setStudentNameInput}
+              />
+              <TextInput
+                style={[styles.infoInput, { flex: 0.8 }]}
+                placeholder="Mã số SV (MSSV) *"
+                placeholderTextColor="#666688"
+                value={studentCodeInput}
+                onChangeText={setStudentCodeInput}
+              />
+            </View>
             <TextInput
-              style={[styles.infoInput, { flex: 1.2 }]}
-              placeholder="Họ và Tên sinh viên *"
+              style={[styles.infoInput, { width: '100%' }]}
+              placeholder="Tên Lớp / Mã Lớp học (VD: ENG101_01) *"
               placeholderTextColor="#666688"
-              value={studentNameInput}
-              onChangeText={setStudentNameInput}
-            />
-            <TextInput
-              style={[styles.infoInput, { flex: 0.8 }]}
-              placeholder="Mã số SV (MSSV) *"
-              placeholderTextColor="#666688"
-              value={studentCodeInput}
-              onChangeText={setStudentCodeInput}
+              value={classNameInput}
+              onChangeText={setClassNameInput}
             />
           </View>
         </View>
@@ -520,7 +517,6 @@ export default function Station2Screen({ onBack }: Props) {
                 </View>
               )}
 
-              {/* 🎧 BỘ PHÁT AUDIO AN TOÀN TUYỆT ĐỐI KHÔNG CRASH */}
               {evalResult && (
                 <View style={styles.evalBox}>
                   <Text style={styles.evalScore}>🏆 ĐIỂM BÀI NÓI: {evalResult.score}/100</Text>

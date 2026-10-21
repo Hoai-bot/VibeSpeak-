@@ -5,6 +5,7 @@ export interface RoleplaySubmission {
   id?: string;
   studentName?: string;
   pairName?: string;
+  className?: string; // 🎯 Bổ sung Tên lớp / Mã lớp
   score: number;
   mode: string;
   cefrLevel: string;
@@ -16,21 +17,26 @@ export interface RoleplaySubmission {
 
 const LOCAL_HISTORY_KEY = 'vibespeak_user_submissions_history';
 
-// 🎯 HÀM LƯU BÀI NỘP TRẠM 2 (LƯU CẢ SUPABASE VÀ LOCALSTORAGE)
+// Chuyển Audio Blob sang Base64 nhỏ gọn để Giáo viên phát được trực tiếp
+export const blobToBase64 = (blob: Blob): Promise<string> => {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result as string || '');
+    reader.readAsDataURL(blob);
+  });
+};
+
 export const saveSubmissionToCloud = async (submission: RoleplaySubmission) => {
   try {
-    // 1. Lưu ngay vào localStorage cho người chơi tự do xem lại lịch sử cá nhân
+    // 1. Lưu Local cho Sinh viên
     try {
       const existingLocal = localStorage.getItem(LOCAL_HISTORY_KEY);
       const historyList: RoleplaySubmission[] = existingLocal ? JSON.parse(existingLocal) : [];
       historyList.unshift(submission);
-      // Giữ tối đa 20 bài làm gần nhất ở máy local
       localStorage.setItem(LOCAL_HISTORY_KEY, JSON.stringify(historyList.slice(0, 20)));
-    } catch (e) {
-      console.warn("⚠️ Không thể lưu lịch sử vào localStorage:", e);
-    }
+    } catch (e) {}
 
-    // 2. Gửi dữ liệu lên Supabase Cloud
+    // 2. Gửi lên Supabase Cloud cho Bảng Giáo viên
     if (!supabase) return;
 
     const { data: userData } = await supabase.auth.getUser();
@@ -38,10 +44,11 @@ export const saveSubmissionToCloud = async (submission: RoleplaySubmission) => {
 
     const currentMode = String(submission.mode || 'SOLO').toUpperCase();
     const level = String(submission.cefrLevel || 'A1').toUpperCase();
+    const className = submission.className || 'LỚP CHUNG';
     let displayName = submission.pairName || submission.studentName || 'Sinh viên';
 
-    const formattedFeedback = `[${currentMode} - ${level} | ${displayName}]: ${submission.feedback || ''}`;
-    const validAudioUrl = submission.audioUrl && submission.audioUrl.length > 10 ? submission.audioUrl : '';
+    // Đóng gói thông tin Lớp vào Header nhận diện
+    const formattedFeedback = `[${currentMode} - ${level} | CLASS: ${className} | ${displayName}]: ${submission.feedback || ''}`;
 
     const { error } = await supabase.from('assessment_results').insert([
       {
@@ -49,41 +56,31 @@ export const saveSubmissionToCloud = async (submission: RoleplaySubmission) => {
         score: submission.score || 0,
         transcript: submission.transcript || '',
         feedback: formattedFeedback,
-        audio_url: validAudioUrl,
+        audio_url: submission.audioUrl || '', // Base64 Audio DataURL
       },
     ]);
 
     if (error) {
-      console.error("❌ Lỗi insert dữ liệu Trạm 2 lên Supabase:", error);
-    } else {
-      console.log("✅ Đã lưu bài nộp Trạm 2 lên Supabase Cloud thành công!");
+      console.error("❌ Lỗi insert dữ liệu lên Supabase:", error);
     }
   } catch (err) {
     console.warn("⚠️ Lỗi saveSubmissionToCloud:", err);
   }
 };
 
-// 🎯 HÀM TẢI LỊCH SỬ CỦA NGƯỜI CHƠI (TỰ ĐỘNG CHỌN LOCAL/CLOUD)
 export const fetchUserSubmissions = async (): Promise<RoleplaySubmission[]> => {
-  // 1. Ưu tiên đọc lịch sử từ localStorage của trình duyệt hiện tại
   try {
     const localData = localStorage.getItem(LOCAL_HISTORY_KEY);
     if (localData) {
       const parsed: RoleplaySubmission[] = JSON.parse(localData);
-      if (parsed && parsed.length > 0) {
-        return parsed;
-      }
+      if (parsed && parsed.length > 0) return parsed;
     }
-  } catch (e) {
-    console.warn("⚠️ Không đọc được localStorage:", e);
-  }
-
-  // 2. Fallback nếu không có localStorage: Lấy từ Supabase Cloud
+  } catch (e) {}
   return await fetchSubmissionsFromCloud();
 };
 
-// 🎯 HÀM TẢI TẤT CẢ BÀI NỘP CHO BẢNG GIÁO VIÊN
-export const fetchSubmissionsFromCloud = async (): Promise<RoleplaySubmission[]> => {
+// 🎯 HÀM LẤY DỮ LIỆU BẢNG GIÁO VIÊN LỌC THEO LỚP & NGÀY
+export const fetchSubmissionsFromCloud = async (selectedClass?: string): Promise<RoleplaySubmission[]> => {
   try {
     if (!supabase) return [];
 
@@ -91,25 +88,15 @@ export const fetchSubmissionsFromCloud = async (): Promise<RoleplaySubmission[]>
       .from('assessment_results')
       .select('id, score, transcript, feedback, audio_url, created_at, user_id')
       .order('created_at', { ascending: false })
-      .limit(50);
+      .limit(100);
 
     if (error || !results) return [];
 
-    const { data: profiles } = await supabase
-      .from('profiles')
-      .select('id, full_name, student_code');
-
-    const profileMap: Record<string, string> = {};
-    if (profiles) {
-      profiles.forEach((p: any) => {
-        profileMap[p.id] = p.full_name || p.student_code || 'Sinh viên';
-      });
-    }
-
-    return results.map((item: any) => {
+    const parsedList: RoleplaySubmission[] = results.map((item: any) => {
       let mode = 'TRẠM 2';
       let cefrLevel = 'A1';
-      let playerName = profileMap[item.user_id] || 'Sinh viên';
+      let extractedClass = 'LỚP CHUNG';
+      let playerName = 'Sinh viên';
       let cleanFeedback = item.feedback || '';
 
       if (cleanFeedback && cleanFeedback.startsWith('[') && cleanFeedback.includes(']:')) {
@@ -123,31 +110,42 @@ export const fetchSubmissionsFromCloud = async (): Promise<RoleplaySubmission[]>
         mode = String(metaParts[0] || 'TRẠM 2').trim().toUpperCase();
         cefrLevel = String(metaParts[1] || 'A1').trim().toUpperCase();
 
-        if (tagParts.length > 1 && tagParts[1].trim()) {
-          playerName = tagParts[1].trim();
-        }
+        tagParts.forEach((tag) => {
+          if (tag.startsWith('CLASS:')) {
+            extractedClass = tag.replace('CLASS:', '').trim();
+          } else if (!tag.includes('-') && tag.trim()) {
+            playerName = tag.trim();
+          }
+        });
       }
 
       return {
         id: item.id || String(Math.random()),
-        studentName: playerName || 'Sinh viên',
-        pairName: playerName || 'Sinh viên',
+        studentName: playerName,
+        pairName: playerName,
+        className: extractedClass,
         score: Number(item.score) || 0,
-        mode: String(mode || 'TRẠM 2').toUpperCase(),
-        cefrLevel: String(cefrLevel || 'A1').toUpperCase(),
+        mode: String(mode).toUpperCase(),
+        cefrLevel: String(cefrLevel).toUpperCase(),
         transcript: item.transcript || '',
         audioUrl: item.audio_url || '',
         feedback: cleanFeedback,
         timestamp: item.created_at ? new Date(item.created_at).toLocaleString('vi-VN') : '',
       };
     });
+
+    // Lọc theo Lớp nếu Giáo viên chọn lọc
+    if (selectedClass && selectedClass !== 'ALL') {
+      return parsedList.filter(s => s.className?.toUpperCase() === selectedClass.toUpperCase());
+    }
+
+    return parsedList;
   } catch (err) {
     console.warn("⚠️ Lỗi fetchSubmissionsFromCloud:", err);
   }
   return [];
 };
 
-// 🎯 HÀM LẤY BẢNG XẾP HẠNG AN TOÀN
 export const fetchTopLeaderboard = async () => {
   try {
     if (!supabase) return [];
