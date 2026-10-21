@@ -7,7 +7,8 @@ import { getInstantRelayChallenge, generateRelayChallenge } from '../services/ar
 import { getInstantRoleplayScenario, generateRoleplayScenario } from '../services/arena/roleplayService';
 
 import { evaluateSpeaking, AssessmentResult } from '../services/arena/assessmentService';
-import { saveSubmissionToCloud, blobToBase64 } from '../services/userService';
+// 🎯 XÓA blobToBase64 TỪ IMPORTS
+import { saveSubmissionToCloud } from '../services/userService';
 import { supabase } from '../utils/supabase';
 
 interface Props {
@@ -23,6 +24,20 @@ interface PlayerResult {
   p2Transcript?: string;
 }
 
+// 🎯 ĐỊNH NGHĨA HÀM CHUYỂN DỔI BASE64 AN TOÀN NỘI BỘ TRÁNH LỖI IMPORT
+const safeBlobToBase64 = (blob: Blob): Promise<string> => {
+  return new Promise((resolve) => {
+    if (!blob) return resolve('');
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const result = reader.result as string;
+      resolve(result || '');
+    };
+    reader.onerror = () => resolve('');
+    reader.readAsDataURL(blob);
+  });
+};
+
 export default function Station2Screen({ onBack }: Props) {
   const [studentNameInput, setStudentNameInput] = useState<string>('');
   const [studentCodeInput, setStudentCodeInput] = useState<string>('');
@@ -35,7 +50,6 @@ export default function Station2Screen({ onBack }: Props) {
   const [customTopicInput, setCustomTopicInput] = useState<string>('');
   const [isUsingCustomTopic, setIsUsingCustomTopic] = useState<boolean>(false);
 
-  // 🎯 HÀM TÍNH THỜI GIAN LINH HOẠT THEO CẢ LEVEL LẪN CHẾ ĐỘ CHƠI
   const getTimerByLevel = (level: string, currentMode: string = mode): number => {
     const lvl = level.toUpperCase();
     
@@ -214,7 +228,6 @@ export default function Station2Screen({ onBack }: Props) {
     return '';
   };
 
-  // 🎙 BẮT ĐẦU THU ÂM (LƠI LỎNG CHO NGƯỜI CHƠI TỰ DO)
   const startFullRecording = async () => {
     if (!studentNameInput.trim()) {
       alert("⚠️ Vui lòng nhập Họ tên hoặc Biệt danh của bạn ở phía trên trước khi bắt đầu!");
@@ -286,7 +299,8 @@ export default function Station2Screen({ onBack }: Props) {
         const mimeTypeUsed = recorder.mimeType || chosenMime || 'audio/webm';
         const fullAudioBlob = new Blob(audioChunksRef.current, { type: mimeTypeUsed });
 
-        const base64Audio = await blobToBase64(fullAudioBlob);
+        // 🎯 CHUYỂN BASE64 BẰNG HÀM NỘI BỘ AN TOÀN
+        const base64Audio = await safeBlobToBase64(fullAudioBlob);
         const localAudioUrl = URL.createObjectURL(fullAudioBlob);
 
         const targetPrompt = exercise?.promptEn || exercise?.contextEn || exercise?.scenarioTitle || '';
@@ -624,7 +638,7 @@ const styles = StyleSheet.create({
   switchTurnText: { color: '#000', fontSize: 10, fontWeight: '900' },
   recordBtn: { backgroundColor: '#FF0055', paddingVertical: 12, paddingHorizontal: 16, borderRadius: 10, width: '100%', alignItems: 'center' },
   recordBtnText: { color: '#FFF', fontSize: 11, fontWeight: '900' },
-  evalBox: { backgroundColor: '#130A2A', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#39FF14', width: '100%', marginTop: 12 },
+  evalBox: { backgroundColor: '#130A2A', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#332255', width: '100%', marginTop: 12 },
   evalScore: { color: '#39FF14', fontSize: 12, fontWeight: '900', marginBottom: 4 },
   audioPlayerBox: { backgroundColor: '#1A0B2E', padding: 8, borderRadius: 8, width: '100%', marginBottom: 8, borderWidth: 1, borderColor: '#00FFFF' },
   audioLabel: { color: '#00FFFF', fontSize: 10, fontWeight: 'bold' },
