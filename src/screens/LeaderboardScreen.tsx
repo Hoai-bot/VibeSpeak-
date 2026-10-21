@@ -53,18 +53,22 @@ export default function LeaderboardScreen({ onBack }: Props) {
     new Set(allSubmissions.map((s) => cleanClassName(s.className)))
   );
 
-  // Lọc dữ liệu theo Lớp đã chọn & Sắp xếp điểm từ Cao xuống Thấp
+  // 🎯 LỌC VÀ SẮP XẾP CHUẨN XÁC ĐIỂM SỐ (LỌC BỎ BÀI 0 ĐIỂM / LỖI)
   const filteredSubmissions = (selectedClass === 'ALL'
     ? allSubmissions
     : allSubmissions.filter((s) => cleanClassName(s.className).toUpperCase() === selectedClass.toUpperCase())
-  ).sort((a, b) => b.score - a.score);
+  )
+    // 1. Chỉ lấy những bài thi có điểm > 0
+    .filter((item) => Number(item.score) > 0)
+    // 2. Ép kiểu Number để sắp xếp từ Cao xuống Thấp chính xác tuyệt đối
+    .sort((a, b) => Number(b.score) - Number(a.score));
 
   // Tạo danh sách Bảng Vàng có Xếp Hạng (Rank 1, 2, 3...)
   const leaderboardList: LeaderboardEntry[] = filteredSubmissions.map((item, index) => ({
     rank: index + 1,
     name: item.studentName || item.pairName || 'Chiến binh',
     className: cleanClassName(item.className),
-    score: item.score,
+    score: Number(item.score),
     mode: item.mode || 'SOLO',
     cefrLevel: item.cefrLevel || 'A1',
     date: item.timestamp || '',
@@ -111,7 +115,7 @@ export default function LeaderboardScreen({ onBack }: Props) {
         {loading ? (
           <ActivityIndicator size="large" color="#FFD700" style={{ marginVertical: 30 }} />
         ) : leaderboardList.length === 0 ? (
-          <Text style={styles.emptyText}>Chưa có dữ liệu xếp hạng cho lớp này.</Text>
+          <Text style={styles.emptyText}>Chưa có dữ liệu xếp hạng hợp lệ cho lớp này.</Text>
         ) : (
           /* DANH SÁCH BẢNG VÀNG XẾP HẠNG THỨ TỰ */
           <View style={{ width: '100%' }}>
