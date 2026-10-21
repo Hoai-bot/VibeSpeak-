@@ -59,7 +59,6 @@ export default function Station2Screen({ onBack }: Props) {
   const audioChunksRef = useRef<Blob[]>([]);
   const audioStreamRef = useRef<MediaStream | null>(null);
   
-  // 🎯 QUẢN LÝ BÓC TÁCH TOÀN BỘ BÀI NÓI (FULL TRANSCRIPT)
   const recognitionRef = useRef<any>(null);
   const fullTranscriptRef = useRef<string>('');
 
@@ -185,15 +184,7 @@ export default function Station2Screen({ onBack }: Props) {
     }
   }, [mode, cefrLevel]);
 
-  const blobToDataURL = (blob: Blob): Promise<string> => {
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result as string);
-      reader.readAsDataURL(blob);
-    });
-  };
-
-  // 🎙 BẮT ĐẦU THU ÂM VÀ BÓC TÁCH TOÀN BỘ 100% LỜI NÓI
+  // 🎙 BẮT ĐẦU THU ÂM VÀ XỬ LÝ THANH GHI ÂM SIÊU TỐC
   const startFullRecording = async () => {
     if (!studentNameInput.trim() || !studentCodeInput.trim()) {
       alert("⚠️ Vui lòng điền đầy đủ TỌA ĐỘ SINH VIÊN (Họ tên & Mã số sinh viên) ở phía trên trước khi bắt đầu thu âm!");
@@ -206,7 +197,6 @@ export default function Station2Screen({ onBack }: Props) {
       audioChunksRef.current = [];
       fullTranscriptRef.current = '';
 
-      // KÍCH HOẠT CHẾ ĐỘ THU TOÀN BỘ CÂU (BẮT CẢ CÁC TỪ PHỤ)
       const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
       if (SpeechRecognition) {
         const recognition = new SpeechRecognition();
@@ -224,7 +214,6 @@ export default function Station2Screen({ onBack }: Props) {
           }
         };
 
-        // Tự động khởi động lại nếu bị tạm dừng giữa chừng khi sinh viên suy nghĩ
         recognition.onend = () => {
           if (isRecording && recognitionRef.current) {
             try { recognitionRef.current.start(); } catch (e) {}
@@ -258,17 +247,15 @@ export default function Station2Screen({ onBack }: Props) {
           } catch (e) {}
         }
 
+        // 🎯 TẠO BLOB URL PHÁT MƯỢT TRÊN THANH GHI ÂM (TỐI ƯU 100%)
+        const localAudioUrl = URL.createObjectURL(fullAudioBlob);
+
         const targetPrompt = exercise?.promptEn || exercise?.contextEn || exercise?.scenarioTitle || '';
         const capturedSpeech = fullTranscriptRef.current || '';
 
         const result = await evaluateSpeaking(fullAudioBlob, cefrLevel, undefined, targetPrompt, userId, capturedSpeech);
         
-        let finalAudioUrl = result.audioUrl || '';
-        if (!finalAudioUrl || finalAudioUrl.length < 5) {
-          finalAudioUrl = await blobToDataURL(fullAudioBlob);
-        }
-
-        result.audioUrl = finalAudioUrl;
+        result.audioUrl = localAudioUrl;
         setEvalResult(result);
 
         let p1Score = result.score;
@@ -309,7 +296,7 @@ export default function Station2Screen({ onBack }: Props) {
           mode: mode,
           cefrLevel: cefrLevel,
           transcript: result.transcript,
-          audioUrl: finalAudioUrl,
+          audioUrl: localAudioUrl,
           feedback: feedbackDetail,
           timestamp: new Date().toLocaleTimeString('vi-VN')
         });
@@ -503,10 +490,12 @@ export default function Station2Screen({ onBack }: Props) {
                 </View>
               )}
 
+              {/* 🎧 HIỂN THỊ THANH GHI ÂM CHUẨN MƯỢT MA */}
               {evalResult && (
                 <View style={styles.evalBox}>
                   <Text style={styles.evalScore}>🏆 ĐIỂM BÀI NÓI: {evalResult.score}/100</Text>
-                  {evalResult.audioUrl && (
+                  
+                  {evalResult.audioUrl ? (
                     <View style={styles.audioPlayerBox}>
                       <Text style={styles.audioLabel}>🎧 Nghe lại bài thu âm vừa nộp:</Text>
                       {React.createElement('audio', {
@@ -515,7 +504,8 @@ export default function Station2Screen({ onBack }: Props) {
                         style: { width: '100%', marginTop: 6, height: 36 }
                       })}
                     </View>
-                  )}
+                  ) : null}
+
                   <Text style={styles.transcriptText}>💬 Lời thoại ghi nhận đầy đủ: "{evalResult.transcript}"</Text>
                   <Text style={styles.feedbackText}>💡 Nhận xét AI: {evalResult.detailedFeedback}</Text>
                 </View>
