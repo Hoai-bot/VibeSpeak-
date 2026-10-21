@@ -29,7 +29,6 @@ export default function LeaderboardScreen({ onBack }: Props) {
   const loadLeaderboardData = async () => {
     setLoading(true);
     try {
-      // Lấy toàn bộ bài nộp trên Cloud
       const data = await fetchSubmissionsFromCloud('ALL');
       setAllSubmissions(data || []);
     } catch (e) {
@@ -39,22 +38,32 @@ export default function LeaderboardScreen({ onBack }: Props) {
     }
   };
 
+  // Làm sạch tên lớp để tránh bị lặp tiền tố "CLASS:"
+  const cleanClassName = (rawClass?: string) => {
+    if (!rawClass) return 'LỚP CHUNG';
+    let cls = rawClass.trim();
+    if (cls.toUpperCase().startsWith('CLASS:')) {
+      cls = cls.substring(6).trim();
+    }
+    return cls || 'LỚP CHUNG';
+  };
+
   // Trích xuất danh sách các Mã Lớp duy nhất
   const availableClasses = Array.from(
-    new Set(allSubmissions.map((s) => s.className || 'LỚP CHUNG'))
+    new Set(allSubmissions.map((s) => cleanClassName(s.className)))
   );
 
   // Lọc dữ liệu theo Lớp đã chọn & Sắp xếp điểm từ Cao xuống Thấp
   const filteredSubmissions = (selectedClass === 'ALL'
     ? allSubmissions
-    : allSubmissions.filter((s) => s.className?.toUpperCase() === selectedClass.toUpperCase())
+    : allSubmissions.filter((s) => cleanClassName(s.className).toUpperCase() === selectedClass.toUpperCase())
   ).sort((a, b) => b.score - a.score);
 
   // Tạo danh sách Bảng Vàng có Xếp Hạng (Rank 1, 2, 3...)
   const leaderboardList: LeaderboardEntry[] = filteredSubmissions.map((item, index) => ({
     rank: index + 1,
     name: item.studentName || item.pairName || 'Chiến binh',
-    className: item.className || 'LỚP CHUNG',
+    className: cleanClassName(item.className),
     score: item.score,
     mode: item.mode || 'SOLO',
     cefrLevel: item.cefrLevel || 'A1',
@@ -107,7 +116,6 @@ export default function LeaderboardScreen({ onBack }: Props) {
           /* DANH SÁCH BẢNG VÀNG XẾP HẠNG THỨ TỰ */
           <View style={{ width: '100%' }}>
             {leaderboardList.map((entry) => {
-              // Biểu tượng TOP 1, 2, 3
               let rankBadge = `#${entry.rank}`;
               let cardBorderColor = '#332255';
               let rankColor = '#FFF';
