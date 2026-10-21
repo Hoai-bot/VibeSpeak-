@@ -8,7 +8,6 @@ import { getInstantRoleplayScenario, generateRoleplayScenario } from '../service
 
 import { evaluateSpeaking, AssessmentResult } from '../services/arena/assessmentService';
 import { saveSubmissionToCloud } from '../services/userService';
-// 🎯 IMPORT TĨNH SINGLETON CLIENT TRÁNH CẢNH BÁO GOTRUECLIENT MULTIPLE INSTANCES
 import { supabase } from '../utils/supabase';
 
 interface Props {
@@ -61,6 +60,9 @@ export default function Station2Screen({ onBack }: Props) {
   const audioChunksRef = useRef<Blob[]>([]);
   const audioStreamRef = useRef<MediaStream | null>(null);
   
+  // 🎯 QUẢN LÝ ĐƯỜNG DẪN AUDIO BỀN VỮNG TRÁNH LỖI PHÁT
+  const currentAudioUrlRef = useRef<string>('');
+  
   const recognitionRef = useRef<any>(null);
   const fullTranscriptRef = useRef<string>('');
 
@@ -68,7 +70,6 @@ export default function Station2Screen({ onBack }: Props) {
 
   const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
 
-  // 🎯 TỐI ƯU HÀM NẠP TÀI KHOẢN TỪ SINGLETON SUPABASE
   useEffect(() => {
     const fetchUser = async () => {
       try {
@@ -186,7 +187,25 @@ export default function Station2Screen({ onBack }: Props) {
     }
   }, [mode, cefrLevel]);
 
-  // 🎙 BẮT ĐẦU THU ÂM VÀ XỬ LÝ THANH GHI ÂM SIÊU TỐC
+  // 🎯 LỰA CHỌN M3U8/MIME TYPE AN TOÀN CHO TẤT CẢ TRÌNH DUYỆT
+  const getOptimalMimeType = () => {
+    if (typeof MediaRecorder === 'undefined') return '';
+    const candidates = [
+      'audio/webm;codecs=opus',
+      'audio/webm',
+      'audio/mp4',
+      'audio/aac',
+      'audio/ogg'
+    ];
+    for (const candidate of candidates) {
+      if (MediaRecorder.isTypeSupported(candidate)) {
+        return candidate;
+      }
+    }
+    return '';
+  };
+
+  // 🎙 BẮT ĐẦU THU ÂM VỚI QUY TRÌNH BẢO TỒN ÂM THANH TRIỆT ĐỂ
   const startFullRecording = async () => {
     if (!studentNameInput.trim() || !studentCodeInput.trim()) {
       alert("⚠️ Vui lòng điền đầy đủ TỌA ĐỘ SINH VIÊN (Họ tên & Mã số sinh viên) ở phía trên trước khi bắt đầu thu âm!");
@@ -229,7 +248,9 @@ export default function Station2Screen({ onBack }: Props) {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       audioStreamRef.current = stream;
 
-      const recorder = new MediaRecorder(stream);
+      const chosenMime = getOptimalMimeType();
+      const recorderOptions = chosenMime ? { mimeType: chosenMime } : undefined;
+      const recorder = new MediaRecorder(stream, recorderOptions);
       mediaRecorderRef.current = recorder;
 
       recorder.ondataavailable = (e) => {
@@ -239,7 +260,6 @@ export default function Station2Screen({ onBack }: Props) {
       };
 
       recorder.onstop = async () => {
-        const fullAudioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
         setIsEvaluating(true);
 
         if (recognitionRef.current) {
@@ -249,14 +269,23 @@ export default function Station2Screen({ onBack }: Props) {
           } catch (e) {}
         }
 
-        const localAudioUrl = URL.createObjectURL(fullAudioBlob);
+        // TẠO BLOB AN TOÀN KHI DỪNG THU ÂM
+        const mimeTypeUsed = recorder.mimeType || chosenMime || 'audio/webm';
+        const fullAudioBlob = new Blob(audioChunksRef.current, { type: mimeTypeUsed });
+
+        // TẠO ĐƯỜNG DẪN BLOB BỀN VỮNG
+        if (currentAudioUrlRef.current) {
+          try { URL.revokeObjectURL(currentAudioUrlRef.current); } catch (e) {}
+        }
+        const createdAudioUrl = URL.createObjectURL(fullAudioBlob);
+        currentAudioUrlRef.current = createdAudioUrl;
 
         const targetPrompt = exercise?.promptEn || exercise?.contextEn || exercise?.scenarioTitle || '';
         const capturedSpeech = fullTranscriptRef.current || '';
 
         const result = await evaluateSpeaking(fullAudioBlob, cefrLevel, undefined, targetPrompt, userId, capturedSpeech);
         
-        result.audioUrl = localAudioUrl;
+        result.audioUrl = createdAudioUrl;
         setEvalResult(result);
 
         let p1Score = result.score;
@@ -297,7 +326,7 @@ export default function Station2Screen({ onBack }: Props) {
           mode: mode,
           cefrLevel: cefrLevel,
           transcript: result.transcript,
-          audioUrl: localAudioUrl,
+          audioUrl: createdAudioUrl,
           feedback: feedbackDetail,
           timestamp: new Date().toLocaleTimeString('vi-VN')
         });
@@ -309,7 +338,7 @@ export default function Station2Screen({ onBack }: Props) {
         }
       };
 
-      recorder.start();
+      recorder.start(200); // Đóng gói dữ liệu liên tục mỗi 200ms
       setIsRecording(true);
       setIsGameActive(true);
     } catch (err) {
@@ -491,6 +520,7 @@ export default function Station2Screen({ onBack }: Props) {
                 </View>
               )}
 
+              {/* 🎧 BỘ PHÁT AUDIO AN TOÀN TUYỆT ĐỐI KHÔNG CRASH */}
               {evalResult && (
                 <View style={styles.evalBox}>
                   <Text style={styles.evalScore}>🏆 ĐIỂM BÀI NÓI: {evalResult.score}/100</Text>
@@ -500,6 +530,7 @@ export default function Station2Screen({ onBack }: Props) {
                       <Text style={styles.audioLabel}>🎧 Nghe lại bài thu âm vừa nộp:</Text>
                       {React.createElement('audio', {
                         controls: true,
+                        playsInline: true,
                         src: evalResult.audioUrl,
                         style: { width: '100%', marginTop: 6, height: 36 }
                       })}
