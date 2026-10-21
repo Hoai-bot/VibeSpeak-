@@ -26,7 +26,7 @@ interface PlayerResult {
 export default function Station2Screen({ onBack }: Props) {
   const [studentNameInput, setStudentNameInput] = useState<string>('');
   const [studentCodeInput, setStudentCodeInput] = useState<string>('');
-  const [classNameInput, setClassNameInput] = useState<string>(''); // Ô nhập Tên Lớp
+  const [classNameInput, setClassNameInput] = useState<string>('');
 
   const [cefrLevel, setCefrLevel] = useState<string>('A1');
   const [mode, setMode] = useState<'solo' | 'relay' | 'roleplay'>('solo');
@@ -35,20 +35,37 @@ export default function Station2Screen({ onBack }: Props) {
   const [customTopicInput, setCustomTopicInput] = useState<string>('');
   const [isUsingCustomTopic, setIsUsingCustomTopic] = useState<boolean>(false);
 
-  const getTimerByLevel = (level: string): number => {
-    switch (level.toUpperCase()) {
-      case 'A1': return 15;
-      case 'A2': return 20;
-      case 'B1': return 25;
-      case 'B2': return 30;
-      case 'C1': return 40;
+  // 🎯 HÀM TÍNH THỜI GIAN LINH HOẠT THEO CẢ LEVEL LẪN CHẾ ĐỘ CHƠI
+  const getTimerByLevel = (level: string, currentMode: string = mode): number => {
+    const lvl = level.toUpperCase();
+    
+    // NẾU CHƠI ĐẤU ĐÔI (RELAY / ROLEPLAY): Nhịp độ nhanh, luân phiên dồn dập
+    if (currentMode === 'relay' || currentMode === 'roleplay') {
+      switch (lvl) {
+        case 'A1': return 15;
+        case 'A2': return 20;
+        case 'B1': return 25;
+        case 'B2': return 30;
+        case 'C1': return 35;
+        case 'C2': return 45;
+        default: return 15;
+      }
+    }
+
+    // NẾU CHƠI SOLO: Thời gian thoải mái hơn để cá nhân diễn thuyết
+    switch (lvl) {
+      case 'A1': return 20;
+      case 'A2': return 25;
+      case 'B1': return 30;
+      case 'B2': return 40;
+      case 'C1': return 50;
       case 'C2': return 60;
-      default: return 15;
+      default: return 20;
     }
   };
 
   const [activePlayer, setActivePlayer] = useState<PlayerTurn>(1);
-  const [turnTimer, setTurnTimer] = useState<number>(getTimerByLevel('A1'));
+  const [turnTimer, setTurnTimer] = useState<number>(getTimerByLevel('A1', 'solo'));
   const [isGameActive, setIsGameActive] = useState<boolean>(false);
 
   const [isRecording, setIsRecording] = useState<boolean>(false);
@@ -61,7 +78,6 @@ export default function Station2Screen({ onBack }: Props) {
   const audioChunksRef = useRef<Blob[]>([]);
   const audioStreamRef = useRef<MediaStream | null>(null);
   
-  const currentAudioUrlRef = useRef<string>('');
   const recognitionRef = useRef<any>(null);
   const fullTranscriptRef = useRef<string>('');
 
@@ -90,12 +106,18 @@ export default function Station2Screen({ onBack }: Props) {
 
   const handleSwitchTurn = () => {
     setActivePlayer((prevPlayer) => (prevPlayer === 1 ? 2 : 1));
-    setTurnTimer(getTimerByLevel(cefrLevel));
+    setTurnTimer(getTimerByLevel(cefrLevel, mode));
   };
 
   const handleSelectLevel = (lvl: string) => {
     setCefrLevel(lvl);
-    setTurnTimer(getTimerByLevel(lvl));
+    setTurnTimer(getTimerByLevel(lvl, mode));
+  };
+
+  // Cập nhật lại thời gian khi giáo viên/sinh viên chuyển Chế độ đấu
+  const handleSelectMode = (newMode: 'solo' | 'relay' | 'roleplay') => {
+    setMode(newMode);
+    setTurnTimer(getTimerByLevel(cefrLevel, newMode));
   };
 
   useEffect(() => {
@@ -132,7 +154,7 @@ export default function Station2Screen({ onBack }: Props) {
     setPlayerScores({});
     setIsGameActive(false);
     setActivePlayer(1);
-    setTurnTimer(getTimerByLevel(cefrLevel));
+    setTurnTimer(getTimerByLevel(cefrLevel, mode));
 
     const customExercise = {
       title: `📚 CHỦ ĐỀ GIÁO VIÊN YÊU CẦU [${cefrLevel}]`,
@@ -161,7 +183,7 @@ export default function Station2Screen({ onBack }: Props) {
     setPlayerScores({});
     setIsGameActive(false);
     setActivePlayer(1);
-    setTurnTimer(getTimerByLevel(selectedLevel));
+    setTurnTimer(getTimerByLevel(selectedLevel, selectedMode));
 
     let instantData: any = null;
     if (selectedMode === 'solo') instantData = getInstantSoloTopic(selectedLevel);
@@ -203,7 +225,7 @@ export default function Station2Screen({ onBack }: Props) {
 
     try {
       setEvalResult(null);
-      setTurnTimer(getTimerByLevel(cefrLevel));
+      setTurnTimer(getTimerByLevel(cefrLevel, mode));
       audioChunksRef.current = [];
       fullTranscriptRef.current = '';
 
@@ -261,14 +283,12 @@ export default function Station2Screen({ onBack }: Props) {
         const mimeTypeUsed = recorder.mimeType || chosenMime || 'audio/webm';
         const fullAudioBlob = new Blob(audioChunksRef.current, { type: mimeTypeUsed });
 
-        // Chuyển âm thanh thành Base64 để máy Giáo viên phát được trực tiếp
         const base64Audio = await blobToBase64(fullAudioBlob);
         const localAudioUrl = URL.createObjectURL(fullAudioBlob);
 
         const targetPrompt = exercise?.promptEn || exercise?.contextEn || exercise?.scenarioTitle || '';
         const capturedSpeech = fullTranscriptRef.current || '';
 
-        // Chấm điểm thực tế theo Lời thoại
         const result = await evaluateSpeaking(fullAudioBlob, cefrLevel, undefined, targetPrompt, userId, capturedSpeech);
         
         result.audioUrl = localAudioUrl;
@@ -305,7 +325,6 @@ export default function Station2Screen({ onBack }: Props) {
           feedbackDetail = `[ĐỘC LẬP: Vai 1 = ${p1Score}đ, Vai 2 = ${p2Score}đ | TỔNG CẶP = ${totalAvgScore}đ]: ${result.detailedFeedback}`;
         }
 
-        // Lưu bài nộp kèm Tên Lớp và chuỗi Base64 Audio
         await saveSubmissionToCloud({
           studentName: studentIdentifier,
           pairName: pairDisplayName,
@@ -314,7 +333,7 @@ export default function Station2Screen({ onBack }: Props) {
           mode: mode,
           cefrLevel: cefrLevel,
           transcript: result.transcript,
-          audioUrl: base64Audio, // 🎯 Lưu Base64 cho máy GV phát lại
+          audioUrl: base64Audio,
           feedback: feedbackDetail,
           timestamp: new Date().toLocaleTimeString('vi-VN')
         });
@@ -428,13 +447,13 @@ export default function Station2Screen({ onBack }: Props) {
 
         {/* Chọn Chế độ Đấu */}
         <View style={styles.modeRow}>
-          <TouchableOpacity style={[styles.modeBtn, mode === 'solo' && styles.modeBtnActive]} onPress={() => setMode('solo')}>
+          <TouchableOpacity style={[styles.modeBtn, mode === 'solo' && styles.modeBtnActive]} onPress={() => handleSelectMode('solo')}>
             <Text style={[styles.modeText, mode === 'solo' && styles.modeTextActive]}>🎯 SOLO</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.modeBtn, mode === 'relay' && styles.modeBtnActive]} onPress={() => setMode('relay')}>
+          <TouchableOpacity style={[styles.modeBtn, mode === 'relay' && styles.modeBtnActive]} onPress={() => handleSelectMode('relay')}>
             <Text style={[styles.modeText, mode === 'relay' && styles.modeTextActive]}>⚡ RELAY</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.modeBtn, mode === 'roleplay' && styles.modeBtnActive]} onPress={() => setMode('roleplay')}>
+          <TouchableOpacity style={[styles.modeBtn, mode === 'roleplay' && styles.modeBtnActive]} onPress={() => handleSelectMode('roleplay')}>
             <Text style={[styles.modeText, mode === 'roleplay' && styles.modeTextActive]}>🎭 ROLEPLAY</Text>
           </TouchableOpacity>
         </View>
@@ -449,7 +468,7 @@ export default function Station2Screen({ onBack }: Props) {
               
               <View style={styles.timerBox}>
                 <Text style={styles.timerLabel}>
-                  ⏱ THỜI GIAN LƯỢT [{cefrLevel}]: {turnTimer}s {isRecording ? '(ĐANG THU ÂM)' : '(SẴN SÀNG)'}
+                  ⏱ THỜI GIAN LƯỢT [{cefrLevel} - {mode.toUpperCase()}]: {turnTimer}s {isRecording ? '(ĐANG THU ÂM)' : '(SẴN SÀNG)'}
                 </Text>
                 <Text style={[styles.timerValue, turnTimer <= 5 && { color: '#FF0055' }]}>
                   00:{turnTimer < 10 ? `0${turnTimer}` : turnTimer}
@@ -492,8 +511,8 @@ export default function Station2Screen({ onBack }: Props) {
                 <TouchableOpacity style={styles.startBtn} onPress={startFullRecording}>
                   <Text style={styles.startBtnText}>
                     {mode === 'solo' 
-                      ? `🎙 BẤM THU ÂM SOLO (${getTimerByLevel(cefrLevel)}s)` 
-                      : `🎙 BẤM THU ÂM CHUNG (${getTimerByLevel(cefrLevel)}s / LƯỢT)`}
+                      ? `🎙 BẤM THU ÂM SOLO (${getTimerByLevel(cefrLevel, mode)}s)` 
+                      : `🎙 BẤM THU ÂM CHUNG (${getTimerByLevel(cefrLevel, mode)}s / LƯỢT)`}
                   </Text>
                 </TouchableOpacity>
               ) : isRecording ? (
