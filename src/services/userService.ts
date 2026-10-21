@@ -75,7 +75,7 @@ export const fetchUserSubmissions = async (): Promise<RoleplaySubmission[]> => {
   return await fetchSubmissionsFromCloud();
 };
 
-// 🎯 HÀM LẤY DỮ LIỆU CHUẨN XÁC TÊN SINH VIÊN VÀ MÃ LỚP
+// 🎯 HÀM LẤY DỮ LIỆU TỪ CLOUD (TỰ ĐỘNG LOẠI BỎ BÀI 0 ĐIỂM)
 export const fetchSubmissionsFromCloud = async (selectedClass?: string): Promise<RoleplaySubmission[]> => {
   try {
     if (!supabase) return [];
@@ -83,66 +83,64 @@ export const fetchSubmissionsFromCloud = async (selectedClass?: string): Promise
     const { data: results, error } = await supabase
       .from('assessment_results')
       .select('id, score, transcript, feedback, audio_url, created_at, user_id')
-      .order('created_at', { ascending: false })
+      .gt('score', 0) // 🎯 CHỈ LẤY BÀI NỘP CÓ ĐIỂM > 0 TỪ DATABASE
+      .order('score', { ascending: false })
       .limit(200);
 
     if (error || !results) return [];
 
-    const parsedList: RoleplaySubmission[] = results.map((item: any) => {
-      let mode = 'SOLO';
-      let cefrLevel = 'A1';
-      let extractedClass = 'LỚP CHUNG';
-      let playerName = 'Chiến binh';
-      let cleanFeedback = item.feedback || '';
+    const parsedList: RoleplaySubmission[] = results
+      .map((item: any) => {
+        let mode = 'SOLO';
+        let cefrLevel = 'A1';
+        let extractedClass = 'LỚP CHUNG';
+        let playerName = 'Chiến binh';
+        let cleanFeedback = item.feedback || '';
 
-      if (cleanFeedback && cleanFeedback.startsWith('[') && cleanFeedback.includes(']:')) {
-        const parts = cleanFeedback.split(']:');
-        const headerTag = parts[0].replace('[', '');
-        cleanFeedback = parts.slice(1).join(']:').trim();
+        if (cleanFeedback && cleanFeedback.startsWith('[') && cleanFeedback.includes(']:')) {
+          const parts = cleanFeedback.split(']:');
+          const headerTag = parts[0].replace('[', '');
+          cleanFeedback = parts.slice(1).join(']:').trim();
 
-        // Tách các trường bằng dấu phân cách '|'
-        const tagParts = headerTag.split('|').map(p => p.trim());
+          const tagParts = headerTag.split('|').map(p => p.trim());
 
-        // Phần 0: [MODE - LEVEL]
-        if (tagParts[0]) {
-          const meta = tagParts[0].split('-');
-          mode = String(meta[0] || 'SOLO').trim().toUpperCase();
-          cefrLevel = String(meta[1] || 'A1').trim().toUpperCase();
-        }
+          if (tagParts[0]) {
+            const meta = tagParts[0].split('-');
+            mode = String(meta[0] || 'SOLO').trim().toUpperCase();
+            cefrLevel = String(meta[1] || 'A1').trim().toUpperCase();
+          }
 
-        // Duyệt các phần còn lại để phân định rõ Tên Lớp và Tên Sinh Viên
-        for (let i = 1; i < tagParts.length; i++) {
-          const part = tagParts[i];
-          if (part.startsWith('CLASS:')) {
-            extractedClass = part.replace('CLASS:', '').trim().toUpperCase() || 'LỚP CHUNG';
-          } else if (part.length > 0) {
-            playerName = part;
+          for (let i = 1; i < tagParts.length; i++) {
+            const part = tagParts[i];
+            if (part.startsWith('CLASS:')) {
+              extractedClass = part.replace('CLASS:', '').trim().toUpperCase() || 'LỚP CHUNG';
+            } else if (part.length > 0) {
+              playerName = part;
+            }
           }
         }
-      }
 
-      // Làm sạch tên lớp
-      if (extractedClass.startsWith('CLASS:')) {
-        extractedClass = extractedClass.replace('CLASS:', '').trim();
-      }
-      if (!extractedClass) extractedClass = 'LỚP CHUNG';
+        if (extractedClass.startsWith('CLASS:')) {
+          extractedClass = extractedClass.replace('CLASS:', '').trim();
+        }
+        if (!extractedClass) extractedClass = 'LỚP CHUNG';
 
-      return {
-        id: item.id || String(Math.random()),
-        studentName: playerName,
-        pairName: playerName,
-        className: extractedClass,
-        score: Number(item.score) || 0,
-        mode: String(mode).toUpperCase(),
-        cefrLevel: String(cefrLevel).toUpperCase(),
-        transcript: item.transcript || '',
-        audioUrl: item.audio_url || '',
-        feedback: cleanFeedback,
-        timestamp: item.created_at ? new Date(item.created_at).toLocaleDateString('vi-VN') : '',
-      };
-    });
+        return {
+          id: item.id || String(Math.random()),
+          studentName: playerName,
+          pairName: playerName,
+          className: extractedClass,
+          score: Number(item.score) || 0,
+          mode: String(mode).toUpperCase(),
+          cefrLevel: String(cefrLevel).toUpperCase(),
+          transcript: item.transcript || '',
+          audioUrl: item.audio_url || '',
+          feedback: cleanFeedback,
+          timestamp: item.created_at ? new Date(item.created_at).toLocaleDateString('vi-VN') : '',
+        };
+      })
+      .filter((item) => Number(item.score) > 0); // 🎯 LỌC LẠI LẦN 2 CHẮC CHẮN > 0 ĐIỂM
 
-    // Lọc theo Lớp nếu Giáo viên / Sinh viên chọn
     if (selectedClass && selectedClass !== 'ALL') {
       return parsedList.filter(s => s.className?.toUpperCase() === selectedClass.toUpperCase());
     }

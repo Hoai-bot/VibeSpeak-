@@ -30,7 +30,9 @@ export default function LeaderboardScreen({ onBack }: Props) {
     setLoading(true);
     try {
       const data = await fetchSubmissionsFromCloud('ALL');
-      setAllSubmissions(data || []);
+      // 🎯 BẮT BUỘC LỌC BỎ 0 ĐIỂM TẠI ĐÂY
+      const validData = (data || []).filter((item) => Number(item.score) > 0);
+      setAllSubmissions(validData);
     } catch (e) {
       console.warn("Lỗi tải Bảng Vàng:", e);
     } finally {
@@ -38,7 +40,6 @@ export default function LeaderboardScreen({ onBack }: Props) {
     }
   };
 
-  // Làm sạch tên lớp để tránh bị lặp tiền tố "CLASS:"
   const cleanClassName = (rawClass?: string) => {
     if (!rawClass) return 'LỚP CHUNG';
     let cls = rawClass.trim();
@@ -48,22 +49,18 @@ export default function LeaderboardScreen({ onBack }: Props) {
     return cls || 'LỚP CHUNG';
   };
 
-  // Trích xuất danh sách các Mã Lớp duy nhất
   const availableClasses = Array.from(
     new Set(allSubmissions.map((s) => cleanClassName(s.className)))
   );
 
-  // 🎯 LỌC VÀ SẮP XẾP CHUẨN XÁC ĐIỂM SỐ (LỌC BỎ BÀI 0 ĐIỂM / LỖI)
+  // 🎯 SẮP XẾP NGHIÊM NGẶT THEO ĐIỂM SỐ GIẢM DẦN (> 0 ĐIỂM)
   const filteredSubmissions = (selectedClass === 'ALL'
     ? allSubmissions
     : allSubmissions.filter((s) => cleanClassName(s.className).toUpperCase() === selectedClass.toUpperCase())
   )
-    // 1. Chỉ lấy những bài thi có điểm > 0
     .filter((item) => Number(item.score) > 0)
-    // 2. Ép kiểu Number để sắp xếp từ Cao xuống Thấp chính xác tuyệt đối
     .sort((a, b) => Number(b.score) - Number(a.score));
 
-  // Tạo danh sách Bảng Vàng có Xếp Hạng (Rank 1, 2, 3...)
   const leaderboardList: LeaderboardEntry[] = filteredSubmissions.map((item, index) => ({
     rank: index + 1,
     name: item.studentName || item.pairName || 'Chiến binh',
@@ -84,7 +81,6 @@ export default function LeaderboardScreen({ onBack }: Props) {
       </View>
 
       <ScrollView contentContainerStyle={{ alignItems: 'center', paddingBottom: 30 }}>
-        {/* KHU VỰC CHỌN MÃ LỚP ĐỂ XEM THỨ HẠNG CỦA LỚP */}
         <View style={styles.filterBox}>
           <Text style={styles.filterLabel}>🏫 CHỌN LỚP ĐỂ XEM XẾP HẠNG HỌC VIÊN:</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexDirection: 'row', marginTop: 8 }}>
@@ -107,7 +103,6 @@ export default function LeaderboardScreen({ onBack }: Props) {
           </ScrollView>
         </View>
 
-        {/* NÚT LÀM MỚI BẢNG VÀNG */}
         <TouchableOpacity style={styles.refreshBtn} onPress={loadLeaderboardData}>
           <Text style={styles.refreshBtnText}>🔄 CẬP NHẬT THỨ HẠNG MỚI NHẤT</Text>
         </TouchableOpacity>
@@ -117,7 +112,6 @@ export default function LeaderboardScreen({ onBack }: Props) {
         ) : leaderboardList.length === 0 ? (
           <Text style={styles.emptyText}>Chưa có dữ liệu xếp hạng hợp lệ cho lớp này.</Text>
         ) : (
-          /* DANH SÁCH BẢNG VÀNG XẾP HẠNG THỨ TỰ */
           <View style={{ width: '100%' }}>
             {leaderboardList.map((entry) => {
               let rankBadge = `#${entry.rank}`;
