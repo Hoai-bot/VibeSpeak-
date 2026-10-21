@@ -5,7 +5,7 @@ export interface RoleplaySubmission {
   id?: string;
   studentName?: string;
   pairName?: string;
-  className?: string; // 🎯 Bổ sung Tên lớp / Mã lớp
+  className?: string;
   score: number;
   mode: string;
   cefrLevel: string;
@@ -17,7 +17,6 @@ export interface RoleplaySubmission {
 
 const LOCAL_HISTORY_KEY = 'vibespeak_user_submissions_history';
 
-// Chuyển Audio Blob sang Base64 nhỏ gọn để Giáo viên phát được trực tiếp
 export const blobToBase64 = (blob: Blob): Promise<string> => {
   return new Promise((resolve) => {
     const reader = new FileReader();
@@ -28,7 +27,6 @@ export const blobToBase64 = (blob: Blob): Promise<string> => {
 
 export const saveSubmissionToCloud = async (submission: RoleplaySubmission) => {
   try {
-    // 1. Lưu Local cho Sinh viên
     try {
       const existingLocal = localStorage.getItem(LOCAL_HISTORY_KEY);
       const historyList: RoleplaySubmission[] = existingLocal ? JSON.parse(existingLocal) : [];
@@ -36,7 +34,6 @@ export const saveSubmissionToCloud = async (submission: RoleplaySubmission) => {
       localStorage.setItem(LOCAL_HISTORY_KEY, JSON.stringify(historyList.slice(0, 20)));
     } catch (e) {}
 
-    // 2. Gửi lên Supabase Cloud cho Bảng Giáo viên
     if (!supabase) return;
 
     const { data: userData } = await supabase.auth.getUser();
@@ -47,7 +44,6 @@ export const saveSubmissionToCloud = async (submission: RoleplaySubmission) => {
     const className = submission.className || 'LỚP CHUNG';
     let displayName = submission.pairName || submission.studentName || 'Sinh viên';
 
-    // Đóng gói thông tin Lớp vào Header nhận diện
     const formattedFeedback = `[${currentMode} - ${level} | CLASS: ${className} | ${displayName}]: ${submission.feedback || ''}`;
 
     const { error } = await supabase.from('assessment_results').insert([
@@ -56,7 +52,7 @@ export const saveSubmissionToCloud = async (submission: RoleplaySubmission) => {
         score: submission.score || 0,
         transcript: submission.transcript || '',
         feedback: formattedFeedback,
-        audio_url: submission.audioUrl || '', // Base64 Audio DataURL
+        audio_url: submission.audioUrl || '',
       },
     ]);
 
@@ -79,7 +75,7 @@ export const fetchUserSubmissions = async (): Promise<RoleplaySubmission[]> => {
   return await fetchSubmissionsFromCloud();
 };
 
-// 🎯 HÀM LẤY DỮ LIỆU BẢNG GIÁO VIÊN LỌC THEO LỚP & NGÀY
+// 🎯 HÀM LẤY DỮ LIỆU CHUẨN XÁC TÊN SINH VIÊN VÀ MÃ LỚP
 export const fetchSubmissionsFromCloud = async (selectedClass?: string): Promise<RoleplaySubmission[]> => {
   try {
     if (!supabase) return [];
@@ -88,15 +84,15 @@ export const fetchSubmissionsFromCloud = async (selectedClass?: string): Promise
       .from('assessment_results')
       .select('id, score, transcript, feedback, audio_url, created_at, user_id')
       .order('created_at', { ascending: false })
-      .limit(100);
+      .limit(200);
 
     if (error || !results) return [];
 
     const parsedList: RoleplaySubmission[] = results.map((item: any) => {
-      let mode = 'TRẠM 2';
+      let mode = 'SOLO';
       let cefrLevel = 'A1';
       let extractedClass = 'LỚP CHUNG';
-      let playerName = 'Sinh viên';
+      let playerName = 'Chiến binh';
       let cleanFeedback = item.feedback || '';
 
       if (cleanFeedback && cleanFeedback.startsWith('[') && cleanFeedback.includes(']:')) {
@@ -104,20 +100,32 @@ export const fetchSubmissionsFromCloud = async (selectedClass?: string): Promise
         const headerTag = parts[0].replace('[', '');
         cleanFeedback = parts.slice(1).join(']:').trim();
 
-        const tagParts = headerTag.split(' | ');
-        const metaParts = tagParts[0].split(' - ');
+        // Tách các trường bằng dấu phân cách '|'
+        const tagParts = headerTag.split('|').map(p => p.trim());
 
-        mode = String(metaParts[0] || 'TRẠM 2').trim().toUpperCase();
-        cefrLevel = String(metaParts[1] || 'A1').trim().toUpperCase();
+        // Phần 0: [MODE - LEVEL]
+        if (tagParts[0]) {
+          const meta = tagParts[0].split('-');
+          mode = String(meta[0] || 'SOLO').trim().toUpperCase();
+          cefrLevel = String(meta[1] || 'A1').trim().toUpperCase();
+        }
 
-        tagParts.forEach((tag) => {
-          if (tag.startsWith('CLASS:')) {
-            extractedClass = tag.replace('CLASS:', '').trim();
-          } else if (!tag.includes('-') && tag.trim()) {
-            playerName = tag.trim();
+        // Duyệt các phần còn lại để phân định rõ Tên Lớp và Tên Sinh Viên
+        for (let i = 1; i < tagParts.length; i++) {
+          const part = tagParts[i];
+          if (part.startsWith('CLASS:')) {
+            extractedClass = part.replace('CLASS:', '').trim().toUpperCase() || 'LỚP CHUNG';
+          } else if (part.length > 0) {
+            playerName = part;
           }
-        });
+        }
       }
+
+      // Làm sạch tên lớp
+      if (extractedClass.startsWith('CLASS:')) {
+        extractedClass = extractedClass.replace('CLASS:', '').trim();
+      }
+      if (!extractedClass) extractedClass = 'LỚP CHUNG';
 
       return {
         id: item.id || String(Math.random()),
@@ -130,11 +138,11 @@ export const fetchSubmissionsFromCloud = async (selectedClass?: string): Promise
         transcript: item.transcript || '',
         audioUrl: item.audio_url || '',
         feedback: cleanFeedback,
-        timestamp: item.created_at ? new Date(item.created_at).toLocaleString('vi-VN') : '',
+        timestamp: item.created_at ? new Date(item.created_at).toLocaleDateString('vi-VN') : '',
       };
     });
 
-    // Lọc theo Lớp nếu Giáo viên chọn lọc
+    // Lọc theo Lớp nếu Giáo viên / Sinh viên chọn
     if (selectedClass && selectedClass !== 'ALL') {
       return parsedList.filter(s => s.className?.toUpperCase() === selectedClass.toUpperCase());
     }
@@ -147,37 +155,5 @@ export const fetchSubmissionsFromCloud = async (selectedClass?: string): Promise
 };
 
 export const fetchTopLeaderboard = async () => {
-  try {
-    if (!supabase) return [];
-
-    const { data, error } = await supabase
-      .from('assessment_results')
-      .select('score, created_at, user_id, feedback')
-      .order('score', { ascending: false })
-      .limit(20);
-
-    if (error || !data) return [];
-
-    return data.map((item: any, idx: number) => {
-      let name = 'Chiến binh';
-      let cleanFeedback = item.feedback || '';
-
-      if (cleanFeedback && cleanFeedback.includes('|') && cleanFeedback.includes(']:')) {
-        const parts = cleanFeedback.split(']:')[0].split('|');
-        if (parts.length > 1 && parts[1].trim()) {
-          name = parts[1].trim();
-        }
-      }
-
-      return {
-        rank: idx + 1,
-        name: String(name || 'Chiến binh'),
-        score: Number(item.score) || 0,
-        date: item.created_at ? new Date(item.created_at).toLocaleDateString('vi-VN') : ''
-      };
-    });
-  } catch (e) {
-    console.warn("⚠️ Lỗi fetchTopLeaderboard:", e);
-    return [];
-  }
+  return await fetchSubmissionsFromCloud('ALL');
 };
