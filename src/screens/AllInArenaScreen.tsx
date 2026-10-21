@@ -5,11 +5,26 @@ import { generateSoloTopic, clearSoloTopicHistory, SoloTopic } from '../services
 import { generateRelayChallenge, clearRelayHistory, RelayChallenge } from '../services/arena/relayService';
 import { generateRoleplayScenario, clearRoleplayHistory, RoleplayScenario } from '../services/arena/roleplayService';
 import { evaluateSpeaking, AssessmentResult } from '../services/arena/assessmentService';
-import { updateUserProgress, saveSubmissionForTeacher } from '../services/userService';
+// 🎯 Đã cập nhật đúng hàm saveSubmissionToCloud từ userService
+import { updateUserProgress, saveSubmissionToCloud } from '../services/userService';
 
 interface Props {
   onBack: () => void;
 }
+
+// 🎯 ĐỊNH NGHĨA HÀM CHUYỂN DỔI BASE64 AN TOÀN TRÁNH LỖI IMPORT CỤC BỘ
+const safeBlobToBase64 = (blob: Blob): Promise<string> => {
+  return new Promise((resolve) => {
+    if (!blob) return resolve('');
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const result = reader.result as string;
+      resolve(result || '');
+    };
+    reader.onerror = () => resolve('');
+    reader.readAsDataURL(blob);
+  });
+};
 
 export default function AllInArenaScreen({ onBack }: Props) {
   const [mode, setMode] = useState<'solo' | 'relay' | 'roleplay'>('solo');
@@ -272,7 +287,7 @@ export default function AllInArenaScreen({ onBack }: Props) {
     }
   };
 
-  // 🎯 XÁC NHẬN GỬI BÀI VỚI DỰ DỮ LIỆU ĐỊNH DANH ĐẦY ĐỦ
+  // 🎯 XÁC NHẬN GỬI BÀI VỚI DỮ LIỆU ĐỊNH DANH ĐẦY ĐỦ
   const handleConfirmSubmissionWithIdentity = async () => {
     if (opponentType === 'pvp' && !pairNameInput.trim()) {
       alert("Vui lòng nhập Tên Cặp đấu (Ví dụ: Tuấn & Lan)!");
@@ -286,14 +301,20 @@ export default function AllInArenaScreen({ onBack }: Props) {
     const evalData = pendingEvalData || result;
     if (!evalData) return;
 
-    await saveSubmissionForTeacher({
+    // Chuyển file thu âm sang chuỗi Base64 an toàn để lưu vào Cloud
+    let base64Audio = '';
+    if (recordedBlob) {
+      base64Audio = await safeBlobToBase64(recordedBlob);
+    }
+
+    await saveSubmissionToCloud({
       studentName: studentNameInput.trim() || 'Sinh viên VibeSpeak',
       pairName: opponentType === 'pvp' ? pairNameInput.trim() : `Solo [${opponentType.toUpperCase()}]`,
       mode: mode,
       cefrLevel: cefrLevel,
       score: evalData.score || 85,
       transcript: evalData.transcript || '',
-      audioUrl: audioUrl || undefined,
+      audioUrl: base64Audio || audioUrl || undefined,
       feedback: evalData.detailedFeedback || 'Bài làm đạt yêu cầu',
     });
 
