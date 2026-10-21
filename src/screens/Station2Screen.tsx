@@ -8,6 +8,8 @@ import { getInstantRoleplayScenario, generateRoleplayScenario } from '../service
 
 import { evaluateSpeaking, AssessmentResult } from '../services/arena/assessmentService';
 import { saveSubmissionToCloud } from '../services/userService';
+// 🎯 IMPORT TĨNH SINGLETON CLIENT TRÁNH CẢNH BÁO GOTRUECLIENT MULTIPLE INSTANCES
+import { supabase } from '../utils/supabase';
 
 interface Props {
   onBack: () => void;
@@ -66,12 +68,12 @@ export default function Station2Screen({ onBack }: Props) {
 
   const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
 
+  // 🎯 TỐI ƯU HÀM NẠP TÀI KHOẢN TỪ SINGLETON SUPABASE
   useEffect(() => {
     const fetchUser = async () => {
       try {
-        const supabaseModule = await import('../utils/supabase').catch(() => null);
-        if (supabaseModule && supabaseModule.supabase) {
-          const { data } = await supabaseModule.supabase.auth.getUser();
+        if (supabase) {
+          const { data } = await supabase.auth.getUser();
           if (data?.user) {
             setUserId(data.user.id);
             if (data.user.user_metadata?.full_name) {
@@ -247,7 +249,6 @@ export default function Station2Screen({ onBack }: Props) {
           } catch (e) {}
         }
 
-        // 🎯 TẠO BLOB URL PHÁT MƯỢT TRÊN THANH GHI ÂM (TỐI ƯU 100%)
         const localAudioUrl = URL.createObjectURL(fullAudioBlob);
 
         const targetPrompt = exercise?.promptEn || exercise?.contextEn || exercise?.scenarioTitle || '';
@@ -490,7 +491,6 @@ export default function Station2Screen({ onBack }: Props) {
                 </View>
               )}
 
-              {/* 🎧 HIỂN THỊ THANH GHI ÂM CHUẨN MƯỢT MA */}
               {evalResult && (
                 <View style={styles.evalBox}>
                   <Text style={styles.evalScore}>🏆 ĐIỂM BÀI NÓI: {evalResult.score}/100</Text>
