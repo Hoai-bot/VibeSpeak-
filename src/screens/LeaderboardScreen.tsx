@@ -1,107 +1,65 @@
 // src/screens/LeaderboardScreen.tsx
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
-import { supabase } from '../utils/supabase';
+import { fetchSubmissionsFromCloud, RoleplaySubmission } from '../services/userService';
 
 interface Props {
   onBack: () => void;
-  userXp?: number;
 }
 
-interface LeaderboardUser {
-  id: string;
-  name: string;
-  studentCode: string;
-  totalDamage: number;
-  levelBadge: string;
-  avatar: string;
+interface LeaderboardEntry {
   rank: number;
-  isCurrentUser: boolean;
+  name: string;
+  className: string;
+  score: number;
+  mode: string;
+  cefrLevel: string;
+  date: string;
 }
 
-export default function LeaderboardScreen({ onBack, userXp = 3500 }: Props) {
-  const [leaderboard, setLeaderboard] = useState<LeaderboardUser[]>([]);
+export default function LeaderboardScreen({ onBack }: Props) {
+  const [allSubmissions, setAllSubmissions] = useState<RoleplaySubmission[]>([]);
+  const [selectedClass, setSelectedClass] = useState<string>('ALL');
   const [loading, setLoading] = useState<boolean>(true);
-  const [currentUserDamage, setCurrentUserDamage] = useState<number>(userXp);
 
   useEffect(() => {
-    fetchRealtimeLeaderboard();
-  }, [userXp]);
+    loadLeaderboardData();
+  }, []);
 
-  const fetchRealtimeLeaderboard = async () => {
+  const loadLeaderboardData = async () => {
     setLoading(true);
     try {
-      if (supabase) {
-        // 1. Lấy thông tin user hiện tại đang đăng nhập
-        const { data: userData } = await supabase.auth.getUser();
-        const currentUserId = userData?.user?.id;
-
-        // 2. Truy vấn danh sách Hồ sơ người dùng từ bảng profiles
-        const { data: profiles, error: profileErr } = await supabase
-          .from('profiles')
-          .select('id, full_name, student_code, role');
-
-        // 3. Truy vấn tổng điểm phát âm bài làm từ bảng assessment_results
-        const { data: results, error: resultErr } = await supabase
-          .from('assessment_results')
-          .select('user_id, score, feedback');
-
-        if (!profileErr && profiles) {
-          const userScoreMap: Record<string, number> = {};
-
-          if (results) {
-            results.forEach((item: { user_id: string; score: number }) => {
-              if (item.user_id) {
-                // Quy đổi 1 điểm bài nói = 100 HP Sát thương Boss
-                const damage = (Number(item.score) || 0) * 100;
-                userScoreMap[item.user_id] = (userScoreMap[item.user_id] || 0) + damage;
-              }
-            });
-          }
-
-          const avatars = ['🥷', '⚔️', '🎧', '🏎️', '🛡️', '🎯', '🔥', '🐥', '🌟', '⚡'];
-
-          const rankedList: LeaderboardUser[] = profiles
-            .map((p: any, index: number) => {
-              const totalHp = userScoreMap[p.id] || 0;
-              const displayName = String(p.full_name || p.student_code || 'Sinh viên VibeSpeak').trim();
-              const isCurrent = p.id === currentUserId;
-
-              if (isCurrent && totalHp > 0) {
-                setCurrentUserDamage(totalHp);
-              }
-
-              return {
-                id: p.id || String(index),
-                name: isCurrent ? `${displayName} (Bạn)` : displayName,
-                studentCode: String(p.student_code || ''),
-                // 🛡️ SỬA AN TOÀN CHỐNG CRASH TOUPPERCASE
-                levelBadge: String(p.role || 'A2').toUpperCase(),
-                totalDamage: totalHp,
-                avatar: avatars[index % avatars.length],
-                rank: 0,
-                isCurrentUser: isCurrent,
-              };
-            })
-            .sort((a, b) => b.totalDamage - a.totalDamage)
-            .map((item, idx) => ({ ...item, rank: idx + 1 }));
-
-          setLeaderboard(rankedList);
-        }
-      }
-    } catch (error) {
-      console.error("Lỗi tải Bảng xếp hạng Supabase:", error);
+      // Lấy toàn bộ bài nộp trên Cloud
+      const data = await fetchSubmissionsFromCloud('ALL');
+      setAllSubmissions(data || []);
+    } catch (e) {
+      console.warn("Lỗi tải Bảng Vàng:", e);
     } finally {
       setLoading(false);
     }
   };
 
-  const getRankBadgeColor = (rank: number) => {
-    if (rank === 1) return '#FFD700';
-    if (rank === 2) return '#C0C0C0';
-    if (rank === 3) return '#CD7F32';
-    return '#8888AA';
-  };
+  // Trích xuất danh sách các Mã Lớp duy nhất
+  const availableClasses = Array.from(
+    new Set(allSubmissions.map((s) => s.className || 'LỚP CHUNG'))
+  );
+
+  // Lọc dữ liệu theo Lớp đã chọn & Sắp xếp điểm từ Cao xuống Thấp
+  const filteredSubmissions = (selectedClass === 'ALL'
+    ? allSubmissions
+    : allSubmissions.filter((s) => s.className?.toUpperCase() === selectedClass.toUpperCase())
+  ).sort((a, b) => b.score - a.score);
+
+  // Tạo danh sách Bảng Vàng có Xếp Hạng (Rank 1, 2, 3...)
+  const leaderboardList: LeaderboardEntry[] = filteredSubmissions.map((item, index) => ({
+    rank: index + 1,
+    name: item.studentName || item.pairName || 'Chiến binh',
+    className: item.className || 'LỚP CHUNG',
+    score: item.score,
+    mode: item.mode || 'SOLO',
+    cefrLevel: item.cefrLevel || 'A1',
+    date: item.timestamp || '',
+  }));
 
   return (
     <View style={styles.container}>
@@ -109,66 +67,88 @@ export default function LeaderboardScreen({ onBack, userXp = 3500 }: Props) {
         <TouchableOpacity onPress={onBack} style={styles.backBtn}>
           <Text style={styles.backText}>🔙 QUAY LẠI MAP</Text>
         </TouchableOpacity>
-        <Text style={styles.title}>🏆 BẢNG XẾP HẠNG RAID BOSS</Text>
+        <Text style={styles.title}>🏆 BẢNG VÀNG CYBER KNIGHT</Text>
       </View>
 
-      <ScrollView contentContainerStyle={{ alignItems: 'center', width: '100%', paddingBottom: 30 }}>
-        <View style={styles.summaryCard}>
-          <Text style={styles.summaryTitle}>⚡ TỔNG SÁT THƯƠNG DIỆT BOSS CỦA BẠN (THỰC TẾ)</Text>
-          <Text style={styles.summaryScore}>{currentUserDamage.toLocaleString()} HP DAMAGE</Text>
-          <Text style={styles.summarySub}>Luyện tập phát âm tại các Trạm để tích lũy điểm thăng hạng Top Cyber Knight!</Text>
+      <ScrollView contentContainerStyle={{ alignItems: 'center', paddingBottom: 30 }}>
+        {/* KHU VỰC CHỌN MÃ LỚP ĐỂ XEM THỨ HẠNG CỦA LỚP */}
+        <View style={styles.filterBox}>
+          <Text style={styles.filterLabel}>🏫 CHỌN LỚP ĐỂ XEM XẾP HẠNG HỌC VIÊN:</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexDirection: 'row', marginTop: 8 }}>
+            <TouchableOpacity
+              style={[styles.classChip, selectedClass === 'ALL' && styles.classChipActive]}
+              onPress={() => setSelectedClass('ALL')}
+            >
+              <Text style={[styles.chipText, selectedClass === 'ALL' && styles.chipTextActive]}>🌐 TOÀN TRƯỜNG</Text>
+            </TouchableOpacity>
+
+            {availableClasses.map((clsName) => (
+              <TouchableOpacity
+                key={clsName}
+                style={[styles.classChip, selectedClass === clsName && styles.classChipActive]}
+                onPress={() => setSelectedClass(clsName)}
+              >
+                <Text style={[styles.chipText, selectedClass === clsName && styles.chipTextActive]}>🏫 LỚP: {clsName}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
         </View>
 
-        <View style={styles.boardContainer}>
-          <Text style={styles.boardHeader}>🔥 TOP CAO THỦ PHÁT ÂM CHIẾN TRƯỜNG (REALTIME)</Text>
+        {/* NÚT LÀM MỚI BẢNG VÀNG */}
+        <TouchableOpacity style={styles.refreshBtn} onPress={loadLeaderboardData}>
+          <Text style={styles.refreshBtnText}>🔄 CẬP NHẬT THỨ HẠNG MỚI NHẤT</Text>
+        </TouchableOpacity>
 
-          {loading ? (
-            <ActivityIndicator size="large" color="#39FF14" style={{ marginVertical: 30 }} />
-          ) : leaderboard.length > 0 ? (
-            leaderboard.map((item) => {
-              const badgeColor = getRankBadgeColor(item.rank);
+        {loading ? (
+          <ActivityIndicator size="large" color="#FFD700" style={{ marginVertical: 30 }} />
+        ) : leaderboardList.length === 0 ? (
+          <Text style={styles.emptyText}>Chưa có dữ liệu xếp hạng cho lớp này.</Text>
+        ) : (
+          /* DANH SÁCH BẢNG VÀNG XẾP HẠNG THỨ TỰ */
+          <View style={{ width: '100%' }}>
+            {leaderboardList.map((entry) => {
+              // Biểu tượng TOP 1, 2, 3
+              let rankBadge = `#${entry.rank}`;
+              let cardBorderColor = '#332255';
+              let rankColor = '#FFF';
+
+              if (entry.rank === 1) {
+                rankBadge = '🥇 TOP 1';
+                cardBorderColor = '#FFD700';
+                rankColor = '#FFD700';
+              } else if (entry.rank === 2) {
+                rankBadge = '🥈 TOP 2';
+                cardBorderColor = '#C0C0C0';
+                rankColor = '#C0C0C0';
+              } else if (entry.rank === 3) {
+                rankBadge = '🥉 TOP 3';
+                cardBorderColor = '#CD7F32';
+                rankColor = '#CD7F32';
+              }
 
               return (
-                <View 
-                  key={item.id} 
-                  style={[
-                    styles.rankRow, 
-                    item.isCurrentUser && styles.currentUserRow
-                  ]}
-                >
-                  <View style={styles.rankBadgeContainer}>
-                    <Text style={[styles.rankNumber, { color: badgeColor }]}>
-                      {item.rank === 1 ? '🥇' : item.rank === 2 ? '🥈' : item.rank === 3 ? '🥉' : `#${item.rank}`}
-                    </Text>
+                <View key={entry.rank + entry.name} style={[styles.rankCard, { borderColor: cardBorderColor }]}>
+                  <View style={styles.rankBadgeBox}>
+                    <Text style={[styles.rankBadgeText, { color: rankColor }]}>{rankBadge}</Text>
                   </View>
 
-                  <Text style={styles.avatar}>{item.avatar}</Text>
-
-                  <View style={{ flex: 1, marginLeft: 10 }}>
-                    <Text style={[styles.userName, item.isCurrentUser && styles.currentUserName]}>
-                      {item.name}
+                  <View style={{ flex: 1, paddingHorizontal: 10 }}>
+                    <Text style={styles.studentName}>{entry.name}</Text>
+                    <Text style={styles.subMeta}>
+                      🏫 {entry.className} | [{entry.mode} - LEVEL {entry.cefrLevel}]
                     </Text>
-                    {item.studentCode ? (
-                      <Text style={styles.studentCodeText}>MSSV: {item.studentCode}</Text>
-                    ) : null}
-                    <Text style={styles.damageText}>Sát thương: {item.totalDamage.toLocaleString()} HP</Text>
+                    <Text style={styles.dateText}>⏱ {entry.date}</Text>
                   </View>
 
-                  <View style={styles.cefrBadge}>
-                    {/* 🛡️ RENDER AN TOÀN TOUPPERCASE */}
-                    <Text style={styles.cefrText}>{String(item.levelBadge || 'A2').toUpperCase()}</Text>
+                  <View style={styles.scoreBox}>
+                    <Text style={styles.scoreNumber}>{entry.score}</Text>
+                    <Text style={styles.scoreLabel}>ĐIỂM</Text>
                   </View>
                 </View>
               );
-            })
-          ) : (
-            <Text style={styles.emptyText}>Chưa có dữ liệu sinh viên làm bài trên hệ thống Supabase.</Text>
-          )}
-
-          <TouchableOpacity style={styles.refreshBtn} onPress={fetchRealtimeLeaderboard}>
-            <Text style={styles.refreshBtnText}>🔄 CẬP NHẬT BẢNG XẾP HẠNG</Text>
-          </TouchableOpacity>
-        </View>
+            })}
+          </View>
+        )}
       </ScrollView>
     </View>
   );
@@ -176,28 +156,26 @@ export default function LeaderboardScreen({ onBack, userXp = 3500 }: Props) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#05020D', padding: 20, paddingTop: 50 },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 15 },
-  backBtn: { padding: 8, backgroundColor: '#0D0620', borderRadius: 8, borderWidth: 1, borderColor: '#FF007F' },
-  backText: { color: '#FF007F', fontSize: 10, fontWeight: 'bold' },
-  title: { color: '#FFD700', fontSize: 12, fontWeight: '900' },
-  summaryCard: { backgroundColor: '#1A0B2E', padding: 16, borderRadius: 16, borderWidth: 2, borderColor: '#FFD700', width: '100%', alignItems: 'center', marginBottom: 20 },
-  summaryTitle: { color: '#FFD700', fontSize: 10, fontWeight: '900', marginBottom: 6 },
-  summaryScore: { color: '#39FF14', fontSize: 22, fontWeight: '900', marginBottom: 4 },
-  summarySub: { color: '#AAAABB', fontSize: 10, textAlign: 'center' },
-  boardContainer: { backgroundColor: '#0D0620', padding: 16, borderRadius: 16, borderWidth: 2, borderColor: '#FF007F', width: '100%' },
-  boardHeader: { color: '#00FFFF', fontSize: 11, fontWeight: '900', marginBottom: 14, textAlign: 'center' },
-  rankRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#120826', padding: 12, borderRadius: 12, marginBottom: 10, borderWidth: 1, borderColor: '#221133' },
-  currentUserRow: { backgroundColor: '#2E0B3A', borderColor: '#39FF14', borderWidth: 2 },
-  rankBadgeContainer: { width: 32, alignItems: 'center' },
-  rankNumber: { fontSize: 13, fontWeight: '900' },
-  avatar: { fontSize: 20, marginLeft: 6 },
-  userName: { color: '#FFF', fontSize: 12, fontWeight: 'bold' },
-  currentUserName: { color: '#39FF14' },
-  studentCodeText: { color: '#00FFFF', fontSize: 8, marginTop: 1 },
-  damageText: { color: '#8888AA', fontSize: 9, marginTop: 2 },
-  cefrBadge: { backgroundColor: '#0D0620', paddingVertical: 4, paddingHorizontal: 8, borderRadius: 6, borderWidth: 1, borderColor: '#00FFFF' },
-  cefrText: { color: '#00FFFF', fontSize: 9, fontWeight: 'bold' },
-  emptyText: { color: '#8888AA', fontSize: 10, textAlign: 'center', marginVertical: 20 },
-  refreshBtn: { backgroundColor: '#FF007F', padding: 10, borderRadius: 8, width: '100%', alignItems: 'center', marginTop: 10 },
-  refreshBtnText: { color: '#FFF', fontSize: 10, fontWeight: '900' }
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
+  backBtn: { padding: 8, backgroundColor: '#0D0620', borderRadius: 8, borderWidth: 1, borderColor: '#00FFFF' },
+  backText: { color: '#00FFFF', fontSize: 10, fontWeight: 'bold' },
+  title: { color: '#FFD700', fontSize: 13, fontWeight: '900' },
+  filterBox: { backgroundColor: '#130A2A', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#FFD700', width: '100%', marginBottom: 12 },
+  filterLabel: { color: '#FFD700', fontSize: 10, fontWeight: '900' },
+  classChip: { backgroundColor: '#0D0620', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 6, borderWidth: 1, borderColor: '#332255', marginRight: 6 },
+  classChipActive: { backgroundColor: '#FFD700', borderColor: '#FFD700' },
+  chipText: { color: '#AAAABB', fontSize: 9, fontWeight: 'bold' },
+  chipTextActive: { color: '#000' },
+  refreshBtn: { backgroundColor: '#00FFFF', padding: 10, borderRadius: 8, width: '100%', alignItems: 'center', marginBottom: 15 },
+  refreshBtnText: { color: '#000', fontSize: 10, fontWeight: '900' },
+  emptyText: { color: '#AAAABB', fontSize: 10, textAlign: 'center', marginVertical: 20 },
+  rankCard: { backgroundColor: '#130A2A', padding: 12, borderRadius: 12, borderWidth: 1, flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
+  rankBadgeBox: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, backgroundColor: '#0D0620', alignItems: 'center', justifyContent: 'center', minWidth: 55 },
+  rankBadgeText: { fontSize: 10, fontWeight: '900' },
+  studentName: { color: '#00FFFF', fontSize: 11, fontWeight: '900' },
+  subMeta: { color: '#FF007F', fontSize: 8, fontWeight: 'bold', marginTop: 2 },
+  dateText: { color: '#8888AA', fontSize: 8, marginTop: 2 },
+  scoreBox: { alignItems: 'center', justifyContent: 'center', backgroundColor: '#0D0620', padding: 8, borderRadius: 8, borderWidth: 1, borderColor: '#39FF14', minWidth: 50 },
+  scoreNumber: { color: '#39FF14', fontSize: 14, fontWeight: '900' },
+  scoreLabel: { color: '#39FF14', fontSize: 7, fontWeight: 'bold' }
 });
