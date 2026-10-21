@@ -1,3 +1,4 @@
+// src/screens/TeacherDashboard.tsx
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, TextInput } from 'react-native';
 import { fetchSubmissionsFromCloud, RoleplaySubmission } from '../services/userService';
@@ -19,7 +20,7 @@ export default function TeacherDashboard({ onBack }: Props) {
   const loadDashboardData = async () => {
     setLoading(true);
     try {
-      // Tải tất cả bài nộp mới nhất từ Supabase Cloud
+      // Tải 100% bài nộp mới nhất từ Supabase Cloud
       const data = await fetchSubmissionsFromCloud('ALL');
       setSubmissions(data || []);
     } catch (e) {
@@ -29,7 +30,7 @@ export default function TeacherDashboard({ onBack }: Props) {
     }
   };
 
-  // Làm sạch tên lớp
+  // Hàm chuẩn hóa làm sạch Tên Lớp
   const cleanClassName = (rawClass?: string) => {
     if (!rawClass) return 'LỚP CHUNG';
     let cls = rawClass.trim();
@@ -39,19 +40,22 @@ export default function TeacherDashboard({ onBack }: Props) {
     return cls || 'LỚP CHUNG';
   };
 
-  // Trích xuất danh sách tất cả các Mã Lớp có trong dữ liệu
+  // Trích xuất danh sách tất cả các Mã Lớp duy nhất có trong Database
   const availableClasses = Array.from(
-    new Set(submissions.map((s) => cleanClassName(s.className)))
+    new Set(submissions.map((s) => cleanClassName(s.className).toUpperCase()))
   ).filter(Boolean);
 
-  // Lọc danh sách bài nộp theo Mã Lớp được chọn hoặc nhập tìm kiếm
+  // Lọc bài nộp theo Lớp được chọn hoặc Ô Tìm kiếm thủ công
   const filteredSubmissions = submissions.filter((item) => {
     const itemClass = cleanClassName(item.className).toUpperCase();
     
+    // Nếu có nhập từ khóa tìm kiếm thủ công
     if (customClassSearch.trim().length > 0) {
-      return itemClass.includes(customClassSearch.trim().toUpperCase());
+      const query = customClassSearch.trim().toUpperCase();
+      return itemClass.includes(query) || (item.studentName || '').toUpperCase().includes(query);
     }
 
+    // Nếu chọn chip danh sách lớp
     if (selectedClass === 'ALL') return true;
     return itemClass === selectedClass.toUpperCase();
   });
@@ -67,11 +71,11 @@ export default function TeacherDashboard({ onBack }: Props) {
       </View>
 
       <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
-        {/* KHU VỰC CHỌN VÀ TÌM KIẾM MÃ LỚP */}
+        {/* KHU VỰC LỌC TÌM KIẾM MÃ LỚP */}
         <View style={styles.filterCard}>
-          <Text style={styles.filterTitle}>🏫 LỌC THEO MÃ LỚP HỌC VIÊN:</Text>
+          <Text style={styles.filterTitle}>🏫 CHỌN HOẶC TÌM KIẾM MÃ LỚP:</Text>
           
-          {/* Nút danh sách các lớp tìm thấy */}
+          {/* Nút danh sách các Mã Lớp quét được */}
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginVertical: 10 }}>
             <TouchableOpacity
               style={[styles.chip, selectedClass === 'ALL' && !customClassSearch && styles.chipActive]}
@@ -81,7 +85,7 @@ export default function TeacherDashboard({ onBack }: Props) {
               }}
             >
               <Text style={[styles.chipText, selectedClass === 'ALL' && !customClassSearch && styles.chipTextActive]}>
-                🌐 TẤT CẢ CÁC LỚP ({submissions.length})
+                🌐 TOÀN TRƯỜNG ({submissions.length})
               </Text>
             </TouchableOpacity>
 
@@ -103,10 +107,10 @@ export default function TeacherDashboard({ onBack }: Props) {
 
           {/* Ô Nhập Mã Lớp Tìm Kiếm Trực Tiếp */}
           <View style={styles.searchBox}>
-            <Text style={styles.searchLabel}>🔎 Hoặc nhập Mã Lớp thủ công:</Text>
+            <Text style={styles.searchLabel}>🔎 TÌM THỦ CÔNG THEO MÃ LỚP / TÊN HỌC VIÊN:</Text>
             <TextInput
               style={styles.searchInput}
-              placeholder="Ví dụ: IC123, CDCBMN..."
+              placeholder="Gõ mã lớp (ví dụ: ICDL)..."
               placeholderTextColor="#777"
               value={customClassSearch}
               onChangeText={(text) => {
@@ -119,23 +123,23 @@ export default function TeacherDashboard({ onBack }: Props) {
 
         {/* NÚT TẢI LẠI DỮ LIỆU MỚI NHẤT */}
         <TouchableOpacity style={styles.refreshBtn} onPress={loadDashboardData}>
-          <Text style={styles.refreshBtnText}>🔄 CẬP NHẬT DỮ LIỆU BÀI NỘP MỚI NHẤT</Text>
+          <Text style={styles.refreshBtnText}>🔄 CẬP NHẬT DỮ LIỆU MỚI NHẤT</Text>
         </TouchableOpacity>
 
-        {/* KẾT QUẢ BẢNG ĐIỂM */}
+        {/* DANH SÁCH BÀI NỘP */}
         {loading ? (
           <ActivityIndicator size="large" color="#00FFFF" style={{ marginVertical: 30 }} />
         ) : filteredSubmissions.length === 0 ? (
           <View style={styles.emptyBox}>
-            <Text style={styles.emptyText}>⚠️ Chưa ghi nhận bài nộp nào cho Mã Lớp này.</Text>
+            <Text style={styles.emptyText}>⚠️ Không tìm thấy bài nộp nào cho từ khóa "{customClassSearch || selectedClass}".</Text>
             <Text style={styles.emptySubText}>
-              Hãy dặn sinh viên điền đúng Mã Lớp khi bấm nộp bài thực hành!
+              Thử chọn nút "🌐 TOÀN TRƯỜNG" ở trên để kiểm tra xem bài nộp đã lên Cloud chưa.
             </Text>
           </View>
         ) : (
           <View>
             <Text style={styles.summaryText}>
-              📋 Hợp lệ: {filteredSubmissions.length} bài nộp
+              📋 Tìm thấy {filteredSubmissions.length} bài nộp:
             </Text>
 
             {filteredSubmissions.map((sub, index) => (
@@ -148,7 +152,7 @@ export default function TeacherDashboard({ onBack }: Props) {
                 </View>
 
                 <Text style={styles.metaText}>
-                  🏫 Lớp: <Text style={{ color: '#FFD700' }}>{cleanClassName(sub.className)}</Text> | Chế độ: {sub.mode} | Cấp độ: {sub.cefrLevel}
+                  🏫 Lớp: <Text style={{ color: '#FFD700', fontWeight: 'bold' }}>{cleanClassName(sub.className)}</Text> | Chế độ: {sub.mode} | Cấp độ: {sub.cefrLevel}
                 </Text>
                 <Text style={styles.timeText}>⏱ {sub.timestamp}</Text>
 
@@ -185,8 +189,8 @@ const styles = StyleSheet.create({
   refreshBtn: { backgroundColor: '#00FFFF', padding: 12, borderRadius: 8, alignItems: 'center', marginBottom: 15 },
   refreshBtnText: { color: '#000', fontSize: 10, fontWeight: '900' },
   emptyBox: { alignItems: 'center', padding: 30, backgroundColor: '#170B30', borderRadius: 12 },
-  emptyText: { color: '#FF007F', fontSize: 11, fontWeight: 'bold' },
-  emptySubText: { color: '#8888AA', fontSize: 9, marginTop: 4, textAlign: 'center' },
+  emptyText: { color: '#FF007F', fontSize: 11, fontWeight: 'bold', textAlign: 'center' },
+  emptySubText: { color: '#8888AA', fontSize: 9, marginTop: 6, textAlign: 'center' },
   summaryText: { color: '#39FF14', fontSize: 10, fontWeight: 'bold', marginBottom: 10 },
   subCard: { backgroundColor: '#170B30', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#332255', marginBottom: 10 },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
