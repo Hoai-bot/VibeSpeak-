@@ -1,89 +1,16 @@
-// src/services/userService.ts
-import { supabase } from '../utils/supabase';
-
-export interface RoleplaySubmission {
-  id?: string;
-  studentName?: string;
-  pairName?: string;
-  className?: string;
-  score: number;
-  mode: string;
-  cefrLevel: string;
-  transcript: string;
-  audioUrl?: string;
-  feedback: string;
-  timestamp: string;
-}
-
-const LOCAL_HISTORY_KEY = 'vibespeak_user_submissions_history';
-
-export const blobToBase64 = (blob: Blob): Promise<string> => {
-  return new Promise((resolve) => {
-    const reader = new FileReader();
-    reader.onloadend = () => resolve((reader.result as string) || '');
-    reader.readAsDataURL(blob);
-  });
-};
-
-export const saveSubmissionToCloud = async (submission: RoleplaySubmission) => {
-  try {
-    // 1. Lưu dự phòng ở Local Storage máy học viên
-    try {
-      const existingLocal = localStorage.getItem(LOCAL_HISTORY_KEY);
-      const historyList: RoleplaySubmission[] = existingLocal ? JSON.parse(existingLocal) : [];
-      historyList.unshift(submission);
-      localStorage.setItem(LOCAL_HISTORY_KEY, JSON.stringify(historyList.slice(0, 30)));
-    } catch (e) {}
-
-    if (!supabase) return;
-
-    const { data: userData } = await supabase.auth.getUser();
-    const userId = userData?.user?.id || null;
-
-    const currentMode = String(submission.mode || 'SOLO').toUpperCase();
-    const level = String(submission.cefrLevel || 'A1').toUpperCase();
-    const className = submission.className || 'LỚP CHUNG';
-    let displayName = submission.pairName || submission.studentName || 'Sinh viên';
-
-    const formattedFeedback = `[${currentMode} - ${level} | CLASS: ${className} | ${displayName}]: ${submission.feedback || ''}`;
-
-    // 2. Lưu lên Cloud Supabase
-    const { error } = await supabase.from('assessment_results').insert([
-      {
-        user_id: userId,
-        score: Number(submission.score) || 0,
-        transcript: submission.transcript || '',
-        feedback: formattedFeedback,
-        audio_url: submission.audioUrl || '',
-      },
-    ]);
-
-    if (error) {
-      console.error("❌ Lỗi lưu dữ liệu Supabase:", error);
-    }
-  } catch (err) {
-    console.warn("⚠️ Lỗi saveSubmissionToCloud:", err);
-  }
-};
-
-// 🎯 HÀM TRUY XUẤT AN TOÀN TRỰC TIẾP TỪ CLOUD (TỰ ĐỘNG CHỐNG CACHE)
+// 🎯 HÀM TRUY XUẤT SIÊU TỐC - TỐI ƯU DUNG LƯỢNG VÀ TỐC ĐỘ TẢI
 export const fetchSubmissionsFromCloud = async (selectedClass?: string): Promise<RoleplaySubmission[]> => {
   try {
     if (!supabase) return [];
 
-    // Bổ sung timestamp query để vô hiệu hóa cache trình duyệt
+    // Chỉ truy vấn các trường cần thiết, giảm dung lượng dữ liệu tải về qua mạng
     const { data: results, error } = await supabase
       .from('assessment_results')
-      .select('id, score, transcript, feedback, audio_url, created_at, user_id')
+      .select('id, score, transcript, feedback, created_at, user_id') // Loại bỏ tạm audio_url nặng khi xem danh sách
       .order('created_at', { ascending: false })
-      .limit(300);
+      .limit(100); // Giảm bớt xuống 100 bản ghi mới nhất để tải cực nhanh
 
-    if (error) {
-      console.error("❌ Lỗi kết nối Supabase:", error);
-      return [];
-    }
-
-    if (!results || results.length === 0) return [];
+    if (error || !results) return [];
 
     const parsedList: RoleplaySubmission[] = results.map((item: any) => {
       let mode = 'SOLO';
@@ -129,7 +56,7 @@ export const fetchSubmissionsFromCloud = async (selectedClass?: string): Promise
         mode: String(mode).toUpperCase(),
         cefrLevel: String(cefrLevel).toUpperCase(),
         transcript: item.transcript || '',
-        audioUrl: item.audio_url || '',
+        audioUrl: '', // Bỏ nạp chuỗi base64 nặng
         feedback: cleanFeedback,
         timestamp: item.created_at ? new Date(item.created_at).toLocaleString('vi-VN') : '',
       };
@@ -146,38 +73,4 @@ export const fetchSubmissionsFromCloud = async (selectedClass?: string): Promise
     console.warn("⚠️ Lỗi fetchSubmissionsFromCloud:", err);
   }
   return [];
-};
-
-// 🎯 HÀM LẤY LỊCH SỬ CHO HỒ SƠ CHIẾN BINH
-export const fetchUserSubmissions = async (): Promise<RoleplaySubmission[]> => {
-  let localSubmissions: RoleplaySubmission[] = [];
-
-  try {
-    const localData = localStorage.getItem(LOCAL_HISTORY_KEY);
-    if (localData) {
-      localSubmissions = JSON.parse(localData) || [];
-    }
-  } catch (e) {
-    console.warn("Lỗi đọc local history:", e);
-  }
-
-  try {
-    const cloudSubmissions = await fetchSubmissionsFromCloud('ALL');
-    const combinedMap = new Map<string, RoleplaySubmission>();
-
-    [...localSubmissions, ...cloudSubmissions].forEach((item) => {
-      const key = `${item.studentName}_${item.score}_${item.timestamp}`;
-      if (!combinedMap.has(key)) {
-        combinedMap.set(key, item);
-      }
-    });
-
-    return Array.from(combinedMap.values());
-  } catch (err) {
-    return localSubmissions;
-  }
-};
-
-export const fetchTopLeaderboard = async () => {
-  return await fetchSubmissionsFromCloud('ALL');
 };
