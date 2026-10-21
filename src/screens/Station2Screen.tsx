@@ -39,7 +39,6 @@ export default function Station2Screen({ onBack }: Props) {
   const getTimerByLevel = (level: string, currentMode: string = mode): number => {
     const lvl = level.toUpperCase();
     
-    // NẾU CHƠI ĐẤU ĐÔI (RELAY / ROLEPLAY): Nhịp độ nhanh, luân phiên dồn dập
     if (currentMode === 'relay' || currentMode === 'roleplay') {
       switch (lvl) {
         case 'A1': return 15;
@@ -52,7 +51,6 @@ export default function Station2Screen({ onBack }: Props) {
       }
     }
 
-    // NẾU CHƠI SOLO: Thời gian thoải mái hơn để cá nhân diễn thuyết
     switch (lvl) {
       case 'A1': return 20;
       case 'A2': return 25;
@@ -114,7 +112,6 @@ export default function Station2Screen({ onBack }: Props) {
     setTurnTimer(getTimerByLevel(lvl, mode));
   };
 
-  // Cập nhật lại thời gian khi giáo viên/sinh viên chuyển Chế độ đấu
   const handleSelectMode = (newMode: 'solo' | 'relay' | 'roleplay') => {
     setMode(newMode);
     setTurnTimer(getTimerByLevel(cefrLevel, newMode));
@@ -217,11 +214,17 @@ export default function Station2Screen({ onBack }: Props) {
     return '';
   };
 
+  // 🎙 BẮT ĐẦU THU ÂM (LƠI LỎNG CHO NGƯỜI CHƠI TỰ DO)
   const startFullRecording = async () => {
-    if (!studentNameInput.trim() || !studentCodeInput.trim()) {
-      alert("⚠️ Vui lòng điền đầy đủ TỌA ĐỘ SINH VIÊN (Họ tên & MSSV) ở phía trên!");
+    if (!studentNameInput.trim()) {
+      alert("⚠️ Vui lòng nhập Họ tên hoặc Biệt danh của bạn ở phía trên trước khi bắt đầu!");
       return;
     }
+
+    const safeName = studentNameInput.trim();
+    const safeCode = studentCodeInput.trim() ? `MSSV: ${studentCodeInput.trim()}` : 'GUEST';
+    const safeClass = classNameInput.trim() || 'LỚP CHUNG';
+    const studentIdentifier = `${safeName} (${safeCode})`;
 
     try {
       setEvalResult(null);
@@ -311,7 +314,6 @@ export default function Station2Screen({ onBack }: Props) {
           });
         }
 
-        const studentIdentifier = `${studentNameInput.trim()} (MSSV: ${studentCodeInput.trim()})`;
         let pairDisplayName = studentIdentifier;
         let feedbackDetail = result.detailedFeedback;
 
@@ -328,7 +330,7 @@ export default function Station2Screen({ onBack }: Props) {
         await saveSubmissionToCloud({
           studentName: studentIdentifier,
           pairName: pairDisplayName,
-          className: classNameInput.trim() || 'LỚP CHUNG',
+          className: safeClass,
           score: totalAvgScore,
           mode: mode,
           cefrLevel: cefrLevel,
@@ -376,21 +378,21 @@ export default function Station2Screen({ onBack }: Props) {
 
       <ScrollView contentContainerStyle={{ alignItems: 'center', width: '100%', paddingBottom: 30 }}>
         
-        {/* KHU VỰC NHẬP THÔNG TIN SINH VIÊN & MÃ LỚP */}
+        {/* KHU VỰC NHẬP THÔNG TIN SINH VIÊN / NGƯỜI CHƠI TỰ DO */}
         <View style={styles.studentInfoCard}>
-          <Text style={styles.studentInfoTitle}>🎓 THÔNG TIN SINH VIÊN BẮT BUỘC:</Text>
+          <Text style={styles.studentInfoTitle}>🎓 THÔNG TIN NGƯỜI CHƠI / SINH VIÊN:</Text>
           <View style={{ flexDirection: 'column', gap: 6, width: '100%' }}>
             <View style={{ flexDirection: 'row', gap: 8, width: '100%' }}>
               <TextInput
                 style={[styles.infoInput, { flex: 1.2 }]}
-                placeholder="Họ và Tên sinh viên *"
+                placeholder="Họ tên / Biệt danh *"
                 placeholderTextColor="#666688"
                 value={studentNameInput}
                 onChangeText={setStudentNameInput}
               />
               <TextInput
                 style={[styles.infoInput, { flex: 0.8 }]}
-                placeholder="Mã số SV (MSSV) *"
+                placeholder="MSSV (Nếu có)"
                 placeholderTextColor="#666688"
                 value={studentCodeInput}
                 onChangeText={setStudentCodeInput}
@@ -398,7 +400,7 @@ export default function Station2Screen({ onBack }: Props) {
             </View>
             <TextInput
               style={[styles.infoInput, { width: '100%' }]}
-              placeholder="Tên Lớp / Mã Lớp học (VD: ENG101_01) *"
+              placeholder="Mã Lớp (Bỏ trống nếu là Người chơi tự do)"
               placeholderTextColor="#666688"
               value={classNameInput}
               onChangeText={setClassNameInput}
