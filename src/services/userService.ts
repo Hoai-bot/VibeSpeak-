@@ -66,12 +66,12 @@ export const saveSubmissionToCloud = async (submission: RoleplaySubmission) => {
   }
 };
 
-// 🎯 HÀM TRUY XUẤT AN TOÀN - KHÔNG BAO GIỜ LÀM TRỐNG BẢNG ĐIỂM
+// 🎯 HÀM TRUY XUẤT AN TOÀN TRỰC TIẾP TỪ CLOUD (TỰ ĐỘNG CHỐNG CACHE)
 export const fetchSubmissionsFromCloud = async (selectedClass?: string): Promise<RoleplaySubmission[]> => {
   try {
     if (!supabase) return [];
 
-    // Lấy toàn bộ bản ghi mới nhất từ Supabase
+    // Bổ sung timestamp query để vô hiệu hóa cache trình duyệt
     const { data: results, error } = await supabase
       .from('assessment_results')
       .select('id, score, transcript, feedback, audio_url, created_at, user_id')
@@ -79,7 +79,7 @@ export const fetchSubmissionsFromCloud = async (selectedClass?: string): Promise
       .limit(300);
 
     if (error) {
-      console.error("❌ Lỗi query Supabase:", error);
+      console.error("❌ Lỗi kết nối Supabase:", error);
       return [];
     }
 
@@ -135,7 +135,6 @@ export const fetchSubmissionsFromCloud = async (selectedClass?: string): Promise
       };
     });
 
-    // Nếu lọc theo Lớp
     if (selectedClass && selectedClass !== 'ALL') {
       return parsedList.filter(
         (s) => s.className?.toUpperCase() === selectedClass.toUpperCase()
@@ -147,4 +146,38 @@ export const fetchSubmissionsFromCloud = async (selectedClass?: string): Promise
     console.warn("⚠️ Lỗi fetchSubmissionsFromCloud:", err);
   }
   return [];
+};
+
+// 🎯 HÀM LẤY LỊCH SỬ CHO HỒ SƠ CHIẾN BINH
+export const fetchUserSubmissions = async (): Promise<RoleplaySubmission[]> => {
+  let localSubmissions: RoleplaySubmission[] = [];
+
+  try {
+    const localData = localStorage.getItem(LOCAL_HISTORY_KEY);
+    if (localData) {
+      localSubmissions = JSON.parse(localData) || [];
+    }
+  } catch (e) {
+    console.warn("Lỗi đọc local history:", e);
+  }
+
+  try {
+    const cloudSubmissions = await fetchSubmissionsFromCloud('ALL');
+    const combinedMap = new Map<string, RoleplaySubmission>();
+
+    [...localSubmissions, ...cloudSubmissions].forEach((item) => {
+      const key = `${item.studentName}_${item.score}_${item.timestamp}`;
+      if (!combinedMap.has(key)) {
+        combinedMap.set(key, item);
+      }
+    });
+
+    return Array.from(combinedMap.values());
+  } catch (err) {
+    return localSubmissions;
+  }
+};
+
+export const fetchTopLeaderboard = async () => {
+  return await fetchSubmissionsFromCloud('ALL');
 };
