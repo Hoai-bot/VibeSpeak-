@@ -40,8 +40,14 @@ export const saveSubmissionToCloud = async (submission: RoleplaySubmission) => {
 
     if (!supabase) return;
 
-    const { data: userData } = await supabase.auth.getUser();
-    const userId = userData?.user?.id || null;
+    // BỌC AN TOÀN TUYỆT ĐỐI KHI LẤY USER ID KHÔNG ĐỂ BỊ BÁO LỖI MODULE TREO APP
+    let userId = null;
+    try {
+      const { data: userData } = await supabase.auth.getUser();
+      userId = userData?.user?.id || null;
+    } catch (authErr) {
+      console.warn("⚠️ Bỏ qua lấy user_id bị lỗi module, lưu bài dưới dạng guest:", authErr);
+    }
 
     const currentMode = String(submission.mode || 'SOLO').toUpperCase();
     const level = String(submission.cefrLevel || 'A1').toUpperCase();
@@ -70,12 +76,11 @@ export const saveSubmissionToCloud = async (submission: RoleplaySubmission) => {
 
 export const saveSubmissionForTeacher = saveSubmissionToCloud;
 
-// 🎯 HÀM TRUY XUẤT CLOUD KHÔNG SỬ DỤNG ORDER BY (TRÁNH TIMEOUT & THIẾU TÊN BIẾN SUPABASE)
+// 🎯 HÀM TRUY XUẤT CLOUD AN TOÀN - CHỐNG BỊ TREO QUAY TRÒN
 export const fetchSubmissionsFromCloud = async (selectedClass?: string): Promise<RoleplaySubmission[]> => {
   try {
     if (!supabase) return [];
 
-    // Lấy 100 bản ghi thô mà không gọi .order('created_at') trên DB
     const { data: results, error } = await supabase
       .from('assessment_results')
       .select('id, score, transcript, feedback, audio_url, created_at, user_id')
@@ -139,7 +144,7 @@ export const fetchSubmissionsFromCloud = async (selectedClass?: string): Promise
       };
     });
 
-    // Sắp xếp thời gian giảm dần bằng JS
+    // Sắp xếp thời gian giảm dần
     parsedList.sort((a: any, b: any) => b.rawCreatedAt - a.rawCreatedAt);
 
     let filtered = parsedList;
@@ -149,7 +154,6 @@ export const fetchSubmissionsFromCloud = async (selectedClass?: string): Promise
       );
     }
 
-    // Tự động gắn thứ hạng (Rank)
     const sortedForRank = [...filtered].sort((a, b) => b.score - a.score);
     return filtered.map((item) => {
       const rankIndex = sortedForRank.findIndex((r) => r.id === item.id);
