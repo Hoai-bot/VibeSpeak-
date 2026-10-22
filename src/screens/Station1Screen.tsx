@@ -245,7 +245,7 @@ export default function Station1Screen({ onBack }: Props) {
 
     try {
       const promptTarget = (currentDrill?.contentEn || '').trim();
-      // Truyền undefined cho cefrLevel để Trạm 1 không bị hiển thị nhãn cấp độ A2
+      // Truyền undefined cho cefrLevel để Trạm 1 không bị hiển thị nhãn cấp độ
       const evalData = await evaluateSpeaking(recordedAudio, undefined, undefined, promptTarget, userId);
 
       setResult(evalData);
