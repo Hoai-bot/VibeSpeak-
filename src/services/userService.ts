@@ -1,17 +1,13 @@
 // src/services/userService.ts
-import { createClient } from '@supabase/supabase-js';
 import { supabase as defaultSupabase } from '../utils/supabase';
 
-const SUPABASE_URL = 'https://hdifryokbfssibhsnpja.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...';
-
+// Lấy instance duy nhất từ Singleton global, không gọi createClient() mới nữa
 const getSafeSupabase = () => {
   if (defaultSupabase) return defaultSupabase;
-  try {
-    return createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-  } catch (e) {
-    return null;
+  if (typeof window !== 'undefined' && (window as any).__supabaseInstance) {
+    return (window as any).__supabaseInstance;
   }
+  return null;
 };
 
 export interface RoleplaySubmission {
@@ -26,7 +22,7 @@ export interface RoleplaySubmission {
   audioUrl?: string;
   feedback: string;
   timestamp: string;
-  rank?: number; // Bổ sung thuộc tính Rank xếp hạng
+  rank?: number; // Thuộc tính Rank xếp hạng
 }
 
 const LOCAL_HISTORY_KEY = 'vibespeak_user_submissions_history';
@@ -85,7 +81,6 @@ export const fetchSubmissionsFromCloud = async (selectedClass?: string): Promise
     const client = getSafeSupabase();
     if (!client) return [];
 
-    // Bổ sung lại 'audio_url' vào câu lệnh SELECT
     const { data: results, error } = await client
       .from('assessment_results')
       .select('id, score, transcript, feedback, audio_url, created_at, user_id')
@@ -138,7 +133,7 @@ export const fetchSubmissionsFromCloud = async (selectedClass?: string): Promise
         mode: String(mode).toUpperCase(),
         cefrLevel: String(cefrLevel).toUpperCase(),
         transcript: item.transcript || '',
-        audioUrl: item.audio_url || '', // Đã trả về đầy đủ chuỗi audio
+        audioUrl: item.audio_url || '',
         feedback: cleanFeedback,
         timestamp: item.created_at ? new Date(item.created_at).toLocaleString('vi-VN') : '',
       };

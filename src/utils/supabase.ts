@@ -1,22 +1,26 @@
 // src/utils/supabase.ts
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || "https://your-supabase-project-id.supabase.co";
-const supabaseKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || "your-anon-key-here";
+// Đọc URL và ANON KEY từ biến môi trường, có sẵn fallback trực tiếp cho VibeSpeak
+const SUPABASE_URL =
+  process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://hdifryokbfssibhsnpja.supabase.co';
+const SUPABASE_ANON_KEY =
+  process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ||
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'; // Anon Key dự án của bạn
 
-// Khai báo biến singleton trên global window để tránh tạo lại Client khi HMR/Reload
-const globalForSupabase = globalThis as unknown as { supabase: any };
+// Tải hoặc lưu duy nhất 1 instance duy nhất trên window/global context
+declare global {
+  var __supabaseInstance: SupabaseClient | undefined;
+}
 
-export const supabase =
-  globalForSupabase.supabase ||
-  createClient(supabaseUrl, supabaseKey, {
+if (!globalThis.__supabaseInstance) {
+  globalThis.__supabaseInstance = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     auth: {
       persistSession: true,
       autoRefreshToken: true,
       detectSessionInUrl: false,
     },
   });
-
-if (process.env.NODE_ENV !== 'production') {
-  globalForSupabase.supabase = supabase;
 }
+
+export const supabase = globalThis.__supabaseInstance;
