@@ -2,17 +2,14 @@
 import { createClient } from '@supabase/supabase-js';
 import { supabase as defaultSupabase } from '../utils/supabase';
 
-// URL và Anon Key của dự án Supabase VibeSpeak
 const SUPABASE_URL = 'https://hdifryokbfssibhsnpja.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'; // Nhập Anon Key của bạn vào đây
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...';
 
-// Tự động tạo fallback client nếu import bị undefined
 const getSafeSupabase = () => {
   if (defaultSupabase) return defaultSupabase;
   try {
     return createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
   } catch (e) {
-    console.warn("⚠️ Lỗi khởi tạo Supabase fallback:", e);
     return null;
   }
 };
@@ -29,11 +26,11 @@ export interface RoleplaySubmission {
   audioUrl?: string;
   feedback: string;
   timestamp: string;
+  rank?: number; // Bổ sung thuộc tính Rank xếp hạng
 }
 
 const LOCAL_HISTORY_KEY = 'vibespeak_user_submissions_history';
 
-// 🎯 HÀM CHUYỂN DỔI BLOB SANG BASE64 AN TOÀN
 export const blobToBase64 = (blob: Blob): Promise<string> => {
   return new Promise((resolve) => {
     if (!blob) return resolve('');
@@ -44,10 +41,8 @@ export const blobToBase64 = (blob: Blob): Promise<string> => {
   });
 };
 
-// 🎯 HÀM LƯU BÀI NỘP LÊN CLOUD SUPABASE
 export const saveSubmissionToCloud = async (submission: RoleplaySubmission) => {
   try {
-    // 1. Lưu dự phòng ở Local Storage máy học viên
     try {
       const existingLocal = localStorage.getItem(LOCAL_HISTORY_KEY);
       const historyList: RoleplaySubmission[] = existingLocal ? JSON.parse(existingLocal) : [];
@@ -68,8 +63,7 @@ export const saveSubmissionToCloud = async (submission: RoleplaySubmission) => {
 
     const formattedFeedback = `[${currentMode} - ${level} | CLASS: ${className} | ${displayName}]: ${submission.feedback || ''}`;
 
-    // 2. Lưu lên Cloud Supabase
-    const { error } = await client.from('assessment_results').insert([
+    await client.from('assessment_results').insert([
       {
         user_id: userId,
         score: Number(submission.score) || 0,
@@ -78,30 +72,25 @@ export const saveSubmissionToCloud = async (submission: RoleplaySubmission) => {
         audio_url: submission.audioUrl || '',
       },
     ]);
-
-    if (error) {
-      console.error("❌ Lỗi lưu dữ liệu Supabase:", error);
-    }
   } catch (err) {
-    console.warn("⚠️ Lỗi saveSubmissionToCloud:", err);
+    console.warn("Lỗi saveSubmissionToCloud:", err);
   }
 };
 
-// Alias tương thích với các component cũ nếu có gọi saveSubmissionForTeacher
 export const saveSubmissionForTeacher = saveSubmissionToCloud;
 
-// 🎯 HÀM TRUY XUẤT SIÊU TỐC - TỐI ƯU DUNG LƯỢNG VÀ TỐC ĐỘ TẢI
+// 🎯 HÀM TRUY XUẤT ĐẦY ĐỦ AUDIO + BÓC TÁCH XẾP HẠNG (RANK)
 export const fetchSubmissionsFromCloud = async (selectedClass?: string): Promise<RoleplaySubmission[]> => {
   try {
     const client = getSafeSupabase();
     if (!client) return [];
 
-    // Chỉ truy vấn các trường cần thiết, giảm dung lượng dữ liệu tải về qua mạng
+    // Bổ sung lại 'audio_url' vào câu lệnh SELECT
     const { data: results, error } = await client
       .from('assessment_results')
-      .select('id, score, transcript, feedback, created_at, user_id')
+      .select('id, score, transcript, feedback, audio_url, created_at, user_id')
       .order('created_at', { ascending: false })
-      .limit(100);
+      .limit(150);
 
     if (error || !results) return [];
 
@@ -149,59 +138,40 @@ export const fetchSubmissionsFromCloud = async (selectedClass?: string): Promise
         mode: String(mode).toUpperCase(),
         cefrLevel: String(cefrLevel).toUpperCase(),
         transcript: item.transcript || '',
-        audioUrl: '', // Bỏ nạp chuỗi base64 nặng
+        audioUrl: item.audio_url || '', // Đã trả về đầy đủ chuỗi audio
         feedback: cleanFeedback,
         timestamp: item.created_at ? new Date(item.created_at).toLocaleString('vi-VN') : '',
       };
     });
 
+    let filtered = parsedList;
     if (selectedClass && selectedClass !== 'ALL') {
-      return parsedList.filter(
+      filtered = parsedList.filter(
         (s) => s.className?.toUpperCase() === selectedClass.toUpperCase()
       );
     }
 
-    return parsedList;
+    // Tự động tính toán Xếp hạng (Rank) dựa trên Điểm số giảm dần
+    const sortedForRank = [...filtered].sort((a, b) => b.score - a.score);
+    return filtered.map((item) => {
+      const rankIndex = sortedForRank.findIndex((r) => r.id === item.id);
+      return {
+        ...item,
+        rank: rankIndex !== -1 ? rankIndex + 1 : undefined,
+      };
+    });
   } catch (err) {
     console.warn("⚠️ Lỗi fetchSubmissionsFromCloud:", err);
   }
   return [];
 };
 
-// 🎯 HÀM TRUY XUẤT DỮ LIỆU BÀI NỘP CHO MÀN HÌNH HỒ SƠ CHIẾN BINH
 export const fetchUserSubmissions = async (): Promise<RoleplaySubmission[]> => {
-  let localSubmissions: RoleplaySubmission[] = [];
-
-  try {
-    const localData = localStorage.getItem(LOCAL_HISTORY_KEY);
-    if (localData) {
-      localSubmissions = JSON.parse(localData) || [];
-    }
-  } catch (e) {
-    console.warn("Lỗi đọc local history:", e);
-  }
-
-  try {
-    const cloudSubmissions = await fetchSubmissionsFromCloud('ALL');
-    const combinedMap = new Map<string, RoleplaySubmission>();
-
-    [...localSubmissions, ...cloudSubmissions].forEach((item) => {
-      const key = `${item.studentName}_${item.score}_${item.timestamp}`;
-      if (!combinedMap.has(key)) {
-        combinedMap.set(key, item);
-      }
-    });
-
-    return Array.from(combinedMap.values());
-  } catch (err) {
-    return localSubmissions;
-  }
+  return await fetchSubmissionsFromCloud('ALL');
 };
 
 export const fetchTopLeaderboard = async () => {
   return await fetchSubmissionsFromCloud('ALL');
 };
 
-export const updateUserProgress = async (score: number, station: number) => {
-  // Logic cập nhật tiến trình cơ bản
-};
+export const updateUserProgress = async (score: number, station: number) => {};

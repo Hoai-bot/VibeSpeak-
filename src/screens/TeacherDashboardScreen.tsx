@@ -145,7 +145,16 @@ export default function TeacherDashboard({ onBack }: Props) {
             {filteredSubmissions.map((sub, index) => (
               <View key={sub.id || index} style={styles.subCard}>
                 <View style={styles.cardHeader}>
-                  <Text style={styles.studentName}>👤 {sub.studentName || 'Học viên'}</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    {/* HUY HIỆU XẾP HẠNG */}
+                    <View style={styles.rankBadge}>
+                      <Text style={styles.rankBadgeText}>
+                        {sub.rank === 1 ? '🥇 TOP 1' : sub.rank === 2 ? '🥈 TOP 2' : sub.rank === 3 ? '🥉 TOP 3' : `#${sub.rank || index + 1}`}
+                      </Text>
+                    </View>
+                    <Text style={styles.studentName}>👤 {sub.studentName || 'Học viên'}</Text>
+                  </View>
+                  
                   <View style={styles.scoreBadge}>
                     <Text style={styles.scoreText}>{sub.score} ĐIỂM</Text>
                   </View>
@@ -156,10 +165,22 @@ export default function TeacherDashboard({ onBack }: Props) {
                 </Text>
                 <Text style={styles.timeText}>⏱ {sub.timestamp}</Text>
 
+                {/* THANH PHÁT AUDIO CHO GIÁO VIÊN NGHE LẠI */}
+                {sub.audioUrl ? (
+                  <View style={styles.audioPlayerSection}>
+                    <Text style={styles.audioSectionTitle}>🎧 NGHE LẠI BÀI NÓI CỦA SINH VIÊN:</Text>
+                    {React.createElement('audio', { 
+                      controls: true, 
+                      src: sub.audioUrl, 
+                      style: { width: '100%', marginTop: '4px', height: '36px' } 
+                    })}
+                  </View>
+                ) : null}
+
                 {sub.transcript ? (
                   <View style={styles.transcriptBox}>
                     <Text style={styles.transcriptLabel}>💬 Transcript bài nói:</Text>
-                    <Text style={styles.transcriptContent}>{sub.transcript}</Text>
+                    <Text style={styles.transcriptContent}>"{sub.transcript}"</Text>
                   </View>
                 ) : null}
               </View>
@@ -194,12 +215,16 @@ const styles = StyleSheet.create({
   summaryText: { color: '#39FF14', fontSize: 10, fontWeight: 'bold', marginBottom: 10 },
   subCard: { backgroundColor: '#170B30', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#332255', marginBottom: 10 },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  rankBadge: { backgroundColor: '#0D0620', paddingHorizontal: 6, paddingVertical: 3, borderRadius: 4, borderWidth: 1, borderColor: '#FFD700' },
+  rankBadgeText: { color: '#FFD700', fontSize: 9, fontWeight: '900' },
   studentName: { color: '#00FFFF', fontSize: 11, fontWeight: 'bold' },
   scoreBadge: { backgroundColor: '#0D0620', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, borderWidth: 1, borderColor: '#39FF14' },
   scoreText: { color: '#39FF14', fontSize: 11, fontWeight: '900' },
   metaText: { color: '#DDD', fontSize: 8, marginTop: 4 },
   timeText: { color: '#8888AA', fontSize: 8, marginTop: 2 },
+  audioPlayerSection: { backgroundColor: '#0D0620', padding: 8, borderRadius: 6, marginTop: 8, borderWidth: 1, borderColor: '#00FFFF' },
+  audioSectionTitle: { color: '#00FFFF', fontSize: 8, fontWeight: 'bold' },
   transcriptBox: { backgroundColor: '#0D0620', padding: 8, borderRadius: 6, marginTop: 8 },
   transcriptLabel: { color: '#FFD700', fontSize: 8, fontWeight: 'bold' },
-  transcriptContent: { color: '#CCC', fontSize: 8, marginTop: 2 }
+  transcriptContent: { color: '#CCC', fontSize: 8, marginTop: 2, fontStyle: 'italic' }
 });
