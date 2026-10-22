@@ -1,14 +1,6 @@
 // src/services/userService.ts
-import { supabase as defaultSupabase } from '../utils/supabase';
-
-// Lấy instance duy nhất từ Singleton global, không gọi createClient() mới nữa
-const getSafeSupabase = () => {
-  if (defaultSupabase) return defaultSupabase;
-  if (typeof window !== 'undefined' && (window as any).__supabaseInstance) {
-    return (window as any).__supabaseInstance;
-  }
-  return null;
-};
+// 🎯 Import DUY NHẤT một instance supabase duy nhất từ utils
+import { supabase } from '../utils/supabase';
 
 export interface RoleplaySubmission {
   id?: string;
@@ -22,7 +14,7 @@ export interface RoleplaySubmission {
   audioUrl?: string;
   feedback: string;
   timestamp: string;
-  rank?: number; // Thuộc tính Rank xếp hạng
+  rank?: number;
 }
 
 const LOCAL_HISTORY_KEY = 'vibespeak_user_submissions_history';
@@ -46,10 +38,9 @@ export const saveSubmissionToCloud = async (submission: RoleplaySubmission) => {
       localStorage.setItem(LOCAL_HISTORY_KEY, JSON.stringify(historyList.slice(0, 30)));
     } catch (e) {}
 
-    const client = getSafeSupabase();
-    if (!client) return;
+    if (!supabase) return;
 
-    const { data: userData } = await client.auth.getUser();
+    const { data: userData } = await supabase.auth.getUser();
     const userId = userData?.user?.id || null;
 
     const currentMode = String(submission.mode || 'SOLO').toUpperCase();
@@ -59,7 +50,7 @@ export const saveSubmissionToCloud = async (submission: RoleplaySubmission) => {
 
     const formattedFeedback = `[${currentMode} - ${level} | CLASS: ${className} | ${displayName}]: ${submission.feedback || ''}`;
 
-    await client.from('assessment_results').insert([
+    await supabase.from('assessment_results').insert([
       {
         user_id: userId,
         score: Number(submission.score) || 0,
@@ -75,13 +66,12 @@ export const saveSubmissionToCloud = async (submission: RoleplaySubmission) => {
 
 export const saveSubmissionForTeacher = saveSubmissionToCloud;
 
-// 🎯 HÀM TRUY XUẤT ĐẦY ĐỦ AUDIO + BÓC TÁCH XẾP HẠNG (RANK)
+// 🎯 HÀM TRUY XUẤT CHO HỒ SƠ CHIẾN BINH & BẢNG ĐIỂM
 export const fetchSubmissionsFromCloud = async (selectedClass?: string): Promise<RoleplaySubmission[]> => {
   try {
-    const client = getSafeSupabase();
-    if (!client) return [];
+    if (!supabase) return [];
 
-    const { data: results, error } = await client
+    const { data: results, error } = await supabase
       .from('assessment_results')
       .select('id, score, transcript, feedback, audio_url, created_at, user_id')
       .order('created_at', { ascending: false })
@@ -146,7 +136,6 @@ export const fetchSubmissionsFromCloud = async (selectedClass?: string): Promise
       );
     }
 
-    // Tự động tính toán Xếp hạng (Rank) dựa trên Điểm số giảm dần
     const sortedForRank = [...filtered].sort((a, b) => b.score - a.score);
     return filtered.map((item) => {
       const rankIndex = sortedForRank.findIndex((r) => r.id === item.id);
