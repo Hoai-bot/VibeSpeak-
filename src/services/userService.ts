@@ -1,5 +1,4 @@
 // src/services/userService.ts
-// 🎯 Import DUY NHẤT một instance supabase duy nhất từ utils
 import { supabase } from '../utils/supabase';
 
 export interface RoleplaySubmission {
@@ -31,6 +30,7 @@ export const blobToBase64 = (blob: Blob): Promise<string> => {
 
 export const saveSubmissionToCloud = async (submission: RoleplaySubmission) => {
   try {
+    // 1. Lưu dự phòng vào LocalStorage
     try {
       const existingLocal = localStorage.getItem(LOCAL_HISTORY_KEY);
       const historyList: RoleplaySubmission[] = existingLocal ? JSON.parse(existingLocal) : [];
@@ -50,7 +50,7 @@ export const saveSubmissionToCloud = async (submission: RoleplaySubmission) => {
 
     const formattedFeedback = `[${currentMode} - ${level} | CLASS: ${className} | ${displayName}]: ${submission.feedback || ''}`;
 
-    await supabase.from('assessment_results').insert([
+    const { error } = await supabase.from('assessment_results').insert([
       {
         user_id: userId,
         score: Number(submission.score) || 0,
@@ -59,14 +59,18 @@ export const saveSubmissionToCloud = async (submission: RoleplaySubmission) => {
         audio_url: submission.audioUrl || '',
       },
     ]);
+
+    if (error) {
+      console.error("❌ Lỗi lưu dữ liệu lên Supabase:", error);
+    }
   } catch (err) {
-    console.warn("Lỗi saveSubmissionToCloud:", err);
+    console.warn("⚠️ Lỗi saveSubmissionToCloud:", err);
   }
 };
 
 export const saveSubmissionForTeacher = saveSubmissionToCloud;
 
-// 🎯 HÀM TRUY XUẤT CHO HỒ SƠ CHIẾN BINH & BẢNG ĐIỂM
+// 🎯 HÀM TRUY XUẤT CLOUD DÀNH CHO BẢNG ĐIỂM GIÁO VIÊN
 export const fetchSubmissionsFromCloud = async (selectedClass?: string): Promise<RoleplaySubmission[]> => {
   try {
     if (!supabase) return [];
@@ -77,7 +81,12 @@ export const fetchSubmissionsFromCloud = async (selectedClass?: string): Promise
       .order('created_at', { ascending: false })
       .limit(150);
 
-    if (error || !results) return [];
+    if (error) {
+      console.error("❌ Lỗi truy vấn Supabase:", error);
+      return [];
+    }
+
+    if (!results || results.length === 0) return [];
 
     const parsedList: RoleplaySubmission[] = results.map((item: any) => {
       let mode = 'SOLO';
@@ -136,6 +145,7 @@ export const fetchSubmissionsFromCloud = async (selectedClass?: string): Promise
       );
     }
 
+    // Tự động sắp xếp và gắn thứ hạng (Rank)
     const sortedForRank = [...filtered].sort((a, b) => b.score - a.score);
     return filtered.map((item) => {
       const rankIndex = sortedForRank.findIndex((r) => r.id === item.id);

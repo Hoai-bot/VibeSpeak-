@@ -1,4 +1,4 @@
-// src/screens/TeacherDashboard.tsx
+// src/screens/TeacherDashboardScreen.tsx
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, TextInput } from 'react-native';
 import { fetchSubmissionsFromCloud, RoleplaySubmission } from '../services/userService';
@@ -7,7 +7,7 @@ interface Props {
   onBack: () => void;
 }
 
-export default function TeacherDashboard({ onBack }: Props) {
+export default function TeacherDashboardScreen({ onBack }: Props) {
   const [submissions, setSubmissions] = useState<RoleplaySubmission[]>([]);
   const [selectedClass, setSelectedClass] = useState<string>('ALL');
   const [customClassSearch, setCustomClassSearch] = useState<string>('');
@@ -20,7 +20,6 @@ export default function TeacherDashboard({ onBack }: Props) {
   const loadDashboardData = async () => {
     setLoading(true);
     try {
-      // Tải toàn bộ bài nộp mới nhất từ Supabase Cloud
       const data = await fetchSubmissionsFromCloud('ALL');
       setSubmissions(data || []);
     } catch (e) {
@@ -30,7 +29,6 @@ export default function TeacherDashboard({ onBack }: Props) {
     }
   };
 
-  // Hàm chuẩn hóa làm sạch Tên Lớp an toàn
   const cleanClassName = (rawClass?: string) => {
     if (!rawClass) return 'LỚP CHUNG';
     let cls = String(rawClass).trim();
@@ -40,35 +38,25 @@ export default function TeacherDashboard({ onBack }: Props) {
     return cls || 'LỚP CHUNG';
   };
 
-  // Trích xuất danh sách tất cả các Mã Lớp duy nhất có trong Database
   const availableClasses = Array.from(
     new Set(submissions.map((s) => cleanClassName(s.className).toUpperCase()))
   ).filter(Boolean);
 
-  // Lọc bài nộp linh hoạt (Không bỏ sót dữ liệu)
   const filteredSubmissions = submissions.filter((item) => {
     const itemClass = cleanClassName(item.className).toUpperCase();
     const studentName = String(item.studentName || '').toUpperCase();
-    const pairName = String(item.pairName || '').toUpperCase();
-    
-    // 1. Tìm kiếm thủ công theo Tên Sinh viên / Mã Lớp / Tên Cặp đấu
+
     if (customClassSearch.trim().length > 0) {
       const query = customClassSearch.trim().toUpperCase();
-      return (
-        itemClass.includes(query) ||
-        studentName.includes(query) ||
-        pairName.includes(query)
-      );
+      return itemClass.includes(query) || studentName.includes(query);
     }
 
-    // 2. Lọc theo chip chọn lớp
     if (selectedClass === 'ALL') return true;
     return itemClass === selectedClass.toUpperCase();
   });
 
   return (
     <View style={styles.container}>
-      {/* HEADER BAR */}
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack} style={styles.backBtn}>
           <Text style={styles.backText}>🔙 QUAY LẠI MAP</Text>
@@ -77,7 +65,6 @@ export default function TeacherDashboard({ onBack }: Props) {
       </View>
 
       <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
-        {/* KHU VỰC LỌC TÌM KIẾM MÃ LỚP */}
         <View style={styles.filterCard}>
           <Text style={styles.filterTitle}>🏫 CHỌN HOẶC TÌM KIẾM MÃ LỚP:</Text>
           
@@ -114,7 +101,7 @@ export default function TeacherDashboard({ onBack }: Props) {
             <Text style={styles.searchLabel}>🔎 TÌM THỦ CÔNG THEO MÃ LỚP / TÊN HỌC VIÊN:</Text>
             <TextInput
               style={styles.searchInput}
-              placeholder="Gõ mã lớp (ví dụ: ICDL) hoặc tên sinh viên..."
+              placeholder="Gõ mã lớp hoặc tên học viên..."
               placeholderTextColor="#777"
               value={customClassSearch}
               onChangeText={(text) => {
@@ -125,19 +112,17 @@ export default function TeacherDashboard({ onBack }: Props) {
           </View>
         </View>
 
-        {/* NÚT TẢI LẠI DỮ LIỆU MỚI NHẤT */}
         <TouchableOpacity style={styles.refreshBtn} onPress={loadDashboardData}>
           <Text style={styles.refreshBtnText}>🔄 CẬP NHẬT DỮ LIỆU MỚI NHẤT</Text>
         </TouchableOpacity>
 
-        {/* DANH SÁCH BÀI NỘP */}
         {loading ? (
           <ActivityIndicator size="large" color="#00FFFF" style={{ marginVertical: 30 }} />
         ) : filteredSubmissions.length === 0 ? (
           <View style={styles.emptyBox}>
-            <Text style={styles.emptyText}>⚠️ Không tìm thấy bài nộp nào cho từ khóa "{customClassSearch || selectedClass}".</Text>
+            <Text style={styles.emptyText}>⚠️ Chưa ghi nhận bài nộp nào trên Cloud.</Text>
             <Text style={styles.emptySubText}>
-              Bấm vào nút "🌐 TOÀN TRƯỜNG" ở trên để hiển thị toàn bộ danh sách bài nộp từ Cloud.
+              Bấm vào "🌐 TOÀN TRƯỜNG" hoặc bấm "🔄 CẬP NHẬT DỮ LIỆU MỚI NHẤT".
             </Text>
           </View>
         ) : (
@@ -150,7 +135,6 @@ export default function TeacherDashboard({ onBack }: Props) {
               <View key={sub.id || index} style={styles.subCard}>
                 <View style={styles.cardHeader}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    {/* HUY HIỆU XẾP HẠNG */}
                     <View style={styles.rankBadge}>
                       <Text style={styles.rankBadgeText}>
                         {sub.rank === 1 ? '🥇 TOP 1' : sub.rank === 2 ? '🥈 TOP 2' : sub.rank === 3 ? '🥉 TOP 3' : `#${sub.rank || index + 1}`}
@@ -169,7 +153,6 @@ export default function TeacherDashboard({ onBack }: Props) {
                 </Text>
                 <Text style={styles.timeText}>⏱ {sub.timestamp}</Text>
 
-                {/* THANH PHÁT AUDIO CHO GIÁO VIÊN NGHE LẠI */}
                 {sub.audioUrl ? (
                   <View style={styles.audioPlayerSection}>
                     <Text style={styles.audioSectionTitle}>🎧 NGHE LẠI BÀI NÓI CỦA SINH VIÊN:</Text>
