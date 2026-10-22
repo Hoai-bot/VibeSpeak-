@@ -20,7 +20,7 @@ export default function TeacherDashboard({ onBack }: Props) {
   const loadDashboardData = async () => {
     setLoading(true);
     try {
-      // Tải 100% bài nộp mới nhất từ Supabase Cloud
+      // Tải toàn bộ bài nộp mới nhất từ Supabase Cloud
       const data = await fetchSubmissionsFromCloud('ALL');
       setSubmissions(data || []);
     } catch (e) {
@@ -30,10 +30,10 @@ export default function TeacherDashboard({ onBack }: Props) {
     }
   };
 
-  // Hàm chuẩn hóa làm sạch Tên Lớp
+  // Hàm chuẩn hóa làm sạch Tên Lớp an toàn
   const cleanClassName = (rawClass?: string) => {
     if (!rawClass) return 'LỚP CHUNG';
-    let cls = rawClass.trim();
+    let cls = String(rawClass).trim();
     if (cls.toUpperCase().startsWith('CLASS:')) {
       cls = cls.substring(6).trim();
     }
@@ -45,17 +45,23 @@ export default function TeacherDashboard({ onBack }: Props) {
     new Set(submissions.map((s) => cleanClassName(s.className).toUpperCase()))
   ).filter(Boolean);
 
-  // Lọc bài nộp theo Lớp được chọn hoặc Ô Tìm kiếm thủ công
+  // Lọc bài nộp linh hoạt (Không bỏ sót dữ liệu)
   const filteredSubmissions = submissions.filter((item) => {
     const itemClass = cleanClassName(item.className).toUpperCase();
+    const studentName = String(item.studentName || '').toUpperCase();
+    const pairName = String(item.pairName || '').toUpperCase();
     
-    // Nếu có nhập từ khóa tìm kiếm thủ công
+    // 1. Tìm kiếm thủ công theo Tên Sinh viên / Mã Lớp / Tên Cặp đấu
     if (customClassSearch.trim().length > 0) {
       const query = customClassSearch.trim().toUpperCase();
-      return itemClass.includes(query) || (item.studentName || '').toUpperCase().includes(query);
+      return (
+        itemClass.includes(query) ||
+        studentName.includes(query) ||
+        pairName.includes(query)
+      );
     }
 
-    // Nếu chọn chip danh sách lớp
+    // 2. Lọc theo chip chọn lớp
     if (selectedClass === 'ALL') return true;
     return itemClass === selectedClass.toUpperCase();
   });
@@ -75,7 +81,6 @@ export default function TeacherDashboard({ onBack }: Props) {
         <View style={styles.filterCard}>
           <Text style={styles.filterTitle}>🏫 CHỌN HOẶC TÌM KIẾM MÃ LỚP:</Text>
           
-          {/* Nút danh sách các Mã Lớp quét được */}
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginVertical: 10 }}>
             <TouchableOpacity
               style={[styles.chip, selectedClass === 'ALL' && !customClassSearch && styles.chipActive]}
@@ -105,12 +110,11 @@ export default function TeacherDashboard({ onBack }: Props) {
             ))}
           </ScrollView>
 
-          {/* Ô Nhập Mã Lớp Tìm Kiếm Trực Tiếp */}
           <View style={styles.searchBox}>
             <Text style={styles.searchLabel}>🔎 TÌM THỦ CÔNG THEO MÃ LỚP / TÊN HỌC VIÊN:</Text>
             <TextInput
               style={styles.searchInput}
-              placeholder="Gõ mã lớp (ví dụ: ICDL)..."
+              placeholder="Gõ mã lớp (ví dụ: ICDL) hoặc tên sinh viên..."
               placeholderTextColor="#777"
               value={customClassSearch}
               onChangeText={(text) => {
@@ -133,7 +137,7 @@ export default function TeacherDashboard({ onBack }: Props) {
           <View style={styles.emptyBox}>
             <Text style={styles.emptyText}>⚠️ Không tìm thấy bài nộp nào cho từ khóa "{customClassSearch || selectedClass}".</Text>
             <Text style={styles.emptySubText}>
-              Thử chọn nút "🌐 TOÀN TRƯỜNG" ở trên để kiểm tra xem bài nộp đã lên Cloud chưa.
+              Bấm vào nút "🌐 TOÀN TRƯỜNG" ở trên để hiển thị toàn bộ danh sách bài nộp từ Cloud.
             </Text>
           </View>
         ) : (
