@@ -70,19 +70,19 @@ export const saveSubmissionToCloud = async (submission: RoleplaySubmission) => {
 
 export const saveSubmissionForTeacher = saveSubmissionToCloud;
 
-// 🎯 HÀM TRUY XUẤT CLOUD DÀNH CHO BẢNG ĐIỂM GIÁO VIÊN
+// 🎯 HÀM TRUY XUẤT CLOUD DÀNH CHO BẢNG ĐIỂM GIÁO VIÊN (ĐÃ TỐI ƯU TỐC ĐỘ)
 export const fetchSubmissionsFromCloud = async (selectedClass?: string): Promise<RoleplaySubmission[]> => {
   try {
     if (!supabase) return [];
 
+    // Chỉ lấy 80 bản ghi mới nhất để tối ưu tốc độ và tránh timeout DB
     const { data: results, error } = await supabase
       .from('assessment_results')
       .select('id, score, transcript, feedback, audio_url, created_at, user_id')
       .order('created_at', { ascending: false })
-      .limit(150);
+      .limit(80);
 
     if (error) {
-      // In chi tiết mã lỗi, thông điệp và chi tiết thay vì in nguyên đối tượng Object
       console.error("❌ Lỗi truy vấn Supabase:", error.code, error.message, error.details);
       return [];
     }
