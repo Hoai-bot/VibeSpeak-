@@ -247,7 +247,8 @@ export default function Station1Screen({ onBack }: Props) {
 
       setResult(evalData);
       
-      if (evalData.isWin) {
+      const isPass = (evalData.score >= 70) || evalData.isWin;
+      if (isPass) {
         updateUserProgress(1, 30, true);
       }
     } catch (err) {
@@ -255,10 +256,11 @@ export default function Station1Screen({ onBack }: Props) {
       alert("⚠️ Lỗi kết nối chấm điểm. Vui lòng thử nộp lại!");
     } finally {
       setIsAnalyzing(false);
-      setRecordedAudio(null);
-      setHasRecorded(false);
     }
   };
+
+  // Đánh giá đạt/không đạt trực tiếp theo điểm số
+  const isPassed = (result?.score ?? 0) >= 70 || result?.isWin;
 
   return (
     <View style={styles.container}>
@@ -363,14 +365,14 @@ export default function Station1Screen({ onBack }: Props) {
 
         {/* KẾT QUẢ CHẤM ĐIỂM */}
         {result && (
-          <View style={[styles.box, { borderColor: result.isWin ? '#39FF14' : '#FF0055' }]}>
-            <Text style={[styles.resultTitle, { color: result.isWin ? '#39FF14' : '#FF0055' }]}>
-              {result.isWin ? '🏆 PHÁT ÂM RẤT CHUẨN!' : '💀 CẦN LUYỆN TẬP THÊM'}
+          <View style={[styles.box, { borderColor: isPassed ? '#39FF14' : '#FF0055' }]}>
+            <Text style={[styles.resultTitle, { color: isPassed ? '#39FF14' : '#FF0055' }]}>
+              {isPassed ? '🏆 PHÁT ÂM RẤT CHUẨN!' : '💀 CẦN LUYỆN TẬP THÊM'}
             </Text>
             <Text style={styles.scoreText}>⚡ Điểm phát âm: {result.score} / 100 ĐIỂM</Text>
 
-            {/* 🎧 RENDER AN TOÀN CHO WEB KHÔNG LỖI TYPESCRIPT */}
-            {result.audioUrl && (
+            {/* 🎧 RENDER AN TOÀN CHO WEB */}
+            {result.audioUrl ? (
               <View style={styles.audioPlayerBox}>
                 <Text style={styles.audioLabel}>🎧 Nghe lại bài phát âm của bạn:</Text>
                 {React.createElement('audio', {
@@ -379,7 +381,7 @@ export default function Station1Screen({ onBack }: Props) {
                   style: { width: '100%', marginTop: 6, height: 36 }
                 })}
               </View>
-            )}
+            ) : null}
 
             <View style={styles.scriptBox}>
               <Text style={styles.scriptLabel}>📝 Âm AI nghe được thực tế:</Text>
