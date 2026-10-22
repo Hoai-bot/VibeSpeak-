@@ -234,7 +234,7 @@ export default function Station1Screen({ onBack }: Props) {
     }
   };
 
-  // ⚔️ NỘP BÀI VÀ CHẤM ĐIỂM AI
+  // ⚔️ NỘP BÀI VÀ CHẤM ĐIỂM AI (TRẠM 1 KHÔNG DÙNG CEFR LEVEL)
   const handleSubmitAnswer = async () => {
     if (!hasRecorded || !recordedAudio || recordedAudio.size <= 800) {
       alert("🔒 Vui lòng bấm micro thu âm phát âm trước khi nộp bài!");
@@ -245,7 +245,8 @@ export default function Station1Screen({ onBack }: Props) {
 
     try {
       const promptTarget = (currentDrill?.contentEn || '').trim();
-      const evalData = await evaluateSpeaking(recordedAudio, 'A2', undefined, promptTarget, userId);
+      // Truyền undefined cho cefrLevel để Trạm 1 không bị hiển thị nhãn cấp độ A2
+      const evalData = await evaluateSpeaking(recordedAudio, undefined, undefined, promptTarget, userId);
 
       setResult(evalData);
       
