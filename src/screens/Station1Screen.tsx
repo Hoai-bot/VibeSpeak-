@@ -62,20 +62,22 @@ export default function Station1Screen({ onBack }: Props) {
     setIsPlayingTTS(false);
   };
 
-  // 🔊 HÀM PHÁT ÂM MẪU CHUẨN ĐÃ ĐƯỢC BẢO VỆ 2 LỚP
+  // 🔊 HÀM PHÁT ÂM MẪU CHUẨN ĐÃ ĐƯỢC CẬP NHẬT TỐI ƯU TTS
   const playSampleAudio = (textToSpeak: string) => {
     if (!textToSpeak) return;
     stopAllAudio();
     setIsPlayingTTS(true);
 
+    // 🎯 Chuẩn hóa văn bản: Thay ký tự '/' thành dấu chấm ngắt câu để TTS đọc rõ nguyên âm từng từ
+    const cleanSpeechText = textToSpeak.replace(/\//g, '.').trim();
+
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       window.speechSynthesis.cancel();
 
       const speakText = () => {
-        const utterance = new SpeechSynthesisUtterance(textToSpeak);
+        const utterance = new SpeechSynthesisUtterance(cleanSpeechText);
         utterance.lang = 'en-US';
-        utterance.rate = 0.85;
-        utterance.pitch = 1.0;
+        utterance.rate = 0.75; // Hạ tốc độ đọc xuống 0.75 để nghe rõ âm /ʌ/
 
         const voices = window.speechSynthesis.getVoices();
         const englishVoice = voices.find(
@@ -88,7 +90,7 @@ export default function Station1Screen({ onBack }: Props) {
 
         utterance.onstart = () => setIsPlayingTTS(true);
         utterance.onend = () => setIsPlayingTTS(false);
-        utterance.onerror = () => tryAudioUrlFallback(textToSpeak);
+        utterance.onerror = () => tryAudioUrlFallback(cleanSpeechText);
 
         window.speechSynthesis.speak(utterance);
       };
@@ -106,7 +108,7 @@ export default function Station1Screen({ onBack }: Props) {
       }
     }
 
-    tryAudioUrlFallback(textToSpeak);
+    tryAudioUrlFallback(cleanSpeechText);
   };
 
   const tryAudioUrlFallback = (textToSpeak: string) => {
