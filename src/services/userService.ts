@@ -1,86 +1,13 @@
 // src/services/userService.ts
-import { supabase } from '../utils/supabase';
-
-export interface RoleplaySubmission {
-  id?: string;
-  studentName?: string;
-  pairName?: string;
-  className?: string;
-  score: number;
-  mode: string;
-  cefrLevel: string;
-  transcript: string;
-  audioUrl?: string;
-  feedback: string;
-  timestamp: string;
-  rank?: number;
-}
-
-const LOCAL_HISTORY_KEY = 'vibespeak_user_submissions_history';
-
-export const blobToBase64 = (blob: Blob): Promise<string> => {
-  return new Promise((resolve) => {
-    if (!blob) return resolve('');
-    const reader = new FileReader();
-    reader.onloadend = () => resolve((reader.result as string) || '');
-    reader.onerror = () => resolve('');
-    reader.readAsDataURL(blob);
-  });
-};
-
-export const saveSubmissionToCloud = async (submission: RoleplaySubmission) => {
-  try {
-    // 1. Lưu dự phòng vào LocalStorage
-    try {
-      const existingLocal = localStorage.getItem(LOCAL_HISTORY_KEY);
-      const historyList: RoleplaySubmission[] = existingLocal ? JSON.parse(existingLocal) : [];
-      historyList.unshift(submission);
-      localStorage.setItem(LOCAL_HISTORY_KEY, JSON.stringify(historyList.slice(0, 30)));
-    } catch (e) {}
-
-    if (!supabase) return;
-
-    const { data: userData } = await supabase.auth.getUser();
-    const userId = userData?.user?.id || null;
-
-    const currentMode = String(submission.mode || 'SOLO').toUpperCase();
-    const level = String(submission.cefrLevel || 'A1').toUpperCase();
-    const className = submission.className || 'LỚP CHUNG';
-    let displayName = submission.pairName || submission.studentName || 'Sinh viên';
-
-    const formattedFeedback = `[${currentMode} - ${level} | CLASS: ${className} | ${displayName}]: ${submission.feedback || ''}`;
-
-    const { error } = await supabase.from('assessment_results').insert([
-      {
-        user_id: userId,
-        score: Number(submission.score) || 0,
-        transcript: submission.transcript || '',
-        feedback: formattedFeedback,
-        audio_url: submission.audioUrl || '',
-      },
-    ]);
-
-    if (error) {
-      console.error("❌ Lỗi lưu dữ liệu lên Supabase:", error.code, error.message, error.details);
-    }
-  } catch (err) {
-    console.warn("⚠️ Lỗi saveSubmissionToCloud:", err);
-  }
-};
-
-export const saveSubmissionForTeacher = saveSubmissionToCloud;
-
-// 🎯 HÀM TRUY XUẤT CLOUD DÀNH CHO BẢNG ĐIỂM GIÁO VIÊN (ĐÃ TỐI ƯU TỐC ĐỘ)
 export const fetchSubmissionsFromCloud = async (selectedClass?: string): Promise<RoleplaySubmission[]> => {
   try {
     if (!supabase) return [];
 
-    // Chỉ lấy 80 bản ghi mới nhất để tối ưu tốc độ và tránh timeout DB
+    // ⚡ GIẢI PHÁP MỚI: Bỏ .order('created_at') để tránh Statement Timeout 57014
     const { data: results, error } = await supabase
       .from('assessment_results')
       .select('id, score, transcript, feedback, audio_url, created_at, user_id')
-      .order('created_at', { ascending: false })
-      .limit(80);
+      .limit(100); // Lấy nhanh 100 bản ghi thô
 
     if (error) {
       console.error("❌ Lỗi truy vấn Supabase:", error.code, error.message, error.details);
@@ -136,8 +63,12 @@ export const fetchSubmissionsFromCloud = async (selectedClass?: string): Promise
         audioUrl: item.audio_url || '',
         feedback: cleanFeedback,
         timestamp: item.created_at ? new Date(item.created_at).toLocaleString('vi-VN') : '',
+        rawCreatedAt: item.created_at ? new Date(item.created_at).getTime() : 0, // Lưu mốc thời gian dạng số
       };
     });
+
+    // 🎯 TỰ SẮP XẾP BẰNG JAVASCRIPT TRÊN TRÌNH DUYỆT (Siêu nhanh, không bị tốn tài nguyên DB)
+    parsedList.sort((a: any, b: any) => b.rawCreatedAt - a.rawCreatedAt);
 
     let filtered = parsedList;
     if (selectedClass && selectedClass !== 'ALL') {
@@ -146,7 +77,7 @@ export const fetchSubmissionsFromCloud = async (selectedClass?: string): Promise
       );
     }
 
-    // Tự động sắp xếp và gắn thứ hạng (Rank)
+    // Tự động sắp xếp và gắn thứ hạng (Rank) theo Điểm số
     const sortedForRank = [...filtered].sort((a, b) => b.score - a.score);
     return filtered.map((item) => {
       const rankIndex = sortedForRank.findIndex((r) => r.id === item.id);
@@ -160,13 +91,3 @@ export const fetchSubmissionsFromCloud = async (selectedClass?: string): Promise
   }
   return [];
 };
-
-export const fetchUserSubmissions = async (): Promise<RoleplaySubmission[]> => {
-  return await fetchSubmissionsFromCloud('ALL');
-};
-
-export const fetchTopLeaderboard = async () => {
-  return await fetchSubmissionsFromCloud('ALL');
-};
-
-export const updateUserProgress = async (score: number, station: number) => {};
