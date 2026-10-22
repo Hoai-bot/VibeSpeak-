@@ -61,7 +61,7 @@ export const saveSubmissionToCloud = async (submission: RoleplaySubmission) => {
     ]);
 
     if (error) {
-      console.error("❌ Lỗi lưu dữ liệu lên Supabase:", error);
+      console.error("❌ Lỗi lưu dữ liệu lên Supabase:", error.code, error.message, error.details);
     }
   } catch (err) {
     console.warn("⚠️ Lỗi saveSubmissionToCloud:", err);
@@ -82,7 +82,8 @@ export const fetchSubmissionsFromCloud = async (selectedClass?: string): Promise
       .limit(150);
 
     if (error) {
-      console.error("❌ Lỗi truy vấn Supabase:", error);
+      // In chi tiết mã lỗi, thông điệp và chi tiết thay vì in nguyên đối tượng Object
+      console.error("❌ Lỗi truy vấn Supabase:", error.code, error.message, error.details);
       return [];
     }
 
