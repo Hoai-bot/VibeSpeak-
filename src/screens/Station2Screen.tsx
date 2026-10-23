@@ -7,7 +7,6 @@ import { getInstantRelayChallenge, generateRelayChallenge } from '../services/ar
 import { getInstantRoleplayScenario, generateRoleplayScenario } from '../services/arena/roleplayService';
 
 import { evaluateSpeaking, AssessmentResult } from '../services/arena/assessmentService';
-// 🎯 XÓA blobToBase64 TỪ IMPORTS
 import { saveSubmissionToCloud } from '../services/userService';
 import { supabase } from '../utils/supabase';
 
@@ -24,7 +23,7 @@ interface PlayerResult {
   p2Transcript?: string;
 }
 
-// 🎯 ĐỊNH NGHĨA HÀM CHUYỂN DỔI BASE64 AN TOÀN NỘI BỘ TRÁNH LỖI IMPORT
+// Hàm chuyển đổi Base64 nội bộ an toàn
 const safeBlobToBase64 = (blob: Blob): Promise<string> => {
   return new Promise((resolve) => {
     if (!blob) return resolve('');
@@ -219,15 +218,23 @@ export default function Station2Screen({ onBack }: Props) {
     }
   }, [mode, cefrLevel]);
 
+  // 🎯 TÌM MIME TYPE PHÙ HỢP NHẤT CHO TRÌNH DUYỆT (ĐẶC BIỆT LÀ CHROME ANDROID)
   const getOptimalMimeType = () => {
     if (typeof MediaRecorder === 'undefined') return '';
-    const candidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/aac'];
+    const candidates = [
+      'audio/webm;codecs=opus',
+      'audio/webm',
+      'audio/mp4',
+      'audio/aac',
+      'audio/ogg'
+    ];
     for (const candidate of candidates) {
       if (MediaRecorder.isTypeSupported(candidate)) return candidate;
     }
     return '';
   };
 
+  // 🎯 HÀM BẮT ĐẦU THU ÂM CHUẨN TƯƠNG THÍCH VỚI TẤT CẢ DÒNG ĐIỆN THOẠI ANDROID & IOS
   const startFullRecording = async () => {
     if (!studentNameInput.trim()) {
       alert("⚠️ Vui lòng nhập Họ tên hoặc Biệt danh của bạn ở phía trên trước khi bắt đầu!");
@@ -245,33 +252,39 @@ export default function Station2Screen({ onBack }: Props) {
       audioChunksRef.current = [];
       fullTranscriptRef.current = '';
 
+      // 1. Khởi tạo SpeechRecognition an toàn cho Android & iOS
       const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
       if (SpeechRecognition) {
-        const recognition = new SpeechRecognition();
-        recognition.continuous = true;
-        recognition.interimResults = true;
-        recognition.lang = 'en-US';
+        try {
+          const recognition = new SpeechRecognition();
+          recognition.continuous = true;
+          recognition.interimResults = true;
+          recognition.lang = 'en-US';
 
-        recognition.onresult = (event: any) => {
-          let accumulatedSpeech = '';
-          for (let i = 0; i < event.results.length; ++i) {
-            accumulatedSpeech += event.results[i][0].transcript + ' ';
-          }
-          if (accumulatedSpeech.trim()) {
-            fullTranscriptRef.current = accumulatedSpeech.trim();
-          }
-        };
+          recognition.onresult = (event: any) => {
+            let accumulatedSpeech = '';
+            for (let i = 0; i < event.results.length; ++i) {
+              accumulatedSpeech += event.results[i][0].transcript + ' ';
+            }
+            if (accumulatedSpeech.trim()) {
+              fullTranscriptRef.current = accumulatedSpeech.trim();
+            }
+          };
 
-        recognition.onend = () => {
-          if (isRecording && recognitionRef.current) {
-            try { recognitionRef.current.start(); } catch (e) {}
-          }
-        };
+          recognition.onend = () => {
+            if (isRecording && recognitionRef.current) {
+              try { recognitionRef.current.start(); } catch (e) {}
+            }
+          };
 
-        recognition.start();
-        recognitionRef.current = recognition;
+          recognition.start();
+          recognitionRef.current = recognition;
+        } catch (e) {
+          console.warn("SpeechRecognition Android Bypass:", e);
+        }
       }
 
+      // 2. Lấy luồng Microphone từ thiết bị
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       audioStreamRef.current = stream;
 
@@ -299,15 +312,23 @@ export default function Station2Screen({ onBack }: Props) {
         const mimeTypeUsed = recorder.mimeType || chosenMime || 'audio/webm';
         const fullAudioBlob = new Blob(audioChunksRef.current, { type: mimeTypeUsed });
 
-        // 🎯 CHUYỂN BASE64 BẰNG HÀM NỘI BỘ AN TOÀN
+        // Chuyển Base64 an toàn cho Cloud storage
         const base64Audio = await safeBlobToBase64(fullAudioBlob);
         const localAudioUrl = URL.createObjectURL(fullAudioBlob);
 
         const targetPrompt = exercise?.promptEn || exercise?.contextEn || exercise?.scenarioTitle || '';
         const capturedSpeech = fullTranscriptRef.current || '';
 
-        const result = await evaluateSpeaking(fullAudioBlob, cefrLevel, undefined, targetPrompt, userId, capturedSpeech);
-        
+        // 🎯 Gọi hàm chấm điểm chung cho Trạm 2
+        const result = await evaluateSpeaking(
+          fullAudioBlob, 
+          cefrLevel, 
+          'STATION_2', 
+          targetPrompt, 
+          userId, 
+          capturedSpeech
+        );
+
         result.audioUrl = localAudioUrl;
         setEvalResult(result);
 
@@ -361,11 +382,12 @@ export default function Station2Screen({ onBack }: Props) {
         }
       };
 
+      // 🎯 QUAN TRỌNG CHO ANDROID: Dùng 200ms để tránh giật lag buffer
       recorder.start(200);
       setIsRecording(true);
       setIsGameActive(true);
     } catch (err) {
-      alert("Thiết bị chưa được cấp quyền micro!");
+      alert("🔒 Vui lòng kiểm tra biểu tượng 🔒 trên thanh địa chỉ trình duyệt Android/iOS và cho phép 'Microphone'!");
     }
   };
 
