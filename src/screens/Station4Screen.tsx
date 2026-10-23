@@ -30,17 +30,20 @@ export default function Station4Screen({ onBack }: Props) {
   const [hasRecorded, setHasRecorded] = useState<boolean>(false);
   const [recordedAudioUrl, setRecordedAudioUrl] = useState<string | null>(null);
 
+  // Lưu lời thoại nhận diện thực tế
+  const [capturedText, setCapturedText] = useState<string>('');
+
   const [result, setResult] = useState<AssessmentResult | null>(null);
-  const [userId, setUserId] = useState<string | undefined>(undefined); // 👈 Lấy ID sinh viên
+  const [userId, setUserId] = useState<string | undefined>(undefined);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const currentAudioRef = useRef<HTMLAudioElement | null>(null);
   const requestIdRef = useRef<number>(0);
+  const recognitionRef = useRef<any>(null);
 
   const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
 
-  // 🎯 LẤY USER ID AN TOÀN TRÁNH LỖI BUILD MODULE NOT FOUND
   useEffect(() => {
     const fetchUser = async () => {
       try {
@@ -125,11 +128,15 @@ export default function Station4Screen({ onBack }: Props) {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
       try { mediaRecorderRef.current.stop(); } catch (e) {}
     }
+    if (recognitionRef.current) {
+      try { recognitionRef.current.stop(); } catch (e) {}
+    }
     setBattleState('idle');
     setIsRecording(false);
     setRecordedAudio(null);
     setHasRecorded(false);
     setRecordedAudioUrl(null);
+    setCapturedText('');
     setResult(null);
     audioChunksRef.current = [];
   };
@@ -176,12 +183,36 @@ export default function Station4Screen({ onBack }: Props) {
     };
   }, [cefrLevel]);
 
+  // Thu âm & Bóc tách giọng nói
   const handleToggleRecord = async () => {
     stopAllAudio();
 
     if (!isRecording) {
       try {
         if (typeof navigator !== 'undefined' && navigator.mediaDevices) {
+
+          // Bắt Web Speech Recognition
+          const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+          if (SpeechRecognition) {
+            const recognition = new SpeechRecognition();
+            recognition.continuous = true;
+            recognition.interimResults = true;
+            recognition.lang = 'en-US';
+
+            recognition.onresult = (event: any) => {
+              let currentTranscript = '';
+              for (let i = event.resultIndex; i < event.results.length; ++i) {
+                currentTranscript += event.results[i][0].transcript;
+              }
+              if (currentTranscript.trim()) {
+                setCapturedText(currentTranscript.trim());
+              }
+            };
+
+            recognition.start();
+            recognitionRef.current = recognition;
+          }
+
           const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
           
           let options = {};
@@ -221,6 +252,7 @@ export default function Station4Screen({ onBack }: Props) {
           mediaRecorder.start(100);
           setIsRecording(true);
           setBattleState('battling');
+          setCapturedText('');
         } else {
           alert("Trình duyệt không hỗ trợ micro thu âm!");
         }
@@ -229,6 +261,9 @@ export default function Station4Screen({ onBack }: Props) {
       }
     } else {
       setIsRecording(false);
+      if (recognitionRef.current) {
+        try { recognitionRef.current.stop(); } catch (e) {}
+      }
       if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
         mediaRecorderRef.current.stop();
       }
@@ -253,32 +288,20 @@ export default function Station4Screen({ onBack }: Props) {
     try {
       const targetPrompt = (exercise?.promptEn || 'General speaking challenge').trim();
       
-      // 🎯 ĐÃ SỬA: Truyền userId làm tham số thứ 5 để đồng bộ bài làm sang Supabase & Storage
-      const evalData = await evaluateSpeaking(recordedAudio, cefrLevel, '4', targetPrompt, userId);
+      // 🎯 ĐÃ CẬP NHẬT: Truyền 'STATION_4' và capturedText chuẩn xác
+      const evalData = await evaluateSpeaking(
+        recordedAudio, 
+        cefrLevel, 
+        'STATION_4', 
+        targetPrompt, 
+        userId, 
+        capturedText
+      );
 
-      if (!evalData.transcript || evalData.wordCount === 0 || evalData.score === 0) {
-        const strictFailedResult: AssessmentResult = {
-          score: 0,
-          isWin: false,
-          transcript: evalData.transcript || "(Không ghi nhận âm thanh câu trả lời rõ ràng)",
-          wordCount: evalData.wordCount || 0,
-          pronunciation: 0,
-          grammar: 0,
-          vocabulary: 0,
-          reflexes: 0,
-          content: 0,
-          fluency: 0,
-          detailedFeedback: "❌ AI chỉ nhận diện được tiếng ồn nền hoặc ngắc ứ. Vui lòng cất giọng trả lời đầy đủ câu hỏi!",
-        };
-        setResult(strictFailedResult);
-        saveWeakPoint('station4', targetPrompt, 0);
-        alert("🛡️ NỘP BÀI THẤT BẠI: Bạn chưa trả lời câu hỏi! Vui lòng bấm micro để cất giọng.");
-      } else {
-        setResult(evalData);
-        updateUserProgress(4, evalData.isWin ? 50 : 10, evalData.isWin);
-        if (evalData.score < 60) {
-          saveWeakPoint('station4', targetPrompt, evalData.score);
-        }
+      setResult(evalData);
+      updateUserProgress(4, evalData.isWin ? 50 : 10, evalData.isWin);
+      if (evalData.score < 60) {
+        saveWeakPoint('station4', targetPrompt, evalData.score);
       }
     } catch (err) {
       console.error("Lỗi chấm điểm Trạm 4:", err);
@@ -353,7 +376,7 @@ export default function Station4Screen({ onBack }: Props) {
                 onPress={() => exercise.promptEn && playPromptTTS(exercise.promptEn)}
               >
                 <Text style={styles.ttsBtnText}>
-                  {isPlayingTTS ? '🔊 ĐANG PHÁT GIỌNG NÓI...' : '🔊 NGHE TÌNH HU HUỐNG (NATURAL VOICE)'}
+                  {isPlayingTTS ? '🔊 ĐANG PHÁT GIỌNG NÓI...' : '🔊 NGHE TÌNH HUỐNG (NATURAL VOICE)'}
                 </Text>
               </TouchableOpacity>
 
@@ -402,7 +425,7 @@ export default function Station4Screen({ onBack }: Props) {
         {battleState === 'analyzing' && (
           <View style={styles.box}>
             <ActivityIndicator size="large" color="#39FF14" style={{ marginBottom: 15 }} />
-            <Text style={styles.searchingText}>⚡ GROQ WHISPER AI ĐANG BÓC TÁCH GIỌNG NÓI & CHẤM 6 TIÊU CHÍ...</Text>
+            <Text style={styles.searchingText}>⚡ AI ĐANG BÓC TÁCH GIỌNG NÓI & PHÂN TÍCH PHẢN ỨNG...</Text>
           </View>
         )}
 
@@ -413,7 +436,6 @@ export default function Station4Screen({ onBack }: Props) {
             </Text>
             <Text style={styles.scoreText}>⚡ TỔNG ĐIỂM TRẠM 4: {result.score} / 100 ĐIỂM</Text>
 
-            {/* 🎧 RENDER AN TOÀN CHO WEB KHÔNG LỖI TYPESCRIPT */}
             {(recordedAudioUrl || result.audioUrl) && (
               <View style={styles.nativeAudioContainer}>
                 <Text style={styles.nativeAudioLabel}>🎧 NGHE LẠI BẢN THU PHẢN HỒI CỦA BẠN:</Text>
@@ -426,35 +448,8 @@ export default function Station4Screen({ onBack }: Props) {
             )}
 
             <View style={styles.scriptBox}>
-              <Text style={styles.scriptLabel}>📝 CHI TIẾT PHÁT ÂM TỪNG TỪ (WORD-BY-WORD):</Text>
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 6 }}>
-                {result.wordAnalysis && result.wordAnalysis.length > 0 ? (
-                  result.wordAnalysis.map((item, idx) => {
-                    let color = '#39FF14';
-                    if (item.status === 'warning') color = '#FFD700';
-                    if (item.status === 'error') color = '#FF0055';
-
-                    return (
-                      <Text key={idx} style={{ color, fontSize: 13, fontWeight: 'bold', marginRight: 6, marginBottom: 4 }}>
-                        {item.word}
-                      </Text>
-                    );
-                  })
-                ) : (
-                  <Text style={styles.scriptContent}>"{result.transcript}"</Text>
-                )}
-              </View>
-              <Text style={styles.wordCountText}>📊 Số từ phát âm thực tế: {result.wordCount} từ</Text>
-            </View>
-
-            <Text style={styles.breakdownHeaderLabel}>📊 PHÂN TÍCH CHI TIẾT 6 TIÊU CHÍ:</Text>
-            <View style={styles.breakdownCard}>
-              <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>🗣 1. Phát âm:</Text><Text style={styles.breakdownValue}>{result.pronunciation}/100</Text></View>
-              <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>📚 2. Ngữ pháp:</Text><Text style={styles.breakdownValue}>{result.grammar}/100</Text></View>
-              <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>🔤 3. Từ vựng:</Text><Text style={styles.breakdownValue}>{result.vocabulary}/100</Text></View>
-              <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>⚡ 4. Phản xạ:</Text><Text style={styles.breakdownValue}>{result.reflexes}/100</Text></View>
-              <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>🎯 5. Nội dung:</Text><Text style={styles.breakdownValue}>{result.content}/100</Text></View>
-              <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>🌊 6. Trôi chảy:</Text><Text style={styles.breakdownValue}>{result.fluency}/100</Text></View>
+              <Text style={styles.scriptLabel}>📝 ÂM AI NGHE ĐƯỢC THỰC TẾ:</Text>
+              <Text style={styles.scriptContent}>"{result.transcript || '(Không nghe rõ từ)'}"</Text>
             </View>
 
             <Text style={styles.feedbackText}>{result.detailedFeedback}</Text>
@@ -508,11 +503,5 @@ const styles = StyleSheet.create({
   scriptBox: { backgroundColor: '#1A0B2E', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#332255', width: '100%', marginBottom: 12 },
   scriptLabel: { color: '#FFD700', fontSize: 10, fontWeight: 'bold', marginBottom: 4 },
   scriptContent: { color: '#FFF', fontSize: 11, fontStyle: 'italic', marginBottom: 6 },
-  wordCountText: { color: '#39FF14', fontSize: 9, fontWeight: 'bold', marginTop: 6 },
-  breakdownHeaderLabel: { color: '#FFD700', fontSize: 10, fontWeight: 'bold', alignSelf: 'flex-start', marginBottom: 6 },
-  breakdownCard: { backgroundColor: '#120826', padding: 12, borderRadius: 10, width: '100%', marginBottom: 12, borderWidth: 1, borderColor: '#FF007F' },
-  breakdownRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4, borderBottomWidth: 1, borderBottomColor: '#221133' },
-  breakdownLabel: { color: '#AAAABB', fontSize: 10 },
-  breakdownValue: { color: '#39FF14', fontSize: 10, fontWeight: 'bold' },
   feedbackText: { color: '#FFF', fontSize: 11, textAlign: 'center', lineHeight: 16, marginBottom: 15 }
 });
