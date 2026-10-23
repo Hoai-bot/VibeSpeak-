@@ -56,7 +56,8 @@ export const saveSubmissionToCloud = async (submission: RoleplaySubmission) => {
 
     const formattedFeedback = `[${currentMode} - ${level} | CLASS: ${className} | ${displayName}]: ${submission.feedback || ''}`;
 
-    const { error } = await supabase.from('assessment_results').insert([
+    // 🎯 ĐỒNG BỘ LƯU VÀO BẢNG 'submissions'
+    const { error } = await supabase.from('submissions').insert([
       {
         user_id: userId,
         score: Number(submission.score) || 0,
@@ -67,7 +68,7 @@ export const saveSubmissionToCloud = async (submission: RoleplaySubmission) => {
     ]);
 
     if (error) {
-      console.error("❌ Lỗi lưu dữ liệu lên Supabase:", error.code, error.message, error.details);
+      console.error("❌ Lỗi lưu dữ liệu lên Supabase (submissions):", error.code, error.message, error.details);
     }
   } catch (err) {
     console.warn("⚠️ Lỗi saveSubmissionToCloud:", err);
@@ -76,19 +77,20 @@ export const saveSubmissionToCloud = async (submission: RoleplaySubmission) => {
 
 export const saveSubmissionForTeacher = saveSubmissionToCloud;
 
-// 🎯 HÀM TRUY XUẤT CLOUD TỰ ĐỘNG BÓC TÁCH MÃ LỚP MỚI & SẮP XẾP THỨ HẠNG
+// 🎯 HÀM TRUY XUẤT ĐỒNG BỘ TỪ BẢNG 'submissions'
 export const fetchSubmissionsFromCloud = async (selectedClass?: string): Promise<RoleplaySubmission[]> => {
   try {
     if (!supabase) return [];
 
+    // 🎯 TRUY VẤN CHÍNH XÁC BẢNG 'submissions'
     const { data: results, error } = await supabase
-      .from('assessment_results')
+      .from('submissions')
       .select('id, score, transcript, feedback, audio_url, created_at, user_id')
       .order('created_at', { ascending: false })
-      .limit(200); // 🎯 Tăng giới hạn lên 200 bài nộp mới nhất
+      .limit(200);
 
     if (error) {
-      console.error("❌ Lỗi truy vấn Supabase:", error.code, error.message, error.details);
+      console.error("❌ Lỗi truy vấn Supabase (submissions):", error.code, error.message, error.details);
       return [];
     }
 
