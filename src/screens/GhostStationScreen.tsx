@@ -8,7 +8,8 @@ interface Props {
   onNavigateToOasis?: (ghostSentence: string) => void;
 }
 
-export function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
+// 🎯 XÓA 'export' Ở ĐẦU HÀM ĐỂ TRÁNH TRÙNG LẶP DÒNG EXPORT DEFAULT Ở CUỐI FILE
+function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
   const [ghostSentence, setGhostSentence] = useState<string>("Whispers in the dark connected speech");
   const [isRecording, setIsRecording] = useState<boolean>(false);
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
@@ -206,4 +207,5 @@ const styles = StyleSheet.create({
   modalCancelText: { color: '#8888AA', fontSize: 11, textDecorationLine: 'underline' }
 });
 
+// 🎯 DÒNG EXPORT DEFAULT DUY NHẤT CỦA FILE
 export default GhostStationScreen;

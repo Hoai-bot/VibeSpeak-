@@ -469,5 +469,3 @@ const styles = StyleSheet.create({
   scriptContent: { color: '#FFF', fontSize: 11, fontStyle: 'italic', marginVertical: 4 },
   feedbackText: { color: '#FFF', fontSize: 11, textAlign: 'center', lineHeight: 16 }
 });
-
-export default Station1Screen;
