@@ -1,7 +1,7 @@
 // src/screens/Station4Screen.tsx
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
-import { evaluateSpeaking, AssessmentResult } from '../services/arena/assessmentService';
+import { evaluateSpeaking, AssessmentResult, analyzeSpokenTranscript } from '../services/arena/assessmentService';
 import { 
   getInstantStation4Exercise, 
   generateStation4Exercise, 
@@ -29,6 +29,10 @@ export default function Station4Screen({ onBack }: Props) {
   const [recordedAudio, setRecordedAudio] = useState<Blob | null>(null);
   const [hasRecorded, setHasRecorded] = useState<boolean>(false);
   const [recordedAudioUrl, setRecordedAudioUrl] = useState<string | null>(null);
+
+  // Tính toán chỉ số WPM (Tốc độ trôi chảy)
+  const [speakingDurationSeconds, setSpeakingDurationSeconds] = useState<number>(0);
+  const recordingStartTimeRef = useRef<number>(0);
 
   // Lưu lời thoại nhận diện thực tế
   const [capturedText, setCapturedText] = useState<string>('');
@@ -199,7 +203,6 @@ export default function Station4Screen({ onBack }: Props) {
           return;
         }
 
-        // 1. Tích hợp SpeechRecognition an toàn cho Android & iOS
         const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
         if (SpeechRecognition) {
           try {
@@ -223,7 +226,6 @@ export default function Station4Screen({ onBack }: Props) {
           }
         }
 
-        // 2. Thu âm MediaStream với fallback MIME Type linh hoạt cho Android Chrome
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         mediaStreamRef.current = stream;
 
@@ -259,7 +261,6 @@ export default function Station4Screen({ onBack }: Props) {
           const mimeUsed = recorder.mimeType || chosenMime || 'audio/webm';
           const blob = new Blob(audioChunksRef.current, { type: mimeUsed });
 
-          // 🎯 CHẤP NHẬN TẤT CẢ BLOB TRÊN ANDROID (KHÔNG KIỂM TRA SIZE CỨNG)
           setRecordedAudio(blob);
           setHasRecorded(true);
 
@@ -269,7 +270,7 @@ export default function Station4Screen({ onBack }: Props) {
           }
         };
 
-        // 🎯 QUAN TRỌNG CHO ANDROID: Bắt đầu thu âm với timeslice 200ms để tránh xả buffer giật lag
+        recordingStartTimeRef.current = Date.now();
         recorder.start(200);
         setIsRecording(true);
         setHasRecorded(false);
@@ -280,6 +281,9 @@ export default function Station4Screen({ onBack }: Props) {
       }
     } else {
       setIsRecording(false);
+      const durationSec = Math.max(1, Math.round((Date.now() - recordingStartTimeRef.current) / 1000));
+      setSpeakingDurationSeconds(durationSec);
+
       if (recognitionRef.current) {
         try { recognitionRef.current.stop(); } catch (e) {}
       }
@@ -330,6 +334,15 @@ export default function Station4Screen({ onBack }: Props) {
       setHasRecorded(false);
     }
   };
+
+  // Tính WPM dựa trên số từ nói được và thời lượng ghi âm
+  const calculateWPM = (text: string, durationSec: number): number => {
+    if (!text || durationSec <= 0) return 0;
+    const wordCount = text.trim().split(/\s+/).filter(Boolean).length;
+    return Math.round((wordCount / durationSec) * 60);
+  };
+
+  const wpmValue = result?.transcript ? calculateWPM(result.transcript, speakingDurationSeconds) : 0;
 
   if (showWeakPoints) {
     return (
@@ -454,6 +467,39 @@ export default function Station4Screen({ onBack }: Props) {
             </Text>
             <Text style={styles.scoreText}>⚡ TỔNG ĐIỂM TRẠM 4: {result.score} / 100 ĐIỂM</Text>
 
+            {/* 🎯 NÂNG CẤP CHỈ SỐ TỐC ĐỘ NÓI (WPM) & HIGHLIGHT LỜI THOẠI */}
+            <View style={styles.wpmBox}>
+              <Text style={styles.wpmTitle}>⚡ TỐC ĐỘ TRÔI CHẢY (FLUENCY): {wpmValue} WPM</Text>
+              <Text style={styles.wpmDesc}>
+                {wpmValue >= 110 
+                  ? '🚀 Phản xạ rất trôi chảy & tự nhiên!' 
+                  : wpmValue >= 75 
+                  ? '👍 Tốc độ đạt yêu cầu đàm thoại.' 
+                  : '💡 Tốc độ hơi chậm, hãy tăng độ phản xạ hơn nhé!'}
+              </Text>
+            </View>
+
+            {result.transcript ? (
+              <View style={styles.wordHighlightBox}>
+                <Text style={styles.wordHighlightTitle}>🎙 CÁC TỪ AI GHI NHẬN TỪ PHẢN HỒI NÓI:</Text>
+                <View style={styles.wordRow}>
+                  {analyzeSpokenTranscript(result.transcript).map((item, idx) => (
+                    <View 
+                      key={idx} 
+                      style={[
+                        styles.wordBadge, 
+                        item.isConfident ? styles.correctBadge : styles.warningBadge
+                      ]}
+                    >
+                      <Text style={[styles.wordBadgeText, item.isConfident ? styles.correctText : styles.warningText]}>
+                        {item.word} {item.isConfident ? '✓' : '⚠️'}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            ) : null}
+
             {(recordedAudioUrl || result.audioUrl) && (
               <View style={styles.nativeAudioContainer}>
                 <Text style={styles.nativeAudioLabel}>🎧 NGHE LẠI BẢN THU PHẢN HỒI CỦA BẠN:</Text>
@@ -516,6 +562,18 @@ const styles = StyleSheet.create({
   submitBtnText: { color: '#000', fontSize: 11, fontWeight: '900' },
   resultTitle: { fontSize: 15, fontWeight: '900', marginBottom: 6 },
   scoreText: { color: '#FFD700', fontSize: 13, fontWeight: '900', marginBottom: 10 },
+  wpmBox: { backgroundColor: '#130A2A', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#FFD700', width: '100%', marginBottom: 10, alignItems: 'center' },
+  wpmTitle: { color: '#FFD700', fontSize: 11, fontWeight: '900' },
+  wpmDesc: { color: '#AAAABB', fontSize: 9, marginTop: 3 },
+  wordHighlightBox: { backgroundColor: '#120826', padding: 8, borderRadius: 8, borderWidth: 1, borderColor: '#00FFFF', width: '100%', marginBottom: 10 },
+  wordHighlightTitle: { color: '#00FFFF', fontSize: 9, fontWeight: '900', marginBottom: 6 },
+  wordRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  wordBadge: { paddingHorizontal: 6, paddingVertical: 3, borderRadius: 6, borderWidth: 1 },
+  correctBadge: { backgroundColor: 'rgba(57, 255, 20, 0.15)', borderColor: '#39FF14' },
+  warningBadge: { backgroundColor: 'rgba(255, 215, 0, 0.15)', borderColor: '#FFD700' },
+  wordBadgeText: { fontSize: 10, fontWeight: 'bold' },
+  correctText: { color: '#39FF14' },
+  warningText: { color: '#FFD700' },
   nativeAudioLabel: { color: '#00FFFF', fontSize: 10, fontWeight: 'bold' },
   nativeAudioContainer: { width: '100%', backgroundColor: '#1A0B2E', padding: 10, borderRadius: 10, borderWidth: 1, borderColor: '#00FFFF', marginBottom: 12, alignItems: 'center' },
   scriptBox: { backgroundColor: '#1A0B2E', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#332255', width: '100%', marginBottom: 12 },
