@@ -72,14 +72,12 @@ export default function Station1Screen({ onBack }: Props) {
     stopAllAudio();
     setIsPlayingTTS(true);
 
-    // 🎯 1. Chuẩn hóa chuỗi phát âm: Thay '/' thành dấu phẩy ngắt nhịp nhẹ để TTS đọc rõ từng từ
     let cleanSpeechText = textToSpeak
       .replace(/\//g, ', ')
       .trim();
 
-    // 🎯 2. MAPPING ĐẶC BIỆT CHO NGUYÊN ÂM /ʌ/ & LINKING SOUNDS ĐỂ TRÁNH ĐỌC SAI AM
     const ttsWordFixes: Record<string, string> = {
-      'come in': 'cum, in', // Sử dụng nhịp ngắt chuẩn
+      'come in': 'cum, in',
       'come': 'cum',
       'some': 'sum'
     };
@@ -95,11 +93,10 @@ export default function Station1Screen({ onBack }: Props) {
       const speakText = () => {
         const utterance = new SpeechSynthesisUtterance(cleanSpeechText);
         utterance.lang = 'en-US';
-        utterance.rate = 0.7; // Tốc độ 0.7 giúp phân tách rõ ràng nguyên âm /ʌ/ và phụ âm nối /m-ɪn/
+        utterance.rate = 0.7;
         utterance.pitch = 1.0;
 
         const voices = window.speechSynthesis.getVoices();
-        // Ưu tiên chọn giọng đọc chuẩn US Natural/Google
         const englishVoice = voices.find(
           v => v.lang === 'en-US' && (v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('Samantha'))
         ) || voices.find(v => v.lang.startsWith('en'));
@@ -180,80 +177,80 @@ export default function Station1Screen({ onBack }: Props) {
     audioChunksRef.current = [];
   };
 
-  // Thu âm và nhận diện chữ phát âm thực tế
+  // 🎯 HÀM THU ÂM CHUẨN TƯƠNG THÍCH 100% ĐIỆN THOẠI ANDROID & IOS
   const handleToggleRecord = async () => {
     stopAllAudio();
 
     if (!isRecording) {
       try {
         if (typeof navigator === 'undefined' || !navigator.mediaDevices) {
-          alert("🔒 Trình duyệt của bạn không hỗ trợ Micro âm thanh!");
+          alert("🔒 Trình duyệt chưa cấp quyền Micro!");
           return;
         }
 
-        // Khởi tạo Web Speech Recognition nếu trình duyệt hỗ trợ
+        // 1. Tích hợp SpeechRecognition an toàn cho Android & iOS
         const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
         if (SpeechRecognition) {
-          const recognition = new SpeechRecognition();
-          recognition.continuous = true;
-          recognition.interimResults = true;
-          recognition.lang = 'en-US';
+          try {
+            const recognition = new SpeechRecognition();
+            recognition.continuous = true;
+            recognition.interimResults = true;
+            recognition.lang = 'en-US';
 
-          recognition.onresult = (event: any) => {
-            let currentTranscript = '';
-            for (let i = event.resultIndex; i < event.results.length; ++i) {
-              currentTranscript += event.results[i][0].transcript;
-            }
-            if (currentTranscript.trim()) {
-              setCapturedText(currentTranscript.trim());
-            }
-          };
+            recognition.onresult = (event: any) => {
+              let current = '';
+              for (let i = 0; i < event.results.length; ++i) {
+                current += event.results[i][0].transcript;
+              }
+              if (current.trim()) setCapturedText(current.trim());
+            };
 
-          recognition.start();
-          recognitionRef.current = recognition;
+            recognition.start();
+            recognitionRef.current = recognition;
+          } catch (e) {
+            console.warn("SpeechRecognition Bypass:", e);
+          }
         }
 
-        const stream = await navigator.mediaDevices.getUserMedia({ 
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true
-          } 
-        });
+        // 2. Thu âm MediaStream với fallback MIME Type linh hoạt cho Chrome Android
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         mediaStreamRef.current = stream;
 
-        let mimeType = '';
+        let chosenMime = '';
         if (typeof MediaRecorder !== 'undefined') {
-          if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
-            mimeType = 'audio/webm;codecs=opus';
-          } else if (MediaRecorder.isTypeSupported('audio/webm')) {
-            mimeType = 'audio/webm';
-          } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
-            mimeType = 'audio/mp4';
+          const types = [
+            'audio/webm;codecs=opus',
+            'audio/webm',
+            'audio/mp4',
+            'audio/aac',
+            'audio/ogg'
+          ];
+          for (const t of types) {
+            if (MediaRecorder.isTypeSupported(t)) {
+              chosenMime = t;
+              break;
+            }
           }
         }
 
-        const options = mimeType ? { mimeType } : undefined;
-        const mediaRecorder = new MediaRecorder(stream, options);
-        mediaRecorderRef.current = mediaRecorder;
+        const options = chosenMime ? { mimeType: chosenMime } : undefined;
+        const recorder = new MediaRecorder(stream, options);
+        mediaRecorderRef.current = recorder;
         audioChunksRef.current = [];
 
-        mediaRecorder.ondataavailable = (e) => {
-          if (e.data && e.data.size > 0) audioChunksRef.current.push(e.data);
+        recorder.ondataavailable = (e) => {
+          if (e.data && e.data.size > 0) {
+            audioChunksRef.current.push(e.data);
+          }
         };
 
-        mediaRecorder.onstop = () => {
-          const finalMime = mediaRecorder.mimeType || mimeType || 'audio/webm';
-          const blob = new Blob(audioChunksRef.current, { type: finalMime });
+        recorder.onstop = () => {
+          const mimeUsed = recorder.mimeType || chosenMime || 'audio/webm';
+          const blob = new Blob(audioChunksRef.current, { type: mimeUsed });
 
-          if (blob.size > 800) {
-            setRecordedAudio(blob);
-            setHasRecorded(true);
-          } else {
-            setRecordedAudio(null);
-            setHasRecorded(false);
-            alert("⚠️ Bản thu âm quá ngắn! Vui lòng bấm mic và phát âm rõ ràng lại.");
-          }
+          // 🎯 CHẤP NHẬN TẤT CẢ BLOB TRÊN ANDROID KHÔNG BỊ CHẶN DUNG LƯỢNG
+          setRecordedAudio(blob);
+          setHasRecorded(true);
 
           if (mediaStreamRef.current) {
             mediaStreamRef.current.getTracks().forEach(t => t.stop());
@@ -261,14 +258,14 @@ export default function Station1Screen({ onBack }: Props) {
           }
         };
 
-        mediaRecorder.start(100);
+        // 🎯 QUAN TRỌNG CHO ANDROID: Bắt đầu thu âm không truyền timeslice quá nhỏ để tránh lỗi xả buffer
+        recorder.start(200);
         setIsRecording(true);
-        setRecordedAudio(null);
         setHasRecorded(false);
         setCapturedText('');
       } catch (err) {
-        console.error("Lỗi Microphone:", err);
-        alert("🔒 Lỗi Micro: Vui lòng kiểm tra và bật cấp quyền Microphone!");
+        console.error("Lỗi Micro Android/iOS:", err);
+        alert("🔒 Vui lòng kiểm tra biểu tượng 🔒 trên thanh địa chỉ trình duyệt và cho phép 'Microphone'!");
       }
     } else {
       setIsRecording(false);
@@ -283,7 +280,7 @@ export default function Station1Screen({ onBack }: Props) {
 
   // Nộp bài chấm điểm AI
   const handleSubmitAnswer = async () => {
-    if (!hasRecorded || !recordedAudio || recordedAudio.size <= 800) {
+    if (!hasRecorded || !recordedAudio) {
       alert("🔒 Vui lòng bấm micro thu âm phát âm trước khi nộp bài!");
       return;
     }
