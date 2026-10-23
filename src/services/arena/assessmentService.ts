@@ -21,8 +21,8 @@ export const evaluateSpeaking = async (
   try {
     const cleanSpeech = (capturedSpeech || '').trim();
 
-    // 1. KIỂM TRA IM LẶNG / KHÔNG NÓI GÌ -> 0 ĐIỂM
-    if (!audioBlob || audioBlob.size < 1200 || !cleanSpeech || cleanSpeech.length < 2) {
+    // 🎯 1. KIỂM TRA CHO ANDROID: Hạ ngưỡng size < 300 bytes và linh hoạt với cleanSpeech
+    if (!audioBlob || (audioBlob.size < 300 && (!cleanSpeech || cleanSpeech.length < 2))) {
       return {
         score: 0,
         isWin: false,
