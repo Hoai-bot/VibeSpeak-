@@ -66,13 +66,28 @@ export default function Station1Screen({ onBack }: Props) {
     setIsPlayingTTS(false);
   };
 
-  // Hàm phát âm mẫu chuẩn
+  // 🔊 HÀM PHÁT ÂM MẪU CHUẨN ĐÃ CẬP NHẬT MAPPING CHO NGUYÊN ÂM /ʌ/ & LINKING SOUNDS
   const playSampleAudio = (textToSpeak: string) => {
     if (!textToSpeak) return;
     stopAllAudio();
     setIsPlayingTTS(true);
 
-    const cleanSpeechText = textToSpeak.replace(/\//g, '.').trim();
+    // 🎯 1. Chuẩn hóa chuỗi phát âm: Thay '/' thành dấu phẩy ngắt nhịp nhẹ để TTS đọc rõ từng từ
+    let cleanSpeechText = textToSpeak
+      .replace(/\//g, ', ')
+      .trim();
+
+    // 🎯 2. MAPPING ĐẶC BIỆT CHO NGUYÊN ÂM /ʌ/ & LINKING SOUNDS ĐỂ TRÁNH ĐỌC SAI AM
+    const ttsWordFixes: Record<string, string> = {
+      'come in': 'cum, in', // Sử dụng nhịp ngắt chuẩn
+      'come': 'cum',
+      'some': 'sum'
+    };
+
+    const lowerText = cleanSpeechText.toLowerCase();
+    if (ttsWordFixes[lowerText]) {
+      cleanSpeechText = ttsWordFixes[lowerText];
+    }
 
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       window.speechSynthesis.cancel();
@@ -80,11 +95,13 @@ export default function Station1Screen({ onBack }: Props) {
       const speakText = () => {
         const utterance = new SpeechSynthesisUtterance(cleanSpeechText);
         utterance.lang = 'en-US';
-        utterance.rate = 0.75;
+        utterance.rate = 0.7; // Tốc độ 0.7 giúp phân tách rõ ràng nguyên âm /ʌ/ và phụ âm nối /m-ɪn/
+        utterance.pitch = 1.0;
 
         const voices = window.speechSynthesis.getVoices();
+        // Ưu tiên chọn giọng đọc chuẩn US Natural/Google
         const englishVoice = voices.find(
-          v => v.lang.startsWith('en') && (v.name.includes('Google') || v.name.includes('Natural') || v.name.includes('Samantha') || v.name.includes('US'))
+          v => v.lang === 'en-US' && (v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('Samantha'))
         ) || voices.find(v => v.lang.startsWith('en'));
 
         if (englishVoice) {
@@ -275,7 +292,6 @@ export default function Station1Screen({ onBack }: Props) {
 
     try {
       const promptTarget = (currentDrill?.contentEn || '').trim();
-      // 🎯 Đã cập nhật truyền 'STATION_1' vào tham số stationType
       const evalData = await evaluateSpeaking(
         recordedAudio, 
         undefined, 
