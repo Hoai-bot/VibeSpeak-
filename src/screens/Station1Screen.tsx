@@ -275,10 +275,11 @@ export default function Station1Screen({ onBack }: Props) {
 
     try {
       const promptTarget = (currentDrill?.contentEn || '').trim();
+      // 🎯 Đã cập nhật truyền 'STATION_1' vào tham số stationType
       const evalData = await evaluateSpeaking(
         recordedAudio, 
         undefined, 
-        undefined, 
+        'STATION_1', 
         promptTarget, 
         userId, 
         capturedText
