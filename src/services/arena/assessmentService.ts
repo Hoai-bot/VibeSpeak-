@@ -10,17 +10,15 @@ export interface AssessmentResult {
 
 export type StationType = 'STATION_1' | 'STATION_2' | 'STATION_3' | 'STATION_4' | string;
 
-// 🎯 INTERFACE HIGHLIGHT PHÂN TÍCH TỪNG TỪ
+// 🎯 DÀNH CHO TRẠM 1: So sánh từ mẫu và từ đọc được
 export interface WordDiff {
   word: string;
   status: 'correct' | 'incorrect' | 'missing';
 }
 
-// 🎯 HÀM SO SÁNH CÂU MẪU VÀ BÀI NÓI THỰC TẾ
 export function generateWordDiff(targetText: string, capturedTranscript: string): WordDiff[] {
   if (!targetText) return [];
   
-  // Chuẩn hóa chuỗi, loại bỏ dấu câu
   const cleanTarget = targetText.replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, "").toLowerCase().split(/\s+/).filter(Boolean);
   const cleanCaptured = (capturedTranscript || "").replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, "").toLowerCase().split(/\s+/).filter(Boolean);
 
@@ -30,6 +28,31 @@ export function generateWordDiff(targetText: string, capturedTranscript: string)
     } else {
       return { word, status: 'incorrect' };
     }
+  });
+}
+
+// 🎯 DÀNH CHO TRẠM 2: Phân tích trực tiếp lời thoại sinh viên đã nói
+export interface SpokenWordAnalysis {
+  word: string;
+  isConfident: boolean;
+}
+
+export function analyzeSpokenTranscript(transcript: string): SpokenWordAnalysis[] {
+  if (!transcript) return [];
+
+  const words = transcript
+    .replace(/[.,/#!$%^&*;:{}=\-_`~()?"']/g, "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+
+  return words.map((w) => {
+    const clean = w.toLowerCase();
+    const isHesitation = ['uh', 'um', 'err', 'ah', 'mm'].includes(clean);
+    return {
+      word: w,
+      isConfident: !isHesitation && clean.length > 1,
+    };
   });
 }
 
@@ -44,7 +67,6 @@ export const evaluateSpeaking = async (
   try {
     const cleanSpeech = (capturedSpeech || '').trim();
 
-    // 🎯 CHẤP NHẬN TẤT CẢ THIẾT BỊ: Chỉ chặn nếu HOÀN TOÀN KHÔNG CÓ CẢ AUDIO LẪN TEXT
     if (!audioBlob && !cleanSpeech) {
       return {
         score: 0,
@@ -58,7 +80,6 @@ export const evaluateSpeaking = async (
     let calculatedScore = 80;
     let feedbackMessage = "";
 
-    // 🎯 XỬ LÝ CHẤM ĐIỂM DÀNH CHO TRẠM 1
     if (currentStation === 'STATION_1' && targetPrompt) {
       const normalize = (str: string) => str.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim();
       
@@ -69,7 +90,6 @@ export const evaluateSpeaking = async (
       const spokenWords = spokenClean.split(/\s+/).filter(Boolean);
 
       if (targetWords.length === 0 || spokenWords.length === 0) {
-        // Fallback an toàn cho Android khi SpeechRecognition không bắt được chữ nhưng có âm thanh
         calculatedScore = 82;
         feedbackMessage = "✅ Đã ghi nhận bài phát âm qua Micro thiết bị di động!";
       } else {
@@ -105,7 +125,6 @@ export const evaluateSpeaking = async (
         }
       }
     } else {
-      // Dành cho Trạm 2, 3, 4
       calculatedScore = Math.floor(Math.random() * 18) + 78;
       const levelTag = cefrLevel ? ` cấp độ ${cefrLevel.toUpperCase()}` : '';
       

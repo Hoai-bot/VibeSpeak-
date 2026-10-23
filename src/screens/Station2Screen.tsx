@@ -6,7 +6,7 @@ import { getInstantSoloTopic, generateSoloTopic } from '../services/arena/soloSe
 import { getInstantRelayChallenge, generateRelayChallenge } from '../services/arena/relayService';
 import { getInstantRoleplayScenario, generateRoleplayScenario } from '../services/arena/roleplayService';
 
-import { evaluateSpeaking, AssessmentResult, generateWordDiff } from '../services/arena/assessmentService';
+import { evaluateSpeaking, AssessmentResult, analyzeSpokenTranscript } from '../services/arena/assessmentService';
 import { saveSubmissionToCloud } from '../services/userService';
 import { supabase } from '../utils/supabase';
 
@@ -23,7 +23,6 @@ interface PlayerResult {
   p2Transcript?: string;
 }
 
-// Hàm chuyển đổi Base64 nội bộ an toàn
 const safeBlobToBase64 = (blob: Blob): Promise<string> => {
   return new Promise((resolve) => {
     if (!blob) return resolve('');
@@ -218,7 +217,6 @@ export default function Station2Screen({ onBack }: Props) {
     }
   }, [mode, cefrLevel]);
 
-  // 🎯 TÌM MIME TYPE PHÙ HỢP NHẤT CHO TRÌNH DUYỆT (ĐẶC BIỆT LÀ CHROME ANDROID)
   const getOptimalMimeType = () => {
     if (typeof MediaRecorder === 'undefined') return '';
     const candidates = [
@@ -234,7 +232,6 @@ export default function Station2Screen({ onBack }: Props) {
     return '';
   };
 
-  // 🎯 HÀM BẮT ĐẦU THU ÂM CHUẨN TƯƠNG THÍCH VỚI TẤT CẢ DÒNG ĐIỆN THOẠI ANDROID & IOS
   const startFullRecording = async () => {
     if (!studentNameInput.trim()) {
       alert("⚠️ Vui lòng nhập Họ tên hoặc Biệt danh của bạn ở phía trên trước khi bắt đầu!");
@@ -252,7 +249,6 @@ export default function Station2Screen({ onBack }: Props) {
       audioChunksRef.current = [];
       fullTranscriptRef.current = '';
 
-      // 1. Khởi tạo SpeechRecognition an toàn cho Android & iOS
       const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
       if (SpeechRecognition) {
         try {
@@ -284,7 +280,6 @@ export default function Station2Screen({ onBack }: Props) {
         }
       }
 
-      // 2. Lấy luồng Microphone từ thiết bị
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       audioStreamRef.current = stream;
 
@@ -312,14 +307,12 @@ export default function Station2Screen({ onBack }: Props) {
         const mimeTypeUsed = recorder.mimeType || chosenMime || 'audio/webm';
         const fullAudioBlob = new Blob(audioChunksRef.current, { type: mimeTypeUsed });
 
-        // Chuyển Base64 an toàn cho Cloud storage
         const base64Audio = await safeBlobToBase64(fullAudioBlob);
         const localAudioUrl = URL.createObjectURL(fullAudioBlob);
 
         const targetPrompt = exercise?.promptEn || exercise?.contextEn || exercise?.scenarioTitle || '';
         const capturedSpeech = fullTranscriptRef.current || '';
 
-        // 🎯 Gọi hàm chấm điểm chung cho Trạm 2
         const result = await evaluateSpeaking(
           fullAudioBlob, 
           cefrLevel, 
@@ -382,7 +375,6 @@ export default function Station2Screen({ onBack }: Props) {
         }
       };
 
-      // 🎯 QUAN TRỌNG CHO ANDROID: Dùng 200ms để tránh giật lag buffer
       recorder.start(200);
       setIsRecording(true);
       setIsGameActive(true);
@@ -414,7 +406,6 @@ export default function Station2Screen({ onBack }: Props) {
 
       <ScrollView contentContainerStyle={{ alignItems: 'center', width: '100%', paddingBottom: 30 }}>
         
-        {/* KHU VỰC NHẬP THÔNG TIN SINH VIÊN / NGƯỜI CHƠI TỰ DO */}
         <View style={styles.studentInfoCard}>
           <Text style={styles.studentInfoTitle}>🎓 THÔNG TIN NGƯỜI CHƠI / SINH VIÊN:</Text>
           <View style={{ flexDirection: 'column', gap: 6, width: '100%' }}>
@@ -444,7 +435,6 @@ export default function Station2Screen({ onBack }: Props) {
           </View>
         </View>
 
-        {/* Ô NHẬP CHỦ ĐỀ GIÁO VIÊN */}
         <View style={styles.customTopicCard}>
           <Text style={styles.customTopicTitle}>📌 NHẬP CHỦ ĐỀ SÁCH GIÁO KHOA (GIÁO VIÊN GIAO BÀI):</Text>
           <TextInput
@@ -469,7 +459,6 @@ export default function Station2Screen({ onBack }: Props) {
           </View>
         </View>
 
-        {/* Chọn Cấp độ CEFR */}
         <Text style={styles.sectionLabel}>CHỌN LEVEL CẤP ĐỘ:</Text>
         <View style={styles.cefrRow}>
           {CEFR_LEVELS.map((lvl) => (
@@ -483,7 +472,6 @@ export default function Station2Screen({ onBack }: Props) {
           ))}
         </View>
 
-        {/* Chọn Chế độ Đấu */}
         <View style={styles.modeRow}>
           <TouchableOpacity style={[styles.modeBtn, mode === 'solo' && styles.modeBtnActive]} onPress={() => handleSelectMode('solo')}>
             <Text style={[styles.modeText, mode === 'solo' && styles.modeTextActive]}>🎯 SOLO</Text>
@@ -496,7 +484,6 @@ export default function Station2Screen({ onBack }: Props) {
           </TouchableOpacity>
         </View>
 
-        {/* CARD THI ĐẤU CHÍNH */}
         <View style={styles.box}>
           <Text style={styles.boxTitle}>📌 SÀN ĐẤU {mode.toUpperCase()} [{cefrLevel}]</Text>
 
@@ -578,28 +565,27 @@ export default function Station2Screen({ onBack }: Props) {
                 <View style={styles.evalBox}>
                   <Text style={styles.evalScore}>🏆 ĐIỂM BÀI NÓI: {evalResult.score}/100</Text>
                   
-                  {/* 🎯 NÂNG CẤP HIGHLIGHT TỪ ĐÚNG / SAI CHO TRẠM 2 */}
-                  <View style={styles.wordHighlightBox}>
-                    <Text style={styles.wordHighlightTitle}>🎯 CHI TIẾT CÁC TỪ PHÁT ÂM TRONG BÀI NÓI:</Text>
-                    <View style={styles.wordRow}>
-                      {generateWordDiff(
-                        exercise?.promptEn || exercise?.contextEn || '', 
-                        evalResult.transcript || ''
-                      ).map((item, idx) => (
-                        <View 
-                          key={idx} 
-                          style={[
-                            styles.wordBadge, 
-                            item.status === 'correct' ? styles.correctBadge : styles.incorrectBadge
-                          ]}
-                        >
-                          <Text style={[styles.wordBadgeText, item.status === 'correct' ? styles.correctText : styles.incorrectText]}>
-                            {item.word} {item.status === 'correct' ? '✓' : '✗'}
-                          </Text>
-                        </View>
-                      ))}
+                  {/* 🎯 NÂNG CẤP: PHÂN TÍCH CHÍNH LỜI THOẠI SINH VIÊN ĐÃ NÓI */}
+                  {evalResult.transcript ? (
+                    <View style={styles.wordHighlightBox}>
+                      <Text style={styles.wordHighlightTitle}>🎙 CÁC TỪ AI GHI NHẬN ĐƯỢC TỪ BÀI NÓI CỦA BẠN:</Text>
+                      <View style={styles.wordRow}>
+                        {analyzeSpokenTranscript(evalResult.transcript).map((item, idx) => (
+                          <View 
+                            key={idx} 
+                            style={[
+                              styles.wordBadge, 
+                              item.isConfident ? styles.correctBadge : styles.warningBadge
+                            ]}
+                          >
+                            <Text style={[styles.wordBadgeText, item.isConfident ? styles.correctText : styles.warningText]}>
+                              {item.word} {item.isConfident ? '✓' : '⚠️'}
+                            </Text>
+                          </View>
+                        ))}
+                      </View>
                     </View>
-                  </View>
+                  ) : null}
 
                   {evalResult.audioUrl ? (
                     <View style={styles.audioPlayerBox}>
@@ -690,9 +676,11 @@ const styles = StyleSheet.create({
   wordRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   wordBadge: { paddingHorizontal: 6, paddingVertical: 3, borderRadius: 6, borderWidth: 1 },
   correctBadge: { backgroundColor: 'rgba(57, 255, 20, 0.15)', borderColor: '#39FF14' },
+  warningBadge: { backgroundColor: 'rgba(255, 215, 0, 0.15)', borderColor: '#FFD700' },
   incorrectBadge: { backgroundColor: 'rgba(255, 0, 85, 0.15)', borderColor: '#FF0055' },
   wordBadgeText: { fontSize: 10, fontWeight: 'bold' },
   correctText: { color: '#39FF14' },
+  warningText: { color: '#FFD700' },
   incorrectText: { color: '#FF0055' },
   audioPlayerBox: { backgroundColor: '#1A0B2E', padding: 8, borderRadius: 8, width: '100%', marginBottom: 8, borderWidth: 1, borderColor: '#00FFFF' },
   audioLabel: { color: '#00FFFF', fontSize: 10, fontWeight: 'bold' },
