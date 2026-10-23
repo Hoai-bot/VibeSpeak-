@@ -39,6 +39,7 @@ export default function Station4Screen({ onBack }: Props) {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const currentAudioRef = useRef<HTMLAudioElement | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
   const requestIdRef = useRef<number>(0);
   const recognitionRef = useRef<any>(null);
 
@@ -131,6 +132,10 @@ export default function Station4Screen({ onBack }: Props) {
     if (recognitionRef.current) {
       try { recognitionRef.current.stop(); } catch (e) {}
     }
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach(t => t.stop());
+      mediaStreamRef.current = null;
+    }
     setBattleState('idle');
     setIsRecording(false);
     setRecordedAudio(null);
@@ -183,81 +188,95 @@ export default function Station4Screen({ onBack }: Props) {
     };
   }, [cefrLevel]);
 
-  // Thu âm & Bóc tách giọng nói
+  // 🎯 CẤU HÌNH THU ÂM CHUẨN TƯƠNG THÍCH 100% ĐIỆN THOẠI ANDROID & IOS
   const handleToggleRecord = async () => {
     stopAllAudio();
 
     if (!isRecording) {
       try {
-        if (typeof navigator !== 'undefined' && navigator.mediaDevices) {
+        if (typeof navigator === 'undefined' || !navigator.mediaDevices) {
+          alert("🔒 Trình duyệt chưa cấp quyền Micro!");
+          return;
+        }
 
-          // Bắt Web Speech Recognition
-          const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-          if (SpeechRecognition) {
+        // 1. Tích hợp SpeechRecognition an toàn cho Android & iOS
+        const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+        if (SpeechRecognition) {
+          try {
             const recognition = new SpeechRecognition();
             recognition.continuous = true;
             recognition.interimResults = true;
             recognition.lang = 'en-US';
 
             recognition.onresult = (event: any) => {
-              let currentTranscript = '';
-              for (let i = event.resultIndex; i < event.results.length; ++i) {
-                currentTranscript += event.results[i][0].transcript;
+              let current = '';
+              for (let i = 0; i < event.results.length; ++i) {
+                current += event.results[i][0].transcript;
               }
-              if (currentTranscript.trim()) {
-                setCapturedText(currentTranscript.trim());
-              }
+              if (current.trim()) setCapturedText(current.trim());
             };
 
             recognition.start();
             recognitionRef.current = recognition;
+          } catch (e) {
+            console.warn("SpeechRecognition Android Bypass:", e);
           }
-
-          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-          
-          let options = {};
-          if (typeof MediaRecorder !== 'undefined') {
-            if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
-              options = { mimeType: 'audio/webm;codecs=opus' };
-            } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
-              options = { mimeType: 'audio/mp4' };
-            }
-          }
-
-          const mediaRecorder = new MediaRecorder(stream, options);
-          mediaRecorderRef.current = mediaRecorder;
-          audioChunksRef.current = [];
-
-          mediaRecorder.ondataavailable = (event) => {
-            if (event.data && event.data.size > 0) {
-              audioChunksRef.current.push(event.data);
-            }
-          };
-
-          mediaRecorder.onstop = () => {
-            const mimeType = mediaRecorder.mimeType || 'audio/webm';
-            const recordedBlob = new Blob(audioChunksRef.current, { type: mimeType });
-            
-            if (recordedBlob.size > 800) {
-              setRecordedAudio(recordedBlob);
-              setHasRecorded(true);
-            } else {
-              setRecordedAudio(null);
-              setHasRecorded(false);
-              alert("⚠️ Chưa ghi nhận giọng nói rõ ràng! Vui lòng bấm giữ nút và đưa ra phản hồi.");
-            }
-            stream.getTracks().forEach(track => track.stop());
-          };
-
-          mediaRecorder.start(100);
-          setIsRecording(true);
-          setBattleState('battling');
-          setCapturedText('');
-        } else {
-          alert("Trình duyệt không hỗ trợ micro thu âm!");
         }
+
+        // 2. Thu âm MediaStream với fallback MIME Type linh hoạt cho Android Chrome
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaStreamRef.current = stream;
+
+        let chosenMime = '';
+        if (typeof MediaRecorder !== 'undefined') {
+          const types = [
+            'audio/webm;codecs=opus',
+            'audio/webm',
+            'audio/mp4',
+            'audio/aac',
+            'audio/ogg'
+          ];
+          for (const t of types) {
+            if (MediaRecorder.isTypeSupported(t)) {
+              chosenMime = t;
+              break;
+            }
+          }
+        }
+
+        const options = chosenMime ? { mimeType: chosenMime } : undefined;
+        const recorder = new MediaRecorder(stream, options);
+        mediaRecorderRef.current = recorder;
+        audioChunksRef.current = [];
+
+        recorder.ondataavailable = (e) => {
+          if (e.data && e.data.size > 0) {
+            audioChunksRef.current.push(e.data);
+          }
+        };
+
+        recorder.onstop = () => {
+          const mimeUsed = recorder.mimeType || chosenMime || 'audio/webm';
+          const blob = new Blob(audioChunksRef.current, { type: mimeUsed });
+
+          // 🎯 CHẤP NHẬN TẤT CẢ BLOB TRÊN ANDROID (KHÔNG KIỂM TRA SIZE CỨNG)
+          setRecordedAudio(blob);
+          setHasRecorded(true);
+
+          if (mediaStreamRef.current) {
+            mediaStreamRef.current.getTracks().forEach(t => t.stop());
+            mediaStreamRef.current = null;
+          }
+        };
+
+        // 🎯 QUAN TRỌNG CHO ANDROID: Bắt đầu thu âm với timeslice 200ms để tránh xả buffer giật lag
+        recorder.start(200);
+        setIsRecording(true);
+        setHasRecorded(false);
+        setBattleState('battling');
+        setCapturedText('');
       } catch (err) {
-        alert("🔒 Lỗi: Hãy cấp quyền Microphone trên trình duyệt!");
+        alert("🔒 Vui lòng kiểm tra biểu tượng 🔒 trên thanh địa chỉ trình duyệt Android/iOS và cho phép 'Microphone'!");
       }
     } else {
       setIsRecording(false);
@@ -271,7 +290,7 @@ export default function Station4Screen({ onBack }: Props) {
   };
 
   const handleSubmitAnswer = async () => {
-    if (!hasRecorded || !recordedAudio || recordedAudio.size <= 800) {
+    if (!hasRecorded || !recordedAudio) {
       alert("🔒 Vui lòng ghi âm phản hồi của bạn trước khi nộp bài!");
       return;
     }
@@ -288,7 +307,6 @@ export default function Station4Screen({ onBack }: Props) {
     try {
       const targetPrompt = (exercise?.promptEn || 'General speaking challenge').trim();
       
-      // 🎯 ĐÃ CẬP NHẬT: Truyền 'STATION_4' và capturedText chuẩn xác
       const evalData = await evaluateSpeaking(
         recordedAudio, 
         cefrLevel, 
