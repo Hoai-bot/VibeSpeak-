@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
 import { getRandomStation1Drill, DrillType } from '../services/drills/station1Service';
-import { evaluateSpeaking, AssessmentResult } from '../services/arena/assessmentService';
+import { evaluateSpeaking, AssessmentResult, generateWordDiff } from '../services/arena/assessmentService';
 import { updateUserProgress } from '../services/userService';
 
 interface Props {
@@ -411,10 +411,31 @@ export default function Station1Screen({ onBack }: Props) {
             </Text>
             <Text style={styles.scoreText}>⚡ Điểm phát âm: {result.score} / 100 ĐIỂM</Text>
 
+            {/* 🎯 NÂNG CẤP HIGHLIGHT TỪ ĐÚNG / SAI TRỰC QUAN */}
+            <View style={styles.wordHighlightBox}>
+              <Text style={styles.wordHighlightTitle}>🎯 CHI TIẾT TỪNG TỪ MỤC TIÊU:</Text>
+              <View style={styles.wordRow}>
+                {generateWordDiff(currentDrill?.contentEn || '', result.transcript || '').map((item, idx) => (
+                  <TouchableOpacity 
+                    key={idx} 
+                    style={[
+                      styles.wordBadge, 
+                      item.status === 'correct' ? styles.correctBadge : styles.incorrectBadge
+                    ]}
+                    onPress={() => playSampleAudio(item.word)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.wordBadgeText, item.status === 'correct' ? styles.correctText : styles.incorrectText]}>
+                      {item.word} {item.status === 'correct' ? '✓' : '✗'}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
             {result.audioUrl ? (
               <View style={styles.audioPlayerBox}>
                 <Text style={styles.audioLabel}>🎧 Nghe lại bài phát âm của bạn:</Text>
-                {/* 🎯 SỬ DỤNG CHUẨN TẬP TIN DỰ PHÒNG */}
                 <audio controls src={result.audioUrl} style={{ width: '100%', marginTop: 6, height: 36 }} />
               </View>
             ) : null}
@@ -462,6 +483,15 @@ const styles = StyleSheet.create({
   submitBtnText: { color: '#000', fontSize: 11, fontWeight: '900' },
   resultTitle: { fontSize: 15, fontWeight: '900', marginBottom: 6 },
   scoreText: { color: '#FFD700', fontSize: 13, fontWeight: '900', marginBottom: 10 },
+  wordHighlightBox: { backgroundColor: '#120826', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#00FFFF', width: '100%', marginVertical: 8 },
+  wordHighlightTitle: { color: '#00FFFF', fontSize: 9, fontWeight: '900', marginBottom: 6 },
+  wordRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  wordBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, borderWidth: 1 },
+  correctBadge: { backgroundColor: 'rgba(57, 255, 20, 0.15)', borderColor: '#39FF14' },
+  incorrectBadge: { backgroundColor: 'rgba(255, 0, 85, 0.15)', borderColor: '#FF0055' },
+  wordBadgeText: { fontSize: 11, fontWeight: 'bold' },
+  correctText: { color: '#39FF14' },
+  incorrectText: { color: '#FF0055' },
   audioPlayerBox: { backgroundColor: '#1A0B2E', padding: 10, borderRadius: 8, width: '100%', marginBottom: 10, borderWidth: 1, borderColor: '#00FFFF' },
   audioLabel: { color: '#00FFFF', fontSize: 10, fontWeight: 'bold' },
   scriptBox: { backgroundColor: '#1A0B2E', padding: 10, borderRadius: 8, width: '100%', marginBottom: 10 },
