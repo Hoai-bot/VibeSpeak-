@@ -10,6 +10,29 @@ export interface AssessmentResult {
 
 export type StationType = 'STATION_1' | 'STATION_2' | 'STATION_3' | 'STATION_4' | string;
 
+// 🎯 INTERFACE HIGHLIGHT PHÂN TÍCH TỪNG TỪ
+export interface WordDiff {
+  word: string;
+  status: 'correct' | 'incorrect' | 'missing';
+}
+
+// 🎯 HÀM SO SÁNH CÂU MẪU VÀ BÀI NÓI THỰC TẾ
+export function generateWordDiff(targetText: string, capturedTranscript: string): WordDiff[] {
+  if (!targetText) return [];
+  
+  // Chuẩn hóa chuỗi, loại bỏ dấu câu
+  const cleanTarget = targetText.replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, "").toLowerCase().split(/\s+/).filter(Boolean);
+  const cleanCaptured = (capturedTranscript || "").replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, "").toLowerCase().split(/\s+/).filter(Boolean);
+
+  return cleanTarget.map((word) => {
+    if (cleanCaptured.includes(word)) {
+      return { word, status: 'correct' };
+    } else {
+      return { word, status: 'incorrect' };
+    }
+  });
+}
+
 export const evaluateSpeaking = async (
   audioBlob: Blob,
   cefrLevel?: string,
