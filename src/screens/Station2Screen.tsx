@@ -6,7 +6,7 @@ import { getInstantSoloTopic, generateSoloTopic } from '../services/arena/soloSe
 import { getInstantRelayChallenge, generateRelayChallenge } from '../services/arena/relayService';
 import { getInstantRoleplayScenario, generateRoleplayScenario } from '../services/arena/roleplayService';
 
-import { evaluateSpeaking, AssessmentResult } from '../services/arena/assessmentService';
+import { evaluateSpeaking, AssessmentResult, generateWordDiff } from '../services/arena/assessmentService';
 import { saveSubmissionToCloud } from '../services/userService';
 import { supabase } from '../utils/supabase';
 
@@ -578,6 +578,29 @@ export default function Station2Screen({ onBack }: Props) {
                 <View style={styles.evalBox}>
                   <Text style={styles.evalScore}>🏆 ĐIỂM BÀI NÓI: {evalResult.score}/100</Text>
                   
+                  {/* 🎯 NÂNG CẤP HIGHLIGHT TỪ ĐÚNG / SAI CHO TRẠM 2 */}
+                  <View style={styles.wordHighlightBox}>
+                    <Text style={styles.wordHighlightTitle}>🎯 CHI TIẾT CÁC TỪ PHÁT ÂM TRONG BÀI NÓI:</Text>
+                    <View style={styles.wordRow}>
+                      {generateWordDiff(
+                        exercise?.promptEn || exercise?.contextEn || '', 
+                        evalResult.transcript || ''
+                      ).map((item, idx) => (
+                        <View 
+                          key={idx} 
+                          style={[
+                            styles.wordBadge, 
+                            item.status === 'correct' ? styles.correctBadge : styles.incorrectBadge
+                          ]}
+                        >
+                          <Text style={[styles.wordBadgeText, item.status === 'correct' ? styles.correctText : styles.incorrectText]}>
+                            {item.word} {item.status === 'correct' ? '✓' : '✗'}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                  </View>
+
                   {evalResult.audioUrl ? (
                     <View style={styles.audioPlayerBox}>
                       <Text style={styles.audioLabel}>🎧 Nghe lại bài thu âm vừa nộp:</Text>
@@ -662,6 +685,15 @@ const styles = StyleSheet.create({
   recordBtnText: { color: '#FFF', fontSize: 11, fontWeight: '900' },
   evalBox: { backgroundColor: '#130A2A', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#332255', width: '100%', marginTop: 12 },
   evalScore: { color: '#39FF14', fontSize: 12, fontWeight: '900', marginBottom: 4 },
+  wordHighlightBox: { backgroundColor: '#120826', padding: 8, borderRadius: 8, borderWidth: 1, borderColor: '#00FFFF', width: '100%', marginVertical: 8 },
+  wordHighlightTitle: { color: '#00FFFF', fontSize: 9, fontWeight: '900', marginBottom: 6 },
+  wordRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  wordBadge: { paddingHorizontal: 6, paddingVertical: 3, borderRadius: 6, borderWidth: 1 },
+  correctBadge: { backgroundColor: 'rgba(57, 255, 20, 0.15)', borderColor: '#39FF14' },
+  incorrectBadge: { backgroundColor: 'rgba(255, 0, 85, 0.15)', borderColor: '#FF0055' },
+  wordBadgeText: { fontSize: 10, fontWeight: 'bold' },
+  correctText: { color: '#39FF14' },
+  incorrectText: { color: '#FF0055' },
   audioPlayerBox: { backgroundColor: '#1A0B2E', padding: 8, borderRadius: 8, width: '100%', marginBottom: 8, borderWidth: 1, borderColor: '#00FFFF' },
   audioLabel: { color: '#00FFFF', fontSize: 10, fontWeight: 'bold' },
   transcriptText: { color: '#FFF', fontSize: 10, fontStyle: 'italic', marginBottom: 6 },
