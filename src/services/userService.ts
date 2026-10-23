@@ -28,9 +28,10 @@ export const blobToBase64 = (blob: Blob): Promise<string> => {
   });
 };
 
+// 🎯 HÀM LƯU BÀI KHỚP CHUẨN 100% VỚI BẢNG submissions TRÊN SUPABASE DÒNG THEO DÒNG
 export const saveSubmissionToCloud = async (submission: RoleplaySubmission) => {
   try {
-    // 1. Lưu dự phòng vào LocalStorage
+    // 1. Lưu dự phòng LocalStorage
     try {
       const existingLocal = localStorage.getItem(LOCAL_HISTORY_KEY);
       const historyList: RoleplaySubmission[] = existingLocal ? JSON.parse(existingLocal) : [];
@@ -40,29 +41,26 @@ export const saveSubmissionToCloud = async (submission: RoleplaySubmission) => {
 
     if (!supabase) return;
 
-    // BỌC AN TOÀN TUYỆT ĐỐI KHI LẤY USER ID KHÔNG ĐỂ BỊ BÁO LỖI MODULE TREO APP
-    let userId = null;
-    try {
-      const { data: userData } = await supabase.auth.getUser();
-      userId = userData?.user?.id || null;
-    } catch (authErr) {
-      console.warn("⚠️ Bỏ qua lấy user_id bị lỗi module, lưu bài dưới dạng guest:", authErr);
-    }
-
     const currentMode = String(submission.mode || 'SOLO').toUpperCase();
     const level = String(submission.cefrLevel || 'A1').toUpperCase();
     const className = submission.className || 'LỚP CHUNG';
-    let displayName = submission.pairName || submission.studentName || 'Sinh viên';
+    const studentName = submission.studentName || 'Sinh viên VibeSpeak';
+    
+    // Ghép mã lớp vào pair_name để Giáo viên lọc và đọc được mã lớp dễ dàng
+    const pairNameWithClass = submission.pairName 
+      ? `[CLASS: ${className}] ${submission.pairName}`
+      : `[CLASS: ${className}] ${studentName}`;
 
-    const formattedFeedback = `[${currentMode} - ${level} | CLASS: ${className} | ${displayName}]: ${submission.feedback || ''}`;
-
-    // 🎯 ĐỒNG BỘ LƯU VÀO BẢNG 'submissions'
+    // 🎯 CHỈ INSERT CÁC CỘT CÓ THỰC TRÊN DỮ LIỆU CỦA BẠN
     const { error } = await supabase.from('submissions').insert([
       {
-        user_id: userId,
+        student_name: studentName,
+        pair_name: pairNameWithClass,
+        mode: currentMode,
+        cefr_level: level,
         score: Number(submission.score) || 0,
         transcript: submission.transcript || '',
-        feedback: formattedFeedback,
+        feedback: submission.feedback || '',
         audio_url: submission.audioUrl || '',
       },
     ]);
@@ -77,15 +75,14 @@ export const saveSubmissionToCloud = async (submission: RoleplaySubmission) => {
 
 export const saveSubmissionForTeacher = saveSubmissionToCloud;
 
-// 🎯 HÀM TRUY XUẤT ĐỒNG BỘ TỪ BẢNG 'submissions'
+// 🎯 HÀM TRUY XUẤT BẢNG submissions VÀ TỰ ĐỘNG BÓC TÁCH MÃ LỚP DỄ DÀNG
 export const fetchSubmissionsFromCloud = async (selectedClass?: string): Promise<RoleplaySubmission[]> => {
   try {
     if (!supabase) return [];
 
-    // 🎯 TRUY VẤN CHÍNH XÁC BẢNG 'submissions'
     const { data: results, error } = await supabase
       .from('submissions')
-      .select('id, score, transcript, feedback, audio_url, created_at, user_id')
+      .select('id, student_name, pair_name, mode, cefr_level, score, transcript, feedback, audio_url, created_at')
       .order('created_at', { ascending: false })
       .limit(200);
 
@@ -97,58 +94,33 @@ export const fetchSubmissionsFromCloud = async (selectedClass?: string): Promise
     if (!results || results.length === 0) return [];
 
     const parsedList: RoleplaySubmission[] = results.map((item: any) => {
-      let mode = 'SOLO';
-      let cefrLevel = 'A1';
       let extractedClass = 'LỚP CHUNG';
-      let playerName = 'Học viên';
-      let cleanFeedback = item.feedback || '';
+      let rawPair = item.pair_name || '';
 
-      // 🎯 BÓC TÁCH MÃ LỚP CHUẨN TỪ CHUỖI FEEDBACK DÙ CÓ RÁC HAY KÝ TỰ ĐẶC BIỆT
-      if (cleanFeedback && cleanFeedback.startsWith('[') && cleanFeedback.includes(']:')) {
-        const parts = cleanFeedback.split(']:');
-        const headerTag = parts[0].replace('[', '');
-        cleanFeedback = parts.slice(1).join(']:').trim();
-
-        const tagParts = headerTag.split('|').map((p) => p.trim());
-
-        if (tagParts[0]) {
-          const meta = tagParts[0].split('-');
-          mode = String(meta[0] || 'SOLO').trim().toUpperCase();
-          cefrLevel = String(meta[1] || 'A1').trim().toUpperCase();
-        }
-
-        for (let i = 1; i < tagParts.length; i++) {
-          const part = tagParts[i];
-          if (part.toUpperCase().startsWith('CLASS:')) {
-            extractedClass = part.substring(6).trim().toUpperCase() || 'LỚP CHUNG';
-          } else if (part.length > 0) {
-            playerName = part;
-          }
-        }
+      // Bóc tách Mã Lớp từ chuỗi pair_name
+      if (rawPair.includes('[CLASS:') && rawPair.includes(']')) {
+        const parts = rawPair.split(']');
+        extractedClass = parts[0].replace('[CLASS:', '').trim().toUpperCase() || 'LỚP CHUNG';
+        rawPair = parts.slice(1).join(']').trim();
       }
-
-      if (extractedClass.startsWith('CLASS:')) {
-        extractedClass = extractedClass.replace('CLASS:', '').trim();
-      }
-      if (!extractedClass) extractedClass = 'LỚP CHUNG';
 
       return {
         id: item.id || String(Math.random()),
-        studentName: playerName,
-        pairName: playerName,
+        studentName: item.student_name || 'Sinh viên VibeSpeak',
+        pairName: rawPair || item.student_name || 'Học viên',
         className: extractedClass,
         score: Number(item.score) || 0,
-        mode: String(mode).toUpperCase(),
-        cefrLevel: String(cefrLevel).toUpperCase(),
+        mode: String(item.mode || 'SOLO').toUpperCase(),
+        cefrLevel: String(item.cefr_level || 'A1').toUpperCase(),
         transcript: item.transcript || '',
         audioUrl: item.audio_url || '',
-        feedback: cleanFeedback,
+        feedback: item.feedback || '',
         timestamp: item.created_at ? new Date(item.created_at).toLocaleString('vi-VN') : '',
         rawCreatedAt: item.created_at ? new Date(item.created_at).getTime() : 0,
       };
     });
 
-    // Sắp xếp bài mới nhất lên đầu
+    // Sắp xếp bài mới nộp lên đầu tiên
     parsedList.sort((a: any, b: any) => b.rawCreatedAt - a.rawCreatedAt);
 
     let filtered = parsedList;
@@ -158,7 +130,7 @@ export const fetchSubmissionsFromCloud = async (selectedClass?: string): Promise
       );
     }
 
-    // Tính thứ hạng bài nộp theo điểm số từ cao đến thấp
+    // Tính thứ hạng bài nộp theo điểm số từ cao xuống thấp
     const sortedForRank = [...filtered].sort((a, b) => b.score - a.score);
     return filtered.map((item) => {
       const rankIndex = sortedForRank.findIndex((r) => r.id === item.id);
