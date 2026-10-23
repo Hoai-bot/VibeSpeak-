@@ -7,9 +7,10 @@ import MainMapScreen from '../screens/MainMapScreen';
 import UserProfileScreen from '../screens/UserProfileScreen';
 
 import Station1Screen from '../screens/Station1Screen';
-import Station2Screen from '../screens/Station2Screen'; // 👈 Đã đổi sang Station2Screen
+import Station2Screen from '../screens/Station2Screen';
 import ShadowBossScreen from '../screens/ShadowBossScreen';
 import Station4Screen from '../screens/Station4Screen';
+import GhostStationScreen from '../screens/GhostStationScreen'; // 🎯 Bổ sung import Default
 import TeacherDashboardScreen from '../screens/TeacherDashboardScreen';
 
 export default function AppNavigator() {
@@ -26,6 +27,8 @@ export default function AppNavigator() {
       setCurrentScreen('station3');
     } else if (idStr === '4' || idStr.includes('station4')) {
       setCurrentScreen('station4');
+    } else if (idStr === 'ghost' || idStr.includes('ghost')) {
+      setCurrentScreen('ghost'); // 🎯 Điều hướng Trạm Bóng Ma
     } else if (idStr === 'teacher' || idStr.includes('teacher') || idStr.includes('admin')) {
       setCurrentScreen('teacher');
     }
@@ -56,7 +59,7 @@ export default function AppNavigator() {
       )}
 
       {currentScreen === 'station2' && (
-        <Station2Screen onBack={() => setCurrentScreen('map')} /> // 👈 Đã gắn đúng màn hình Trạm 2
+        <Station2Screen onBack={() => setCurrentScreen('map')} />
       )}
 
       {currentScreen === 'station3' && (
@@ -65,6 +68,10 @@ export default function AppNavigator() {
 
       {currentScreen === 'station4' && (
         <Station4Screen onBack={() => setCurrentScreen('map')} />
+      )}
+
+      {currentScreen === 'ghost' && (
+        <GhostStationScreen onBack={() => setCurrentScreen('map')} /> // 🎯 Bổ sung render
       )}
 
       {currentScreen === 'teacher' && (
