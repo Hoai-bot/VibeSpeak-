@@ -76,7 +76,7 @@ export const saveSubmissionToCloud = async (submission: RoleplaySubmission) => {
 
 export const saveSubmissionForTeacher = saveSubmissionToCloud;
 
-// 🎯 HÀM TRUY XUẤT CLOUD AN TOÀN - CHỐNG BỊ TREO QUAY TRÒN
+// 🎯 HÀM TRUY XUẤT CLOUD TỰ ĐỘNG BÓC TÁCH MÃ LỚP MỚI & SẮP XẾP THỨ HẠNG
 export const fetchSubmissionsFromCloud = async (selectedClass?: string): Promise<RoleplaySubmission[]> => {
   try {
     if (!supabase) return [];
@@ -84,7 +84,8 @@ export const fetchSubmissionsFromCloud = async (selectedClass?: string): Promise
     const { data: results, error } = await supabase
       .from('assessment_results')
       .select('id, score, transcript, feedback, audio_url, created_at, user_id')
-      .limit(100);
+      .order('created_at', { ascending: false })
+      .limit(200); // 🎯 Tăng giới hạn lên 200 bài nộp mới nhất
 
     if (error) {
       console.error("❌ Lỗi truy vấn Supabase:", error.code, error.message, error.details);
@@ -100,6 +101,7 @@ export const fetchSubmissionsFromCloud = async (selectedClass?: string): Promise
       let playerName = 'Học viên';
       let cleanFeedback = item.feedback || '';
 
+      // 🎯 BÓC TÁCH MÃ LỚP CHUẨN TỪ CHUỖI FEEDBACK DÙ CÓ RÁC HAY KÝ TỰ ĐẶC BIỆT
       if (cleanFeedback && cleanFeedback.startsWith('[') && cleanFeedback.includes(']:')) {
         const parts = cleanFeedback.split(']:');
         const headerTag = parts[0].replace('[', '');
@@ -115,8 +117,8 @@ export const fetchSubmissionsFromCloud = async (selectedClass?: string): Promise
 
         for (let i = 1; i < tagParts.length; i++) {
           const part = tagParts[i];
-          if (part.startsWith('CLASS:')) {
-            extractedClass = part.replace('CLASS:', '').trim().toUpperCase() || 'LỚP CHUNG';
+          if (part.toUpperCase().startsWith('CLASS:')) {
+            extractedClass = part.substring(6).trim().toUpperCase() || 'LỚP CHUNG';
           } else if (part.length > 0) {
             playerName = part;
           }
@@ -144,16 +146,17 @@ export const fetchSubmissionsFromCloud = async (selectedClass?: string): Promise
       };
     });
 
-    // Sắp xếp thời gian giảm dần
+    // Sắp xếp bài mới nhất lên đầu
     parsedList.sort((a: any, b: any) => b.rawCreatedAt - a.rawCreatedAt);
 
     let filtered = parsedList;
     if (selectedClass && selectedClass !== 'ALL') {
       filtered = parsedList.filter(
-        (s) => s.className?.toUpperCase() === selectedClass.toUpperCase()
+        (s) => s.className?.trim().toUpperCase() === selectedClass.trim().toUpperCase()
       );
     }
 
+    // Tính thứ hạng bài nộp theo điểm số từ cao đến thấp
     const sortedForRank = [...filtered].sort((a, b) => b.score - a.score);
     return filtered.map((item) => {
       const rankIndex = sortedForRank.findIndex((r) => r.id === item.id);
