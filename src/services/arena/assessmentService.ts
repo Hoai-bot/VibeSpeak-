@@ -21,7 +21,7 @@ export const evaluateSpeaking = async (
   try {
     const cleanSpeech = (capturedSpeech || '').trim();
 
-    // 🎯 1. KIỂM TRA IM LẶNG / KHÔNG NÓI GÌ -> TRẢ VỀ 0 ĐIỂM
+    // 1. KIỂM TRA IM LẶNG / KHÔNG NÓI GÌ -> 0 ĐIỂM
     if (!audioBlob || audioBlob.size < 1200 || !cleanSpeech || cleanSpeech.length < 2) {
       return {
         score: 0,
@@ -33,76 +33,64 @@ export const evaluateSpeaking = async (
 
     const currentStation = (stationType || 'STATION_1').toUpperCase();
     let calculatedScore = 80;
-
-    // 🎯 2. CHẤM ĐIỂM DỰA TRÊN ĐỘ KHỚP TỪ MỤC TIÊU DÀNH CHO TRẠM 1
-    if (currentStation === 'STATION_1' && targetPrompt) {
-      const targetWords = targetPrompt.toLowerCase().split(/[\/\s]+/).filter(Boolean);
-      const spokenWords = cleanSpeech.toLowerCase().split(/\s+/).filter(Boolean);
-
-      const matchedCount = targetWords.filter(w => spokenWords.includes(w)).length;
-      
-      if (matchedCount === 0) {
-        calculatedScore = 40;
-      } else if (matchedCount < targetWords.length) {
-        calculatedScore = 65;
-      } else {
-        calculatedScore = Math.floor(Math.random() * 11) + 85; // Phát âm chuẩn: 85 - 95 điểm
-      }
-    } else {
-      calculatedScore = Math.floor(Math.random() * 18) + 78;
-    }
-
     let feedbackMessage = "";
 
-    // 🎯 3. PHÂN LOẠI CÂU NHẬN XÉT CHI TIẾT THEO TỪNG TRẠM
-    switch (currentStation) {
-      case 'STATION_1':
-        // ❌ TUYỆT ĐỐI KHÔNG BỔ SUNG CẤP ĐỘ CEFR (A1/A2) CHO TRẠM 1
-        if (calculatedScore >= 80) {
-          feedbackMessage = "✅ Phát âm xuất sắc! Độ bật âm rõ ràng, khẩu hình chuẩn và hoàn thành bài luyện tập rất tốt.";
-        } else if (calculatedScore >= 70) {
-          feedbackMessage = "👍 Bài phát âm đạt yêu cầu! Âm lượng rõ ràng, hoàn thành bài thực hành tròn vai.";
-        } else {
-          feedbackMessage = `💡 Phát âm chưa chính xác từ mục tiêu "${targetPrompt}". Vui lòng nghe lại bài mẫu và bấm mic thu âm lại!`;
-        }
-        break;
+    // 🎯 2. THUẬT TOÁN CHẤM ĐIỂM CHUẨN XÁC DÀNH CHO TOÀN BỘ TRẠM 1
+    if (currentStation === 'STATION_1' && targetPrompt) {
+      const normalize = (str: string) => str.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim();
+      
+      const targetClean = normalize(targetPrompt);
+      const spokenClean = normalize(cleanSpeech);
 
-      case 'STATION_2':
-        {
-          const levelTag = cefrLevel ? ` cấp độ ${cefrLevel.toUpperCase()}` : '';
-          if (calculatedScore >= 80) {
-            feedbackMessage = `🎉 Hoàn thành xuất sắc tình huống đóng vai${levelTag}! Phản xạ tự nhiên, dùng từ vựng phù hợp ngữ cảnh.`;
+      const targetWords = targetClean.split(/\s+/).filter(Boolean);
+      const spokenWords = spokenClean.split(/\s+/).filter(Boolean);
+
+      if (targetWords.length === 0) {
+        calculatedScore = 80;
+        feedbackMessage = "👍 Bài phát âm hoàn thành tốt!";
+      } else {
+        // Đếm số từ phát âm khớp
+        let matchedCount = 0;
+        targetWords.forEach(word => {
+          if (spokenWords.includes(word)) {
+            matchedCount++;
+          }
+        });
+
+        const accuracyRatio = matchedCount / targetWords.length;
+
+        // A. XỬ LÝ MINIMAL PAIRS (1 - 2 từ mẫu)
+        if (targetWords.length <= 2) {
+          if (matchedCount === targetWords.length) {
+            calculatedScore = Math.floor(Math.random() * 11) + 88; // 88 - 98 điểm
+            feedbackMessage = `🏆 Tốt lắm! Bạn đã phân biệt và phát âm rất chuẩn xác cặp từ "${targetPrompt}".`;
+          } else if (matchedCount > 0) {
+            calculatedScore = 65; // Đọc được 1/2 từ
+            feedbackMessage = `💀 Bạn mới phát âm đúng 1 trong 2 từ của cặp "${targetPrompt}". Bấm "📢 NGHE PHÁT ÂM MẪU" để phân biệt rõ lại nhé!`;
           } else {
-            feedbackMessage = `👍 Bài nói đạt yêu cầu${levelTag}! Khả năng giao tiếp tốt, đáp ứng đúng mục tiêu tình huống.`;
+            calculatedScore = 40;
+            feedbackMessage = `💡 Phát âm chưa đúng từ mục tiêu "${targetPrompt}". Hãy nghe âm mẫu và thử lại!`;
+          }
+        } 
+        // B. XỬ LÝ LINKING SOUNDS & TONGUE TWISTERS (Cụm từ hoặc câu dài)
+        else {
+          if (accuracyRatio >= 0.8) {
+            calculatedScore = Math.floor(Math.random() * 14) + 85; // 85 - 98 điểm
+            feedbackMessage = `🏆 Phản xạ phát âm rất xuất sắc! Đã phát âm chuẩn ${matchedCount}/${targetWords.length} từ trong thử thách.`;
+          } else if (accuracyRatio >= 0.5) {
+            calculatedScore = Math.floor(Math.random() * 15) + 70; // 70 - 84 điểm
+            feedbackMessage = `👍 Bài phát âm đạt yêu cầu (${matchedCount}/${targetWords.length} từ chuẩn)! Nên hạ tốc độ đọc để nối âm/phát âm các từ chưa chuẩn.`;
+          } else {
+            calculatedScore = Math.floor(Math.random() * 20) + 40; // 40 - 60 điểm
+            feedbackMessage = `💡 AI mới nghe nhận diện được ${matchedCount}/${targetWords.length} từ. Vui lòng nhấn "📢 NGHE PHÁT ÂM MẪU" và luyện tập lại từng cụm nhỏ nhé!`;
           }
         }
-        break;
-
-      case 'STATION_3':
-        {
-          const levelTag = cefrLevel ? ` cấp độ ${cefrLevel.toUpperCase()}` : '';
-          if (calculatedScore >= 80) {
-            feedbackMessage = `🏆 Luận điểm phản bác sắc bén${levelTag}! Đưa ra lý lẽ thuyết phục và cấu trúc câu tranh luận chắc chắn.`;
-          } else {
-            feedbackMessage = `👍 Bài tranh luận đạt tiêu chuẩn${levelTag}! Lập luận rõ ràng, biết cách bảo vệ quan điểm.`;
-          }
-        }
-        break;
-
-      case 'STATION_4':
-        {
-          const levelTag = cefrLevel ? ` cấp độ ${cefrLevel.toUpperCase()}` : '';
-          if (calculatedScore >= 80) {
-            feedbackMessage = `✨ Trôi chảy và diễn đạt rất tự nhiên${levelTag}! Mạch câu chuyện gắn kết bài bản.`;
-          } else {
-            feedbackMessage = `✅ Hoàn thành thử thách ngẫu hứng${levelTag}! Tốc độ nói vừa phải, truyền tải đủ ý chính.`;
-          }
-        }
-        break;
-
-      default:
-        feedbackMessage = "👍 Bài thực hành hoàn thành thành công!";
-        break;
+      }
+    } else {
+      // Các Trạm khác (Trạm 2, 3, 4)
+      calculatedScore = Math.floor(Math.random() * 18) + 78;
+      const levelTag = cefrLevel ? ` cấp độ ${cefrLevel.toUpperCase()}` : '';
+      feedbackMessage = `👍 Bài nói đạt yêu cầu${levelTag}! Hoàn thành bài thực hành thành công.`;
     }
 
     return {
@@ -116,8 +104,8 @@ export const evaluateSpeaking = async (
     return {
       score: 0,
       isWin: false,
-      transcript: "(Lỗi chấm điểm)",
-      detailedFeedback: "⚠️ Có lỗi trong quá trình xử lý âm thanh. Vui lòng bấm mic và thử lại!"
+      transcript: "(Lỗi bóc tách âm thanh)",
+      detailedFeedback: "⚠️ Có lỗi xảy ra khi chấm điểm. Vui lòng bấm mic thu âm lại!"
     };
   }
 };
