@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, TextInput } from 'react-native';
 import { fetchSubmissionsFromCloud, RoleplaySubmission } from '../services/userService';
+import { supabase } from '../utils/supabase';
 
 interface Props {
   onBack: () => void;
@@ -12,10 +13,6 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
   const [selectedClass, setSelectedClass] = useState<string>('ALL');
   const [customClassSearch, setCustomClassSearch] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
-
-  useEffect(() => {
-    loadDashboardData();
-  }, []);
 
   const loadDashboardData = async () => {
     setLoading(true);
@@ -28,6 +25,38 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    loadDashboardData();
+
+    // 🎯 1. KÍCH HOẠT LẮNG NGHE REALTIME TỪ BẢNG 'assessment_results'
+    let channel: any = null;
+    if (supabase) {
+      channel = supabase
+        .channel('realtime_teacher_dashboard')
+        .on(
+          'postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'assessment_results' },
+          async () => {
+            const updatedData = await fetchSubmissionsFromCloud('ALL');
+            setSubmissions(updatedData || []);
+          }
+        )
+        .subscribe();
+    }
+
+    // 🎯 2. TỰ ĐỘNG POLLING LÀM MỚI MỖI 10 GIÂY DỰ PHÒNG
+    const interval = setInterval(() => {
+      fetchSubmissionsFromCloud('ALL').then((data) => {
+        if (data && data.length > 0) setSubmissions(data);
+      });
+    }, 10000);
+
+    return () => {
+      if (channel && supabase) supabase.removeChannel(channel);
+      clearInterval(interval);
+    };
+  }, []);
 
   const cleanClassName = (rawClass?: string) => {
     if (!rawClass) return 'LỚP CHUNG';
