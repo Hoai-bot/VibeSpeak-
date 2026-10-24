@@ -18,20 +18,43 @@ export interface RoleplaySubmission {
 
 const LOCAL_HISTORY_KEY = 'vibespeak_user_submissions_history';
 
-export const blobToBase64 = (blob: Blob): Promise<string> => {
-  return new Promise((resolve) => {
-    if (!blob) return resolve('');
-    const reader = new FileReader();
-    reader.onloadend = () => resolve((reader.result as string) || '');
-    reader.onerror = () => resolve('');
-    reader.readAsDataURL(blob);
-  });
+// 🎯 HÀM UPLOAD THẲNG BLOB LÊN BUCKET recordings TRÊN SUPABASE
+export const uploadAudioToSupabaseStorage = async (audioBlob: Blob | null): Promise<string> => {
+  if (!audioBlob || !supabase) return '';
+
+  try {
+    const fileExt = audioBlob.type.includes('mp4') ? 'mp4' : audioBlob.type.includes('aac') ? 'aac' : 'webm';
+    const fileName = `rec_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.${fileExt}`;
+    const filePath = `audio/${fileName}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from('recordings')
+      .upload(filePath, audioBlob, {
+        cacheControl: '3600',
+        upsert: false,
+        contentType: audioBlob.type || 'audio/webm',
+      });
+
+    if (uploadError) {
+      console.warn("⚠️ Upload Supabase Storage thất bại:", uploadError.message);
+      return '';
+    }
+
+    const { data: publicUrlData } = supabase.storage
+      .from('recordings')
+      .getPublicUrl(filePath);
+
+    return publicUrlData.publicUrl || '';
+  } catch (err) {
+    console.warn("⚠️ Lỗi uploadAudioToSupabaseStorage:", err);
+    return '';
+  }
 };
 
-// 🎯 HÀM LƯU BÀI KHỚP CHUẨN 100% VỚI BẢNG submissions TRÊN SUPABASE DÒNG THEO DÒNG
-export const saveSubmissionToCloud = async (submission: RoleplaySubmission) => {
+// 🎯 HÀM LƯU BÀI NỘP: TỰ ĐỘNG UPLOAD NẾU CÓ TRUYỀN BLOB
+export const saveSubmissionToCloud = async (submission: RoleplaySubmission, audioBlob?: Blob | null) => {
   try {
-    // 1. Lưu dự phòng LocalStorage
+    // Lưu dự phòng LocalStorage
     try {
       const existingLocal = localStorage.getItem(LOCAL_HISTORY_KEY);
       const historyList: RoleplaySubmission[] = existingLocal ? JSON.parse(existingLocal) : [];
@@ -41,17 +64,26 @@ export const saveSubmissionToCloud = async (submission: RoleplaySubmission) => {
 
     if (!supabase) return;
 
+    let finalAudioUrl = submission.audioUrl || '';
+
+    // Nếu truyền audioBlob, upload trực tiếp lên Storage bucket 'recordings'
+    if (audioBlob) {
+      const cdnUrl = await uploadAudioToSupabaseStorage(audioBlob);
+      if (cdnUrl) {
+        finalAudioUrl = cdnUrl;
+      }
+    }
+
     const currentMode = String(submission.mode || 'SOLO').toUpperCase();
     const level = String(submission.cefrLevel || 'A1').toUpperCase();
     const className = submission.className || 'LỚP CHUNG';
     const studentName = submission.studentName || 'Sinh viên VibeSpeak';
     
-    // Ghép mã lớp vào pair_name để Giáo viên lọc và đọc được mã lớp dễ dàng
     const pairNameWithClass = submission.pairName 
       ? `[CLASS: ${className}] ${submission.pairName}`
       : `[CLASS: ${className}] ${studentName}`;
 
-    // 🎯 CHỈ INSERT CÁC CỘT CÓ THỰC TRÊN DỮ LIỆU CỦA BẠN
+    // Lưu vào bảng submissions
     const { error } = await supabase.from('submissions').insert([
       {
         student_name: studentName,
@@ -61,7 +93,7 @@ export const saveSubmissionToCloud = async (submission: RoleplaySubmission) => {
         score: Number(submission.score) || 0,
         transcript: submission.transcript || '',
         feedback: submission.feedback || '',
-        audio_url: submission.audioUrl || '',
+        audio_url: finalAudioUrl,
       },
     ]);
 
@@ -75,7 +107,7 @@ export const saveSubmissionToCloud = async (submission: RoleplaySubmission) => {
 
 export const saveSubmissionForTeacher = saveSubmissionToCloud;
 
-// 🎯 HÀM TRUY XUẤT BẢNG submissions VÀ TỰ ĐỘNG BÓC TÁCH MÃ LỚP DỄ DÀNG
+// 🎯 HÀM TRUY VẤN BẢNG submissions DÀNH CHO GIÁO VIÊN
 export const fetchSubmissionsFromCloud = async (selectedClass?: string): Promise<RoleplaySubmission[]> => {
   try {
     if (!supabase) return [];
@@ -97,7 +129,6 @@ export const fetchSubmissionsFromCloud = async (selectedClass?: string): Promise
       let extractedClass = 'LỚP CHUNG';
       let rawPair = item.pair_name || '';
 
-      // Bóc tách Mã Lớp từ chuỗi pair_name
       if (rawPair.includes('[CLASS:') && rawPair.includes(']')) {
         const parts = rawPair.split(']');
         extractedClass = parts[0].replace('[CLASS:', '').trim().toUpperCase() || 'LỚP CHUNG';
@@ -120,7 +151,6 @@ export const fetchSubmissionsFromCloud = async (selectedClass?: string): Promise
       };
     });
 
-    // Sắp xếp bài mới nộp lên đầu tiên
     parsedList.sort((a: any, b: any) => b.rawCreatedAt - a.rawCreatedAt);
 
     let filtered = parsedList;
@@ -130,7 +160,6 @@ export const fetchSubmissionsFromCloud = async (selectedClass?: string): Promise
       );
     }
 
-    // Tính thứ hạng bài nộp theo điểm số từ cao xuống thấp
     const sortedForRank = [...filtered].sort((a, b) => b.score - a.score);
     return filtered.map((item) => {
       const rankIndex = sortedForRank.findIndex((r) => r.id === item.id);
