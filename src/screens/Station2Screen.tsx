@@ -23,19 +23,6 @@ interface PlayerResult {
   p2Transcript?: string;
 }
 
-const safeBlobToBase64 = (blob: Blob): Promise<string> => {
-  return new Promise((resolve) => {
-    if (!blob) return resolve('');
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const result = reader.result as string;
-      resolve(result || '');
-    };
-    reader.onerror = () => resolve('');
-    reader.readAsDataURL(blob);
-  });
-};
-
 export default function Station2Screen({ onBack }: Props) {
   const [studentNameInput, setStudentNameInput] = useState<string>('');
   const [studentCodeInput, setStudentCodeInput] = useState<string>('');
@@ -306,8 +293,6 @@ export default function Station2Screen({ onBack }: Props) {
 
         const mimeTypeUsed = recorder.mimeType || chosenMime || 'audio/webm';
         const fullAudioBlob = new Blob(audioChunksRef.current, { type: mimeTypeUsed });
-
-        const base64Audio = await safeBlobToBase64(fullAudioBlob);
         const localAudioUrl = URL.createObjectURL(fullAudioBlob);
 
         const targetPrompt = exercise?.promptEn || exercise?.contextEn || exercise?.scenarioTitle || '';
@@ -355,6 +340,7 @@ export default function Station2Screen({ onBack }: Props) {
           feedbackDetail = `[ĐỘC LẬP: Vai 1 = ${p1Score}đ, Vai 2 = ${p2Score}đ | TỔNG CẶP = ${totalAvgScore}đ]: ${result.detailedFeedback}`;
         }
 
+        // 🎯 TẢI THẲNG BLOB LÊN SUPABASE STORAGE BUCKET 'recordings'
         await saveSubmissionToCloud({
           studentName: studentIdentifier,
           pairName: pairDisplayName,
@@ -363,10 +349,10 @@ export default function Station2Screen({ onBack }: Props) {
           mode: mode,
           cefrLevel: cefrLevel,
           transcript: result.transcript,
-          audioUrl: base64Audio,
+          audioUrl: '', // Sẽ được tự động điền bằng public URL từ bucket recordings
           feedback: feedbackDetail,
           timestamp: new Date().toLocaleTimeString('vi-VN')
-        });
+        }, fullAudioBlob);
 
         setIsEvaluating(false);
 
@@ -565,7 +551,6 @@ export default function Station2Screen({ onBack }: Props) {
                 <View style={styles.evalBox}>
                   <Text style={styles.evalScore}>🏆 ĐIỂM BÀI NÓI: {evalResult.score}/100</Text>
                   
-                  {/* 🎯 NÂNG CẤP: PHÂN TÍCH CHÍNH LỜI THOẠI SINH VIÊN ĐÃ NÓI */}
                   {evalResult.transcript ? (
                     <View style={styles.wordHighlightBox}>
                       <Text style={styles.wordHighlightTitle}>🎙 CÁC TỪ AI GHI NHẬN ĐƯỢC TỪ BÀI NÓI CỦA BẠN:</Text>
