@@ -17,8 +17,82 @@ export interface RoleplaySubmission {
 }
 
 const LOCAL_HISTORY_KEY = 'vibespeak_user_submissions_history';
+const OFFLINE_QUEUE_KEY = 'vibespeak_pending_submissions_queue';
 
-// 🎯 HÀM UPLOAD THẲNG BLOB LÊN BUCKET recordings TRÊN SUPABASE
+// 🎯 1. LƯU BÀI VÀO HÀNG ĐỢI KHI RỚT MẠNG HOẶC SUPABASE LỖI KẾT NỐI
+export const queueOfflineSubmission = (submission: RoleplaySubmission) => {
+  try {
+    const raw = localStorage.getItem(OFFLINE_QUEUE_KEY);
+    const queue: RoleplaySubmission[] = raw ? JSON.parse(raw) : [];
+    queue.push({
+      ...submission,
+      timestamp: submission.timestamp || new Date().toLocaleTimeString('vi-VN')
+    });
+    localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(queue));
+    console.log("📦 Đã xếp bài vào hàng đợi Offline chờ mạng ổn định.");
+  } catch (e) {
+    console.warn("Không thể lưu hàng đợi offline:", e);
+  }
+};
+
+// 🎯 2. TỰ ĐỘNG GỬI BÙ KHI THIẾT BỊ CÓ MẠNG TRỞ LẠI
+export const processOfflineQueue = async () => {
+  if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+  if (!supabase) return;
+
+  try {
+    const raw = localStorage.getItem(OFFLINE_QUEUE_KEY);
+    if (!raw) return;
+
+    const queue: RoleplaySubmission[] = JSON.parse(raw);
+    if (queue.length === 0) return;
+
+    console.log(`🔄 Phát hiện kết nối mạng! Đang gửi bù ${queue.length} bài nộp...`);
+    const remainingQueue: RoleplaySubmission[] = [];
+
+    for (const item of queue) {
+      try {
+        const { error } = await supabase.from('submissions').insert([
+          {
+            student_name: item.studentName || 'Học viên VibeSpeak',
+            pair_name: item.pairName,
+            mode: item.mode,
+            cefr_level: item.cefrLevel,
+            score: Number(item.score) || 0,
+            transcript: item.transcript || '',
+            feedback: item.feedback || '',
+            audio_url: item.audioUrl || '',
+          }
+        ]);
+
+        if (error) {
+          remainingQueue.push(item);
+        }
+      } catch (err) {
+        remainingQueue.push(item);
+      }
+    }
+
+    if (remainingQueue.length > 0) {
+      localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(remainingQueue));
+    } else {
+      localStorage.removeItem(OFFLINE_QUEUE_KEY);
+      console.log("✅ Đã giải phóng toàn bộ hàng đợi nộp bài offline!");
+    }
+  } catch (e) {
+    console.warn("Lỗi xử lý processOfflineQueue:", e);
+  }
+};
+
+// 🎯 3. LẮNG NGHE SỰ KIỆN ONLINE VÀ QUÉT ĐỊNH KỲ MỖI 30 GIÂY
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', () => {
+    processOfflineQueue();
+  });
+  setInterval(processOfflineQueue, 30000);
+}
+
+// 🎯 4. HÀM UPLOAD THẲNG BLOB LÊN BUCKET recordings TRÊN SUPABASE
 export const uploadAudioToSupabaseStorage = async (audioBlob: Blob | null): Promise<string> => {
   if (!audioBlob || !supabase) return '';
 
@@ -53,39 +127,63 @@ export const uploadAudioToSupabaseStorage = async (audioBlob: Blob | null): Prom
   }
 };
 
-// 🎯 HÀM LƯU BÀI NỘP VÀO DATABASE VÀ STORAGE CDN
+// 🎯 5. HÀM LƯU BÀI NỘP VÀO DATABASE VÀ STORAGE CDN (KÈM BẢO VỆ OFFLINE)
 export const saveSubmissionToCloud = async (submission: RoleplaySubmission, audioBlob?: Blob | null) => {
+  let finalAudioUrl = submission.audioUrl || '';
+
+  // 1. Lưu dự phòng lịch sử cục bộ
   try {
-    // Lưu dự phòng LocalStorage
-    try {
-      const existingLocal = localStorage.getItem(LOCAL_HISTORY_KEY);
-      const historyList: RoleplaySubmission[] = existingLocal ? JSON.parse(existingLocal) : [];
-      historyList.unshift(submission);
-      localStorage.setItem(LOCAL_HISTORY_KEY, JSON.stringify(historyList.slice(0, 30)));
-    } catch (e) {}
+    const existingLocal = localStorage.getItem(LOCAL_HISTORY_KEY);
+    const historyList: RoleplaySubmission[] = existingLocal ? JSON.parse(existingLocal) : [];
+    historyList.unshift(submission);
+    localStorage.setItem(LOCAL_HISTORY_KEY, JSON.stringify(historyList.slice(0, 30)));
+  } catch (e) {}
 
-    if (!supabase) return;
+  const currentMode = String(submission.mode || 'SOLO').toUpperCase();
+  const level = String(submission.cefrLevel || 'A1').toUpperCase();
+  const className = submission.className || 'LỚP CHUNG';
+  const studentName = submission.studentName || 'Sinh viên VibeSpeak';
+  
+  const pairNameWithClass = submission.pairName 
+    ? `[CLASS: ${className}] ${submission.pairName}`
+    : `[CLASS: ${className}] ${studentName}`;
 
-    let finalAudioUrl = submission.audioUrl || '';
+  const payload: RoleplaySubmission = {
+    ...submission,
+    studentName,
+    pairName: pairNameWithClass,
+    mode: currentMode,
+    cefrLevel: level,
+    className
+  };
 
-    // Nếu có Blob âm thanh truyền vào, ưu tiên upload lên Supabase Storage bucket 'recordings'
+  // 2. Nếu rớt mạng ngay từ đầu, đưa thẳng vào hàng đợi offline
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    queueOfflineSubmission(payload);
+    return;
+  }
+
+  try {
+    if (!supabase) {
+      queueOfflineSubmission(payload);
+      return;
+    }
+
+    // Upload audio blob lên Supabase Storage nếu có
     if (audioBlob) {
-      const cdnUrl = await uploadAudioToSupabaseStorage(audioBlob);
-      if (cdnUrl) {
-        finalAudioUrl = cdnUrl;
+      try {
+        const cdnUrl = await uploadAudioToSupabaseStorage(audioBlob);
+        if (cdnUrl) {
+          finalAudioUrl = cdnUrl;
+        }
+      } catch (audioErr) {
+        console.warn("⚠️ Bỏ qua upload audio do lỗi mạng:", audioErr);
       }
     }
 
-    const currentMode = String(submission.mode || 'SOLO').toUpperCase();
-    const level = String(submission.cefrLevel || 'A1').toUpperCase();
-    const className = submission.className || 'LỚP CHUNG';
-    const studentName = submission.studentName || 'Sinh viên VibeSpeak';
-    
-    const pairNameWithClass = submission.pairName 
-      ? `[CLASS: ${className}] ${submission.pairName}`
-      : `[CLASS: ${className}] ${studentName}`;
+    payload.audioUrl = finalAudioUrl;
 
-    // 🎯 CHỈ LƯU CHUỖI URL CDN NGẮN GỌN (~80 bytes) VÀO DATABASE
+    // Lưu vào bảng submissions
     const { error } = await supabase.from('submissions').insert([
       {
         student_name: studentName,
@@ -100,16 +198,21 @@ export const saveSubmissionToCloud = async (submission: RoleplaySubmission, audi
     ]);
 
     if (error) {
-      console.error("❌ Lỗi lưu dữ liệu lên Supabase (submissions):", error.code, error.message, error.details);
+      console.warn("❌ Lỗi mạng khi ghi nhận Supabase, chuyển vào hàng đợi Offline:", error.message);
+      queueOfflineSubmission(payload);
+    } else {
+      // Gửi bài thành công -> Tiện thể kiểm tra và đẩy các bài còn tồn đọng
+      processOfflineQueue();
     }
   } catch (err) {
-    console.warn("⚠️ Lỗi saveSubmissionToCloud:", err);
+    console.warn("⚠️ Mạng chập chờn khi saveSubmissionToCloud, đưa vào hàng đợi:", err);
+    queueOfflineSubmission(payload);
   }
 };
 
 export const saveSubmissionForTeacher = saveSubmissionToCloud;
 
-// 🎯 HÀM TRUY VẤN BẢNG submissions DÀNH CHO GIÁO VIÊN
+// 🎯 6. HÀM TRUY VẤN BẢNG submissions DÀNH CHO GIÁO VIÊN
 export const fetchSubmissionsFromCloud = async (selectedClass?: string): Promise<RoleplaySubmission[]> => {
   try {
     if (!supabase) return [];
