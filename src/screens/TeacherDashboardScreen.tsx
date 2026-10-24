@@ -29,14 +29,14 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
   useEffect(() => {
     loadDashboardData();
 
-    // 🎯 1. KÍCH HOẠT LẮNG NGHE REALTIME TỪ BẢNG 'assessment_results'
+    // 🎯 1. KÍCH HOẠT LẮNG NGHE REALTIME TỪ BẢNG 'submissions'
     let channel: any = null;
     if (supabase) {
       channel = supabase
         .channel('realtime_teacher_dashboard')
         .on(
           'postgres_changes',
-          { event: 'INSERT', schema: 'public', table: 'assessment_results' },
+          { event: 'INSERT', schema: 'public', table: 'submissions' },
           async () => {
             const updatedData = await fetchSubmissionsFromCloud('ALL');
             setSubmissions(updatedData || []);
@@ -45,7 +45,7 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
         .subscribe();
     }
 
-    // 🎯 2. TỰ ĐỘNG POLLING LÀM MỚI MỖI 10 GIÂY DỰ PHÒNG
+    // 🎯 2. POLLING LÀM MỚI MỖI 10 GIÂY
     const interval = setInterval(() => {
       fetchSubmissionsFromCloud('ALL').then((data) => {
         if (data && data.length > 0) setSubmissions(data);
@@ -84,6 +84,116 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
     return itemClass === selectedClass.toUpperCase();
   });
 
+  // 🎯 HÀM XUẤT CSV TƯƠNG THÍCH HOÀN TOÀN EXCEL (KÈM UTF-8 BOM)
+  const exportSubmissionsToCSV = () => {
+    if (!filteredSubmissions || filteredSubmissions.length === 0) {
+      alert("⚠️ Không có dữ liệu để xuất bảng điểm!");
+      return;
+    }
+
+    const headers = [
+      "Hạng",
+      "Mã Lớp",
+      "Sinh Viên / Biệt Danh",
+      "Cặp Đấu / Vai Trò",
+      "Chế Độ (Mode)",
+      "Level CEFR",
+      "Điểm Số",
+      "Kết Quả",
+      "Thời Gian Nộp",
+      "Lời Thoại (Transcript)",
+      "Đường Dẫn Audio CDN"
+    ];
+
+    const rows = filteredSubmissions.map((item, index) => [
+      item.rank || index + 1,
+      `"${cleanClassName(item.className).replace(/"/g, '""')}"`,
+      `"${(item.studentName || 'Sinh viên').replace(/"/g, '""')}"`,
+      `"${(item.pairName || '').replace(/"/g, '""')}"`,
+      item.mode || 'SOLO',
+      item.cefrLevel || 'A1',
+      item.score,
+      item.score >= 70 ? "ĐẠT (PASS)" : "CẦN RÈN THÊM",
+      `"${item.timestamp || ''}"`,
+      `"${(item.transcript || '').replace(/"/g, '""').replace(/\n/g, ' ')}"`,
+      item.audioUrl || ''
+    ]);
+
+    const csvContent = [
+      headers.join(","),
+      ...rows.map(row => row.join(","))
+    ].join("\r\n");
+
+    const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    
+    const safeClassName = selectedClass === 'ALL' ? 'TOAN_TRUONG' : selectedClass.replace(/\s+/g, '_');
+    link.setAttribute("href", url);
+    link.setAttribute("download", `Bang_Diem_VibeSpeak_${safeClassName}_${Date.now()}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  // 🎯 THUẬT TOÁN TÍNH TOÁN CLASS ANALYTICS
+  const computeClassAnalytics = (data: RoleplaySubmission[]) => {
+    if (!data || data.length === 0) {
+      return {
+        avgScore: 0,
+        passRate: 0,
+        total: 0,
+        excellentCount: 0,
+        passCount: 0,
+        needsWorkCount: 0,
+        issues: [] as string[]
+      };
+    }
+
+    const total = data.length;
+    const totalScore = data.reduce((sum, s) => sum + (Number(s.score) || 0), 0);
+    const avgScore = Math.round(totalScore / total);
+
+    const excellentCount = data.filter(s => s.score >= 85).length;
+    const passCount = data.filter(s => s.score >= 70 && s.score < 85).length;
+    const needsWorkCount = data.filter(s => s.score < 70).length;
+    const passRate = Math.round(((excellentCount + passCount) / total) * 100);
+
+    const issueKeywords = [
+      { key: "ending sound", label: "Nuốt âm cuối (Ending sounds: /s/, /t/, /d/)" },
+      { key: "âm", label: "Phát âm lệch cặp nguyên/phụ âm tương đồng" },
+      { key: "nối", label: "Chưa nối âm mượt mà giữa các từ (Linking sounds)" },
+      { key: "wpm", label: "Tốc độ nói chậm, còn nhiều khoảng ngừng ngập" },
+      { key: "luyện", label: "Cần tăng phản xạ từ vựng tự nhiên hơn" }
+    ];
+
+    const detected: string[] = [];
+    const allFeedback = data.map(s => (s.feedback || '').toLowerCase()).join(" ");
+
+    issueKeywords.forEach(item => {
+      if (allFeedback.includes(item.key)) {
+        detected.push(item.label);
+      }
+    });
+
+    if (detected.length === 0) {
+      detected.push("Phát âm rõ ràng, nhịp độ và từ vựng của lớp khá đồng đều!");
+    }
+
+    return {
+      avgScore,
+      passRate,
+      total,
+      excellentCount,
+      passCount,
+      needsWorkCount,
+      issues: detected.slice(0, 3)
+    };
+  };
+
+  const analytics = computeClassAnalytics(filteredSubmissions);
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -94,6 +204,7 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
       </View>
 
       <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
+        {/* CARD LỌC LỚP HỌC */}
         <View style={styles.filterCard}>
           <Text style={styles.filterTitle}>🏫 CHỌN HOẶC TÌM KIẾM MÃ LỚP:</Text>
           
@@ -141,6 +252,58 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
           </View>
         </View>
 
+        {/* 🎯 KHỐI THỐNG KÊ LỚP HỌC & NÚT XUẤT EXCEL */}
+        {filteredSubmissions.length > 0 && (
+          <View style={styles.analyticsCard}>
+            <View style={styles.analyticsHeaderRow}>
+              <Text style={styles.analyticsTitle}>
+                📈 PHÂN TÍCH LỚP: [{selectedClass === 'ALL' ? 'TOÀN TRƯỜNG' : selectedClass}]
+              </Text>
+              
+              <TouchableOpacity style={styles.exportBtn} onPress={exportSubmissionsToCSV}>
+                <Text style={styles.exportBtnText}>📥 XUẤT EXCEL / CSV</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.kpiRow}>
+              <View style={styles.kpiBox}>
+                <Text style={styles.kpiLabel}>SỐ BÀI NỘP</Text>
+                <Text style={styles.kpiValue}>{analytics.total}</Text>
+              </View>
+              <View style={styles.kpiBox}>
+                <Text style={styles.kpiLabel}>ĐIỂM TRUNG BÌNH</Text>
+                <Text style={[styles.kpiValue, { color: analytics.avgScore >= 70 ? '#39FF14' : '#FFD700' }]}>
+                  {analytics.avgScore}/100
+                </Text>
+              </View>
+              <View style={styles.kpiBox}>
+                <Text style={styles.kpiLabel}>TỶ LỆ ĐẠT (PASS)</Text>
+                <Text style={[styles.kpiValue, { color: analytics.passRate >= 70 ? '#39FF14' : '#FF0055' }]}>
+                  {analytics.passRate}%
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.distributionBox}>
+              <Text style={styles.distributionLabel}>
+                🏆 Xuất sắc: {analytics.excellentCount} | 👍 Đạt: {analytics.passCount} | ⚠️ Cần rèn: {analytics.needsWorkCount}
+              </Text>
+              <View style={styles.distributionTrack}>
+                <View style={{ flex: analytics.excellentCount || 0.05, backgroundColor: '#39FF14' }} />
+                <View style={{ flex: analytics.passCount || 0.05, backgroundColor: '#00FFFF' }} />
+                <View style={{ flex: analytics.needsWorkCount || 0.05, backgroundColor: '#FF0055' }} />
+              </View>
+            </View>
+
+            <View style={styles.issuesContainer}>
+              <Text style={styles.issuesHeader}>⚠️ ĐIỂM CẦN LƯU Ý PHỔ BIẾN CỦA LỚP:</Text>
+              {analytics.issues.map((issue, idx) => (
+                <Text key={idx} style={styles.issueItem}>• {issue}</Text>
+              ))}
+            </View>
+          </View>
+        )}
+
         <TouchableOpacity style={styles.refreshBtn} onPress={loadDashboardData}>
           <Text style={styles.refreshBtnText}>🔄 CẬP NHẬT DỮ LIỆU MỚI NHẤT</Text>
         </TouchableOpacity>
@@ -157,7 +320,7 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
         ) : (
           <View>
             <Text style={styles.summaryText}>
-              📋 Tìm thấy {filteredSubmissions.length} bài nộp:
+              📋 Danh sách {filteredSubmissions.length} bài nộp theo thời gian:
             </Text>
 
             {filteredSubmissions.map((sub, index) => (
@@ -223,6 +386,24 @@ const styles = StyleSheet.create({
   searchBox: { marginTop: 8 },
   searchLabel: { color: '#AAAABB', fontSize: 8, marginBottom: 4 },
   searchInput: { backgroundColor: '#0D0620', color: '#FFF', padding: 8, borderRadius: 6, borderWidth: 1, borderColor: '#00FFFF', fontSize: 10 },
+  
+  // Analytics Styles
+  analyticsCard: { backgroundColor: '#120826', padding: 14, borderRadius: 12, borderWidth: 1, borderColor: '#00FFFF', marginBottom: 14 },
+  analyticsHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 },
+  analyticsTitle: { color: '#00FFFF', fontSize: 11, fontWeight: '900' },
+  exportBtn: { backgroundColor: '#39FF14', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 6 },
+  exportBtnText: { color: '#000', fontSize: 10, fontWeight: '900' },
+  kpiRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 6, marginBottom: 10 },
+  kpiBox: { flex: 1, backgroundColor: '#0D0620', padding: 8, borderRadius: 8, borderWidth: 1, borderColor: '#332255', alignItems: 'center' },
+  kpiLabel: { color: '#8888AA', fontSize: 8, fontWeight: 'bold', marginBottom: 2 },
+  kpiValue: { color: '#FFF', fontSize: 16, fontWeight: '900' },
+  distributionBox: { width: '100%', marginBottom: 10 },
+  distributionLabel: { color: '#AAAABB', fontSize: 8, fontWeight: 'bold', marginBottom: 4 },
+  distributionTrack: { height: 6, width: '100%', borderRadius: 3, overflow: 'hidden', flexDirection: 'row', backgroundColor: '#221144' },
+  issuesContainer: { backgroundColor: '#1A0B2E', padding: 8, borderRadius: 6, borderWidth: 1, borderColor: '#FF0055' },
+  issuesHeader: { color: '#FF0055', fontSize: 9, fontWeight: '900', marginBottom: 4 },
+  issueItem: { color: '#FFD700', fontSize: 9, lineHeight: 14 },
+
   refreshBtn: { backgroundColor: '#00FFFF', padding: 12, borderRadius: 8, alignItems: 'center', marginBottom: 15 },
   refreshBtnText: { color: '#000', fontSize: 10, fontWeight: '900' },
   emptyBox: { alignItems: 'center', padding: 30, backgroundColor: '#170B30', borderRadius: 12 },
