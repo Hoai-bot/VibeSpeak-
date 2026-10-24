@@ -10,7 +10,7 @@ export interface RoleplaySubmission {
   mode: string;
   cefrLevel: string;
   transcript: string;
-  audioUrl?: string;
+  audioUrl?: string; // Chứa URL CDN công khai từ bucket recordings
   feedback: string;
   timestamp: string;
   rank?: number;
@@ -27,6 +27,7 @@ export const uploadAudioToSupabaseStorage = async (audioBlob: Blob | null): Prom
     const fileName = `rec_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.${fileExt}`;
     const filePath = `audio/${fileName}`;
 
+    // Upload Blob trực tiếp lên bucket 'recordings' đã cấp quyền RLS
     const { error: uploadError } = await supabase.storage
       .from('recordings')
       .upload(filePath, audioBlob, {
@@ -40,6 +41,7 @@ export const uploadAudioToSupabaseStorage = async (audioBlob: Blob | null): Prom
       return '';
     }
 
+    // Lấy URL công khai CDN
     const { data: publicUrlData } = supabase.storage
       .from('recordings')
       .getPublicUrl(filePath);
@@ -51,7 +53,7 @@ export const uploadAudioToSupabaseStorage = async (audioBlob: Blob | null): Prom
   }
 };
 
-// 🎯 HÀM LƯU BÀI NỘP: TỰ ĐỘNG UPLOAD NẾU CÓ TRUYỀN BLOB
+// 🎯 HÀM LƯU BÀI NỘP VÀO DATABASE VÀ STORAGE CDN
 export const saveSubmissionToCloud = async (submission: RoleplaySubmission, audioBlob?: Blob | null) => {
   try {
     // Lưu dự phòng LocalStorage
@@ -66,7 +68,7 @@ export const saveSubmissionToCloud = async (submission: RoleplaySubmission, audi
 
     let finalAudioUrl = submission.audioUrl || '';
 
-    // Nếu truyền audioBlob, upload trực tiếp lên Storage bucket 'recordings'
+    // Nếu có Blob âm thanh truyền vào, ưu tiên upload lên Supabase Storage bucket 'recordings'
     if (audioBlob) {
       const cdnUrl = await uploadAudioToSupabaseStorage(audioBlob);
       if (cdnUrl) {
@@ -83,7 +85,7 @@ export const saveSubmissionToCloud = async (submission: RoleplaySubmission, audi
       ? `[CLASS: ${className}] ${submission.pairName}`
       : `[CLASS: ${className}] ${studentName}`;
 
-    // Lưu vào bảng submissions
+    // 🎯 CHỈ LƯU CHUỖI URL CDN NGẮN GỌN (~80 bytes) VÀO DATABASE
     const { error } = await supabase.from('submissions').insert([
       {
         student_name: studentName,
@@ -182,4 +184,10 @@ export const fetchTopLeaderboard = async () => {
   return await fetchSubmissionsFromCloud('ALL');
 };
 
-export const updateUserProgress = async (score: number, station: number) => {};
+export const updateUserProgress = async (station: number, xpToAdd: number, isWin: boolean = true) => {
+  try {
+    const key = `vibespeak_station_${station}_progress`;
+    const current = Number(localStorage.getItem(key) || 0);
+    localStorage.setItem(key, String(current + xpToAdd));
+  } catch (e) {}
+};
