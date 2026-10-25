@@ -1,6 +1,7 @@
 // src/services/userService.ts
 import { supabase } from '../utils/supabase';
 import { recordStudySession } from './streakService';
+import { getCurrentWeekRange } from './leagueService';
 
 export interface RoleplaySubmission {
   id?: string;
@@ -300,4 +301,47 @@ export const updateUserProgress = async (station: number, xpToAdd: number, isWin
     const current = Number(localStorage.getItem(key) || 0);
     localStorage.setItem(key, String(current + xpToAdd));
   } catch (e) {}
+};
+
+// 🎯 7. TRUY VẤN BẢNG XẾP HẠNG GIẢI ĐẤU TUẦN (WEEKLY LEADERBOARD LEAGUES)
+export const fetchWeeklyLeaderboard = async (selectedClass?: string): Promise<RoleplaySubmission[]> => {
+  try {
+    if (!supabase) return [];
+
+    const { start, end } = getCurrentWeekRange();
+
+    // Chỉ lấy các bài nộp phát sinh trong tuần hiện tại
+    const query = supabase
+      .from('submissions')
+      .select('id, student_name, pair_name, mode, cefr_level, score, transcript, feedback, audio_url, created_at')
+      .gte('created_at', start)
+      .lte('created_at', end)
+      .order('created_at', { ascending: false })
+      .limit(300);
+
+    const { data: results, error } = await query;
+
+    if (error) {
+      console.warn("⚠️ Lỗi truy vấn weekly submissions:", error.message);
+      return [];
+    }
+
+    if (!results || results.length === 0) return [];
+
+    return results.map((item: any) => ({
+      id: item.id || String(Math.random()),
+      studentName: item.student_name || 'Học viên VibeSpeak',
+      pairName: item.pair_name || item.student_name || 'Học viên',
+      score: Number(item.score) || 0,
+      mode: String(item.mode || 'SOLO').toUpperCase(),
+      cefrLevel: String(item.cefr_level || 'A1').toUpperCase(),
+      transcript: item.transcript || '',
+      audioUrl: item.audio_url || '',
+      feedback: item.feedback || '',
+      timestamp: item.created_at ? new Date(item.created_at).toLocaleString('vi-VN') : '',
+    }));
+  } catch (err) {
+    console.warn("Lỗi fetchWeeklyLeaderboard:", err);
+    return [];
+  }
 };
