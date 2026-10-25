@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, TextInput } from 'react-native';
 import { fetchSubmissionsFromCloud, RoleplaySubmission } from '../services/userService';
+import { exportSubmissionsToExcel } from '../utils/exportExcelHelper';
 import { supabase } from '../utils/supabase';
 
 interface Props {
@@ -83,59 +84,6 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
     if (selectedClass === 'ALL') return true;
     return itemClass === selectedClass.toUpperCase();
   });
-
-  // 🎯 HÀM XUẤT CSV TƯƠNG THÍCH HOÀN TOÀN EXCEL (KÈM UTF-8 BOM)
-  const exportSubmissionsToCSV = () => {
-    if (!filteredSubmissions || filteredSubmissions.length === 0) {
-      alert("⚠️ Không có dữ liệu để xuất bảng điểm!");
-      return;
-    }
-
-    const headers = [
-      "Hạng",
-      "Mã Lớp",
-      "Sinh Viên / Biệt Danh",
-      "Cặp Đấu / Vai Trò",
-      "Chế Độ (Mode)",
-      "Level CEFR",
-      "Điểm Số",
-      "Kết Quả",
-      "Thời Gian Nộp",
-      "Lời Thoại (Transcript)",
-      "Đường Dẫn Audio CDN"
-    ];
-
-    const rows = filteredSubmissions.map((item, index) => [
-      item.rank || index + 1,
-      `"${cleanClassName(item.className).replace(/"/g, '""')}"`,
-      `"${(item.studentName || 'Sinh viên').replace(/"/g, '""')}"`,
-      `"${(item.pairName || '').replace(/"/g, '""')}"`,
-      item.mode || 'SOLO',
-      item.cefrLevel || 'A1',
-      item.score,
-      item.score >= 70 ? "ĐẠT (PASS)" : "CẦN RÈN THÊM",
-      `"${item.timestamp || ''}"`,
-      `"${(item.transcript || '').replace(/"/g, '""').replace(/\n/g, ' ')}"`,
-      item.audioUrl || ''
-    ]);
-
-    const csvContent = [
-      headers.join(","),
-      ...rows.map(row => row.join(","))
-    ].join("\r\n");
-
-    const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    
-    const safeClassName = selectedClass === 'ALL' ? 'TOAN_TRUONG' : selectedClass.replace(/\s+/g, '_');
-    link.setAttribute("href", url);
-    link.setAttribute("download", `Bang_Diem_VibeSpeak_${safeClassName}_${Date.now()}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  };
 
   // 🎯 THUẬT TOÁN TÍNH TOÁN CLASS ANALYTICS
   const computeClassAnalytics = (data: RoleplaySubmission[]) => {
@@ -252,7 +200,7 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
           </View>
         </View>
 
-        {/* 🎯 KHỐI THỐNG KÊ LỚP HỌC & NÚT XUẤT EXCEL */}
+        {/* 🎯 KHỐI THỐNG KÊ LỚP HỌC & NÚT XUẤT EXCEL CHUẨN ĐỊNH DẠNG */}
         {filteredSubmissions.length > 0 && (
           <View style={styles.analyticsCard}>
             <View style={styles.analyticsHeaderRow}>
@@ -260,8 +208,11 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
                 📈 PHÂN TÍCH LỚP: [{selectedClass === 'ALL' ? 'TOÀN TRƯỜNG' : selectedClass}]
               </Text>
               
-              <TouchableOpacity style={styles.exportBtn} onPress={exportSubmissionsToCSV}>
-                <Text style={styles.exportBtnText}>📥 XUẤT EXCEL / CSV</Text>
+              <TouchableOpacity 
+                style={styles.exportBtn} 
+                onPress={() => exportSubmissionsToExcel(filteredSubmissions, `Bang_Diem_${selectedClass || 'VibeSpeak'}`)}
+              >
+                <Text style={styles.exportBtnText}>📥 XUẤT BẢNG ĐIỂM EXCEL</Text>
               </TouchableOpacity>
             </View>
 
