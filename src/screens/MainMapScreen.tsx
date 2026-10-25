@@ -1,6 +1,7 @@
 // src/screens/MainMapScreen.tsx
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
+import StreakBadge from '../components/StreakBadge';
 
 interface Props {
   onSelectStation: (stationId: string | number) => void;
@@ -10,17 +11,20 @@ interface Props {
 export default function MainMapScreen({ onSelectStation, onOpenProfile }: Props) {
   return (
     <View style={styles.container}>
-      {/* HEADER GIAO DIỆN CHÍNH CÓ NÚT HỒ SƠ VÀ BẢNG ĐIỂM GIÁO VIÊN */}
+      {/* HEADER GIAO DIỆN CHÍNH CÓ NÚT HỒ SƠ, STREAK BADGE VÀ BẢNG ĐIỂM GIÁO VIÊN */}
       <View style={styles.header}>
         <TouchableOpacity style={styles.profileBtn} onPress={onOpenProfile}>
-          <Text style={styles.profileBtnText}>👤 HỒ SƠ CHIẾN BINH</Text>
+          <Text style={styles.profileBtnText}>👤 HỒ SƠ</Text>
         </TouchableOpacity>
+
+        {/* 🎯 HUY HIỆU NGỌN LỬA CHUỖI NGÀY HỌC */}
+        <StreakBadge />
 
         <TouchableOpacity 
           style={styles.teacherBtn} 
           onPress={() => onSelectStation('teacher')}
         >
-          <Text style={styles.teacherBtnText}>📊 BẢNG ĐIỂM GIÁO VIÊN</Text>
+          <Text style={styles.teacherBtnText}>📊 BẢNG ĐIỂM</Text>
         </TouchableOpacity>
       </View>
 
@@ -55,10 +59,16 @@ export default function MainMapScreen({ onSelectStation, onOpenProfile }: Props)
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#05020D', padding: 20, paddingTop: 45 },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
-  profileBtn: { backgroundColor: '#1A0B2E', paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8, borderWidth: 1, borderColor: '#00FFFF' },
+  header: { 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    alignItems: 'center', 
+    marginBottom: 15,
+    gap: 8,
+  },
+  profileBtn: { backgroundColor: '#1A0B2E', paddingVertical: 8, paddingHorizontal: 10, borderRadius: 8, borderWidth: 1, borderColor: '#00FFFF' },
   profileBtnText: { color: '#00FFFF', fontSize: 10, fontWeight: 'bold' },
-  teacherBtn: { backgroundColor: '#39FF14', paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8, borderWidth: 1, borderColor: '#39FF14' },
+  teacherBtn: { backgroundColor: '#39FF14', paddingVertical: 8, paddingHorizontal: 10, borderRadius: 8, borderWidth: 1, borderColor: '#39FF14' },
   teacherBtnText: { color: '#000', fontSize: 10, fontWeight: '900' },
   mapContainer: { alignItems: 'center', paddingBottom: 30 },
   mapTitle: { color: '#FF007F', fontSize: 15, fontWeight: '900', marginBottom: 4 },
