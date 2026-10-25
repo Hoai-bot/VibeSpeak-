@@ -9,6 +9,7 @@ import { getInstantRoleplayScenario, generateRoleplayScenario } from '../service
 import { evaluateSpeaking, AssessmentResult, analyzeSpokenTranscript } from '../services/arena/assessmentService';
 import { saveSubmissionToCloud } from '../services/userService';
 import { harvestWeakWords } from '../services/weakPointsService';
+import { getOptimizedRecorderConfig, executeWithRetry } from '../utils/networkAudioHelper';
 import { supabase } from '../utils/supabase';
 
 interface Props {
@@ -68,6 +69,7 @@ export default function Station2Screen({ onBack }: Props) {
 
   const [isRecording, setIsRecording] = useState<boolean>(false);
   const [isEvaluating, setIsEvaluating] = useState<boolean>(false);
+  const [evalStatusText, setEvalStatusText] = useState<string>('🤖 AI đang phân tích âm thanh & bóc tách toàn bộ lời thoại...');
   const [evalResult, setEvalResult] = useState<AssessmentResult | null>(null);
   
   const [playerScores, setPlayerScores] = useState<PlayerResult>({});
@@ -205,21 +207,6 @@ export default function Station2Screen({ onBack }: Props) {
     }
   }, [mode, cefrLevel]);
 
-  const getOptimalMimeType = () => {
-    if (typeof MediaRecorder === 'undefined') return '';
-    const candidates = [
-      'audio/webm;codecs=opus',
-      'audio/webm',
-      'audio/mp4',
-      'audio/aac',
-      'audio/ogg'
-    ];
-    for (const candidate of candidates) {
-      if (MediaRecorder.isTypeSupported(candidate)) return candidate;
-    }
-    return '';
-  };
-
   const startFullRecording = async () => {
     if (!studentNameInput.trim()) {
       alert("⚠️ Vui lòng nhập Họ tên hoặc Biệt danh của bạn ở phía trên trước khi bắt đầu!");
@@ -268,12 +255,19 @@ export default function Station2Screen({ onBack }: Props) {
         }
       }
 
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Khử tạp âm và tiếng vọng loa ngoài từ microphone
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        }
+      });
       audioStreamRef.current = stream;
 
-      const chosenMime = getOptimalMimeType();
-      const recorderOptions = chosenMime ? { mimeType: chosenMime } : undefined;
-      const recorder = new MediaRecorder(stream, recorderOptions);
+      // Cấu hình MediaRecorder tối ưu bitrate 32 kbps và chuẩn nén Opus
+      const { options, mimeType } = getOptimizedRecorderConfig();
+      const recorder = new MediaRecorder(stream, options);
       mediaRecorderRef.current = recorder;
 
       recorder.ondataavailable = (e) => {
@@ -284,6 +278,7 @@ export default function Station2Screen({ onBack }: Props) {
 
       recorder.onstop = async () => {
         setIsEvaluating(true);
+        setEvalStatusText('🤖 AI đang phân tích bài nói của bạn...');
 
         if (recognitionRef.current) {
           try { 
@@ -292,83 +287,104 @@ export default function Station2Screen({ onBack }: Props) {
           } catch (e) {}
         }
 
-        const mimeTypeUsed = recorder.mimeType || chosenMime || 'audio/webm';
+        const mimeTypeUsed = recorder.mimeType || mimeType || 'audio/webm';
         const fullAudioBlob = new Blob(audioChunksRef.current, { type: mimeTypeUsed });
         const localAudioUrl = URL.createObjectURL(fullAudioBlob);
 
         const targetPrompt = exercise?.promptEn || exercise?.contextEn || exercise?.scenarioTitle || '';
         const capturedSpeech = fullTranscriptRef.current || '';
 
-        const result = await evaluateSpeaking(
-          fullAudioBlob, 
-          cefrLevel, 
-          'STATION_2', 
-          targetPrompt, 
-          userId, 
-          capturedSpeech
-        );
+        try {
+          // Bọc quá trình chấm điểm AI trong cơ chế Retry thông minh
+          const result = await executeWithRetry(
+            async () => {
+              return await evaluateSpeaking(
+                fullAudioBlob, 
+                cefrLevel, 
+                'STATION_2', 
+                targetPrompt, 
+                userId, 
+                capturedSpeech
+              );
+            },
+            {
+              maxRetries: 3,
+              timeoutMs: 16000,
+              onRetry: (attempt) => {
+                setEvalStatusText(`⚠️ Mạng yếu, đang thử kết nối lại lần ${attempt}/3...`);
+              }
+            }
+          );
 
-        result.audioUrl = localAudioUrl;
-        setEvalResult(result);
+          result.audioUrl = localAudioUrl;
+          setEvalResult(result);
 
-        // 🎯 TỰ ĐỘNG BÓC TÁCH TỪ VỰNG & GOM TỪ YẾU VÀO WEAK-POINT VAULT
-        if (result.transcript) {
-          const spokenAnalysis = analyzeSpokenTranscript(result.transcript);
-          harvestWeakWords(spokenAnalysis, exercise?.promptEn || exercise?.topic);
-        }
+          // Tự động bóc tách từ vựng & gom từ yếu vào Weak-Point Vault
+          if (result.transcript) {
+            const spokenAnalysis = analyzeSpokenTranscript(result.transcript);
+            harvestWeakWords(spokenAnalysis, exercise?.promptEn || exercise?.topic);
+          }
 
-        let p1Score = result.score;
-        let p2Score = result.score;
-        let totalAvgScore = result.score;
+          let p1Score = result.score;
+          let p2Score = result.score;
+          let totalAvgScore = result.score;
 
-        if (mode !== 'solo') {
-          p1Score = Math.max(0, result.score - 1);
-          p2Score = Math.min(100, result.score + 1);
-          totalAvgScore = Math.round((p1Score + p2Score) / 2);
+          if (mode !== 'solo') {
+            p1Score = Math.max(0, result.score - 1);
+            p2Score = Math.min(100, result.score + 1);
+            totalAvgScore = Math.round((p1Score + p2Score) / 2);
 
-          setPlayerScores({
-            p1Score: p1Score,
-            p1Transcript: result.transcript,
-            p2Score: p2Score,
-            p2Transcript: result.transcript
-          });
-        }
+            setPlayerScores({
+              p1Score: p1Score,
+              p1Transcript: result.transcript,
+              p2Score: p2Score,
+              p2Transcript: result.transcript
+            });
+          }
 
-        let pairDisplayName = studentIdentifier;
-        let feedbackDetail = result.detailedFeedback;
+          let pairDisplayName = studentIdentifier;
+          let feedbackDetail = result.detailedFeedback;
 
-        if (mode === 'relay') {
-          pairDisplayName = `${studentIdentifier} & Bạn đấu | Điểm tổng: ${totalAvgScore}đ`;
-          feedbackDetail = `[ĐỘC LẬP: P1 = ${p1Score}đ, P2 = ${p2Score}đ | TỔNG CẶP = ${totalAvgScore}đ]: ${result.detailedFeedback}`;
-        } else if (mode === 'roleplay') {
-          const r1 = exercise?.userRoleEn || 'Vai 1';
-          const r2 = exercise?.aiRoleEn || 'Vai 2';
-          pairDisplayName = `${studentIdentifier} (${r1}: ${p1Score}đ) & AI (${r2}: ${p2Score}đ) | Điểm tổng: ${totalAvgScore}đ`;
-          feedbackDetail = `[ĐỘC LẬP: Vai 1 = ${p1Score}đ, Vai 2 = ${p2Score}đ | TỔNG CẶP = ${totalAvgScore}đ]: ${result.detailedFeedback}`;
-        }
+          if (mode === 'relay') {
+            pairDisplayName = `${studentIdentifier} & Bạn đấu | Điểm tổng: ${totalAvgScore}đ`;
+            feedbackDetail = `[ĐỘC LẬP: P1 = ${p1Score}đ, P2 = ${p2Score}đ | TỔNG CẶP = ${totalAvgScore}đ]: ${result.detailedFeedback}`;
+          } else if (mode === 'roleplay') {
+            const r1 = exercise?.userRoleEn || 'Vai 1';
+            const r2 = exercise?.aiRoleEn || 'Vai 2';
+            pairDisplayName = `${studentIdentifier} (${r1}: ${p1Score}đ) & AI (${r2}: ${p2Score}đ) | Điểm tổng: ${totalAvgScore}đ`;
+            feedbackDetail = `[ĐỘC LẬP: Vai 1 = ${p1Score}đ, Vai 2 = ${p2Score}đ | TỔNG CẶP = ${totalAvgScore}đ]: ${result.detailedFeedback}`;
+          }
 
-        // 🎯 TẢI THẲNG BLOB LÊN SUPABASE STORAGE BUCKET 'recordings'
-        await saveSubmissionToCloud({
-          studentName: studentIdentifier,
-          pairName: pairDisplayName,
-          className: safeClass,
-          score: totalAvgScore,
-          mode: mode,
-          cefrLevel: cefrLevel,
-          transcript: result.transcript,
-          audioUrl: '', // Sẽ được tự động điền bằng public URL từ bucket recordings
-          feedback: feedbackDetail,
-          timestamp: new Date().toLocaleTimeString('vi-VN')
-        }, fullAudioBlob);
+          // Đồng bộ tải lên Supabase Storage với cơ chế Retry
+          await executeWithRetry(
+            async () => {
+              await saveSubmissionToCloud({
+                studentName: studentIdentifier,
+                pairName: pairDisplayName,
+                className: safeClass,
+                score: totalAvgScore,
+                mode: mode,
+                cefrLevel: cefrLevel,
+                transcript: result.transcript,
+                audioUrl: '',
+                feedback: feedbackDetail,
+                timestamp: new Date().toLocaleTimeString('vi-VN')
+              }, fullAudioBlob);
+            },
+            { maxRetries: 2, timeoutMs: 10000 }
+          );
 
-        setIsEvaluating(false);
-
-        if (audioStreamRef.current) {
-          audioStreamRef.current.getTracks().forEach(track => track.stop());
+        } catch (netErr: any) {
+          alert(`⚠️ ${netErr.message || 'Lỗi gửi bài do mất kết nối!'}`);
+        } finally {
+          setIsEvaluating(false);
+          if (audioStreamRef.current) {
+            audioStreamRef.current.getTracks().forEach(track => track.stop());
+          }
         }
       };
 
-      recorder.start(200);
+      recorder.start(100); // Thu nhận chunks 100ms nhằm giảm độ trễ khi hoàn tất
       setIsRecording(true);
       setIsGameActive(true);
     } catch (err) {
@@ -550,7 +566,9 @@ export default function Station2Screen({ onBack }: Props) {
               ) : (
                 <View style={{ marginVertical: 15, alignItems: 'center' }}>
                   <ActivityIndicator size="small" color="#00FFFF" />
-                  <Text style={{ color: '#00FFFF', fontSize: 11, marginTop: 5 }}>🤖 AI đang phân tích âm thanh & bóc tách toàn bộ lời thoại...</Text>
+                  <Text style={{ color: '#00FFFF', fontSize: 11, marginTop: 5, textAlign: 'center' }}>
+                    {evalStatusText}
+                  </Text>
                 </View>
               )}
 
