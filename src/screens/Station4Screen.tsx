@@ -8,8 +8,8 @@ import {
   clearStation4History,
   SpeakingExpressExercise 
 } from '../services/arena/station4Service';
-import { updateUserProgress } from '../services/userService';
-import { saveWeakPoint } from '../services/weakPointsService';
+import { updateUserProgress, saveSubmissionToCloud } from '../services/userService';
+import { harvestWeakWords, saveWeakPoint } from '../services/weakPointsService';
 import WeakPointsScreen from './WeakPointsScreen';
 
 interface Props {
@@ -192,7 +192,6 @@ export default function Station4Screen({ onBack }: Props) {
     };
   }, [cefrLevel]);
 
-  // 🎯 CẤU HÌNH THU ÂM CHUẨN TƯƠNG THÍCH 100% ĐIỆN THOẠI ANDROID & IOS
   const handleToggleRecord = async () => {
     stopAllAudio();
 
@@ -301,6 +300,7 @@ export default function Station4Screen({ onBack }: Props) {
 
     if (isRecording) setIsRecording(false);
 
+    let audioBlobForUpload = recordedAudio;
     if (typeof window !== 'undefined' && window.URL) {
       const audioUrl = URL.createObjectURL(recordedAudio);
       setRecordedAudioUrl(audioUrl);
@@ -321,10 +321,31 @@ export default function Station4Screen({ onBack }: Props) {
       );
 
       setResult(evalData);
-      updateUserProgress(4, evalData.isWin ? 50 : 10, evalData.isWin);
+      updateUserProgress(4, evalData.isWin ? 50 : 10, evalData.isWin);[cite: 4]
+
+      // 🎯 TỰ ĐỘNG THU THẬP TỪ YẾU VÀO WEAK-POINT VAULT (SPACED REPETITION)
+      if (evalData.transcript) {
+        const spokenAnalysis = analyzeSpokenTranscript(evalData.transcript);
+        harvestWeakWords(spokenAnalysis, targetPrompt);[cite: 7]
+      }
+
       if (evalData.score < 60) {
         saveWeakPoint('station4', targetPrompt, evalData.score);
       }
+
+      // 🎯 LƯU BÀI NỘP LÊN SUPABASE CLOUD & KÍCH HOẠT CHUỖI STREAK
+      await saveSubmissionToCloud({
+        studentName: 'Chiến Binh Express',
+        pairName: 'Speaking Express',
+        className: 'TRẠM 4: EXPRESS',
+        score: evalData.score,
+        mode: 'SOLO',
+        cefrLevel: cefrLevel,
+        transcript: evalData.transcript,
+        feedback: `[EXPRESS ${cefrLevel}]: Tốc độ phản hồi đạt ${evalData.score}/100đ. Nhận xét: ${evalData.detailedFeedback}`,
+        timestamp: new Date().toLocaleTimeString('vi-VN')
+      }, audioBlobForUpload);[cite: 4]
+
     } catch (err) {
       console.error("Lỗi chấm điểm Trạm 4:", err);
       alert("⚠️ Lỗi kết nối chấm điểm. Vui lòng thử nộp lại!");
@@ -467,7 +488,7 @@ export default function Station4Screen({ onBack }: Props) {
             </Text>
             <Text style={styles.scoreText}>⚡ TỔNG ĐIỂM TRẠM 4: {result.score} / 100 ĐIỂM</Text>
 
-            {/* 🎯 NÂNG CẤP CHỈ SỐ TỐC ĐỘ NÓI (WPM) & HIGHLIGHT LỜI THOẠI */}
+            {/* CHỈ SỐ TỐC ĐỘ NÓI (WPM) & HIGHLIGHT LỜI THOẠI */}
             <View style={styles.wpmBox}>
               <Text style={styles.wpmTitle}>⚡ TỐC ĐỘ TRÔI CHẢY (FLUENCY): {wpmValue} WPM</Text>
               <Text style={styles.wpmDesc}>
