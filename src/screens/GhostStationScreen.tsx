@@ -4,6 +4,7 @@ import { View, Text, TouchableOpacity, StyleSheet, Modal, ActivityIndicator, Scr
 import { transcribeAndGradeAudio } from '../services/groqClient';
 import { generateWordDiff } from '../services/arena/assessmentService';
 import { saveSubmissionToCloud } from '../services/userService';
+import { harvestWeakWords } from '../services/weakPointsService';
 
 interface Props {
   onBack: () => void;
@@ -135,7 +136,15 @@ function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
       setScore(calculatedScore);
       setSpokenTranscript(recognizedText);
 
-      // 🎯 ĐỒNG BỘ LƯU LÊN SUPABASE CHO GIÁO VIÊN
+      // 🎯 TỰ ĐỘNG THU THẬP TỪ BỊ LỆCH ÂM / RỚT NHỊP VÀO WEAK-POINT VAULT
+      const diffResults = generateWordDiff(ghostSentence, recognizedText);
+      const weakItemsForVault = diffResults.map((item) => ({
+        word: item.word,
+        isConfident: item.status === 'correct'
+      }));
+      harvestWeakWords(weakItemsForVault, ghostSentence);
+
+      // 🎯 ĐỒNG BỘ LƯU LÊN SUPABASE CHO GIÁO VIÊN (KÈM AUDIOLINK VÀ TỰ ĐỘNG CẬP NHẬT STREAK)
       await saveSubmissionToCloud({
         studentName: 'Chiến Binh Shadow',
         pairName: 'Ghost Shadowing',
@@ -146,7 +155,7 @@ function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
         transcript: recognizedText,
         feedback: `[SHADOWING]: Bài đọc đuổi câu "${ghostSentence}" đạt ${calculatedScore}/100đ`,
         timestamp: new Date().toLocaleTimeString('vi-VN')
-      });
+      }, audioBlob);
 
       // KÍCH HOẠT POPUP CỨU HỘ KHI ĐIỂM < 50 TRONG 2 LẦN LIÊN TIẾP
       if (calculatedScore < 50) {
