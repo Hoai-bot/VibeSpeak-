@@ -2,6 +2,7 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
 import StreakBadge from '../components/StreakBadge';
+import NotificationToggle from '../components/NotificationToggle';
 
 interface Props {
   onSelectStation: (stationId: string | number) => void;
@@ -11,7 +12,7 @@ interface Props {
 export default function MainMapScreen({ onSelectStation, onOpenProfile }: Props) {
   return (
     <View style={styles.container}>
-      {/* HEADER GIAO DIỆN CHÍNH CÓ NÚT HỒ SƠ, STREAK BADGE VÀ BẢNG ĐIỂM GIÁO VIÊN */}
+      {/* HEADER GIAO DIỆN CHÍNH: HỒ SƠ, STREAK BADGE, THÔNG BÁO VÀ BẢNG ĐIỂM */}
       <View style={styles.header}>
         <TouchableOpacity style={styles.profileBtn} onPress={onOpenProfile}>
           <Text style={styles.profileBtnText}>👤 HỒ SƠ</Text>
@@ -19,6 +20,9 @@ export default function MainMapScreen({ onSelectStation, onOpenProfile }: Props)
 
         {/* 🎯 HUY HIỆU NGỌN LỬA CHUỖI NGÀY HỌC */}
         <StreakBadge />
+
+        {/* 🎯 BẬT/TẮT THÔNG BÁO NHẮC HỌC THÔNG MINH */}
+        <NotificationToggle />
 
         <TouchableOpacity 
           style={styles.teacherBtn} 
@@ -58,17 +62,17 @@ export default function MainMapScreen({ onSelectStation, onOpenProfile }: Props)
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#05020D', padding: 20, paddingTop: 45 },
+  container: { flex: 1, backgroundColor: '#05020D', padding: 18, paddingTop: 45 },
   header: { 
     flexDirection: 'row', 
     justifyContent: 'space-between', 
     alignItems: 'center', 
     marginBottom: 15,
-    gap: 8,
+    gap: 6,
   },
-  profileBtn: { backgroundColor: '#1A0B2E', paddingVertical: 8, paddingHorizontal: 10, borderRadius: 8, borderWidth: 1, borderColor: '#00FFFF' },
+  profileBtn: { backgroundColor: '#1A0B2E', paddingVertical: 7, paddingHorizontal: 9, borderRadius: 8, borderWidth: 1, borderColor: '#00FFFF' },
   profileBtnText: { color: '#00FFFF', fontSize: 10, fontWeight: 'bold' },
-  teacherBtn: { backgroundColor: '#39FF14', paddingVertical: 8, paddingHorizontal: 10, borderRadius: 8, borderWidth: 1, borderColor: '#39FF14' },
+  teacherBtn: { backgroundColor: '#39FF14', paddingVertical: 7, paddingHorizontal: 9, borderRadius: 8, borderWidth: 1, borderColor: '#39FF14' },
   teacherBtnText: { color: '#000', fontSize: 10, fontWeight: '900' },
   mapContainer: { alignItems: 'center', paddingBottom: 30 },
   mapTitle: { color: '#FF007F', fontSize: 15, fontWeight: '900', marginBottom: 4 },
