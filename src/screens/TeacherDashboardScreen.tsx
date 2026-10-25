@@ -10,27 +10,76 @@ interface Props {
 }
 
 export default function TeacherDashboardScreen({ onBack }: Props) {
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [isTeacher, setIsTeacher] = useState<boolean>(false);
+  const [isAdmin, setIsAdmin] = useState<boolean>(false);
+  const [teacherAssignedClasses, setTeacherAssignedClasses] = useState<string[]>([]);
+  
   const [submissions, setSubmissions] = useState<RoleplaySubmission[]>([]);
-  const [selectedClass, setSelectedClass] = useState<string>('ALL');
+  const [selectedClass, setSelectedClass] = useState<string>('');
   const [customClassSearch, setCustomClassSearch] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
 
-  const loadDashboardData = async () => {
-    setLoading(true);
-    try {
-      const data = await fetchSubmissionsFromCloud('ALL');
-      setSubmissions(data || []);
-    } catch (e) {
-      console.warn("Lỗi tải Bảng điểm Giáo viên:", e);
-    } finally {
-      setLoading(false);
-    }
-  };
-
+  // 🎯 1. KIỂM TRA PHÂN QUYỀN GIÁO VIÊN KHI MỞ MÀN HÌNH
   useEffect(() => {
-    loadDashboardData();
+    const checkTeacherAuth = async () => {
+      setLoading(true);
+      try {
+        if (!supabase) {
+          setIsTeacher(true);
+          setSelectedClass('ALL');
+          return;
+        }
 
-    // 🎯 1. KÍCH HOẠT LẮNG NGHE REALTIME TỪ BẢNG 'submissions'
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
+          setIsTeacher(false);
+          setLoading(false);
+          return;
+        }
+
+        setCurrentUser(user);
+        const meta = user.user_metadata || {};
+        const role = String(meta.role || '').toLowerCase();
+        
+        // Kiểm tra xem là Admin hay Giáo viên
+        const hasAdminRole = role === 'admin';
+        const hasTeacherRole = role === 'teacher' || hasAdminRole;
+        setIsAdmin(hasAdminRole);
+        setIsTeacher(hasTeacherRole);
+
+        if (hasTeacherRole) {
+          // Lấy danh sách lớp giáo viên được giao phụ trách (mảng hoặc chuỗi phân tách bằng dấu phẩy)
+          let assigned: string[] = [];
+          if (Array.isArray(meta.assigned_classes)) {
+            assigned = meta.assigned_classes.map((c: string) => c.trim().toUpperCase());
+          } else if (typeof meta.assigned_classes === 'string') {
+            assigned = meta.assigned_classes.split(',').map((c: string) => c.trim().toUpperCase()).filter(Boolean);
+          } else if (meta.class_code) {
+            assigned = [meta.class_code.trim().toUpperCase()];
+          }
+
+          setTeacherAssignedClasses(assigned);
+
+          // Nếu là Admin thì mặc định chọn ALL, nếu là GV thì chọn lớp đầu tiên trong danh sách phụ trách
+          if (hasAdminRole || assigned.length === 0) {
+            setSelectedClass('ALL');
+          } else {
+            setSelectedClass(assigned[0]);
+          }
+
+          await loadDashboardData();
+        }
+      } catch (err) {
+        console.warn("Lỗi kiểm tra quyền giáo viên:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    checkTeacherAuth();
+
+    // Lắng nghe realtime từ Supabase khi có bài nộp mới
     let channel: any = null;
     if (supabase) {
       channel = supabase
@@ -39,25 +88,25 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
           'postgres_changes',
           { event: 'INSERT', schema: 'public', table: 'submissions' },
           async () => {
-            const updatedData = await fetchSubmissionsFromCloud('ALL');
-            setSubmissions(updatedData || []);
+            await loadDashboardData();
           }
         )
         .subscribe();
     }
 
-    // 🎯 2. POLLING LÀM MỚI MỖI 10 GIÂY
-    const interval = setInterval(() => {
-      fetchSubmissionsFromCloud('ALL').then((data) => {
-        if (data && data.length > 0) setSubmissions(data);
-      });
-    }, 10000);
-
     return () => {
       if (channel && supabase) supabase.removeChannel(channel);
-      clearInterval(interval);
     };
   }, []);
+
+  const loadDashboardData = async () => {
+    try {
+      const data = await fetchSubmissionsFromCloud('ALL');
+      setSubmissions(data || []);
+    } catch (e) {
+      console.warn("Lỗi tải Bảng điểm:", e);
+    }
+  };
 
   const cleanClassName = (rawClass?: string) => {
     if (!rawClass) return 'LỚP CHUNG';
@@ -68,20 +117,32 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
     return cls || 'LỚP CHUNG';
   };
 
-  const availableClasses = Array.from(
+  // 🎯 2. DANH SÁCH LỚP HỢP LỆ THEO QUYỀN HẠN CỦA GIÁO VIÊN
+  const rawAvailableClasses = Array.from(
     new Set(submissions.map((s) => cleanClassName(s.className).toUpperCase()))
   ).filter(Boolean);
 
+  // Nếu là Admin: hiển thị toàn bộ lớp. Nếu là GV: chỉ hiển thị các lớp mình phụ trách
+  const availableClasses = isAdmin || teacherAssignedClasses.length === 0
+    ? rawAvailableClasses
+    : rawAvailableClasses.filter(cls => teacherAssignedClasses.includes(cls));
+
+  // 🎯 3. LỌC BÀI NỘP CHẶT CHẼ THEO PHẠM VI LỚP PHỤ TRÁCH
   const filteredSubmissions = submissions.filter((item) => {
     const itemClass = cleanClassName(item.className).toUpperCase();
     const studentName = String(item.studentName || '').toUpperCase();
+
+    // Rào chắn bảo mật: Nếu không phải Admin, bài nộp KHÔNG thuộc lớp phụ trách sẽ bị loại bỏ ngay
+    if (!isAdmin && teacherAssignedClasses.length > 0 && !teacherAssignedClasses.includes(itemClass)) {
+      return false;
+    }
 
     if (customClassSearch.trim().length > 0) {
       const query = customClassSearch.trim().toUpperCase();
       return itemClass.includes(query) || studentName.includes(query);
     }
 
-    if (selectedClass === 'ALL') return true;
+    if (selectedClass === 'ALL' && isAdmin) return true;
     return itemClass === selectedClass.toUpperCase();
   });
 
@@ -142,65 +203,109 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
 
   const analytics = computeClassAnalytics(filteredSubmissions);
 
+  // 🛑 GIAO DIỆN CHẶN NẾU KHÔNG PHẢI GIÁO VIÊN
+  if (!loading && !isTeacher) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={onBack} style={styles.backBtn}>
+            <Text style={styles.backText}>🔙 QUAY LẠI MAP</Text>
+          </TouchableOpacity>
+          <Text style={styles.title}>🔒 TRUY CẬP BỊ GIỚI HẠN</Text>
+        </View>
+
+        <View style={styles.restrictedCard}>
+          <Text style={styles.restrictedIcon}>⛔</Text>
+          <Text style={styles.restrictedTitle}>KHU VỰC DÀNH CHO GIÁO VIÊN</Text>
+          <Text style={styles.restrictedDesc}>
+            Tài khoản hiện tại của bạn không có quyền Giáo viên (Role: Teacher) để xem bảng điểm học viên.
+          </Text>
+          <Text style={styles.restrictedHint}>
+            💡 Vui lòng đăng nhập bằng tài khoản Giáo viên được cấp hoặc liên hệ Quản trị viên để phân quyền lớp phụ trách.
+          </Text>
+          <TouchableOpacity style={styles.backHomeBtn} onPress={onBack}>
+            <Text style={styles.backHomeBtnText}>QUAY LẠI ĐẤU TRƯỜNG</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack} style={styles.backBtn}>
           <Text style={styles.backText}>🔙 QUAY LẠI MAP</Text>
         </TouchableOpacity>
-        <Text style={styles.title}>📊 BẢNG ĐIỂM DÀNH CHO GIÁO VIÊN</Text>
+        <Text style={styles.title}>📊 BẢNG ĐIỂM GIÁO VIÊN</Text>
       </View>
 
       <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
-        {/* CARD LỌC LỚP HỌC */}
+        {/* BANNER THÔNG TIN PHÂN QUYỀN GIÁO VIÊN */}
+        <View style={styles.teacherBadgeCard}>
+          <Text style={styles.teacherBadgeName}>
+            👨‍🏫 GIÁO VIÊN: <Text style={{ color: '#39FF14' }}>{currentUser?.user_metadata?.full_name || currentUser?.email || 'Thầy/Cô'}</Text>
+          </Text>
+          <Text style={styles.teacherBadgeRole}>
+            {isAdmin 
+              ? '👑 Quyền: QUẢN TRỊ VIÊN TOÀN TRƯỜNG' 
+              : `🏫 Lớp phụ trách: ${teacherAssignedClasses.length > 0 ? teacherAssignedClasses.join(', ') : 'Chưa gán lớp (Mặc định)'}`}
+          </Text>
+        </View>
+
+        {/* CARD CHỌN LỚP ĐƯỢC PHÂN CÔNG */}
         <View style={styles.filterCard}>
-          <Text style={styles.filterTitle}>🏫 CHỌN HOẶC TÌM KIẾM MÃ LỚP:</Text>
+          <Text style={styles.filterTitle}>🏫 CÁC LỚP BẠN PHỤ TRÁCH:</Text>
           
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginVertical: 10 }}>
-            <TouchableOpacity
-              style={[styles.chip, selectedClass === 'ALL' && !customClassSearch && styles.chipActive]}
-              onPress={() => {
-                setSelectedClass('ALL');
-                setCustomClassSearch('');
-              }}
-            >
-              <Text style={[styles.chipText, selectedClass === 'ALL' && !customClassSearch && styles.chipTextActive]}>
-                🌐 TOÀN TRƯỜNG ({submissions.length})
-              </Text>
-            </TouchableOpacity>
-
-            {availableClasses.map((cls) => (
+            {isAdmin && (
               <TouchableOpacity
-                key={cls}
-                style={[styles.chip, selectedClass === cls && !customClassSearch && styles.chipActive]}
+                style={[styles.chip, selectedClass === 'ALL' && !customClassSearch && styles.chipActive]}
                 onPress={() => {
-                  setSelectedClass(cls);
+                  setSelectedClass('ALL');
                   setCustomClassSearch('');
                 }}
               >
-                <Text style={[styles.chipText, selectedClass === cls && !customClassSearch && styles.chipTextActive]}>
-                  🏫 {cls}
+                <Text style={[styles.chipText, selectedClass === 'ALL' && !customClassSearch && styles.chipTextActive]}>
+                  🌐 TOÀN TRƯỜNG ({submissions.length})
                 </Text>
               </TouchableOpacity>
-            ))}
+            )}
+
+            {availableClasses.map((cls) => {
+              const countInClass = submissions.filter(s => cleanClassName(s.className).toUpperCase() === cls).length;
+              return (
+                <TouchableOpacity
+                  key={cls}
+                  style={[styles.chip, selectedClass === cls && !customClassSearch && styles.chipActive]}
+                  onPress={() => {
+                    setSelectedClass(cls);
+                    setCustomClassSearch('');
+                  }}
+                >
+                  <Text style={[styles.chipText, selectedClass === cls && !customClassSearch && styles.chipTextActive]}>
+                    🏫 {cls} ({countInClass})
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
           </ScrollView>
 
           <View style={styles.searchBox}>
-            <Text style={styles.searchLabel}>🔎 TÌM THỦ CÔNG THEO MÃ LỚP / TÊN HỌC VIÊN:</Text>
+            <Text style={styles.searchLabel}>🔎 TÌM SINH VIÊN TRONG LỚP PHỤ TRÁCH:</Text>
             <TextInput
               style={styles.searchInput}
-              placeholder="Gõ mã lớp hoặc tên học viên..."
+              placeholder="Gõ tên hoặc MSSV sinh viên cần tìm..."
               placeholderTextColor="#777"
               value={customClassSearch}
               onChangeText={(text) => {
                 setCustomClassSearch(text);
-                setSelectedClass('CUSTOM');
               }}
             />
           </View>
         </View>
 
-        {/* 🎯 KHỐI THỐNG KÊ LỚP HỌC & NÚT XUẤT EXCEL CHUẨN ĐỊNH DẠNG */}
+        {/* KHỐI THỐNG KÊ LỚP HỌC & XUẤT EXCEL CHUẨN */}
         {filteredSubmissions.length > 0 && (
           <View style={styles.analyticsCard}>
             <View style={styles.analyticsHeaderRow}>
@@ -210,7 +315,7 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
               
               <TouchableOpacity 
                 style={styles.exportBtn} 
-                onPress={() => exportSubmissionsToExcel(filteredSubmissions, `Bang_Diem_${selectedClass || 'VibeSpeak'}`)}
+                onPress={() => exportSubmissionsToExcel(filteredSubmissions, `Bang_Diem_${selectedClass || 'Lop'}`)}
               >
                 <Text style={styles.exportBtnText}>📥 XUẤT BẢNG ĐIỂM EXCEL</Text>
               </TouchableOpacity>
@@ -263,15 +368,15 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
           <ActivityIndicator size="large" color="#00FFFF" style={{ marginVertical: 30 }} />
         ) : filteredSubmissions.length === 0 ? (
           <View style={styles.emptyBox}>
-            <Text style={styles.emptyText}>⚠️ Chưa ghi nhận bài nộp nào trên Cloud.</Text>
+            <Text style={styles.emptyText}>⚠️ Chưa ghi nhận bài nộp nào thuộc lớp này.</Text>
             <Text style={styles.emptySubText}>
-              Bấm vào "🌐 TOÀN TRƯỜNG" hoặc bấm "🔄 CẬP NHẬT DỮ LIỆU MỚI NHẤT".
+              Hãy giao bài tập tại Trạm 2 hoặc 4 cho sinh viên làm để ghi nhận kết quả.
             </Text>
           </View>
         ) : (
           <View>
             <Text style={styles.summaryText}>
-              📋 Danh sách {filteredSubmissions.length} bài nộp theo thời gian:
+              📋 Danh sách {filteredSubmissions.length} bài nộp của lớp {selectedClass}:
             </Text>
 
             {filteredSubmissions.map((sub, index) => (
@@ -328,6 +433,12 @@ const styles = StyleSheet.create({
   backBtn: { backgroundColor: '#1F103C', padding: 8, borderRadius: 8, borderWidth: 1, borderColor: '#00FFFF' },
   backText: { color: '#00FFFF', fontSize: 10, fontWeight: 'bold' },
   title: { color: '#FFD700', fontSize: 12, fontWeight: '900' },
+  
+  // Teacher Info Badge
+  teacherBadgeCard: { backgroundColor: '#170B30', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#39FF14', marginBottom: 12 },
+  teacherBadgeName: { color: '#FFF', fontSize: 11, fontWeight: '900' },
+  teacherBadgeRole: { color: '#00FFFF', fontSize: 9, marginTop: 3 },
+
   filterCard: { backgroundColor: '#170B30', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#FFD700', marginBottom: 12 },
   filterTitle: { color: '#FFD700', fontSize: 10, fontWeight: 'bold' },
   chip: { backgroundColor: '#0D0620', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 6, borderWidth: 1, borderColor: '#332255', marginRight: 6 },
@@ -338,6 +449,15 @@ const styles = StyleSheet.create({
   searchLabel: { color: '#AAAABB', fontSize: 8, marginBottom: 4 },
   searchInput: { backgroundColor: '#0D0620', color: '#FFF', padding: 8, borderRadius: 6, borderWidth: 1, borderColor: '#00FFFF', fontSize: 10 },
   
+  // Restricted Access Screen
+  restrictedCard: { backgroundColor: '#170B30', padding: 25, borderRadius: 16, borderWidth: 2, borderColor: '#FF0055', alignItems: 'center', marginTop: 40 },
+  restrictedIcon: { fontSize: 40, marginBottom: 10 },
+  restrictedTitle: { color: '#FF0055', fontSize: 14, fontWeight: '900', marginBottom: 10 },
+  restrictedDesc: { color: '#DDD', fontSize: 11, textAlign: 'center', lineHeight: 16, marginBottom: 12 },
+  restrictedHint: { color: '#FFD700', fontSize: 9, textAlign: 'center', lineHeight: 14, marginBottom: 20 },
+  backHomeBtn: { backgroundColor: '#FF0055', paddingVertical: 10, paddingHorizontal: 20, borderRadius: 8 },
+  backHomeBtnText: { color: '#FFF', fontSize: 10, fontWeight: '900' },
+
   // Analytics Styles
   analyticsCard: { backgroundColor: '#120826', padding: 14, borderRadius: 12, borderWidth: 1, borderColor: '#00FFFF', marginBottom: 14 },
   analyticsHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 },
