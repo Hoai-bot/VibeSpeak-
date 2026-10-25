@@ -104,13 +104,27 @@ export default function AuthModal({ visible, onClose, onSuccess }: Props) {
         }
       }
     } catch (err: any) {
-      console.warn('Lỗi xác thực Auth:', err);
-      if (err.message?.includes('Invalid login credentials')) {
+      console.warn('Lỗi xác thực Auth chi tiết:', err);
+
+      // Trích xuất thông báo lỗi chính xác từ mọi định dạng object của Supabase
+      const rawError =
+        err?.message ||
+        err?.error_description ||
+        err?.msg ||
+        (typeof err === 'object' ? JSON.stringify(err) : String(err));
+
+      if (rawError.includes('Invalid login credentials')) {
         setErrMsg('Email hoặc mật khẩu không chính xác.');
-      } else if (err.message?.includes('User already registered')) {
-        setErrMsg('Email này đã được đăng ký. Vui lòng chuyển sang Đăng nhập.');
+      } else if (rawError.includes('User already registered') || rawError.includes('already registered')) {
+        setErrMsg('Email này đã được đăng ký. Vui lòng bấm vào Đăng nhập bên dưới.');
+      } else if (rawError.includes('Password should be at least')) {
+        setErrMsg('Mật khẩu cần tối thiểu 6 ký tự.');
+      } else if (rawError.includes('Signup requires a valid password')) {
+        setErrMsg('Vui lòng nhập mật khẩu hợp lệ.');
+      } else if (rawError === '{}' || !rawError || rawError === 'null') {
+        setErrMsg('Không thể kết nối đến máy chủ Supabase. Vui lòng kiểm tra kết nối mạng hoặc thử lại.');
       } else {
-        setErrMsg(err.message || 'Lỗi kết nối máy chủ xác thực.');
+        setErrMsg(rawError);
       }
     } finally {
       setLoading(false);
