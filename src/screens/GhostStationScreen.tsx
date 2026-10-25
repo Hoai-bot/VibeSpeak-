@@ -5,6 +5,7 @@ import { transcribeAndGradeAudio } from '../services/groqClient';
 import { generateWordDiff } from '../services/arena/assessmentService';
 import { saveSubmissionToCloud } from '../services/userService';
 import { harvestWeakWords } from '../services/weakPointsService';
+import { getOptimizedRecorderConfig, executeWithRetry } from '../utils/networkAudioHelper';
 
 interface Props {
   onBack: () => void;
@@ -24,6 +25,7 @@ function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
   const [ghostSentence, setGhostSentence] = useState<string>(GHOST_SENTENCES[0]);
   const [isRecording, setIsRecording] = useState<boolean>(false);
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
+  const [analyzingStatus, setAnalyzingStatus] = useState<string>('🤖 AI ĐANG PHÂN TÍCH GIỌNG NÓI...');
   const [score, setScore] = useState<number | null>(null);
   const [spokenTranscript, setSpokenTranscript] = useState<string>('');
   const [isPlayingTTS, setIsPlayingTTS] = useState<boolean>(false);
@@ -61,21 +63,6 @@ function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
     setSpokenTranscript('');
   };
 
-  const getOptimalMimeType = () => {
-    if (typeof MediaRecorder === 'undefined') return '';
-    const candidates = [
-      'audio/webm;codecs=opus',
-      'audio/webm',
-      'audio/mp4',
-      'audio/aac',
-      'audio/ogg'
-    ];
-    for (const candidate of candidates) {
-      if (MediaRecorder.isTypeSupported(candidate)) return candidate;
-    }
-    return '';
-  };
-
   const startRecording = async () => {
     try {
       if (typeof navigator === 'undefined' || !navigator.mediaDevices) {
@@ -83,11 +70,14 @@ function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
         return;
       }
 
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Khử tiếng vọng và tạp âm môi trường
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true }
+      });
       mediaStreamRef.current = stream;
 
-      const chosenMime = getOptimalMimeType();
-      const options = chosenMime ? { mimeType: chosenMime } : undefined;
+      // Cấu hình MediaRecorder tối ưu 32 kbps và codec Opus
+      const { options } = getOptimizedRecorderConfig();
       const mediaRecorder = new MediaRecorder(stream, options);
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
@@ -96,7 +86,7 @@ function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
         if (e.data && e.data.size > 0) audioChunksRef.current.push(e.data);
       };
 
-      mediaRecorder.start(200);
+      mediaRecorder.start(100);
       setIsRecording(true);
       setScore(null);
       setSpokenTranscript('');
@@ -111,10 +101,11 @@ function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
 
     setIsRecording(false);
     setIsAnalyzing(true);
+    setAnalyzingStatus('🤖 AI ĐANG PHÂN TÍCH GIỌNG NÓI...');
 
     const processAudio = new Promise<Blob>((resolve) => {
       mediaRecorder.onstop = () => {
-        const mimeUsed = mediaRecorder.mimeType || getOptimalMimeType() || 'audio/webm';
+        const mimeUsed = mediaRecorder.mimeType || 'audio/webm';
         const audioBlob = new Blob(audioChunksRef.current, { type: mimeUsed });
         resolve(audioBlob);
       };
@@ -128,7 +119,20 @@ function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
       }
 
       const audioBlob = await processAudio;
-      const res = await transcribeAndGradeAudio(audioBlob, ghostSentence);
+
+      // 🎯 TỰ ĐỘNG RETRY NẾU API GROQ BỊ DROP PACKET HOẶC RATE-LIMIT
+      const res = await executeWithRetry(
+        async () => {
+          return await transcribeAndGradeAudio(audioBlob, ghostSentence);
+        },
+        {
+          maxRetries: 3,
+          timeoutMs: 14000,
+          onRetry: (attempt) => {
+            setAnalyzingStatus(`⚠️ MẠNG YẾU, ĐANG THỬ KẾT NỐI LẠI (${attempt}/3)...`);
+          }
+        }
+      );
       
       const calculatedScore = Number(res.score) || 0;
       const recognizedText = res.transcript || '';
@@ -144,18 +148,23 @@ function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
       }));
       harvestWeakWords(weakItemsForVault, ghostSentence);
 
-      // 🎯 ĐỒNG BỘ LƯU LÊN SUPABASE CHO GIÁO VIÊN (KÈM AUDIOLINK VÀ TỰ ĐỘNG CẬP NHẬT STREAK)
-      await saveSubmissionToCloud({
-        studentName: 'Chiến Binh Shadow',
-        pairName: 'Ghost Shadowing',
-        className: 'TRẠM 3: GHOST',
-        score: calculatedScore,
-        mode: 'SHADOWING',
-        cefrLevel: 'B1',
-        transcript: recognizedText,
-        feedback: `[SHADOWING]: Bài đọc đuổi câu "${ghostSentence}" đạt ${calculatedScore}/100đ`,
-        timestamp: new Date().toLocaleTimeString('vi-VN')
-      }, audioBlob);
+      // 🎯 ĐỒNG BỘ LƯU LÊN SUPABASE VỚI CƠ CHẾ RETRY
+      await executeWithRetry(
+        async () => {
+          await saveSubmissionToCloud({
+            studentName: 'Chiến Binh Shadow',
+            pairName: 'Ghost Shadowing',
+            className: 'TRẠM 3: GHOST',
+            score: calculatedScore,
+            mode: 'SHADOWING',
+            cefrLevel: 'B1',
+            transcript: recognizedText,
+            feedback: `[SHADOWING]: Bài đọc đuổi câu "${ghostSentence}" đạt ${calculatedScore}/100đ`,
+            timestamp: new Date().toLocaleTimeString('vi-VN')
+          }, audioBlob);
+        },
+        { maxRetries: 2, timeoutMs: 10000 }
+      );
 
       // KÍCH HOẠT POPUP CỨU HỘ KHI ĐIỂM < 50 TRONG 2 LẦN LIÊN TIẾP
       if (calculatedScore < 50) {
@@ -167,8 +176,8 @@ function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
       } else {
         setGhostMissCount(0);
       }
-    } catch (e) {
-      alert('⚠️ Lỗi phân tích âm thanh! Vui lòng bấm thu âm lại.');
+    } catch (e: any) {
+      alert(`⚠️ Lỗi phân tích: ${e.message || 'Mạng yếu, vui lòng bấm thu âm lại!'}`);
     } finally {
       setIsAnalyzing(false);
     }
@@ -208,7 +217,7 @@ function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
           >
             <Text style={styles.recordText}>
               {isAnalyzing 
-                ? '🤖 AI ĐANG PHÂN TÍCH GIỌNG NÓI...' 
+                ? analyzingStatus 
                 : isRecording 
                 ? '⏹️ DỪNG THU ÂM & CHẤM ĐIỂM' 
                 : '🎙️ BẮT ĐẦU ĐỌC ĐUỔI (SHADOWING)'}
