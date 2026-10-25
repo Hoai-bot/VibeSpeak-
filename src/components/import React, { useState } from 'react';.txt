@@ -1,0 +1,101 @@
+import React, { useState } from 'react';
+
+interface Station {
+  id: string;
+  name: string;
+  address: string;
+  distance: string;
+  openTime: string;
+  acceptedTypes: string[];
+}
+
+export const RecycleMap: React.FC = () => {
+  const [selectedStation, setSelectedStation] = useState<Station | null>(null);
+
+  // Danh sách điểm thu gom giả lập chuẩn
+  const stations: Station[] = [
+    {
+      id: '1',
+      name: 'Trạm Thu Gom VeVe Eco - Cầu Giấy',
+      address: '123 Đường Cầu Giấy, Phường Quan Hoa, Hà Nội',
+      distance: '0.8 km',
+      openTime: '08:00 - 18:00',
+      acceptedTypes: ['Chai nhựa', 'Lon nhôm', 'Hộp giấy']
+    },
+    {
+      id: '2',
+      name: 'Điểm Tái Chế Xanh - Thanh Xuân',
+      address: '45 Nguyễn Trãi, Thanh Xuân, Hà Nội',
+      distance: '2.3 km',
+      openTime: '07:30 - 19:00',
+      acceptedTypes: ['Chai nhựa', 'Thủy tinh', 'Kim loại']
+    },
+    {
+      id: '3',
+      name: 'Trạm Gom Rác Tái Chế - Hoàn Kiếm',
+      address: '12 Tràng Thi, Hoàn Kiếm, Hà Nội',
+      distance: '4.1 km',
+      openTime: '08:00 - 17:30',
+      acceptedTypes: ['Giấy & Carton', 'Lon nhôm']
+    }
+  ];
+
+  return (
+    <div className="space-y-4">
+      {/* Khung Bản đồ nhúng Google Maps */}
+      <div className="bg-white p-2 rounded-2xl shadow-sm border border-emerald-100 overflow-hidden">
+        <div className="w-full h-52 bg-slate-100 rounded-xl overflow-hidden relative">
+          <iframe
+            title="Bản đồ điểm thu gom"
+            src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3723.863855881429!2d105.78183187602334!3d21.034122187456722!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x3135ab4cd0c66f05%3A0xe13170e5b0b3074!2zQ8O1bmcgdmnDqm4gQ8G6p3UgR2nhuqV5!5e0!3m2!1svi!2s!4v1700000000000!5m2!1svi!2s"
+            width="100%"
+            height="100%"
+            style={{ border: 0 }}
+            allowFullScreen={false}
+            loading="lazy"
+            referrerPolicy="no-referrer-when-downgrade"
+          />
+        </div>
+      </div>
+
+      {/* Danh sách các trạm thu gom gần bạn */}
+      <div className="bg-white p-4 rounded-2xl shadow-sm border border-emerald-100">
+        <h3 className="text-sm font-bold text-gray-800 mb-3 flex items-center gap-1">
+          📍 Trạm thu gom gần bạn
+        </h3>
+
+        <div className="space-y-3">
+          {stations.map((st) => (
+            <div
+              key={st.id}
+              onClick={() => setSelectedStation(st)}
+              className={`p-3 rounded-xl border text-left cursor-pointer transition-all ${
+                selectedStation?.id === st.id
+                  ? 'border-emerald-500 bg-emerald-50/50 shadow-sm'
+                  : 'border-gray-100 bg-gray-50/60 hover:bg-gray-100/60'
+              }`}
+            >
+              <div className="flex justify-between items-start mb-1">
+                <h4 className="text-xs font-bold text-gray-800">{st.name}</h4>
+                <span className="text-[10px] font-semibold text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded-full">
+                  {st.distance}
+                </span>
+              </div>
+              <p className="text-[11px] text-gray-500 mb-2">{st.address}</p>
+              
+              <div className="flex flex-wrap gap-1">
+                {st.acceptedTypes.map((type, idx) => (
+                  <span key={idx} className="text-[9px] bg-white border border-gray-200 text-gray-600 px-1.5 py-0.5 rounded">
+                    ♻️ {type}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default RecycleMap;
