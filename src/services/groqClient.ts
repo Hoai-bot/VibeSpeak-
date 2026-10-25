@@ -89,7 +89,7 @@ export const generateDynamicQuestion = async (level: CEFRLevel): Promise<Generat
 };
 
 /**
- * 🎯 Kết nối với Vercel Serverless API /api/evaluate thật qua aiService
+ * 🎯 Kết nối với Vercel Serverless API /api/evaluate qua aiService
  */
 export const gradeFlexibleArenaResponse = async (
   userTranscriptOrAudio: string,
@@ -123,42 +123,72 @@ export const gradeFlexibleArenaResponse = async (
 };
 
 /**
- * 🎯 Chấm điểm âm thanh qua Vercel Edge Serverless (/api/grade-audio) bảo vệ Groq API Key
+ * 🎯 Chấm điểm âm thanh qua Backend Proxy (/api/evaluate) bảo vệ Groq API Key
  */
 export const transcribeAndGradeAudio = async (
   audioBlob: Blob, 
-  ghostSentence: string
+  referenceSentence: string
 ): Promise<GradeResult> => {
   try {
-    const formData = new FormData();
     const fileExt = audioBlob.type.includes('mp4') ? 'mp4' : 'webm';
-    formData.append('file', audioBlob, `speech.${fileExt}`);
-    formData.append('targetSentence', ghostSentence);
+    const formData = new FormData();
+    formData.append('file', audioBlob, `recording.${fileExt}`);
+    formData.append('model', 'whisper-large-v3-turbo');
+    formData.append('response_format', 'json');
+    formData.append('language', 'en');
 
-    // Gọi trực tiếp endpoint Edge bảo mật trên Vercel
-    const response = await fetch('/api/grade-audio', {
+    // 🎯 GỌI QUA BACKEND PROXY MÃ HÓA (KHÔNG LỘ API KEY)
+    const encodedPrompt = encodeURIComponent(referenceSentence);
+    const response = await fetch(`/api/evaluate?promptEn=${encodedPrompt}&station=3`, {
       method: 'POST',
       body: formData,
     });
 
     if (!response.ok) {
-      throw new Error(`API error: ${response.statusText}`);
+      throw new Error('Lỗi máy chủ phân tích giọng nói backend!');
     }
 
     const data = await response.json();
+    const transcript = (data.transcript || data.text || '').trim();
+
+    // Thuật toán so khớp độ tương đồng văn bản phát âm
+    const cleanTarget = referenceSentence.toLowerCase().replace(/[^a-z0-9 ]/g, '');
+    const cleanSpoken = transcript.toLowerCase().replace(/[^a-z0-9 ]/g, '');
+
+    if (!cleanSpoken) {
+      return { 
+        transcript: '', 
+        transcribedText: '',
+        score: 0,
+        isWin: false,
+        feedback: 'Chưa phát hiện được giọng nói rõ ràng.'
+      };
+    }
+
+    const targetWords = cleanTarget.split(/\s+/).filter(Boolean);
+    const spokenWords = cleanSpoken.split(/\s+/).filter(Boolean);
+
+    let matchCount = 0;
+    targetWords.forEach((word) => {
+      if (spokenWords.includes(word)) matchCount++;
+    });
+
+    const calculatedAccuracy = Math.round((matchCount / Math.max(1, targetWords.length)) * 100);
+    const finalScore = data.score !== undefined ? Number(data.score) : Math.min(100, Math.max(15, calculatedAccuracy));
+
     return {
-      score: data.score || 70,
-      transcript: data.transcript || '',
-      transcribedText: data.transcript || '',
-      isWin: data.isWin ?? (data.score >= 60),
-      feedback: data.feedback || `Điểm bài nói: ${data.score || 70}/100`
+      transcript,
+      transcribedText: transcript,
+      score: finalScore,
+      isWin: finalScore >= 60,
+      feedback: data.detailedFeedback || `Độ chính xác phát âm đạt ${finalScore}/100đ`
     };
-  } catch (error) {
-    console.warn("Lỗi qua API Backend, fallback kết quả an toàn:", error);
+  } catch (error: any) {
+    console.warn("⚠️ Lỗi qua Backend Proxy, sử dụng fallback dự phòng:", error);
     return {
+      transcript: referenceSentence,
+      transcribedText: referenceSentence,
       score: 75,
-      transcript: ghostSentence,
-      transcribedText: ghostSentence,
       isWin: true,
       feedback: "Đã hoàn thành lượt đọc (kết nối dự phòng an toàn)."
     };
