@@ -321,12 +321,12 @@ export default function Station4Screen({ onBack }: Props) {
       );
 
       setResult(evalData);
-      updateUserProgress(4, evalData.isWin ? 50 : 10, evalData.isWin);[cite: 4]
+      updateUserProgress(4, evalData.isWin ? 50 : 10, evalData.isWin);
 
       // 🎯 TỰ ĐỘNG THU THẬP TỪ YẾU VÀO WEAK-POINT VAULT (SPACED REPETITION)
       if (evalData.transcript) {
         const spokenAnalysis = analyzeSpokenTranscript(evalData.transcript);
-        harvestWeakWords(spokenAnalysis, targetPrompt);[cite: 7]
+        harvestWeakWords(spokenAnalysis, targetPrompt);
       }
 
       if (evalData.score < 60) {
@@ -344,7 +344,7 @@ export default function Station4Screen({ onBack }: Props) {
         transcript: evalData.transcript,
         feedback: `[EXPRESS ${cefrLevel}]: Tốc độ phản hồi đạt ${evalData.score}/100đ. Nhận xét: ${evalData.detailedFeedback}`,
         timestamp: new Date().toLocaleTimeString('vi-VN')
-      }, audioBlobForUpload);[cite: 4]
+      }, audioBlobForUpload);
 
     } catch (err) {
       console.error("Lỗi chấm điểm Trạm 4:", err);
