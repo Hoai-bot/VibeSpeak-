@@ -10,6 +10,7 @@ import {
 } from '../services/arena/station4Service';
 import { updateUserProgress, saveSubmissionToCloud } from '../services/userService';
 import { harvestWeakWords, saveWeakPoint } from '../services/weakPointsService';
+import { getOptimizedRecorderConfig, executeWithRetry } from '../utils/networkAudioHelper';
 import WeakPointsScreen from './WeakPointsScreen';
 
 interface Props {
@@ -24,6 +25,7 @@ export default function Station4Screen({ onBack }: Props) {
 
   const [exercise, setExercise] = useState<SpeakingExpressExercise | null>(null);
   const [battleState, setBattleState] = useState<'idle' | 'battling' | 'analyzing' | 'ended'>('idle');
+  const [analyzingStatusText, setAnalyzingStatusText] = useState<string>('⚡ AI ĐANG BÓC TÁCH GIỌNG NÓI & PHÂN TÍCH PHẢN ỨNG...');
   
   const [isRecording, setIsRecording] = useState<boolean>(false);
   const [recordedAudio, setRecordedAudio] = useState<Blob | null>(null);
@@ -225,27 +227,18 @@ export default function Station4Screen({ onBack }: Props) {
           }
         }
 
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        // Khử tiếng vọng, khử ồn môi trường và cân bằng âm lượng tự động
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          }
+        });
         mediaStreamRef.current = stream;
 
-        let chosenMime = '';
-        if (typeof MediaRecorder !== 'undefined') {
-          const types = [
-            'audio/webm;codecs=opus',
-            'audio/webm',
-            'audio/mp4',
-            'audio/aac',
-            'audio/ogg'
-          ];
-          for (const t of types) {
-            if (MediaRecorder.isTypeSupported(t)) {
-              chosenMime = t;
-              break;
-            }
-          }
-        }
-
-        const options = chosenMime ? { mimeType: chosenMime } : undefined;
+        // Cấu hình MediaRecorder nén Opus 32 kbps tối ưu độ trễ
+        const { options } = getOptimizedRecorderConfig();
         const recorder = new MediaRecorder(stream, options);
         mediaRecorderRef.current = recorder;
         audioChunksRef.current = [];
@@ -257,7 +250,7 @@ export default function Station4Screen({ onBack }: Props) {
         };
 
         recorder.onstop = () => {
-          const mimeUsed = recorder.mimeType || chosenMime || 'audio/webm';
+          const mimeUsed = recorder.mimeType || 'audio/webm';
           const blob = new Blob(audioChunksRef.current, { type: mimeUsed });
 
           setRecordedAudio(blob);
@@ -270,7 +263,7 @@ export default function Station4Screen({ onBack }: Props) {
         };
 
         recordingStartTimeRef.current = Date.now();
-        recorder.start(200);
+        recorder.start(100); // Thu nhận chunks 100ms
         setIsRecording(true);
         setHasRecorded(false);
         setBattleState('battling');
@@ -307,17 +300,30 @@ export default function Station4Screen({ onBack }: Props) {
     }
 
     setBattleState('analyzing');
+    setAnalyzingStatusText('⚡ AI ĐANG BÓC TÁCH GIỌNG NÓI & PHÂN TÍCH PHẢN ỨNG...');
 
     try {
       const targetPrompt = (exercise?.promptEn || 'General speaking challenge').trim();
       
-      const evalData = await evaluateSpeaking(
-        recordedAudio, 
-        cefrLevel, 
-        'STATION_4', 
-        targetPrompt, 
-        userId, 
-        capturedText
+      // 🎯 BỌC LỜI GỌI EVALUATION BẰNG CƠ CHẾ RETRY THÔNG MINH
+      const evalData = await executeWithRetry(
+        async () => {
+          return await evaluateSpeaking(
+            recordedAudio, 
+            cefrLevel, 
+            'STATION_4', 
+            targetPrompt, 
+            userId, 
+            capturedText
+          );
+        },
+        {
+          maxRetries: 3,
+          timeoutMs: 16000,
+          onRetry: (attempt) => {
+            setAnalyzingStatusText(`⚠️ MẠNG YẾU, ĐANG THỬ KẾT NỐI LẠI LẦN ${attempt}/3...`);
+          }
+        }
       );
 
       setResult(evalData);
@@ -333,22 +339,27 @@ export default function Station4Screen({ onBack }: Props) {
         saveWeakPoint('station4', targetPrompt, evalData.score);
       }
 
-      // 🎯 LƯU BÀI NỘP LÊN SUPABASE CLOUD & KÍCH HOẠT CHUỖI STREAK
-      await saveSubmissionToCloud({
-        studentName: 'Chiến Binh Express',
-        pairName: 'Speaking Express',
-        className: 'TRẠM 4: EXPRESS',
-        score: evalData.score,
-        mode: 'SOLO',
-        cefrLevel: cefrLevel,
-        transcript: evalData.transcript,
-        feedback: `[EXPRESS ${cefrLevel}]: Tốc độ phản hồi đạt ${evalData.score}/100đ. Nhận xét: ${evalData.detailedFeedback}`,
-        timestamp: new Date().toLocaleTimeString('vi-VN')
-      }, audioBlobForUpload);
+      // 🎯 LƯU BÀI NỘP LÊN SUPABASE CLOUD VỚI CƠ CHẾ RETRY
+      await executeWithRetry(
+        async () => {
+          await saveSubmissionToCloud({
+            studentName: 'Chiến Binh Express',
+            pairName: 'Speaking Express',
+            className: 'TRẠM 4: EXPRESS',
+            score: evalData.score,
+            mode: 'SOLO',
+            cefrLevel: cefrLevel,
+            transcript: evalData.transcript,
+            feedback: `[EXPRESS ${cefrLevel}]: Tốc độ phản hồi đạt ${evalData.score}/100đ. Nhận xét: ${evalData.detailedFeedback}`,
+            timestamp: new Date().toLocaleTimeString('vi-VN')
+          }, audioBlobForUpload);
+        },
+        { maxRetries: 2, timeoutMs: 10000 }
+      );
 
-    } catch (err) {
+    } catch (err: any) {
       console.error("Lỗi chấm điểm Trạm 4:", err);
-      alert("⚠️ Lỗi kết nối chấm điểm. Vui lòng thử nộp lại!");
+      alert(`⚠️ Lỗi chấm điểm: ${err.message || 'Mạng yếu, vui lòng bấm nộp lại!'}`);
     } finally {
       setBattleState('ended');
       setRecordedAudio(null);
@@ -477,7 +488,7 @@ export default function Station4Screen({ onBack }: Props) {
         {battleState === 'analyzing' && (
           <View style={styles.box}>
             <ActivityIndicator size="large" color="#39FF14" style={{ marginBottom: 15 }} />
-            <Text style={styles.searchingText}>⚡ AI ĐANG BÓC TÁCH GIỌNG NÓI & PHÂN TÍCH PHẢN ỨNG...</Text>
+            <Text style={styles.searchingText}>{analyzingStatusText}</Text>
           </View>
         )}
 
