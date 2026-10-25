@@ -8,6 +8,7 @@ import { getInstantRoleplayScenario, generateRoleplayScenario } from '../service
 
 import { evaluateSpeaking, AssessmentResult, analyzeSpokenTranscript } from '../services/arena/assessmentService';
 import { saveSubmissionToCloud } from '../services/userService';
+import { harvestWeakWords } from '../services/weakPointsService';
 import { supabase } from '../utils/supabase';
 
 interface Props {
@@ -309,6 +310,12 @@ export default function Station2Screen({ onBack }: Props) {
 
         result.audioUrl = localAudioUrl;
         setEvalResult(result);
+
+        // 🎯 TỰ ĐỘNG BÓC TÁCH TỪ VỰNG & GOM TỪ YẾU VÀO WEAK-POINT VAULT
+        if (result.transcript) {
+          const spokenAnalysis = analyzeSpokenTranscript(result.transcript);
+          harvestWeakWords(spokenAnalysis, exercise?.promptEn || exercise?.topic);
+        }
 
         let p1Score = result.score;
         let p2Score = result.score;
