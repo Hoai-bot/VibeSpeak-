@@ -1,5 +1,6 @@
 // src/services/userService.ts
 import { supabase } from '../utils/supabase';
+import { recordStudySession } from './streakService';
 
 export interface RoleplaySubmission {
   id?: string;
@@ -67,6 +68,9 @@ export const processOfflineQueue = async () => {
 
         if (error) {
           remainingQueue.push(item);
+        } else {
+          // Gửi bù thành công -> Cập nhật Streak
+          recordStudySession();
         }
       } catch (err) {
         remainingQueue.push(item);
@@ -127,8 +131,11 @@ export const uploadAudioToSupabaseStorage = async (audioBlob: Blob | null): Prom
   }
 };
 
-// 🎯 5. HÀM LƯU BÀI NỘP VÀO DATABASE VÀ STORAGE CDN (KÈM BẢO VỆ OFFLINE)
+// 🎯 5. HÀM LƯU BÀI NỘP VÀO DATABASE VÀ STORAGE CDN (KÈM BẢO VỆ OFFLINE & TỰ ĐỘNG CẬP NHẬT STREAK)
 export const saveSubmissionToCloud = async (submission: RoleplaySubmission, audioBlob?: Blob | null) => {
+  // 🔥 TÍNH NĂNG STREAK: Ghi nhận ngay phiên học khi nộp bài
+  recordStudySession();
+
   let finalAudioUrl = submission.audioUrl || '';
 
   // 1. Lưu dự phòng lịch sử cục bộ
@@ -201,7 +208,7 @@ export const saveSubmissionToCloud = async (submission: RoleplaySubmission, audi
       console.warn("❌ Lỗi mạng khi ghi nhận Supabase, chuyển vào hàng đợi Offline:", error.message);
       queueOfflineSubmission(payload);
     } else {
-      // Gửi bài thành công -> Tiện thể kiểm tra và đẩy các bài còn tồn đọng
+      // Gửi bài thành công -> Kiểm tra và đẩy các bài còn tồn đọng trong queue
       processOfflineQueue();
     }
   } catch (err) {
