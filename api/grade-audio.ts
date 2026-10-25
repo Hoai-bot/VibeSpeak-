@@ -9,13 +9,14 @@ export default async function handler(req: Request) {
   }
 
   try {
-    const groqApiKey = process.env.GROQ_API_KEY;
+    // Nhận cả GROQ_API_KEY_NEW hoặc GROQ_API_KEY đã thiết lập trên Vercel
+    const groqApiKey = process.env.GROQ_API_KEY_NEW || process.env.GROQ_API_KEY;
     if (!groqApiKey) {
       return new Response(JSON.stringify({ error: 'Server GROQ_API_KEY is missing' }), { status: 500 });
     }
 
-    // Nhận FormData chứa file âm thanh và câu mẫu từ client
-    const formData = await req.formData();
+    // Nhận FormData chứa file âm thanh và câu mẫu từ client (ép kiểu any để tránh lỗi TS2339)
+    const formData: any = await req.formData();
     const audioFile = formData.get('file');
     const targetSentence = formData.get('targetSentence') || '';
 
@@ -24,7 +25,7 @@ export default async function handler(req: Request) {
     }
 
     // 1. Gửi âm thanh lên Whisper của Groq để chuyển thành text (Transcription)
-    const whisperFormData = new FormData();
+    const whisperFormData: any = new FormData();
     whisperFormData.append('file', audioFile);
     whisperFormData.append('model', 'whisper-large-v3');
     whisperFormData.append('language', 'en');
