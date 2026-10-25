@@ -18,9 +18,22 @@ export default function AuthModal({ visible, onClose, onSuccess }: Props) {
   const [classCode, setClassCode] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
   const [errMsg, setErrMsg] = useState<string>('');
+  const [successMsg, setSuccessMsg] = useState<string>('');
+
+  const resetForm = () => {
+    setErrMsg('');
+    setSuccessMsg('');
+    setEmail('');
+    setPassword('');
+    setFullName('');
+    setStudentCode('');
+    setClassCode('');
+  };
 
   const handleSubmit = async () => {
     setErrMsg('');
+    setSuccessMsg('');
+
     if (!email.trim() || !password.trim()) {
       setErrMsg('Vui lòng nhập đầy đủ Email và Mật khẩu.');
       return;
@@ -40,13 +53,13 @@ export default function AuthModal({ visible, onClose, onSuccess }: Props) {
 
     try {
       if (isRegister) {
-        // 🎯 ĐĂNG KÝ TÀI KHOẢN MỚI
+        // 🎯 1. ĐĂNG KÝ TÀI KHOẢN MỚI
         const { data, error } = await supabase.auth.signUp({
           email: email.trim(),
           password: password.trim(),
           options: {
             data: {
-              full_name: fullName.trim() || 'Người học tự do',
+              full_name: fullName.trim() || 'Người học VibeSpeak',
               student_code: studentCode.trim().toUpperCase() || 'GUEST',
               class_code: classCode.trim().toUpperCase() || 'LỚP CHUNG',
               role: 'student',
@@ -55,13 +68,26 @@ export default function AuthModal({ visible, onClose, onSuccess }: Props) {
         });
 
         if (error) throw error;
+
         if (data?.user) {
-          alert('🎉 Đăng ký tài khoản thành công!');
-          onSuccess(data.user);
-          onClose();
+          setSuccessMsg('🎉 ĐĂNG KÝ THÀNH CÔNG! ĐANG VÀO ĐẤU TRƯỜNG...');
+          
+          // Tự động đăng nhập để lưu session bền vững
+          const { data: loginData } = await supabase.auth.signInWithPassword({
+            email: email.trim(),
+            password: password.trim(),
+          });
+
+          const activeUser = loginData?.user || data.user;
+
+          setTimeout(() => {
+            onSuccess(activeUser);
+            resetForm();
+            onClose();
+          }, 1500);
         }
       } else {
-        // 🎯 ĐĂNG NHẬP
+        // 🎯 2. ĐĂNG NHẬP
         const { data, error } = await supabase.auth.signInWithPassword({
           email: email.trim(),
           password: password.trim(),
@@ -69,8 +95,12 @@ export default function AuthModal({ visible, onClose, onSuccess }: Props) {
 
         if (error) throw error;
         if (data?.user) {
-          onSuccess(data.user);
-          onClose();
+          setSuccessMsg('🔓 ĐĂNG NHẬP THÀNH CÔNG!');
+          setTimeout(() => {
+            onSuccess(data.user);
+            resetForm();
+            onClose();
+          }, 800);
         }
       }
     } catch (err: any) {
@@ -78,7 +108,7 @@ export default function AuthModal({ visible, onClose, onSuccess }: Props) {
       if (err.message?.includes('Invalid login credentials')) {
         setErrMsg('Email hoặc mật khẩu không chính xác.');
       } else if (err.message?.includes('User already registered')) {
-        setErrMsg('Email này đã được đăng ký tài khoản.');
+        setErrMsg('Email này đã được đăng ký. Vui lòng chuyển sang Đăng nhập.');
       } else {
         setErrMsg(err.message || 'Lỗi kết nối máy chủ xác thực.');
       }
@@ -87,7 +117,6 @@ export default function AuthModal({ visible, onClose, onSuccess }: Props) {
     }
   };
 
-  // 🎯 XỬ LÝ KHI NGƯỜI DÙNG CHỌN TIẾP TỤC DÙNG THỬ (GUEST MODE)
   const handleContinueAsGuest = () => {
     const guestUser = {
       id: `guest_${Date.now()}`,
@@ -100,6 +129,7 @@ export default function AuthModal({ visible, onClose, onSuccess }: Props) {
       },
     };
     onSuccess(guestUser);
+    resetForm();
     onClose();
   };
 
@@ -110,10 +140,12 @@ export default function AuthModal({ visible, onClose, onSuccess }: Props) {
           <Text style={styles.tag}>🔒 HỆ THỐNG XÁC THỰC VIBESPEAK</Text>
           <Text style={styles.title}>{isRegister ? 'ĐĂNG KÝ TÀI KHOẢN' : 'ĐĂNG NHẬP'}</Text>
           <Text style={styles.desc}>
-            Đăng nhập để đồng bộ chuỗi Streak 🔥, điểm giải đấu tuần và lưu trữ kho âm cần phục thù trên Cloud[cite: 14].
+            Đăng ký để đồng bộ chuỗi Streak 🔥, điểm giải đấu tuần và lưu trữ kho âm cần phục thù trên Cloud.
           </Text>
 
+          {/* BANNER THÔNG BÁO LỖI HOẶC THÀNH CÔNG TRỰC QUAN */}
           {errMsg ? <Text style={styles.errorText}>⚠️ {errMsg}</Text> : null}
+          {successMsg ? <Text style={styles.successText}>{successMsg}</Text> : null}
 
           {isRegister && (
             <>
@@ -123,6 +155,7 @@ export default function AuthModal({ visible, onClose, onSuccess }: Props) {
                 placeholderTextColor="#666688"
                 value={fullName}
                 onChangeText={setFullName}
+                editable={!loading && !successMsg}
               />
               <View style={{ flexDirection: 'row', gap: 8, width: '100%' }}>
                 <TextInput
@@ -131,6 +164,7 @@ export default function AuthModal({ visible, onClose, onSuccess }: Props) {
                   placeholderTextColor="#666688"
                   value={studentCode}
                   onChangeText={setStudentCode}
+                  editable={!loading && !successMsg}
                 />
                 <TextInput
                   style={[styles.input, { flex: 1 }]}
@@ -138,6 +172,7 @@ export default function AuthModal({ visible, onClose, onSuccess }: Props) {
                   placeholderTextColor="#666688"
                   value={classCode}
                   onChangeText={setClassCode}
+                  editable={!loading && !successMsg}
                 />
               </View>
             </>
@@ -151,6 +186,7 @@ export default function AuthModal({ visible, onClose, onSuccess }: Props) {
             autoCapitalize="none"
             value={email}
             onChangeText={setEmail}
+            editable={!loading && !successMsg}
           />
 
           <TextInput
@@ -160,12 +196,13 @@ export default function AuthModal({ visible, onClose, onSuccess }: Props) {
             secureTextEntry
             value={password}
             onChangeText={setPassword}
+            editable={!loading && !successMsg}
           />
 
           <TouchableOpacity 
-            style={[styles.submitBtn, loading && styles.submitBtnDisabled]} 
+            style={[styles.submitBtn, (loading || !!successMsg) && styles.submitBtnDisabled]} 
             onPress={handleSubmit}
-            disabled={loading}
+            disabled={loading || !!successMsg}
           >
             {loading ? (
               <ActivityIndicator color="#000" size="small" />
@@ -176,10 +213,10 @@ export default function AuthModal({ visible, onClose, onSuccess }: Props) {
             )}
           </TouchableOpacity>
 
-          {/* 🎯 NÚT TIẾP TỤC VỚI TƯ CÁCH KHÁCH (DÙNG THỬ) */}
           <TouchableOpacity 
             style={styles.guestBtn} 
             onPress={handleContinueAsGuest}
+            disabled={loading || !!successMsg}
           >
             <Text style={styles.guestBtnText}>🚀 TIẾP TỤC VỚI TƯ CÁCH KHÁCH (DÙNG THỬ)</Text>
           </TouchableOpacity>
@@ -189,14 +226,23 @@ export default function AuthModal({ visible, onClose, onSuccess }: Props) {
             onPress={() => {
               setIsRegister(!isRegister);
               setErrMsg('');
+              setSuccessMsg('');
             }}
+            disabled={loading || !!successMsg}
           >
             <Text style={styles.toggleText}>
               {isRegister ? 'Đã có tài khoản? Đăng nhập ngay' : 'Chưa có tài khoản? Bấm vào đây để Đăng ký'}
             </Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.closeBtn} onPress={onClose}>
+          <TouchableOpacity 
+            style={styles.closeBtn} 
+            onPress={() => {
+              resetForm();
+              onClose();
+            }}
+            disabled={loading || !!successMsg}
+          >
             <Text style={styles.closeText}>Đóng lại</Text>
           </TouchableOpacity>
         </View>
@@ -211,25 +257,14 @@ const styles = StyleSheet.create({
   tag: { color: '#FFD700', fontSize: 10, fontWeight: '900', marginBottom: 4 },
   title: { color: '#00FFFF', fontSize: 16, fontWeight: '900', marginBottom: 6 },
   desc: { color: '#AAAABB', fontSize: 10, textAlign: 'center', lineHeight: 15, marginBottom: 16 },
-  errorText: { color: '#FF0055', fontSize: 10, fontWeight: 'bold', marginBottom: 10, textAlign: 'center' },
+  errorText: { color: '#FF0055', backgroundColor: 'rgba(255, 0, 85, 0.15)', padding: 8, borderRadius: 6, width: '100%', fontSize: 10, fontWeight: 'bold', marginBottom: 10, textAlign: 'center' },
+  successText: { color: '#39FF14', backgroundColor: 'rgba(57, 255, 20, 0.15)', padding: 8, borderRadius: 6, width: '100%', fontSize: 10, fontWeight: '900', marginBottom: 10, textAlign: 'center' },
   input: { width: '100%', backgroundColor: '#0D0620', color: '#FFF', padding: 11, borderRadius: 8, borderWidth: 1, borderColor: '#332255', fontSize: 11, marginBottom: 10 },
   submitBtn: { width: '100%', backgroundColor: '#39FF14', paddingVertical: 12, borderRadius: 10, alignItems: 'center', marginTop: 4 },
   submitBtnDisabled: { opacity: 0.5 },
   submitText: { color: '#000', fontSize: 11, fontWeight: '900' },
-  
-  // Style nút Khách dùng thử
-  guestBtn: { 
-    width: '100%', 
-    backgroundColor: '#1A0B2E', 
-    borderWidth: 1.5, 
-    borderColor: '#FF007F', 
-    paddingVertical: 11, 
-    borderRadius: 10, 
-    alignItems: 'center', 
-    marginTop: 8 
-  },
+  guestBtn: { width: '100%', backgroundColor: '#1A0B2E', borderWidth: 1.5, borderColor: '#FF007F', paddingVertical: 11, borderRadius: 10, alignItems: 'center', marginTop: 8 },
   guestBtnText: { color: '#FF007F', fontSize: 10, fontWeight: '900' },
-
   toggleRow: { marginTop: 14, paddingVertical: 4 },
   toggleText: { color: '#00FFFF', fontSize: 10, textDecorationLine: 'underline' },
   closeBtn: { marginTop: 10, paddingVertical: 6 },
