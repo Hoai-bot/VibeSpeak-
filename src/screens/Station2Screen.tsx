@@ -265,9 +265,24 @@ export default function Station2Screen({ onBack }: Props) {
       });
       audioStreamRef.current = stream;
 
-      // Cấu hình MediaRecorder tối ưu bitrate 32 kbps và chuẩn nén Opus
-      const { options, mimeType } = getOptimizedRecorderConfig();
-      const recorder = new MediaRecorder(stream, options);
+      // Cấu hình MediaRecorder tương thích tốt cho cả iOS WebKit & Android/Chrome
+      let recorderOptions: any = {};
+      let resolvedMimeType = '';
+
+      if (typeof MediaRecorder !== 'undefined') {
+        if (MediaRecorder.isTypeSupported('audio/mp4')) {
+          resolvedMimeType = 'audio/mp4';
+          recorderOptions = { mimeType: 'audio/mp4' };
+        } else if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+          resolvedMimeType = 'audio/webm;codecs=opus';
+          recorderOptions = { mimeType: 'audio/webm;codecs=opus' };
+        } else if (MediaRecorder.isTypeSupported('audio/webm')) {
+          resolvedMimeType = 'audio/webm';
+          recorderOptions = { mimeType: 'audio/webm' };
+        }
+      }
+
+      const recorder = new MediaRecorder(stream, recorderOptions);
       mediaRecorderRef.current = recorder;
 
       recorder.ondataavailable = (e) => {
@@ -287,8 +302,8 @@ export default function Station2Screen({ onBack }: Props) {
           } catch (e) {}
         }
 
-        const mimeTypeUsed = recorder.mimeType || mimeType || 'audio/webm';
-        const fullAudioBlob = new Blob(audioChunksRef.current, { type: mimeTypeUsed });
+        const actualType = recorder.mimeType || resolvedMimeType || 'audio/mp4';
+        const fullAudioBlob = new Blob(audioChunksRef.current, { type: actualType });
         const localAudioUrl = URL.createObjectURL(fullAudioBlob);
 
         const targetPrompt = exercise?.promptEn || exercise?.contextEn || exercise?.scenarioTitle || '';
@@ -384,7 +399,7 @@ export default function Station2Screen({ onBack }: Props) {
         }
       };
 
-      recorder.start(100); // Thu nhận chunks 100ms nhằm giảm độ trễ khi hoàn tất
+      recorder.start(100);
       setIsRecording(true);
       setIsGameActive(true);
     } catch (err) {
@@ -601,8 +616,10 @@ export default function Station2Screen({ onBack }: Props) {
                     <View style={styles.audioPlayerBox}>
                       <Text style={styles.audioLabel}>🎧 Nghe lại bài thu âm vừa nộp:</Text>
                       {React.createElement('audio', {
+                        key: evalResult.audioUrl,
                         controls: true,
                         playsInline: true,
+                        preload: 'auto',
                         src: evalResult.audioUrl,
                         style: { width: '100%', marginTop: 6, height: 36 }
                       })}
