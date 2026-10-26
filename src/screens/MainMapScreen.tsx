@@ -52,7 +52,10 @@ export default function MainMapScreen({ onSelectStation, onOpenProfile }: Props)
       <View style={styles.header}>
         {currentUser ? (
           <TouchableOpacity style={styles.userBadge} onPress={onOpenProfile}>
-            <Text style={styles.userBadgeText}>👤 {displayName.slice(0, 10)}</Text>
+            {/* ✅ ĐÃ LOẠI BỎ .slice(0, 10) ĐỂ HIỂN THỊ ĐẦY ĐỦ TÊN HỌC VIÊN */}
+            <Text numberOfLines={1} ellipsizeMode="tail" style={styles.userBadgeText}>
+              👤 {displayName}
+            </Text>
             <TouchableOpacity onPress={handleLogout} style={styles.logoutMiniBtn}>
               <Text style={styles.logoutMiniText}>🚪</Text>
             </TouchableOpacity>
@@ -123,8 +126,25 @@ const styles = StyleSheet.create({
   },
   loginBtn: { backgroundColor: '#1A0B2E', paddingVertical: 7, paddingHorizontal: 9, borderRadius: 8, borderWidth: 1, borderColor: '#00FFFF' },
   loginBtnText: { color: '#00FFFF', fontSize: 10, fontWeight: '900' },
-  userBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1A0B2E', paddingVertical: 5, paddingHorizontal: 8, borderRadius: 8, borderWidth: 1, borderColor: '#39FF14', gap: 6 },
-  userBadgeText: { color: '#39FF14', fontSize: 10, fontWeight: 'bold' },
+  userBadge: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    backgroundColor: '#1A0B2E', 
+    paddingVertical: 5, 
+    paddingHorizontal: 8, 
+    borderRadius: 8, 
+    borderWidth: 1, 
+    borderColor: '#39FF14', 
+    gap: 6,
+    maxWidth: 160, 
+    flexShrink: 1,
+  },
+  userBadgeText: { 
+    color: '#39FF14', 
+    fontSize: 10, 
+    fontWeight: 'bold',
+    flexShrink: 1, 
+  },
   logoutMiniBtn: { padding: 2 },
   logoutMiniText: { fontSize: 10 },
   teacherBtn: { backgroundColor: '#39FF14', paddingVertical: 7, paddingHorizontal: 9, borderRadius: 8, borderWidth: 1, borderColor: '#39FF14' },
