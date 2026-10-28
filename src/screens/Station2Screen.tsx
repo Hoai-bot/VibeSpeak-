@@ -1,3 +1,4 @@
+
 // src/screens/Station2Screen.tsx
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, TextInput } from 'react-native';
@@ -311,20 +312,20 @@ export default function Station2Screen({ onBack }: Props) {
           } catch (e) {}
         }
 
-        const actualType = recorder.mimeType || resolvedMimeType || 'audio/mp4';
-        const fullAudioBlob = new Blob(audioChunksRef.current, { type: actualType });
-
-        // 🛡️ BỘ LỌC PHÁT HIỆN LỖI THIẾT BỊ / MICRO TRÊN MÁY SINH VIÊN
-        if (durationSeconds < 2.0) {
+        // 🛡️ CHẶN BẤM TẮT QUÁ NHANH (DƯỚI 3 GIÂY)
+        if (durationSeconds < 3.0) {
           setIsEvaluating(false);
-          setHardwareWarning('⚠️ Bài thu âm quá ngắn (dưới 2 giây). Bạn hãy nói trọn vẹn câu trước khi bấm Dừng & Nộp bài!');
+          setHardwareWarning('⚠️ Bạn vừa bấm tắt quá nhanh (dưới 3 giây)! Vui lòng giữ bình tĩnh, đọc to câu trả lời tiếng Anh rồi mới bấm Dừng & Nộp bài.');
           if (audioStreamRef.current) {
             audioStreamRef.current.getTracks().forEach(track => track.stop());
           }
           return;
         }
 
-        if (fullAudioBlob.size < 3000 && !fullTranscriptRef.current.trim()) {
+        const actualType = recorder.mimeType || resolvedMimeType || 'audio/mp4';
+        const fullAudioBlob = new Blob(audioChunksRef.current, { type: actualType });
+
+        if (fullAudioBlob.size < 5000 && !fullTranscriptRef.current.trim()) {
           setIsEvaluating(false);
           setHardwareWarning('⚠️ Micro không thu được tín hiệu âm thanh rõ ràng hoặc âm lượng quá nhỏ. Vui lòng kiểm tra jack cắm tai nghe, đưa mic lại gần miệng và bấm THỬ LẠI!');
           if (audioStreamRef.current) {
