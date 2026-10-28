@@ -420,7 +420,7 @@ export default function Station2Screen({ onBack }: Props) {
     : null;
 
   return (
-    <View style={styles.container}>
+    <View style={styles.container} {...({ className: 'notranslate', translate: 'no' } as any)}>
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack} style={styles.backBtn}>
           <Text style={styles.backText}>🔙 QUAY LẠI MAP</Text>
