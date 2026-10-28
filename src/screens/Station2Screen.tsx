@@ -72,11 +72,15 @@ export default function Station2Screen({ onBack }: Props) {
   const [evalStatusText, setEvalStatusText] = useState<string>('🤖 AI đang phân tích âm thanh & bóc tách toàn bộ lời thoại...');
   const [evalResult, setEvalResult] = useState<AssessmentResult | null>(null);
   
+  // ⚠️ State cảnh báo lỗi âm thanh/micro trên máy sinh viên
+  const [hardwareWarning, setHardwareWarning] = useState<string | null>(null);
+
   const [playerScores, setPlayerScores] = useState<PlayerResult>({});
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const audioStreamRef = useRef<MediaStream | null>(null);
+  const recordingStartTimeRef = useRef<number>(0);
   
   const recognitionRef = useRef<any>(null);
   const fullTranscriptRef = useRef<string>('');
@@ -150,6 +154,7 @@ export default function Station2Screen({ onBack }: Props) {
     const cleanInput = customTopicInput.trim();
     setIsUsingCustomTopic(true);
     setEvalResult(null);
+    setHardwareWarning(null);
     setPlayerScores({});
     setIsGameActive(false);
     setActivePlayer(1);
@@ -179,6 +184,7 @@ export default function Station2Screen({ onBack }: Props) {
     if (isUsingCustomTopic) return;
 
     setEvalResult(null);
+    setHardwareWarning(null);
     setPlayerScores({});
     setIsGameActive(false);
     setActivePlayer(1);
@@ -220,6 +226,7 @@ export default function Station2Screen({ onBack }: Props) {
 
     try {
       setEvalResult(null);
+      setHardwareWarning(null);
       setTurnTimer(getTimerByLevel(cefrLevel, mode));
       audioChunksRef.current = [];
       fullTranscriptRef.current = '';
@@ -265,7 +272,7 @@ export default function Station2Screen({ onBack }: Props) {
       });
       audioStreamRef.current = stream;
 
-      // Cấu hình MediaRecorder tương thích tốt cho cả iOS WebKit & Android/Chrome
+      // Cấu hình MediaRecorder tương thích cho cả iOS & Android
       let recorderOptions: any = {};
       let resolvedMimeType = '';
 
@@ -295,6 +302,8 @@ export default function Station2Screen({ onBack }: Props) {
         setIsEvaluating(true);
         setEvalStatusText('🤖 AI đang phân tích bài nói của bạn...');
 
+        const durationSeconds = (Date.now() - recordingStartTimeRef.current) / 1000;
+
         if (recognitionRef.current) {
           try { 
             recognitionRef.current.onend = null;
@@ -304,13 +313,31 @@ export default function Station2Screen({ onBack }: Props) {
 
         const actualType = recorder.mimeType || resolvedMimeType || 'audio/mp4';
         const fullAudioBlob = new Blob(audioChunksRef.current, { type: actualType });
-        const localAudioUrl = URL.createObjectURL(fullAudioBlob);
 
+        // 🛡️ BỘ LỌC PHÁT HIỆN LỖI THIẾT BỊ / MICRO TRÊN MÁY SINH VIÊN
+        if (durationSeconds < 2.0) {
+          setIsEvaluating(false);
+          setHardwareWarning('⚠️ Bài thu âm quá ngắn (dưới 2 giây). Bạn hãy nói trọn vẹn câu trước khi bấm Dừng & Nộp bài!');
+          if (audioStreamRef.current) {
+            audioStreamRef.current.getTracks().forEach(track => track.stop());
+          }
+          return;
+        }
+
+        if (fullAudioBlob.size < 3000 && !fullTranscriptRef.current.trim()) {
+          setIsEvaluating(false);
+          setHardwareWarning('⚠️ Micro không thu được tín hiệu âm thanh rõ ràng hoặc âm lượng quá nhỏ. Vui lòng kiểm tra jack cắm tai nghe, đưa mic lại gần miệng và bấm THỬ LẠI!');
+          if (audioStreamRef.current) {
+            audioStreamRef.current.getTracks().forEach(track => track.stop());
+          }
+          return;
+        }
+
+        const localAudioUrl = URL.createObjectURL(fullAudioBlob);
         const targetPrompt = exercise?.promptEn || exercise?.contextEn || exercise?.scenarioTitle || '';
         const capturedSpeech = fullTranscriptRef.current || '';
 
         try {
-          // Bọc quá trình chấm điểm AI trong cơ chế Retry thông minh
           const result = await executeWithRetry(
             async () => {
               return await evaluateSpeaking(
@@ -334,7 +361,6 @@ export default function Station2Screen({ onBack }: Props) {
           result.audioUrl = localAudioUrl;
           setEvalResult(result);
 
-          // Tự động bóc tách từ vựng & gom từ yếu vào Weak-Point Vault
           if (result.transcript) {
             const spokenAnalysis = analyzeSpokenTranscript(result.transcript);
             harvestWeakWords(spokenAnalysis, exercise?.promptEn || exercise?.topic);
@@ -370,7 +396,6 @@ export default function Station2Screen({ onBack }: Props) {
             feedbackDetail = `[ĐỘC LẬP: Vai 1 = ${p1Score}đ, Vai 2 = ${p2Score}đ | TỔNG CẶP = ${totalAvgScore}đ]: ${result.detailedFeedback}`;
           }
 
-          // Đồng bộ tải lên Supabase Storage với cơ chế Retry
           await executeWithRetry(
             async () => {
               await saveSubmissionToCloud({
@@ -399,11 +424,12 @@ export default function Station2Screen({ onBack }: Props) {
         }
       };
 
+      recordingStartTimeRef.current = Date.now();
       recorder.start(100);
       setIsRecording(true);
       setIsGameActive(true);
     } catch (err) {
-      alert("🔒 Vui lòng kiểm tra biểu tượng 🔒 trên thanh địa chỉ trình duyệt Android/iOS và cho phép 'Microphone'!");
+      setHardwareWarning("🔒 Trình duyệt chưa được cấp quyền Microphone! Vui lòng bấm vào biểu tượng 🔒 hoặc Cài đặt trên thanh địa chỉ URL để BẬT Micro và tải lại trang.");
     }
   };
 
@@ -556,6 +582,23 @@ export default function Station2Screen({ onBack }: Props) {
                 <Text style={styles.promptText}>🎯 "{exercise.promptEn || exercise.contextEn || ''}"</Text>
               </View>
 
+              {/* ⚠️ HỘP CẢNH BÁO LỖI PHẦN CỨNG / MICRO TRỰC TIẾP */}
+              {hardwareWarning && (
+                <View style={styles.warningBox}>
+                  <Text style={styles.warningTitle}>⚠️ CẢNH BÁO CHẤT LƯỢNG THU ÂM</Text>
+                  <Text style={styles.warningContent}>{hardwareWarning}</Text>
+                  <TouchableOpacity 
+                    style={styles.retryBtn} 
+                    onPress={() => {
+                      setHardwareWarning(null);
+                      setTurnTimer(getTimerByLevel(cefrLevel, mode));
+                    }}
+                  >
+                    <Text style={styles.retryBtnText}>🎙️ BẤM VÀO ĐÂY ĐỂ THỬ LẠI LƯỢT THU ÂM</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
               {!isRecording && !isEvaluating ? (
                 <TouchableOpacity style={styles.startBtn} onPress={startFullRecording}>
                   <Text style={styles.startBtnText}>
@@ -690,6 +733,14 @@ const styles = StyleSheet.create({
   totalScoreText: { color: '#39FF14', fontSize: 11, fontWeight: '900' },
   scriptBox: { backgroundColor: '#130A2A', padding: 10, borderRadius: 8, width: '100%', borderWidth: 1, borderColor: '#332255', marginBottom: 12 },
   promptText: { color: '#FFF', fontSize: 12, fontWeight: '800', textAlign: 'center', lineHeight: 16 },
+  
+  // Styles dành cho hộp cảnh báo chất lượng âm thanh
+  warningBox: { backgroundColor: 'rgba(255, 136, 0, 0.15)', borderWidth: 1.5, borderColor: '#FF8800', borderRadius: 10, padding: 12, marginVertical: 10, width: '100%', alignItems: 'center' },
+  warningTitle: { color: '#FF8800', fontSize: 11, fontWeight: '900', marginBottom: 4 },
+  warningContent: { color: '#FFF', fontSize: 10, textAlign: 'center', lineHeight: 15, marginBottom: 8 },
+  retryBtn: { backgroundColor: '#FF8800', paddingVertical: 8, paddingHorizontal: 12, borderRadius: 6, width: '100%', alignItems: 'center' },
+  retryBtnText: { color: '#000', fontSize: 10, fontWeight: '900' },
+
   startBtn: { backgroundColor: '#FF007F', paddingVertical: 12, paddingHorizontal: 16, borderRadius: 10, width: '100%', alignItems: 'center', marginVertical: 10 },
   startBtnText: { color: '#FFF', fontSize: 11, fontWeight: '900' },
   switchTurnBtn: { backgroundColor: '#00FFFF', paddingVertical: 10, borderRadius: 8, alignItems: 'center' },
