@@ -1,4 +1,3 @@
-
 // src/screens/Station2Screen.tsx
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, TextInput } from 'react-native';
@@ -107,6 +106,43 @@ export default function Station2Screen({ onBack }: Props) {
       }
     };
     fetchUser();
+  }, []);
+
+  // 💡 GIỮ MÀN HÌNH ĐIỆN THOẠI LUÔN SÁNG TRONG SUỐT BUỔI THI
+  useEffect(() => {
+    let wakeLockSentinel: any = null;
+
+    const requestWakeLock = async () => {
+      if (typeof navigator !== 'undefined' && 'wakeLock' in navigator) {
+        try {
+          wakeLockSentinel = await (navigator as any).wakeLock.request('screen');
+        } catch (err) {
+          // Trình duyệt không hỗ trợ hoặc thiết bị từ chối
+        }
+      }
+    };
+
+    requestWakeLock();
+
+    // Tự động xin lại quyền giữ sáng nếu sinh viên lỡ chuyển tab rồi quay lại
+    const handleVisibilityChange = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        requestWakeLock();
+      }
+    };
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+    }
+
+    // Dọn dẹp khi sinh viên bấm quay lại bản đồ chính
+    return () => {
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+      }
+      if (wakeLockSentinel !== null) {
+        wakeLockSentinel.release().catch(() => {});
+      }
+    };
   }, []);
 
   const handleSwitchTurn = () => {
