@@ -38,7 +38,7 @@ export interface SpokenWordAnalysis {
 }
 
 export function analyzeSpokenTranscript(transcript: string): SpokenWordAnalysis[] {
-  if (!transcript) return [];
+  if (!transcript || transcript.startsWith('(')) return [];
 
   const words = transcript
     .replace(/[.,/#!$%^&*;:{}=\-_`~()?"']/g, "")
@@ -65,98 +65,109 @@ export const evaluateSpeaking = async (
   capturedSpeech?: string
 ): Promise<AssessmentResult> => {
   try {
-    const cleanSpeech = (capturedSpeech || '').trim();
+    let recognizedTranscript = (capturedSpeech || '').trim();
 
-    if (!audioBlob && !cleanSpeech) {
+    // 1. Kiểm tra kích thước file âm thanh (dưới 1KB là thu âm rỗng hoặc chưa bật mic)
+    if ((!audioBlob || audioBlob.size < 1000) && !recognizedTranscript) {
       return {
         score: 0,
         isWin: false,
         transcript: "(Chưa ghi nhận được âm thanh)",
-        detailedFeedback: "❌ Không nhận được tín hiệu giọng nói. Vui lòng bật quyền Micro trên trình duyệt và thử lại!"
+        detailedFeedback: "❌ Micro chưa thu được tiếng hoặc âm thanh quá ngắn. Vui lòng kiểm tra quyền Micro và nói to hơn!"
       };
     }
 
+    // 2. Gửi file ghi âm lên API Groq Whisper (/api/grade-audio) để bóc tách lời thoại tiếng Anh
+    if (audioBlob && audioBlob.size >= 1000) {
+      try {
+        const formData = new FormData();
+        const fileExt = audioBlob.type.includes('mp4') ? 'audio.mp4' : 'audio.webm';
+        formData.append('audio', audioBlob, fileExt);
+        if (targetPrompt) formData.append('prompt', targetPrompt);
+        if (cefrLevel) formData.append('level', cefrLevel);
+
+        const response = await fetch('/api/grade-audio', {
+          method: 'POST',
+          body: formData,
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          if (data?.transcript) {
+            recognizedTranscript = data.transcript.trim();
+          }
+          if (data?.score) {
+            return {
+              score: data.score,
+              isWin: data.score >= 70,
+              transcript: recognizedTranscript || data.transcript,
+              detailedFeedback: data.feedback || `Hoàn thành bài nói cấp độ ${cefrLevel || 'A1'}!`
+            };
+          }
+        }
+      } catch (apiErr) {
+        console.warn("Lỗi kết nối /api/grade-audio, sử dụng kết quả dự phòng trực tiếp:", apiErr);
+      }
+    }
+
+    // 3. Phương án xử lý khi không có API backend hoặc mạng yếu: Dựa trên lời thoại thực tế
     const currentStation = (stationType || 'STATION_1').toUpperCase();
-    let calculatedScore = 80;
+    let calculatedScore = 75;
     let feedbackMessage = "";
+
+    if (!recognizedTranscript) {
+      return {
+        score: 40,
+        isWin: false,
+        transcript: "(Không nhận diện được từ ngữ rõ ràng)",
+        detailedFeedback: "⚠️ Âm thanh chưa đủ rõ hoặc phát âm chưa chuẩn. Vui lòng nói to và phát âm rõ từng từ!"
+      };
+    }
 
     if (currentStation === 'STATION_1' && targetPrompt) {
       const normalize = (str: string) => str.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim();
-      
-      const targetClean = normalize(targetPrompt);
-      const spokenClean = normalize(cleanSpeech);
+      const targetWords = normalize(targetPrompt).split(/\s+/).filter(Boolean);
+      const spokenWords = normalize(recognizedTranscript).split(/\s+/).filter(Boolean);
 
-      const targetWords = targetClean.split(/\s+/).filter(Boolean);
-      const spokenWords = spokenClean.split(/\s+/).filter(Boolean);
+      let matchedCount = 0;
+      targetWords.forEach(word => {
+        if (spokenWords.includes(word)) matchedCount++;
+      });
 
-      if (targetWords.length === 0 || spokenWords.length === 0) {
-        calculatedScore = 82;
-        feedbackMessage = "✅ Đã ghi nhận bài phát âm qua Micro thiết bị di động!";
-      } else {
-        let matchedCount = 0;
-        targetWords.forEach(word => {
-          if (spokenWords.includes(word)) matchedCount++;
-        });
-
-        const accuracyRatio = matchedCount / targetWords.length;
-
-        if (targetWords.length <= 2) {
-          if (matchedCount === targetWords.length) {
-            calculatedScore = Math.floor(Math.random() * 11) + 88;
-            feedbackMessage = `🏆 Tốt lắm! Bạn đã phát âm chuẩn xác cặp từ "${targetPrompt}".`;
-          } else if (matchedCount > 0) {
-            calculatedScore = 65;
-            feedbackMessage = `💀 Bạn mới phát âm đúng 1 trong 2 từ của cặp "${targetPrompt}". Hãy thử lại nhé!`;
-          } else {
-            calculatedScore = 45;
-            feedbackMessage = `💡 Phát âm chưa đúng từ mục tiêu "${targetPrompt}". Hãy nghe âm mẫu và thu âm lại!`;
-          }
-        } else {
-          if (accuracyRatio >= 0.8) {
-            calculatedScore = Math.floor(Math.random() * 14) + 85;
-            feedbackMessage = `🏆 Phản xạ phát âm rất xuất sắc! Đã đọc chuẩn ${matchedCount}/${targetWords.length} từ.`;
-          } else if (accuracyRatio >= 0.5) {
-            calculatedScore = Math.floor(Math.random() * 15) + 70;
-            feedbackMessage = `👍 Bài phát âm đạt yêu cầu (${matchedCount}/${targetWords.length} từ chuẩn)!`;
-          } else {
-            calculatedScore = Math.floor(Math.random() * 20) + 40;
-            feedbackMessage = `💡 AI nhận diện được ${matchedCount}/${targetWords.length} từ. Vui lòng luyện tập lại!`;
-          }
-        }
-      }
+      const accuracyRatio = targetWords.length > 0 ? (matchedCount / targetWords.length) : 0;
+      calculatedScore = Math.min(100, Math.round(accuracyRatio * 50 + 50));
+      feedbackMessage = `Phản xạ phát âm: Đã nói đúng ${matchedCount}/${targetWords.length} từ mục tiêu.`;
     } else {
-      calculatedScore = Math.floor(Math.random() * 18) + 78;
-      const levelTag = cefrLevel ? ` cấp độ ${cefrLevel.toUpperCase()}` : '';
-      
-      switch (currentStation) {
-        case 'STATION_2':
-          feedbackMessage = `🎭 Hoàn thành tốt tình huống giao tiếp${levelTag}! Phản xạ rõ ràng và từ vựng phù hợp.`;
-          break;
-        case 'STATION_3':
-          feedbackMessage = `🏆 Bài tranh luận đạt tiêu chuẩn${levelTag}! Lập luận rõ ràng và tự tin.`;
-          break;
-        case 'STATION_4':
-          feedbackMessage = `✨ Trôi chảy và diễn đạt rất tự nhiên${levelTag}! Truyền tải đầy đủ thông điệp.`;
-          break;
-        default:
-          feedbackMessage = `👍 Bài thực hành đạt yêu cầu!`;
-          break;
+      // Đánh giá dựa trên độ dài và số lượng từ tiếng Anh thực tế sinh viên nói
+      const wordCount = recognizedTranscript.split(/\s+/).filter(Boolean).length;
+      if (wordCount >= 25) {
+        calculatedScore = 92;
+        feedbackMessage = `🌟 Bài nói phong phú (${wordCount} từ)! Diễn đạt mạch lạc và tự tin.`;
+      } else if (wordCount >= 15) {
+        calculatedScore = 85;
+        feedbackMessage = `👍 Tốt! Diễn đạt được ý chính (${wordCount} từ). Hãy mở rộng thêm câu ghép.`;
+      } else if (wordCount >= 8) {
+        calculatedScore = 75;
+        feedbackMessage = `👌 Đạt yêu cầu cơ bản (${wordCount} từ). Cần nói dài hơn để đạt điểm cao.`;
+      } else {
+        calculatedScore = 60;
+        feedbackMessage = `⚠️ Bài nói quá ngắn (${wordCount} từ). Cần bổ sung thêm thông tin.`;
       }
     }
 
     return {
       score: calculatedScore,
       isWin: calculatedScore >= 70,
-      transcript: cleanSpeech || "💬 (Đã ghi nhận bài nói thành công qua thiết bị)",
+      transcript: recognizedTranscript,
       detailedFeedback: feedbackMessage
     };
 
   } catch (err) {
     return {
-      score: 75,
-      isWin: true,
-      transcript: "(Đã nhận dữ liệu âm thanh)",
-      detailedFeedback: "✅ Bài làm đã được ghi nhận thành công!"
+      score: 50,
+      isWin: false,
+      transcript: "(Lỗi xử lý bài nói)",
+      detailedFeedback: "❌ Đã có lỗi xảy ra trong quá trình chấm điểm. Vui lòng thử lại!"
     };
   }
 };
