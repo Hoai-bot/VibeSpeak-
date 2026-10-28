@@ -40,6 +40,31 @@ export default function AuthModal({ visible, onClose, onSuccess }: Props) {
     setTeacherSecret('');
   };
 
+  const handleForgotPassword = async () => {
+    setErrMsg('');
+    setSuccessMsg('');
+
+    if (!email.trim()) {
+      setErrMsg('Vui lòng điền địa chỉ Email để nhận liên kết khôi phục mật khẩu.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+        redirectTo: typeof window !== 'undefined' ? window.location.origin : undefined,
+      });
+
+      if (error) throw error;
+
+      setSuccessMsg('Đã gửi email khôi phục mật khẩu! Vui lòng kiểm tra hộp thư đến hoặc thư rác (Spam).');
+    } catch (err: any) {
+      setErrMsg(err.message || 'Không thể gửi email khôi phục mật khẩu.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleSubmit = async () => {
     setErrMsg('');
     setSuccessMsg('');
@@ -285,6 +310,17 @@ export default function AuthModal({ visible, onClose, onSuccess }: Props) {
             editable={!loading && !successMsg}
           />
 
+          {/* 🔑 NÚT QUÊN MẬT KHẨU (CHỈ HIỂN THỊ KHI Ở CHẾ ĐỘ ĐĂNG NHẬP) */}
+          {!isRegister && (
+            <TouchableOpacity 
+              style={styles.forgotBtn} 
+              onPress={handleForgotPassword}
+              disabled={loading || !!successMsg}
+            >
+              <Text style={styles.forgotBtnText}>Quên mật khẩu?</Text>
+            </TouchableOpacity>
+          )}
+
           <TouchableOpacity 
             style={[
               styles.submitBtn, 
@@ -358,6 +394,8 @@ const styles = StyleSheet.create({
   teacherToggle: { paddingVertical: 4, marginBottom: 10, alignItems: 'center' },
   teacherToggleText: { color: '#8888BB', fontSize: 10, textDecorationLine: 'underline' },
   teacherToggleActive: { color: '#FF007F', fontWeight: 'bold' },
+  forgotBtn: { alignSelf: 'flex-end', marginTop: -4, marginBottom: 10, paddingVertical: 2 },
+  forgotBtnText: { color: '#FFD700', fontSize: 10, textDecorationLine: 'underline' },
   submitBtn: { width: '100%', backgroundColor: '#39FF14', paddingVertical: 12, borderRadius: 10, alignItems: 'center', marginTop: 4 },
   teacherSubmitBtn: { backgroundColor: '#FF007F' },
   submitBtnDisabled: { opacity: 0.5 },
