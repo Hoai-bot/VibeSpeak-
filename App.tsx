@@ -1,5 +1,5 @@
 // App.tsx
-import React from 'react';
+import React, { useEffect } from 'react';
 import { SafeAreaView, StyleSheet, StatusBar } from 'react-native';
 import AppNavigator from './src/navigation/AppNavigator';
 
@@ -23,6 +23,24 @@ if (typeof window !== 'undefined') {
 }
 
 export default function App() {
+  useEffect(() => {
+    // 🛡️ CHẶN GOOGLE CHROME VÀ TRÌNH DUYỆT TỰ ĐỘNG DỊCH TIẾNG ANH SANG TIẾNG VIỆT
+    if (typeof document !== 'undefined') {
+      // 1. Thêm thuộc tính translate="no" vào thẻ <html> và <body>
+      document.documentElement.setAttribute('translate', 'no');
+      document.body.setAttribute('translate', 'no');
+      document.body.classList.add('notranslate');
+
+      // 2. Tự động tiêm thẻ meta chống dịch nếu chưa có
+      if (!document.querySelector('meta[name="google"]')) {
+        const metaGoogle = document.createElement('meta');
+        metaGoogle.name = 'google';
+        metaGoogle.content = 'notranslate';
+        document.head.appendChild(metaGoogle);
+      }
+    }
+  }, []);
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#0A051B" />
