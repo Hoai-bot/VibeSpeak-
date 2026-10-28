@@ -96,7 +96,7 @@ export default function Station2Screen({ onBack }: Props) {
           const { data } = await supabase.auth.getUser();
           if (data?.user) {
             setUserId(data.user.id);
-            if (data.user.user_metadata?.full_name) {
+            if (data.user.user_metadata?.full_name && !studentNameInput) {
               setStudentNameInput(data.user.user_metadata.full_name);
             }
           }
@@ -107,6 +107,41 @@ export default function Station2Screen({ onBack }: Props) {
     };
     fetchUser();
   }, []);
+
+  // 💾 TỰ ĐỘNG KHÔI PHỤC THÔNG TIN ĐÃ NHẬP TỪ LOCALSTORAGE
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      const savedName = localStorage.getItem('vibe_student_name');
+      const savedCode = localStorage.getItem('vibe_student_code');
+      const savedClass = localStorage.getItem('vibe_student_class');
+
+      if (savedName) setStudentNameInput(savedName);
+      if (savedCode) setStudentCodeInput(savedCode);
+      if (savedClass) setClassNameInput(savedClass);
+    }
+  }, []);
+
+  // 💾 CÁC HÀM TỰ ĐỘNG LƯU KHI SINH VIÊN GÕ
+  const handleNameChange = (text: string) => {
+    setStudentNameInput(text);
+    if (typeof window !== 'undefined' && window.localStorage) {
+      localStorage.setItem('vibe_student_name', text);
+    }
+  };
+
+  const handleCodeChange = (text: string) => {
+    setStudentCodeInput(text);
+    if (typeof window !== 'undefined' && window.localStorage) {
+      localStorage.setItem('vibe_student_code', text);
+    }
+  };
+
+  const handleClassChange = (text: string) => {
+    setClassNameInput(text);
+    if (typeof window !== 'undefined' && window.localStorage) {
+      localStorage.setItem('vibe_student_class', text);
+    }
+  };
 
   // 💡 GIỮ MÀN HÌNH ĐIỆN THOẠI LUÔN SÁNG TRONG SUỐT BUỔI THI
   useEffect(() => {
@@ -124,7 +159,6 @@ export default function Station2Screen({ onBack }: Props) {
 
     requestWakeLock();
 
-    // Tự động xin lại quyền giữ sáng nếu sinh viên lỡ chuyển tab rồi quay lại
     const handleVisibilityChange = () => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
         requestWakeLock();
@@ -134,7 +168,6 @@ export default function Station2Screen({ onBack }: Props) {
       document.addEventListener('visibilitychange', handleVisibilityChange);
     }
 
-    // Dọn dẹp khi sinh viên bấm quay lại bản đồ chính
     return () => {
       if (typeof document !== 'undefined') {
         document.removeEventListener('visibilitychange', handleVisibilityChange);
@@ -299,7 +332,6 @@ export default function Station2Screen({ onBack }: Props) {
         }
       }
 
-      // Khử tạp âm và tiếng vọng loa ngoài từ microphone
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
@@ -309,7 +341,6 @@ export default function Station2Screen({ onBack }: Props) {
       });
       audioStreamRef.current = stream;
 
-      // Cấu hình MediaRecorder tương thích cho cả iOS & Android
       let recorderOptions: any = {};
       let resolvedMimeType = '';
 
@@ -502,14 +533,14 @@ export default function Station2Screen({ onBack }: Props) {
                 placeholder="Họ tên / Biệt danh *"
                 placeholderTextColor="#666688"
                 value={studentNameInput}
-                onChangeText={setStudentNameInput}
+                onChangeText={handleNameChange}
               />
               <TextInput
                 style={[styles.infoInput, { flex: 0.8 }]}
                 placeholder="MSSV (Nếu có)"
                 placeholderTextColor="#666688"
                 value={studentCodeInput}
-                onChangeText={setStudentCodeInput}
+                onChangeText={handleCodeChange}
               />
             </View>
             <TextInput
@@ -517,7 +548,7 @@ export default function Station2Screen({ onBack }: Props) {
               placeholder="Mã Lớp (Bỏ trống nếu là Người chơi tự do)"
               placeholderTextColor="#666688"
               value={classNameInput}
-              onChangeText={setClassNameInput}
+              onChangeText={handleClassChange}
             />
           </View>
         </View>
