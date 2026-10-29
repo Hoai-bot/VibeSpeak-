@@ -48,46 +48,65 @@ export function analyzeSpokenTranscript(transcript: string): SpokenWordAnalysis[
     .filter(Boolean);
 
   const cleanWords = rawWords.map((w) => w.toLowerCase());
+  const vowels = ['a', 'e', 'i', 'o', 'u'];
 
   return rawWords.map((w, index) => {
     const clean = cleanWords[index];
     const prevWord = index > 0 ? cleanWords[index - 1] : '';
     const prevTwoWord = index > 1 ? cleanWords[index - 2] : '';
+    const nextWord = index < cleanWords.length - 1 ? cleanWords[index + 1] : '';
 
     const isHesitation = ['uh', 'um', 'err', 'ah', 'mm'].includes(clean);
     let isGrammarError = false;
 
-    // 1. Bắt lỗi: "he/she/it don't" -> phải dùng doesn't
-    if (clean === "don't" || clean === "dont") {
-      if (['he', 'she', 'it'].includes(prevWord)) {
-        isGrammarError = true;
-      }
-    }
-
-    // 2. Bắt lỗi: "she/he usually get" -> Chủ ngữ ngôi thứ 3 số ít đi với động từ nguyên mẫu không có 's/es'
-    const singularThirdPersons = ['he', 'she', 'it'];
-    const adverbs = ['usually', 'always', 'often', 'never', 'sometimes'];
-    const commonBaseVerbs = ['get', 'go', 'do', 'have', 'play', 'like', 'want', 'come', 'eat', 'sleep', 'make', 'take', 'drink', 'listen'];
-
-    // Trường hợp đi liền: "she get", "he go"
-    if (singularThirdPersons.includes(prevWord) && commonBaseVerbs.includes(clean)) {
+    // 1. Lỗi trợ động từ ngôi thứ 3: "he/she/it don't" -> phải dùng doesn't
+    if (['don\'t', 'dont'].includes(clean) && ['he', 'she', 'it'].includes(prevWord)) {
       isGrammarError = true;
     }
 
-    // Trường hợp có trạng từ chen giữa: "she usually get", "he always like"
+    // 2. Lỗi chia thì Hiện tại đơn: he/she/it + động từ nguyên mẫu không chia
+    const singularThirdPersons = ['he', 'she', 'it'];
+    const adverbs = ['usually', 'always', 'often', 'never', 'sometimes'];
+    const commonBaseVerbs = ['get', 'go', 'do', 'have', 'play', 'like', 'want', 'come', 'eat', 'sleep', 'make', 'take', 'drink', 'listen', 'see', 'watch'];
+
+    if (singularThirdPersons.includes(prevWord) && commonBaseVerbs.includes(clean)) {
+      isGrammarError = true;
+    }
     if (singularThirdPersons.includes(prevTwoWord) && adverbs.includes(prevWord) && commonBaseVerbs.includes(clean)) {
       isGrammarError = true;
     }
 
-    // 3. Bắt lỗi: "doesn't" đi với động từ thêm s/es (ví dụ: "doesn't gets")
+    // 3. Lỗi trợ động từ phủ định: "doesn't" + động từ thêm s/es
     if (['doesn\'t', 'doesnt'].includes(prevWord) && (clean.endsWith('s') || clean.endsWith('es'))) {
+      isGrammarError = true;
+    }
+
+    // 4. Lỗi Quá khứ đơn (Past Simple): Dùng "didn't" đi với động từ chia quá khứ (V2/V-ed)
+    const pastIrregularVerbs = ['went', 'came', 'bought', 'saw', 'got', 'took', 'had', 'ate', 'made'];
+    if (['didn\'t', 'didnt'].includes(prevWord) && (clean.endsWith('ed') || pastIrregularVerbs.includes(clean))) {
+      isGrammarError = true;
+    }
+
+    // 5. Lỗi Dấu hiệu thời gian quá khứ (yesterday, last, ago) đi với động từ nguyên mẫu hiện tại
+    const pastTimeSignals = ['yesterday', 'ago', 'last'];
+    if (pastTimeSignals.includes(prevWord) && commonBaseVerbs.includes(clean)) {
+      isGrammarError = true;
+    }
+
+    // 6. Lỗi Mạo từ "a" / "an":
+    // "a" đứng trước từ bắt đầu bằng nguyên âm (ví dụ: "a apple", "a orange")
+    if (clean === 'a' && nextWord && vowels.includes(nextWord[0])) {
+      isGrammarError = true;
+    }
+    // "an" đứng trước từ bắt đầu bằng phụ âm thông thường (ví dụ: "an car", "an book")
+    if (clean === 'an' && nextWord && !vowels.includes(nextWord[0])) {
       isGrammarError = true;
     }
 
     return {
       word: w,
       isConfident: !isHesitation && !isGrammarError && clean.length > 1,
-      hasGrammarError: isGrammarError
+      hasGrammarError: isGrammarError,
     };
   });
 }
