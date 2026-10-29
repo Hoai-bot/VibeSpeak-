@@ -1,3 +1,4 @@
+
 // src/screens/Station2Screen.tsx
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, TextInput } from 'react-native';
@@ -306,16 +307,19 @@ export default function Station2Screen({ onBack }: Props) {
         try {
           const recognition = new SpeechRecognition();
           recognition.continuous = true;
-          recognition.interimResults = true;
+          recognition.interimResults = false;
+          recognition.maxAlternatives = 1;
           recognition.lang = 'en-US';
 
+          let transcriptBuffer = '';
           recognition.onresult = (event: any) => {
-            let accumulatedSpeech = '';
-            for (let i = 0; i < event.results.length; ++i) {
-              accumulatedSpeech += event.results[i][0].transcript + ' ';
+            for (let i = event.resultIndex; i < event.results.length; ++i) {
+              if (event.results[i].isFinal) {
+                transcriptBuffer += event.results[i][0].transcript + ' ';
+              }
             }
-            if (accumulatedSpeech.trim()) {
-              fullTranscriptRef.current = accumulatedSpeech.trim();
+            if (transcriptBuffer.trim()) {
+              fullTranscriptRef.current = transcriptBuffer.trim();
             }
           };
 
