@@ -1,4 +1,3 @@
-
 // src/screens/Station2Screen.tsx
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, TextInput } from 'react-native';
@@ -468,9 +467,14 @@ export default function Station2Screen({ onBack }: Props) {
             feedbackDetail = `[ĐỘC LẬP: Vai 1 = ${p1Score}đ, Vai 2 = ${p2Score}đ | TỔNG CẶP = ${totalAvgScore}đ]: ${result.detailedFeedback}`;
           }
 
-          await executeWithRetry(
-            async () => {
-              await saveSubmissionToCloud({
+          // 🚀 BƯỚC 1: TRẢ KẾT QUẢ NGAY LẬP TỨC CHO SINH VIÊN (Không để sinh viên chờ mạng)
+          setIsEvaluating(false);
+
+          // 🚀 BƯỚC 2: TÁCH TIẾN TRÌNH LƯU ĐIỂM VÀ UPLOAD FILE CHẠY NỀN KHÔNG ĐỒNG BỘ
+          (async () => {
+            try {
+              // 1. Lưu điểm và transcript vào Database trước (Cực nhanh: ~0.2s)
+              const savedSubmission = await saveSubmissionToCloud({
                 studentName: studentIdentifier,
                 pairName: pairDisplayName,
                 className: safeClass,
@@ -478,13 +482,36 @@ export default function Station2Screen({ onBack }: Props) {
                 mode: mode,
                 cefrLevel: cefrLevel,
                 transcript: result.transcript,
-                audioUrl: '',
+                audioUrl: '', // Sẽ cập nhật sau khi tải âm thanh xong
                 feedback: feedbackDetail,
                 timestamp: new Date().toLocaleTimeString('vi-VN')
-              }, fullAudioBlob);
-            },
-            { maxRetries: 2, timeoutMs: 10000 }
-          );
+              });
+
+              // 2. Tải file âm thanh lên Supabase Storage trong nền (Background Upload)
+              if (savedSubmission?.id && fullAudioBlob && fullAudioBlob.size >= 1000) {
+                const fileName = `audio_${savedSubmission.id}_${Date.now()}.webm`;
+                const { data: uploadData, error: uploadErr } = await supabase.storage
+                  .from('submissions_audio')
+                  .upload(fileName, fullAudioBlob, { contentType: actualType, upsert: true });
+
+                if (!uploadErr && uploadData?.path) {
+                  const { data: publicUrlData } = supabase.storage
+                    .from('submissions_audio')
+                    .getPublicUrl(uploadData.path);
+
+                  if (publicUrlData?.publicUrl) {
+                    // Cập nhật lại audioUrl vào hàng vừa tạo
+                    await supabase
+                      .from('submissions')
+                      .update({ audioUrl: publicUrlData.publicUrl })
+                      .eq('id', savedSubmission.id);
+                  }
+                }
+              }
+            } catch (bgErr) {
+              console.warn("Lỗi chạy nền không đồng bộ (bảo toàn kết quả sinh viên):", bgErr);
+            }
+          })();
 
         } catch (netErr: any) {
           alert(`⚠️ ${netErr.message || 'Lỗi gửi bài do mất kết nối!'}`);
