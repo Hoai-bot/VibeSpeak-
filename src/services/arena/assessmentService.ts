@@ -31,27 +31,63 @@ export function generateWordDiff(targetText: string, capturedTranscript: string)
   });
 }
 
-// 🎯 DÀNH CHO TRẠM 2: Phân tích trực tiếp lời thoại sinh viên đã nói
+// 🎯 DÀNH CHO TRẠM 2: Phân tích trực tiếp lời thoại sinh viên đã nói kèm bộ lọc ngữ pháp
 export interface SpokenWordAnalysis {
   word: string;
   isConfident: boolean;
+  hasGrammarError?: boolean;
 }
 
 export function analyzeSpokenTranscript(transcript: string): SpokenWordAnalysis[] {
   if (!transcript || transcript.startsWith('(')) return [];
 
-  const words = transcript
+  const rawWords = transcript
     .replace(/[.,/#!$%^&*;:{}=\-_`~()?"']/g, "")
     .trim()
     .split(/\s+/)
     .filter(Boolean);
 
-  return words.map((w) => {
-    const clean = w.toLowerCase();
+  const cleanWords = rawWords.map((w) => w.toLowerCase());
+
+  return rawWords.map((w, index) => {
+    const clean = cleanWords[index];
+    const prevWord = index > 0 ? cleanWords[index - 1] : '';
+    const prevTwoWord = index > 1 ? cleanWords[index - 2] : '';
+
     const isHesitation = ['uh', 'um', 'err', 'ah', 'mm'].includes(clean);
+    let isGrammarError = false;
+
+    // 1. Bắt lỗi: "he/she/it don't" -> phải dùng doesn't
+    if (clean === "don't" || clean === "dont") {
+      if (['he', 'she', 'it'].includes(prevWord)) {
+        isGrammarError = true;
+      }
+    }
+
+    // 2. Bắt lỗi: "she/he usually get" -> Chủ ngữ ngôi thứ 3 số ít đi với động từ nguyên mẫu không có 's/es'
+    const singularThirdPersons = ['he', 'she', 'it'];
+    const adverbs = ['usually', 'always', 'often', 'never', 'sometimes'];
+    const commonBaseVerbs = ['get', 'go', 'do', 'have', 'play', 'like', 'want', 'come', 'eat', 'sleep', 'make', 'take', 'drink', 'listen'];
+
+    // Trường hợp đi liền: "she get", "he go"
+    if (singularThirdPersons.includes(prevWord) && commonBaseVerbs.includes(clean)) {
+      isGrammarError = true;
+    }
+
+    // Trường hợp có trạng từ chen giữa: "she usually get", "he always like"
+    if (singularThirdPersons.includes(prevTwoWord) && adverbs.includes(prevWord) && commonBaseVerbs.includes(clean)) {
+      isGrammarError = true;
+    }
+
+    // 3. Bắt lỗi: "doesn't" đi với động từ thêm s/es (ví dụ: "doesn't gets")
+    if (['doesn\'t', 'doesnt'].includes(prevWord) && (clean.endsWith('s') || clean.endsWith('es'))) {
+      isGrammarError = true;
+    }
+
     return {
       word: w,
-      isConfident: !isHesitation && clean.length > 1,
+      isConfident: !isHesitation && !isGrammarError && clean.length > 1,
+      hasGrammarError: isGrammarError
     };
   });
 }
@@ -151,16 +187,23 @@ export const evaluateSpeaking = async (
       feedbackMessage = `Phản xạ phát âm: Đã nói đúng ${matchedCount}/${targetWords.length} từ mục tiêu.`;
     } else {
       // Đánh giá dựa trên độ dài và số lượng từ tiếng Anh thực tế sinh viên nói
-      const wordCount = recognizedTranscript.split(/\s+/).filter(Boolean).length;
+      const analysis = analyzeSpokenTranscript(recognizedTranscript);
+      const wordCount = analysis.length;
+      const grammarErrors = analysis.filter(item => item.hasGrammarError).length;
+
       if (wordCount >= 25) {
-        calculatedScore = 92;
-        feedbackMessage = `🌟 Bài nói phong phú (${wordCount} từ)! Diễn đạt mạch lạc và tự tin.`;
+        calculatedScore = Math.max(65, 92 - grammarErrors * 5);
+        feedbackMessage = grammarErrors > 0 
+          ? `🌟 Bài nói phong phú (${wordCount} từ) nhưng có ${grammarErrors} lỗi chia động từ/ngữ pháp!`
+          : `🌟 Bài nói phong phú (${wordCount} từ)! Diễn đạt mạch lạc và tự tin.`;
       } else if (wordCount >= 15) {
-        calculatedScore = 85;
-        feedbackMessage = `👍 Tốt! Diễn đạt được ý chính (${wordCount} từ). Hãy mở rộng thêm câu ghép.`;
+        calculatedScore = Math.max(60, 85 - grammarErrors * 5);
+        feedbackMessage = grammarErrors > 0 
+          ? `👍 Nắm được ý (${wordCount} từ) nhưng còn ${grammarErrors} lỗi chia động từ/ngữ pháp.`
+          : `👍 Tốt! Diễn đạt được ý chính (${wordCount} từ). Hãy mở rộng thêm câu ghép.`;
       } else if (wordCount >= 8) {
-        calculatedScore = 75;
-        feedbackMessage = `👌 Đạt yêu cầu cơ bản (${wordCount} từ). Cần nói dài hơn để đạt điểm cao.`;
+        calculatedScore = Math.max(50, 75 - grammarErrors * 5);
+        feedbackMessage = `👌 Đạt yêu cầu cơ bản (${wordCount} từ). Chú ý ngữ pháp và nói dài hơn.`;
       } else {
         calculatedScore = 60;
         feedbackMessage = `⚠️ Bài nói quá ngắn (${wordCount} từ). Cần bổ sung thêm thông tin.`;
