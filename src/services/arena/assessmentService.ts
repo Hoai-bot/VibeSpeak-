@@ -94,18 +94,20 @@ export function analyzeSpokenTranscript(transcript: string): SpokenWordAnalysis[
     }
 
     // 6. Lỗi Mạo từ "a" / "an":
-    // "a" đứng trước từ bắt đầu bằng nguyên âm (ví dụ: "a apple", "a orange")
     if (clean === 'a' && nextWord && vowels.includes(nextWord[0])) {
       isGrammarError = true;
     }
-    // "an" đứng trước từ bắt đầu bằng phụ âm thông thường (ví dụ: "an car", "an book")
     if (clean === 'an' && nextWord && !vowels.includes(nextWord[0])) {
       isGrammarError = true;
     }
 
+    // 💡 KHẮC PHỤC LỖI BẮT SAI CHỦ TỪ "I" VÀ MẠO TỪ "A":
+    // Chấp nhận từ có độ dài 1 ký tự nếu đó là "I" hoặc "a"
+    const isValidWordLength = clean.length > 1 || clean === 'i' || clean === 'a';
+
     return {
       word: w,
-      isConfident: !isHesitation && !isGrammarError && clean.length > 1,
+      isConfident: !isHesitation && !isGrammarError && isValidWordLength,
       hasGrammarError: isGrammarError,
     };
   });
@@ -140,6 +142,7 @@ export const evaluateSpeaking = async (
         formData.append('audio', audioBlob, fileExt);
         if (targetPrompt) formData.append('prompt', targetPrompt);
         if (cefrLevel) formData.append('level', cefrLevel);
+        if (stationType) formData.append('stationType', stationType);
 
         const response = await fetch('/api/grade-audio', {
           method: 'POST',
@@ -205,27 +208,27 @@ export const evaluateSpeaking = async (
       calculatedScore = Math.min(100, Math.round(accuracyRatio * 50 + 50));
       feedbackMessage = `Phản xạ phát âm: Đã nói đúng ${matchedCount}/${targetWords.length} từ mục tiêu.`;
     } else {
-      // Đánh giá dựa trên độ dài và số lượng từ tiếng Anh thực tế sinh viên nói
+      // 🎯 TRẠM 2: Bài nói tự do mở rộng -> Chấm theo số lượng từ và độ trôi chảy thực tế
       const analysis = analyzeSpokenTranscript(recognizedTranscript);
       const wordCount = analysis.length;
       const grammarErrors = analysis.filter(item => item.hasGrammarError).length;
 
       if (wordCount >= 25) {
-        calculatedScore = Math.max(65, 92 - grammarErrors * 5);
+        calculatedScore = Math.max(75, 95 - grammarErrors * 3);
         feedbackMessage = grammarErrors > 0 
-          ? `🌟 Bài nói phong phú (${wordCount} từ) nhưng có ${grammarErrors} lỗi chia động từ/ngữ pháp!`
-          : `🌟 Bài nói phong phú (${wordCount} từ)! Diễn đạt mạch lạc và tự tin.`;
+          ? `🌟 Bài nói rất xuất sắc (${wordCount} từ) nhưng có ${grammarErrors} lỗi chia động từ/ngữ pháp.`
+          : `🌟 Bài nói tuyệt vời (${wordCount} từ)! Phản xạ tự nhiên, lưu loát và tự tin.`;
       } else if (wordCount >= 15) {
-        calculatedScore = Math.max(60, 85 - grammarErrors * 5);
+        calculatedScore = Math.max(70, 88 - grammarErrors * 3);
         feedbackMessage = grammarErrors > 0 
           ? `👍 Nắm được ý (${wordCount} từ) nhưng còn ${grammarErrors} lỗi chia động từ/ngữ pháp.`
-          : `👍 Tốt! Diễn đạt được ý chính (${wordCount} từ). Hãy mở rộng thêm câu ghép.`;
+          : `👍 Rất tốt! Diễn đạt mạch lạc (${wordCount} từ). Hãy mở rộng thêm các ý phụ.`;
       } else if (wordCount >= 8) {
-        calculatedScore = Math.max(50, 75 - grammarErrors * 5);
-        feedbackMessage = `👌 Đạt yêu cầu cơ bản (${wordCount} từ). Chú ý ngữ pháp và nói dài hơn.`;
+        calculatedScore = Math.max(60, 78 - grammarErrors * 3);
+        feedbackMessage = `👌 Đạt yêu cầu cơ bản (${wordCount} từ). Hãy tự tin nói dài hơn.`;
       } else {
-        calculatedScore = 60;
-        feedbackMessage = `⚠️ Bài nói quá ngắn (${wordCount} từ). Cần bổ sung thêm thông tin.`;
+        calculatedScore = Math.max(40, wordCount * 6 + 20);
+        feedbackMessage = `⚠️ Bài nói hơi ngắn (${wordCount} từ). Cần bổ sung thêm thông tin.`;
       }
     }
 
