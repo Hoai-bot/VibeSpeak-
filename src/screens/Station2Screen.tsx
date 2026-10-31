@@ -43,7 +43,6 @@ export default function Station2Screen({ onBack }: Props) {
     let baseSeconds = 20;
 
     if (currentMode === 'roleplay') {
-      // Roleplay: Toàn bộ phiên hội thoại gồm nhiều lượt nói qua lại
       switch (lvl) {
         case 'A1': baseSeconds = 40; break;
         case 'A2': baseSeconds = 50; break;
@@ -64,7 +63,6 @@ export default function Station2Screen({ onBack }: Props) {
         default: baseSeconds = 20; break;
       }
     } else {
-      // Solo
       switch (lvl) {
         case 'A1': baseSeconds = 20; break;
         case 'A2': baseSeconds = 25; break;
@@ -76,7 +74,6 @@ export default function Station2Screen({ onBack }: Props) {
       }
     }
 
-    // Tùy theo độ dài/độ phức tạp của đề tài, tự động gia giảm thời gian (+5s đến +15s nếu chủ đề dài)
     const promptText = currentExercise?.promptEn || currentExercise?.topic || customTopicInput || '';
     const wordCountInPrompt = promptText.trim().split(/\s+/).filter(Boolean).length;
     if (wordCountInPrompt > 20) {
@@ -435,12 +432,13 @@ export default function Station2Screen({ onBack }: Props) {
         const capturedSpeech = fullTranscriptRef.current || '';
 
         try {
+          // 💡 LUÔN TRUYỀN 'STATION_2' ĐỂ CHẤM ĐIỂM THEO ĐỘ DÀI VÀ NGỮ PHÁP TỰ DO CHO CẢ SOLO LẪN NHÓM
           const result = await executeWithRetry(
             async () => {
               return await evaluateSpeaking(
                 fullAudioBlob, 
                 cefrLevel, 
-                mode === 'solo' ? 'STATION_1' : 'STATION_2', 
+                'STATION_2', 
                 targetPrompt, 
                 userId, 
                 capturedSpeech
@@ -463,7 +461,6 @@ export default function Station2Screen({ onBack }: Props) {
             harvestWeakWords(spokenAnalysis, exercise?.promptEn || exercise?.topic);
           }
 
-          // 🎯 ĐIỂM CHUNG TỔNG THỂ CHO CẢ BÀI HỘI THOẠI CỦA 2 CÁ NHÂN
           const sharedScore = result.score;
           setPlayerScores({
             p1Score: sharedScore,
@@ -475,7 +472,10 @@ export default function Station2Screen({ onBack }: Props) {
           let pairDisplayName = studentIdentifier;
           let feedbackDetail = result.detailedFeedback;
 
-          if (mode === 'roleplay') {
+          if (mode === 'solo') {
+            pairDisplayName = studentIdentifier;
+            feedbackDetail = `[SOLO - ${cefrLevel}]: ${result.detailedFeedback}`;
+          } else if (mode === 'roleplay') {
             const r1 = exercise?.userRoleEn || exercise?.player1En || 'Vai 1';
             const r2 = exercise?.aiRoleEn || exercise?.player2En || 'Vai 2';
             pairDisplayName = `${studentIdentifier} (Cặp đôi: ${r1} & ${r2}) | Điểm: ${sharedScore}đ`;
@@ -730,7 +730,7 @@ export default function Station2Screen({ onBack }: Props) {
                   
                   <TouchableOpacity style={styles.recordBtn} onPress={stopFullRecordingAndEvaluate}>
                     <Text style={styles.recordBtnText}>
-                      🛑 HOÀN THÀNH & NỘP BÀI HỘI THOẠI CỦA CẢ 2
+                      {mode === 'solo' ? '🛑 HOÀN THÀNH & NỘP BÀI NÓI SOLO' : '🛑 HOÀN THÀNH & NỘP BÀI HỘI THOẠI CỦA CẢ 2'}
                     </Text>
                   </TouchableOpacity>
                 </View>
@@ -745,13 +745,20 @@ export default function Station2Screen({ onBack }: Props) {
 
               {evalResult && (
                 <View style={styles.evalBox}>
+                  {/* 💡 TIÊU ĐỀ PHÂN BIỆT CHÍNH XÁC SOLO VÀ CẶP ĐÔI */}
                   <Text style={styles.evalScore}>
-                    🏆 ĐIỂM CHUNG TỔNG THỂ CHO CẢ 2 BẠN: {evalResult.score}/100
+                    {mode === 'solo' 
+                      ? `🏆 ĐIỂM BÀI NÓI SOLO CỦA BẠN: ${evalResult.score}/100` 
+                      : `🏆 ĐIỂM CHUNG TỔNG THỂ CHO CẢ 2 BẠN: ${evalResult.score}/100`}
                   </Text>
                   
                   {evalResult.transcript ? (
                     <View style={styles.wordHighlightBox}>
-                      <Text style={styles.wordHighlightTitle}>🎙 TOÀN BỘ LỜI THOẠI ĐỐI THOẠI THU ĐƯỢC:</Text>
+                      <Text style={styles.wordHighlightTitle}>
+                        {mode === 'solo' 
+                          ? '🎙 TOÀN BỘ TỪ NGỮ GHI NHẬN ĐƯỢC TỪ BÀI NÓI:' 
+                          : '🎙 TOÀN BỘ LỜI THOẠI ĐỐI THOẠI THU ĐƯỢC:'}
+                      </Text>
                       <View style={styles.wordRow}>
                         {analyzeSpokenTranscript(evalResult.transcript).map((item, idx) => (
                           <View 
@@ -772,7 +779,9 @@ export default function Station2Screen({ onBack }: Props) {
 
                   {evalResult.audioUrl ? (
                     <View style={styles.audioPlayerBox}>
-                      <Text style={styles.audioLabel}>🎧 Nghe lại toàn bộ file thu âm hội thoại chung:</Text>
+                      <Text style={styles.audioLabel}>
+                        {mode === 'solo' ? '🎧 Nghe lại bài thu âm của bạn:' : '🎧 Nghe lại toàn bộ file thu âm hội thoại chung:'}
+                      </Text>
                       {React.createElement('audio', {
                         key: evalResult.audioUrl,
                         controls: true,
@@ -784,14 +793,14 @@ export default function Station2Screen({ onBack }: Props) {
                     </View>
                   ) : null}
 
-                  <Text style={styles.transcriptText}>💬 Lời thoại hội thoại: "{evalResult.transcript}"</Text>
+                  <Text style={styles.transcriptText}>💬 Lời thoại ghi nhận: "{evalResult.transcript}"</Text>
                   <Text style={styles.feedbackText}>💡 Nhận xét AI: {evalResult.detailedFeedback}</Text>
                 </View>
               )}
 
               {!isUsingCustomTopic && (
                 <TouchableOpacity style={styles.nextBtn} onPress={() => loadNewExercise()}>
-                  <Text style={styles.nextBtnText}>🔄 TẢI BÀI ĐỐI THOẠI MỚI</Text>
+                  <Text style={styles.nextBtnText}>🔄 TẢI BÀI TẬP MỚI</Text>
                 </TouchableOpacity>
               )}
             </View>
@@ -838,7 +847,6 @@ const styles = StyleSheet.create({
   timerLabel: { color: '#AAAABB', fontSize: 9, fontWeight: 'bold' },
   timerValue: { color: '#39FF14', fontSize: 20, fontWeight: '900', marginTop: 2 },
   
-  // Thẻ vai diễn
   playersRow: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginBottom: 12 },
   playerCard: { flex: 0.48, backgroundColor: '#0D0620', padding: 8, borderRadius: 8, borderWidth: 1, borderColor: '#332255', alignItems: 'center' },
   activePlayerCard: { borderColor: '#39FF14', borderWidth: 2, backgroundColor: '#0F1E1E' },
@@ -859,7 +867,6 @@ const styles = StyleSheet.create({
   startBtn: { backgroundColor: '#FF007F', paddingVertical: 12, paddingHorizontal: 16, borderRadius: 10, width: '100%', alignItems: 'center', marginVertical: 10 },
   startBtnText: { color: '#FFF', fontSize: 11, fontWeight: '900' },
   
-  // Nút chuyển lượt phản xạ nhanh
   quickSwitchBtn: { backgroundColor: '#00FFFF', paddingVertical: 12, paddingHorizontal: 14, borderRadius: 10, alignItems: 'center', borderWidth: 1, borderColor: '#39FF14' },
   quickSwitchText: { color: '#000', fontSize: 11, fontWeight: '900' },
   quickSwitchSub: { color: '#003333', fontSize: 8, fontWeight: 'bold', marginTop: 2 },

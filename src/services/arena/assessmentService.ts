@@ -101,9 +101,9 @@ export function analyzeSpokenTranscript(transcript: string): SpokenWordAnalysis[
       isGrammarError = true;
     }
 
-    // 💡 KHẮC PHỤC LỖI BẮT SAI CHỦ TỪ "I" VÀ MẠO TỪ "A":
-    // Chấp nhận từ có độ dài 1 ký tự nếu đó là "I" hoặc "a"
-    const isValidWordLength = clean.length > 1 || clean === 'i' || clean === 'a';
+    // 💡 KHẮC PHỤC LỖI BẮT SAI CHỦ TỪ "I", MẠO TỪ "A" VÀ CHỮ SỐ (NHƯ SỐ "9"):
+    const isDigit = /^[0-9]+$/.test(clean);
+    const isValidWordLength = clean.length > 1 || clean === 'i' || clean === 'a' || isDigit;
 
     return {
       word: w,
@@ -174,18 +174,16 @@ export const evaluateSpeaking = async (
     let feedbackMessage = "";
 
     if (!recognizedTranscript) {
-      // Một bài nói thực sự kéo dài trên 4-5s trên Android dung lượng phải tối thiểu >= 25,000 bytes (25KB)
       if (audioBlob && audioBlob.size >= 25000) {
         const promptPreview = targetPrompt ? `cho chủ đề "${targetPrompt.slice(0, 30)}..."` : '';
         return {
-          score: Math.floor(Math.random() * 8) + 75, // 75 - 82 điểm (Điểm đạt cơ bản)
+          score: Math.floor(Math.random() * 8) + 75,
           isWin: true,
           transcript: `(Đã ghi nhận bài nói ${promptPreview} qua Micro thiết bị)`,
           detailedFeedback: `✅ AI đã thu nhận bản ghi âm. Cần chú ý phát âm tròn vành rõ chữ hơn để đạt điểm tối đa!`
         };
       }
 
-      // Nếu chỉ bấm rồi tắt ngay (1-3s) hoặc im lặng không nói:
       return {
         score: 30,
         isWin: false,
@@ -208,7 +206,7 @@ export const evaluateSpeaking = async (
       calculatedScore = Math.min(100, Math.round(accuracyRatio * 50 + 50));
       feedbackMessage = `Phản xạ phát âm: Đã nói đúng ${matchedCount}/${targetWords.length} từ mục tiêu.`;
     } else {
-      // 🎯 TRẠM 2: Bài nói tự do mở rộng -> Chấm theo số lượng từ và độ trôi chảy thực tế
+      // 🎯 TRẠM 2: Bài nói tự do mở rộng (SOLO / RELAY / ROLEPLAY)
       const analysis = analyzeSpokenTranscript(recognizedTranscript);
       const wordCount = analysis.length;
       const grammarErrors = analysis.filter(item => item.hasGrammarError).length;
