@@ -4,6 +4,7 @@ import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator
 import { getRandomStation1Drill, DrillType } from '../services/drills/station1Service';
 import { evaluateSpeaking, AssessmentResult, generateWordDiff } from '../services/arena/assessmentService';
 import { updateUserProgress } from '../services/userService';
+import { supabase } from '../utils/supabase'; // 💡 IMPORT TRỰC TIẾP TỪ UTILS
 
 interface Props {
   onBack: () => void;
@@ -33,19 +34,13 @@ export default function Station1Screen({ onBack }: Props) {
   const recognitionRef = useRef<any>(null);
   const recordingStartTimeRef = useRef<number>(0);
 
-  // Lấy user ID an toàn
+  // 🎯 LẤY USER ID AN TOÀN VÀ ĐỒNG NHẤT
   useEffect(() => {
     const fetchUser = async () => {
       try {
-        const supabaseModule = await import('../lib/supabaseClient').catch(() => null)
-                             || await import('../lib/supabase').catch(() => null);
-                             
-        if (supabaseModule) {
-          const supabase = supabaseModule.supabase || supabaseModule.default;
-          if (supabase && supabase.auth) {
-            const { data } = await supabase.auth.getUser();
-            if (data?.user) setUserId(data.user.id);
-          }
+        if (supabase && supabase.auth) {
+          const { data } = await supabase.auth.getUser();
+          if (data?.user) setUserId(data.user.id);
         }
       } catch (e) {
         console.warn("Không lấy được user ID:", e);
