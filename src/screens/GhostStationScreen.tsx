@@ -6,6 +6,7 @@ import { generateWordDiff } from '../services/arena/assessmentService';
 import { saveSubmissionToCloud } from '../services/userService';
 import { harvestWeakWords } from '../services/weakPointsService';
 import { getOptimizedRecorderConfig, executeWithRetry } from '../utils/networkAudioHelper';
+import { supabase } from '../utils/supabase';
 
 interface Props {
   onBack: () => void;
@@ -28,7 +29,12 @@ function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
   const [analyzingStatus, setAnalyzingStatus] = useState<string>('🤖 AI ĐANG PHÂN TÍCH GIỌNG NÓI...');
   const [score, setScore] = useState<number | null>(null);
   const [spokenTranscript, setSpokenTranscript] = useState<string>('');
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [isPlayingTTS, setIsPlayingTTS] = useState<boolean>(false);
+
+  // THÔNG TIN HỌC VIÊN ĐỒNG BỘ VỚI HỆ THỐNG
+  const [studentIdentifier, setStudentIdentifier] = useState<string>('Chiến Binh Shadow');
+  const [studentClass, setStudentClass] = useState<string>('LỚP CHUNG');
 
   // STATE CỨU HỘ OASIS TRẠM BÓNG MA
   const [ghostMissCount, setGhostMissCount] = useState<number>(0);
@@ -37,6 +43,40 @@ function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
   const mediaRecorderRef = useRef<any>(null);
   const audioChunksRef = useRef<any[]>([]);
   const mediaStreamRef = useRef<MediaStream | null>(null);
+  const recordingStartTimeRef = useRef<number>(0);
+
+  // 🎯 1. TỰ ĐỘNG LẤY THÔNG TIN TỪ SUPABASE HOẶC LOCALSTORAGE ĐỂ ĐỒNG BỘ LỚP
+  useEffect(() => {
+    const fetchStudentProfile = async () => {
+      let currentName = 'Chiến Binh Shadow';
+      let currentCode = 'GUEST';
+      let currentClass = 'LỚP CHUNG';
+
+      if (typeof window !== 'undefined' && window.localStorage) {
+        const savedName = localStorage.getItem('vibe_student_name');
+        const savedCode = localStorage.getItem('vibe_student_code');
+        const savedClass = localStorage.getItem('vibe_student_class');
+
+        if (savedName) currentName = savedName;
+        if (savedCode) currentCode = savedCode;
+        if (savedClass) currentClass = savedClass;
+      }
+
+      try {
+        if (supabase && supabase.auth) {
+          const { data } = await supabase.auth.getUser();
+          if (data?.user?.user_metadata?.full_name && currentName === 'Chiến Binh Shadow') {
+            currentName = data.user.user_metadata.full_name;
+          }
+        }
+      } catch (e) {}
+
+      setStudentIdentifier(`${currentName} (${currentCode ? `MSSV: ${currentCode}` : 'GUEST'})`);
+      setStudentClass(currentClass);
+    };
+
+    fetchStudentProfile();
+  }, []);
 
   // 🔊 PHÁT ÂM MẪU BÓNG MA (SHADOWING PROMPT)
   const playGhostAudio = (textToSpeak: string) => {
@@ -45,7 +85,7 @@ function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(textToSpeak);
       utterance.lang = 'en-US';
-      utterance.rate = 0.85; // Tốc độ tự nhiên vừa phải
+      utterance.rate = 0.85;
       utterance.pitch = 0.9;
 
       utterance.onstart = () => setIsPlayingTTS(true);
@@ -61,6 +101,7 @@ function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
     setGhostSentence(GHOST_SENTENCES[nextIdx]);
     setScore(null);
     setSpokenTranscript('');
+    setAudioUrl(null);
   };
 
   const startRecording = async () => {
@@ -70,26 +111,27 @@ function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
         return;
       }
 
-      // Khử tiếng vọng và tạp âm môi trường
+      setScore(null);
+      setSpokenTranscript('');
+      setAudioUrl(null);
+      audioChunksRef.current = [];
+
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true }
       });
       mediaStreamRef.current = stream;
 
-      // Cấu hình MediaRecorder tối ưu 32 kbps và codec Opus
       const { options } = getOptimizedRecorderConfig();
       const mediaRecorder = new MediaRecorder(stream, options);
       mediaRecorderRef.current = mediaRecorder;
-      audioChunksRef.current = [];
 
       mediaRecorder.ondataavailable = (e: any) => {
         if (e.data && e.data.size > 0) audioChunksRef.current.push(e.data);
       };
 
+      recordingStartTimeRef.current = Date.now();
       mediaRecorder.start(100);
       setIsRecording(true);
-      setScore(null);
-      setSpokenTranscript('');
     } catch (err) {
       alert('🔒 Lỗi: Vui lòng bật cấp quyền Micro trên thanh địa chỉ trình duyệt!');
     }
@@ -99,7 +141,19 @@ function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
     const mediaRecorder = mediaRecorderRef.current;
     if (!mediaRecorder) return;
 
+    const durationSeconds = (Date.now() - recordingStartTimeRef.current) / 1000;
     setIsRecording(false);
+
+    // 🛡️ CHẶN THU ÂM QUÁ NGẮN HOẶC BẤM TẮT NGAY DƯỚI 1.2 GIÂY
+    if (durationSeconds < 1.2) {
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach((t: any) => t.stop());
+        mediaStreamRef.current = null;
+      }
+      alert("⚠️ Bạn vừa bấm tắt quá nhanh! Hãy giữ micro và đọc theo toàn bộ câu mẫu nhé.");
+      return;
+    }
+
     setIsAnalyzing(true);
     setAnalyzingStatus('🤖 AI ĐANG PHÂN TÍCH GIỌNG NÓI...');
 
@@ -120,7 +174,19 @@ function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
 
       const audioBlob = await processAudio;
 
-      // 🎯 TỰ ĐỘNG RETRY NẾU API GROQ BỊ DROP PACKET HOẶC RATE-LIMIT
+      // 🛡️ CHẶN FILE RỖNG / KHÔNG CÓ TIẾNG
+      if (audioBlob.size < 3500) {
+        setScore(0);
+        setSpokenTranscript("(Không phát hiện giọng nói)");
+        setIsAnalyzing(false);
+        alert("❌ Micro không thu được âm thanh! Vui lòng đọc to rõ hơn.");
+        return;
+      }
+
+      const localAudio = URL.createObjectURL(audioBlob);
+      setAudioUrl(localAudio);
+
+      // 🎯 RETRY NẾU API GROQ MẠNG CHẬP CHỜN
       const res = await executeWithRetry(
         async () => {
           return await transcribeAndGradeAudio(audioBlob, ghostSentence);
@@ -140,7 +206,7 @@ function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
       setScore(calculatedScore);
       setSpokenTranscript(recognizedText);
 
-      // 🎯 TỰ ĐỘNG THU THẬP TỪ BỊ LỆCH ÂM / RỚT NHỊP VÀO WEAK-POINT VAULT
+      // 🎯 THU THẬP TỪ YẾU VÀO WEAK-POINT VAULT
       const diffResults = generateWordDiff(ghostSentence, recognizedText);
       const weakItemsForVault = diffResults.map((item) => ({
         word: item.word,
@@ -148,25 +214,50 @@ function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
       }));
       harvestWeakWords(weakItemsForVault, ghostSentence);
 
-      // 🎯 ĐỒNG BỘ LƯU LÊN SUPABASE VỚI CƠ CHẾ RETRY
-      await executeWithRetry(
-        async () => {
-          await saveSubmissionToCloud({
-            studentName: 'Chiến Binh Shadow',
+      // 🚀 ĐỒNG BỘ LƯU LÊN SUPABASE (KÈM UPLOAD FILE ÂM THANH CHUẨN XÁC)
+      (async () => {
+        try {
+          const savedSubmission = await saveSubmissionToCloud({
+            studentName: studentIdentifier,
             pairName: 'Ghost Shadowing',
-            className: 'TRẠM 3: GHOST',
+            className: studentClass,
             score: calculatedScore,
             mode: 'SHADOWING',
             cefrLevel: 'B1',
             transcript: recognizedText,
+            audioUrl: '',
             feedback: `[SHADOWING]: Bài đọc đuổi câu "${ghostSentence}" đạt ${calculatedScore}/100đ`,
             timestamp: new Date().toLocaleTimeString('vi-VN')
-          }, audioBlob);
-        },
-        { maxRetries: 2, timeoutMs: 10000 }
-      );
+          });
 
-      // KÍCH HOẠT POPUP CỨU HỘ KHI ĐIỂM < 50 TRONG 2 LẦN LIÊN TIẾP
+          // Upload trực tiếp audioBlob lên Storage Bucket submissions_audio
+          if (savedSubmission?.id && audioBlob && audioBlob.size >= 1000 && supabase) {
+            const fileExt = (mediaRecorder.mimeType || '').includes('mp4') ? 'mp4' : 'webm';
+            const fileName = `ghost_${savedSubmission.id}_${Date.now()}.${fileExt}`;
+
+            const { data: uploadData, error: uploadErr } = await supabase.storage
+              .from('submissions_audio')
+              .upload(fileName, audioBlob, { contentType: audioBlob.type || 'audio/webm', upsert: true });
+
+            if (!uploadErr && uploadData?.path) {
+              const { data: publicUrlData } = supabase.storage
+                .from('submissions_audio')
+                .getPublicUrl(uploadData.path);
+
+              if (publicUrlData?.publicUrl) {
+                await supabase
+                  .from('submissions')
+                  .update({ audioUrl: publicUrlData.publicUrl })
+                  .eq('id', savedSubmission.id);
+              }
+            }
+          }
+        } catch (saveErr) {
+          console.warn("Lỗi lưu điểm / upload audio Ghost Station:", saveErr);
+        }
+      })();
+
+      // KÍCH HOẠT CỨU HỘ KHI ĐIỂM < 50 TRONG 2 LẦN LIÊN TIẾP
       if (calculatedScore < 50) {
         setGhostMissCount((prev) => {
           const next = prev + 1;
@@ -195,6 +286,11 @@ function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
       <ScrollView contentContainerStyle={{ alignItems: 'center', width: '100%', paddingBottom: 30 }}>
         <View style={styles.card}>
           <Text style={styles.tag}>[ SHADOWING ECHO MODE ]</Text>
+          
+          <Text style={styles.studentInfoBadge}>
+            👤 {studentIdentifier} | 🏫 {studentClass}
+          </Text>
+
           <Text style={styles.sentenceText}>"{ghostSentence}"</Text>
 
           <View style={styles.actionBtnRow}>
@@ -252,6 +348,19 @@ function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
                 </View>
               </View>
 
+              {audioUrl && (
+                <View style={styles.audioPlayerBox}>
+                  <Text style={styles.audioPlayerLabel}>🎧 Nghe lại bài đọc đuổi của bạn:</Text>
+                  {React.createElement('audio', {
+                    key: audioUrl,
+                    controls: true,
+                    playsInline: true,
+                    src: audioUrl,
+                    style: { width: '100%', marginTop: 6, height: 35 }
+                  })}
+                </View>
+              )}
+
               <Text style={styles.transcriptNotice}>
                 💬 AI nghe được: "{spokenTranscript || '(Chưa rõ âm)'}"
               </Text>
@@ -304,7 +413,8 @@ const styles = StyleSheet.create({
   backText: { color: '#00FFFF', fontSize: 11, fontWeight: 'bold' },
   headerTitle: { color: '#00FFFF', fontSize: 14, fontWeight: '900' },
   card: { backgroundColor: '#0D0620', padding: 20, borderRadius: 16, borderWidth: 2, borderColor: '#00FFFF', alignItems: 'center', width: '100%' },
-  tag: { color: '#FFD700', fontSize: 11, fontWeight: 'bold', marginBottom: 10 },
+  tag: { color: '#FFD700', fontSize: 11, fontWeight: 'bold', marginBottom: 6 },
+  studentInfoBadge: { color: '#39FF14', fontSize: 10, fontWeight: 'bold', marginBottom: 12 },
   sentenceText: { color: '#FFF', fontSize: 16, fontWeight: 'bold', textAlign: 'center', marginBottom: 15, lineHeight: 22 },
   actionBtnRow: { flexDirection: 'row', gap: 8, width: '100%', marginBottom: 15 },
   ttsBtn: { flex: 1.2, backgroundColor: '#1A0B2E', paddingVertical: 10, borderRadius: 8, borderWidth: 1, borderColor: '#00FFFF', alignItems: 'center' },
@@ -326,7 +436,9 @@ const styles = StyleSheet.create({
   wordBadgeText: { fontSize: 10, fontWeight: 'bold' },
   correctText: { color: '#39FF14' },
   incorrectText: { color: '#FF0055' },
-  transcriptNotice: { color: '#AAAABB', fontSize: 10, fontStyle: 'italic', textAlign: 'center' },
+  audioPlayerBox: { backgroundColor: '#1A0B2E', padding: 10, borderRadius: 8, width: '100%', borderWidth: 1, borderColor: '#00FFFF', marginVertical: 8 },
+  audioPlayerLabel: { color: '#00FFFF', fontSize: 10, fontWeight: 'bold' },
+  transcriptNotice: { color: '#AAAABB', fontSize: 10, fontStyle: 'italic', textAlign: 'center', marginTop: 4 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(5, 2, 13, 0.85)', justifyContent: 'center', alignItems: 'center', padding: 20 },
   modalContent: { backgroundColor: '#052C30', padding: 24, borderRadius: 20, borderWidth: 2, borderColor: '#00FFCC', width: '100%', alignItems: 'center' },
   modalTag: { color: '#FF0055', fontSize: 11, fontWeight: 'bold', marginBottom: 6 },
