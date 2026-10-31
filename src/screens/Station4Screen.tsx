@@ -11,6 +11,7 @@ import {
 import { updateUserProgress, saveSubmissionToCloud } from '../services/userService';
 import { harvestWeakWords, saveWeakPoint } from '../services/weakPointsService';
 import { getOptimizedRecorderConfig, executeWithRetry } from '../utils/networkAudioHelper';
+import { supabase } from '../utils/supabase'; // 💡 IMPORT TRỰC TIẾP TỪ UTILS
 import WeakPointsScreen from './WeakPointsScreen';
 
 interface Props {
@@ -22,6 +23,10 @@ export default function Station4Screen({ onBack }: Props) {
   const [loading, setLoading] = useState<boolean>(false);
   const [isPlayingTTS, setIsPlayingTTS] = useState<boolean>(false);
   const [showWeakPoints, setShowWeakPoints] = useState<boolean>(false);
+
+  // THÔNG TIN HỌC VIÊN ĐỒNG BỘ VỚI HỆ THỐNG
+  const [studentIdentifier, setStudentIdentifier] = useState<string>('Chiến Binh Express');
+  const [studentClass, setStudentClass] = useState<string>('LỚP CHUNG');
 
   const [exercise, setExercise] = useState<SpeakingExpressExercise | null>(null);
   const [battleState, setBattleState] = useState<'idle' | 'battling' | 'analyzing' | 'ended'>('idle');
@@ -51,25 +56,42 @@ export default function Station4Screen({ onBack }: Props) {
 
   const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
 
+  // 🎯 1. TỰ ĐỘNG LẤY USER ID VÀ THÔNG TIN HỌC VIÊN TỪ LOCALSTORAGE / SUPABASE
   useEffect(() => {
-    const fetchUser = async () => {
+    const fetchUserProfile = async () => {
+      let currentName = 'Chiến Binh Express';
+      let currentCode = 'GUEST';
+      let currentClass = 'LỚP CHUNG';
+
+      if (typeof window !== 'undefined' && window.localStorage) {
+        const savedName = localStorage.getItem('vibe_student_name');
+        const savedCode = localStorage.getItem('vibe_student_code');
+        const savedClass = localStorage.getItem('vibe_student_class');
+
+        if (savedName) currentName = savedName;
+        if (savedCode) currentCode = savedCode;
+        if (savedClass) currentClass = savedClass;
+      }
+
       try {
-        const supabaseModule = await import('../lib/supabaseClient').catch(() => null)
-                             || await import('../lib/supabase').catch(() => null)
-                             || await import('@/lib/supabaseClient').catch(() => null);
-                             
-        if (supabaseModule) {
-          const supabase = supabaseModule.supabase || supabaseModule.default;
-          if (supabase && supabase.auth) {
-            const { data } = await supabase.auth.getUser();
-            if (data?.user) setUserId(data.user.id);
+        if (supabase && supabase.auth) {
+          const { data } = await supabase.auth.getUser();
+          if (data?.user) {
+            setUserId(data.user.id);
+            if (data.user.user_metadata?.full_name && currentName === 'Chiến Binh Express') {
+              currentName = data.user.user_metadata.full_name;
+            }
           }
         }
       } catch (e) {
         console.warn("Không lấy được user ID:", e);
       }
+
+      setStudentIdentifier(`${currentName} (${currentCode ? `MSSV: ${currentCode}` : 'GUEST'})`);
+      setStudentClass(currentClass);
     };
-    fetchUser();
+
+    fetchUserProfile();
   }, []);
 
   const getResultHeader = (score: number) => {
@@ -136,7 +158,10 @@ export default function Station4Screen({ onBack }: Props) {
       try { mediaRecorderRef.current.stop(); } catch (e) {}
     }
     if (recognitionRef.current) {
-      try { recognitionRef.current.stop(); } catch (e) {}
+      try { 
+        recognitionRef.current.abort(); 
+        recognitionRef.current = null;
+      } catch (e) {}
     }
     if (mediaStreamRef.current) {
       mediaStreamRef.current.getTracks().forEach(t => t.stop());
@@ -204,6 +229,20 @@ export default function Station4Screen({ onBack }: Props) {
           return;
         }
 
+        // 💡 Reset sạch bộ đệm trước khi thu lại
+        setRecordedAudio(null);
+        setHasRecorded(false);
+        setRecordedAudioUrl(null);
+        setCapturedText('');
+        audioChunksRef.current = [];
+
+        if (recognitionRef.current) {
+          try { 
+            recognitionRef.current.abort(); 
+            recognitionRef.current = null;
+          } catch (e) {}
+        }
+
         const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
         if (SpeechRecognition) {
           try {
@@ -215,7 +254,7 @@ export default function Station4Screen({ onBack }: Props) {
             recognition.onresult = (event: any) => {
               let current = '';
               for (let i = 0; i < event.results.length; ++i) {
-                current += event.results[i][0].transcript;
+                current += event.results[i][0].transcript + ' ';
               }
               if (current.trim()) setCapturedText(current.trim());
             };
@@ -227,7 +266,6 @@ export default function Station4Screen({ onBack }: Props) {
           }
         }
 
-        // Khử tiếng vọng, khử ồn môi trường và cân bằng âm lượng tự động
         const stream = await navigator.mediaDevices.getUserMedia({
           audio: {
             echoCancellation: true,
@@ -237,11 +275,9 @@ export default function Station4Screen({ onBack }: Props) {
         });
         mediaStreamRef.current = stream;
 
-        // Cấu hình MediaRecorder nén Opus 32 kbps tối ưu độ trễ
         const { options } = getOptimizedRecorderConfig();
         const recorder = new MediaRecorder(stream, options);
         mediaRecorderRef.current = recorder;
-        audioChunksRef.current = [];
 
         recorder.ondataavailable = (e) => {
           if (e.data && e.data.size > 0) {
@@ -263,13 +299,11 @@ export default function Station4Screen({ onBack }: Props) {
         };
 
         recordingStartTimeRef.current = Date.now();
-        recorder.start(100); // Thu nhận chunks 100ms
+        recorder.start(100);
         setIsRecording(true);
-        setHasRecorded(false);
         setBattleState('battling');
-        setCapturedText('');
       } catch (err) {
-        alert("🔒 Vui lòng kiểm tra biểu tượng 🔒 trên thanh địa chỉ trình duyệt Android/iOS và cho phép 'Microphone'!");
+        alert("🔒 Vui lòng kiểm tra biểu tượng 🔒 trên thanh địa chỉ trình duyệt và cho phép 'Microphone'!");
       }
     } else {
       setIsRecording(false);
@@ -282,6 +316,13 @@ export default function Station4Screen({ onBack }: Props) {
       if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
         mediaRecorderRef.current.stop();
       }
+
+      // 🛡️ CHẶN BẤM TẮT DƯỚI 1.5 GIÂY
+      if (durationSec < 1.5) {
+        setHasRecorded(false);
+        setRecordedAudio(null);
+        alert("⚠️ Bạn vừa bấm tắt quá nhanh (dưới 1.5 giây)! Vui lòng nói to rõ câu trả lời rồi mới bấm dừng.");
+      }
     }
   };
 
@@ -291,12 +332,19 @@ export default function Station4Screen({ onBack }: Props) {
       return;
     }
 
+    // 🛡️ CHẶN FILE RỖNG / KHÔNG NÓI GÌ
+    if (recordedAudio.size < 3000 && !capturedText.trim()) {
+      alert("❌ Micro không thu được âm thanh! Vui lòng bấm thu âm lại và nói to, rõ ràng hơn.");
+      return;
+    }
+
     if (isRecording) setIsRecording(false);
 
     let audioBlobForUpload = recordedAudio;
+    let localUrl = '';
     if (typeof window !== 'undefined' && window.URL) {
-      const audioUrl = URL.createObjectURL(recordedAudio);
-      setRecordedAudioUrl(audioUrl);
+      localUrl = URL.createObjectURL(recordedAudio);
+      setRecordedAudioUrl(localUrl);
     }
 
     setBattleState('analyzing');
@@ -305,7 +353,6 @@ export default function Station4Screen({ onBack }: Props) {
     try {
       const targetPrompt = (exercise?.promptEn || 'General speaking challenge').trim();
       
-      // 🎯 BỌC LỜI GỌI EVALUATION BẰNG CƠ CHẾ RETRY THÔNG MINH
       const evalData = await executeWithRetry(
         async () => {
           return await evaluateSpeaking(
@@ -326,10 +373,10 @@ export default function Station4Screen({ onBack }: Props) {
         }
       );
 
+      if (localUrl) evalData.audioUrl = localUrl;
       setResult(evalData);
       updateUserProgress(4, evalData.isWin ? 50 : 10, evalData.isWin);
 
-      // 🎯 TỰ ĐỘNG THU THẬP TỪ YẾU VÀO WEAK-POINT VAULT (SPACED REPETITION)
       if (evalData.transcript) {
         const spokenAnalysis = analyzeSpokenTranscript(evalData.transcript);
         harvestWeakWords(spokenAnalysis, targetPrompt);
@@ -339,23 +386,51 @@ export default function Station4Screen({ onBack }: Props) {
         saveWeakPoint('station4', targetPrompt, evalData.score);
       }
 
-      // 🎯 LƯU BÀI NỘP LÊN SUPABASE CLOUD VỚI CƠ CHẾ RETRY
-      await executeWithRetry(
-        async () => {
-          await saveSubmissionToCloud({
-            studentName: 'Chiến Binh Express',
+      // 🚀 TẢI BÀI LÊN SUPABASE VÀ ĐỒNG BỘ FILE ÂM THANH STORAGE
+      (async () => {
+        try {
+          const savedSubmission = await saveSubmissionToCloud({
+            studentName: studentIdentifier,
             pairName: 'Speaking Express',
-            className: 'TRẠM 4: EXPRESS',
+            className: studentClass,
             score: evalData.score,
-            mode: 'SOLO',
+            mode: 'EXPRESS',
             cefrLevel: cefrLevel,
             transcript: evalData.transcript,
+            audioUrl: '',
             feedback: `[EXPRESS ${cefrLevel}]: Tốc độ phản hồi đạt ${evalData.score}/100đ. Nhận xét: ${evalData.detailedFeedback}`,
             timestamp: new Date().toLocaleTimeString('vi-VN')
-          }, audioBlobForUpload);
-        },
-        { maxRetries: 2, timeoutMs: 10000 }
-      );
+          });
+
+          // Upload trực tiếp vào Storage bucket submissions_audio
+          if (savedSubmission?.id && audioBlobForUpload && audioBlobForUpload.size >= 1000 && supabase) {
+            const fileExt = (audioBlobForUpload.type || '').includes('mp4') ? 'mp4' : 'webm';
+            const fileName = `express_${savedSubmission.id}_${Date.now()}.${fileExt}`;
+
+            const { data: uploadData, error: uploadErr } = await supabase.storage
+              .from('submissions_audio')
+              .upload(fileName, audioBlobForUpload, { 
+                contentType: audioBlobForUpload.type || 'audio/webm', 
+                upsert: true 
+              });
+
+            if (!uploadErr && uploadData?.path) {
+              const { data: publicUrlData } = supabase.storage
+                .from('submissions_audio')
+                .getPublicUrl(uploadData.path);
+
+              if (publicUrlData?.publicUrl) {
+                await supabase
+                  .from('submissions')
+                  .update({ audioUrl: publicUrlData.publicUrl })
+                  .eq('id', savedSubmission.id);
+              }
+            }
+          }
+        } catch (saveErr) {
+          console.warn("Lỗi lưu điểm / upload audio Express:", saveErr);
+        }
+      })();
 
     } catch (err: any) {
       console.error("Lỗi chấm điểm Trạm 4:", err);
@@ -367,7 +442,6 @@ export default function Station4Screen({ onBack }: Props) {
     }
   };
 
-  // Tính WPM dựa trên số từ nói được và thời lượng ghi âm
   const calculateWPM = (text: string, durationSec: number): number => {
     if (!text || durationSec <= 0) return 0;
     const wordCount = text.trim().split(/\s+/).filter(Boolean).length;
@@ -409,6 +483,10 @@ export default function Station4Screen({ onBack }: Props) {
       </View>
 
       <ScrollView contentContainerStyle={{ alignItems: 'center', width: '100%', paddingBottom: 30 }}>
+        <Text style={styles.studentInfoBadge}>
+          👤 {studentIdentifier} | 🏫 {studentClass}
+        </Text>
+
         <Text style={styles.sectionLabel}>CHỌN LEVEL CẤP ĐỘ:</Text>
         <View style={styles.cefrRow}>
           {CEFR_LEVELS.map((lvl) => (
@@ -499,7 +577,6 @@ export default function Station4Screen({ onBack }: Props) {
             </Text>
             <Text style={styles.scoreText}>⚡ TỔNG ĐIỂM TRẠM 4: {result.score} / 100 ĐIỂM</Text>
 
-            {/* CHỈ SỐ TỐC ĐỘ NÓI (WPM) & HIGHLIGHT LỜI THOẠI */}
             <View style={styles.wpmBox}>
               <Text style={styles.wpmTitle}>⚡ TỐC ĐỘ TRÔI CHẢY (FLUENCY): {wpmValue} WPM</Text>
               <Text style={styles.wpmDesc}>
@@ -568,6 +645,7 @@ const styles = StyleSheet.create({
   title: { color: '#FF007F', fontSize: 12, fontWeight: '900' },
   weakBtn: { paddingVertical: 6, paddingHorizontal: 10, backgroundColor: '#1A0B2E', borderRadius: 8, borderWidth: 1, borderColor: '#FF007F' },
   weakBtnText: { color: '#FF007F', fontSize: 10, fontWeight: '900' },
+  studentInfoBadge: { color: '#39FF14', fontSize: 10, fontWeight: 'bold', marginBottom: 10 },
   sectionLabel: { color: '#FFD700', fontSize: 10, fontWeight: 'bold', alignSelf: 'flex-start', marginBottom: 6 },
   cefrRow: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginBottom: 15 },
   cefrBadge: { backgroundColor: '#0D0620', paddingVertical: 6, paddingHorizontal: 10, borderRadius: 6, borderWidth: 1, borderColor: '#332255' },
