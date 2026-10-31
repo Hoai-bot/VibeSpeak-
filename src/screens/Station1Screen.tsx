@@ -65,7 +65,7 @@ export default function Station1Screen({ onBack }: Props) {
     setIsPlayingTTS(false);
   };
 
-  // 🔊 HÀM PHÁT ÂM MẪU CHUẨN ĐÃ CẬP NHẬT MAPPING CHO NGUYÊN ÂM /ʌ/ & LINKING SOUNDS
+  // 🔊 HÀM PHÁT ÂM MẪU CHUẨN
   const playSampleAudio = (textToSpeak: string) => {
     if (!textToSpeak) return;
     stopAllAudio();
@@ -162,7 +162,10 @@ export default function Station1Screen({ onBack }: Props) {
       try { mediaRecorderRef.current.stop(); } catch (e) {}
     }
     if (recognitionRef.current) {
-      try { recognitionRef.current.stop(); } catch (e) {}
+      try { 
+        recognitionRef.current.abort(); 
+        recognitionRef.current = null;
+      } catch (e) {}
     }
     if (mediaStreamRef.current) {
       mediaStreamRef.current.getTracks().forEach(track => track.stop());
@@ -176,7 +179,7 @@ export default function Station1Screen({ onBack }: Props) {
     audioChunksRef.current = [];
   };
 
-  // 🎯 HÀM THU ÂM CHUẨN TƯƠNG THÍCH 100% ĐIỆN THOẠI ANDROID & IOS
+  // 🎯 HÀM THU ÂM CÓ KHẢ NĂNG RESET SẠCH BUFFER KHI BẤM THU LẠI
   const handleToggleRecord = async () => {
     stopAllAudio();
 
@@ -185,6 +188,20 @@ export default function Station1Screen({ onBack }: Props) {
         if (typeof navigator === 'undefined' || !navigator.mediaDevices) {
           alert("🔒 Trình duyệt chưa cấp quyền Micro!");
           return;
+        }
+
+        // 💡 1. RESET TRIỆT ĐỂ BỘ NHỚ LƯỢT TRƯỚC ĐỂ KHÔNG BỊ TRÙNG ĐIỂM KHI NÂNG ĐIỂM
+        setRecordedAudio(null);
+        setHasRecorded(false);
+        setResult(null);
+        setCapturedText('');
+        audioChunksRef.current = [];
+
+        if (recognitionRef.current) {
+          try { 
+            recognitionRef.current.abort(); 
+            recognitionRef.current = null;
+          } catch (e) {}
         }
 
         const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -198,7 +215,7 @@ export default function Station1Screen({ onBack }: Props) {
             recognition.onresult = (event: any) => {
               let current = '';
               for (let i = 0; i < event.results.length; ++i) {
-                current += event.results[i][0].transcript;
+                current += event.results[i][0].transcript + ' ';
               }
               if (current.trim()) setCapturedText(current.trim());
             };
@@ -233,7 +250,6 @@ export default function Station1Screen({ onBack }: Props) {
         const options = chosenMime ? { mimeType: chosenMime } : undefined;
         const recorder = new MediaRecorder(stream, options);
         mediaRecorderRef.current = recorder;
-        audioChunksRef.current = [];
 
         recorder.ondataavailable = (e) => {
           if (e.data && e.data.size > 0) {
@@ -256,8 +272,6 @@ export default function Station1Screen({ onBack }: Props) {
 
         recorder.start(200);
         setIsRecording(true);
-        setHasRecorded(false);
-        setCapturedText('');
       } catch (err) {
         console.error("Lỗi Micro Android/iOS:", err);
         alert("🔒 Vui lòng kiểm tra biểu tượng 🔒 trên thanh địa chỉ trình duyệt và cho phép 'Microphone'!");
@@ -385,7 +399,7 @@ export default function Station1Screen({ onBack }: Props) {
                 {isRecording 
                   ? '🔴 ĐANG THU ÂM... (BẤM ĐỂ DỪNG)' 
                   : hasRecorded 
-                  ? '✅ ĐÃ CÓ BẢN THU (BẤM ĐỂ THU LẠI)' 
+                  ? '🔄 BẤM ĐỂ PHÁT ÂM LẠI (NÂNG ĐIỂM)' 
                   : '🎙 BẤM ĐỂ BẮT ĐẦU PHÁT ÂM'}
               </Text>
             </TouchableOpacity>
@@ -411,7 +425,6 @@ export default function Station1Screen({ onBack }: Props) {
             </Text>
             <Text style={styles.scoreText}>⚡ Điểm phát âm: {result.score} / 100 ĐIỂM</Text>
 
-            {/* 🎯 NÂNG CẤP HIGHLIGHT TỪ ĐÚNG / SAI TRỰC QUAN */}
             <View style={styles.wordHighlightBox}>
               <Text style={styles.wordHighlightTitle}>🎯 CHI TIẾT TỪNG TỪ MỤC TIÊU:</Text>
               <View style={styles.wordRow}>

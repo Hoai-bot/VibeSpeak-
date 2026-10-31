@@ -196,7 +196,7 @@ export default function Station2Screen({ onBack }: Props) {
     };
   }, []);
 
-  // 🔄 CHUYỂN LƯỢT HỘI THOẠI NHANH (GIỮ NGUYÊN FILE THU ÂM CHUNG)
+  // 🔄 CHUYỂN LƯỢT HỘI THOẠI NHANH
   const handleSwitchTurn = () => {
     setActivePlayer((prevPlayer) => (prevPlayer === 1 ? 2 : 1));
     setTotalRoundsCompleted((prev) => prev + 1);
@@ -432,7 +432,6 @@ export default function Station2Screen({ onBack }: Props) {
         const capturedSpeech = fullTranscriptRef.current || '';
 
         try {
-          // 💡 LUÔN TRUYỀN 'STATION_2' ĐỂ CHẤM ĐIỂM THEO ĐỘ DÀI VÀ NGỮ PHÁP TỰ DO CHO CẢ SOLO LẪN NHÓM
           const result = await executeWithRetry(
             async () => {
               return await evaluateSpeaking(
@@ -637,7 +636,7 @@ export default function Station2Screen({ onBack }: Props) {
             <Text style={[styles.modeText, mode === 'solo' && styles.modeTextActive]}>🎯 SOLO</Text>
           </TouchableOpacity>
           <TouchableOpacity style={[styles.modeBtn, mode === 'relay' && styles.modeBtnActive]} onPress={() => handleSelectMode('relay')}>
-            <Text style={[styles.modeText, mode === 'relay' && styles.modeTextActive]}>⚡ RELAY</Text>
+            <Text style={[styles.modeText, mode === 'relay' && styles.modeTextActive]}>⚡ RELAY (TIẾP SỨC)</Text>
           </TouchableOpacity>
           <TouchableOpacity style={[styles.modeBtn, mode === 'roleplay' && styles.modeBtnActive]} onPress={() => handleSelectMode('roleplay')}>
             <Text style={[styles.modeText, mode === 'roleplay' && styles.modeTextActive]}>🎭 ROLEPLAY (ĐỐI THOẠI)</Text>
@@ -660,12 +659,12 @@ export default function Station2Screen({ onBack }: Props) {
                 </Text>
               </View>
 
-              {/* KHU VỰC THẺ VAI DIỄN ĐỐI THOẠI */}
+              {/* KHU VỰC THẺ VAI DIỄN ĐỐI THOẠI / TIẾP SỨC */}
               {(mode === 'relay' || mode === 'roleplay') && (
                 <View style={styles.playersRow}>
                   <View style={[styles.playerCard, activePlayer === 1 && styles.activePlayerCard]}>
                     <Text style={styles.playerTag}>👤 VAI 1 (BẠN 1)</Text>
-                    <Text style={styles.roleText}>🎭 {exercise.player1En || exercise.userRoleEn || 'Người hỏi / Khởi xướng'}</Text>
+                    <Text style={styles.roleText}>🎭 {exercise.player1En || exercise.userRoleEn || 'Người khởi xướng'}</Text>
                     {activePlayer === 1 && isRecording && (
                       <View style={styles.speakingBadge}>
                         <Text style={styles.speakingText}>🎙️ ĐANG NÓI CÂU NÀY!</Text>
@@ -675,7 +674,7 @@ export default function Station2Screen({ onBack }: Props) {
 
                   <View style={[styles.playerCard, activePlayer === 2 && styles.activePlayerCard]}>
                     <Text style={styles.playerTag}>👥 VAI 2 (BẠN 2 / AI)</Text>
-                    <Text style={styles.roleText}>🎭 {exercise.player2En || exercise.aiRoleEn || 'Người đáp / Phản hồi'}</Text>
+                    <Text style={styles.roleText}>🎭 {exercise.player2En || exercise.aiRoleEn || 'Người phản hồi'}</Text>
                     {activePlayer === 2 && isRecording && (
                       <View style={styles.speakingBadge}>
                         <Text style={styles.speakingText}>🎙️ ĐANG NÓI CÂU NÀY!</Text>
@@ -706,31 +705,37 @@ export default function Station2Screen({ onBack }: Props) {
                 </View>
               )}
 
+              {/* 🎯 NÚT BẮT ĐẦU: ĐIỀU CHỈNH CHUẨN TỪNG CHẾ ĐỘ (SOLO / RELAY / ROLEPLAY) */}
               {!isRecording && !isEvaluating ? (
                 <TouchableOpacity style={styles.startBtn} onPress={startFullRecording}>
                   <Text style={styles.startBtnText}>
                     {mode === 'solo' 
                       ? `🎙 BẤM THU ÂM SOLO (${getTimerByLevel(cefrLevel, mode, exercise)}s)` 
+                      : mode === 'relay'
+                      ? `🎙 BẮT ĐẦU TIẾP SỨC CẶP ĐÔI (${getTimerByLevel(cefrLevel, mode, exercise)}s)`
                       : `🎙 BẮT ĐẦU ĐỐI THOẠI CẶP ĐÔI (${getTimerByLevel(cefrLevel, mode, exercise)}s)`}
                   </Text>
                 </TouchableOpacity>
               ) : isRecording ? (
                 <View style={{ width: '100%', gap: 10 }}>
-                  {/* NÚT CHUYỂN LƯỢT PHẢN XẠ NHANH CHO HỘI THOẠI 2 CHIỀU */}
                   {(mode === 'relay' || mode === 'roleplay') && (
                     <TouchableOpacity style={styles.quickSwitchBtn} onPress={handleSwitchTurn}>
                       <Text style={styles.quickSwitchText}>
                         💬 NÓI XONG CÂU NÀY 👉 CHUYỂN LƯỢT CHO {activePlayer === 1 ? 'VAI 2' : 'VAI 1'}
                       </Text>
                       <Text style={styles.quickSwitchSub}>
-                        (Đã đối thoại: {totalRoundsCompleted} lượt | Đang thu âm liền mạch 1 file duy nhất)
+                        (Đã hoàn thành: {totalRoundsCompleted} lượt | Đang thu âm liền mạch 1 file duy nhất)
                       </Text>
                     </TouchableOpacity>
                   )}
                   
                   <TouchableOpacity style={styles.recordBtn} onPress={stopFullRecordingAndEvaluate}>
                     <Text style={styles.recordBtnText}>
-                      {mode === 'solo' ? '🛑 HOÀN THÀNH & NỘP BÀI NÓI SOLO' : '🛑 HOÀN THÀNH & NỘP BÀI HỘI THOẠI CỦA CẢ 2'}
+                      {mode === 'solo' 
+                        ? '🛑 HOÀN THÀNH & NỘP BÀI NÓI SOLO' 
+                        : mode === 'relay'
+                        ? '🛑 HOÀN THÀNH & NỘP BÀI TIẾP SỨC CỦA CẢ 2'
+                        : '🛑 HOÀN THÀNH & NỘP BÀI HỘI THOẠI CỦA CẢ 2'}
                     </Text>
                   </TouchableOpacity>
                 </View>
@@ -745,7 +750,6 @@ export default function Station2Screen({ onBack }: Props) {
 
               {evalResult && (
                 <View style={styles.evalBox}>
-                  {/* 💡 TIÊU ĐỀ PHÂN BIỆT CHÍNH XÁC SOLO VÀ CẶP ĐÔI */}
                   <Text style={styles.evalScore}>
                     {mode === 'solo' 
                       ? `🏆 ĐIỂM BÀI NÓI SOLO CỦA BẠN: ${evalResult.score}/100` 
@@ -757,7 +761,7 @@ export default function Station2Screen({ onBack }: Props) {
                       <Text style={styles.wordHighlightTitle}>
                         {mode === 'solo' 
                           ? '🎙 TOÀN BỘ TỪ NGỮ GHI NHẬN ĐƯỢC TỪ BÀI NÓI:' 
-                          : '🎙 TOÀN BỘ LỜI THOẠI ĐỐI THOẠI THU ĐƯỢC:'}
+                          : '🎙 TOÀN BỘ LỜI THOẠI THU ĐƯỢC:'}
                       </Text>
                       <View style={styles.wordRow}>
                         {analyzeSpokenTranscript(evalResult.transcript).map((item, idx) => (
@@ -780,7 +784,7 @@ export default function Station2Screen({ onBack }: Props) {
                   {evalResult.audioUrl ? (
                     <View style={styles.audioPlayerBox}>
                       <Text style={styles.audioLabel}>
-                        {mode === 'solo' ? '🎧 Nghe lại bài thu âm của bạn:' : '🎧 Nghe lại toàn bộ file thu âm hội thoại chung:'}
+                        {mode === 'solo' ? '🎧 Nghe lại bài thu âm của bạn:' : '🎧 Nghe lại toàn bộ file thu âm chung:'}
                       </Text>
                       {React.createElement('audio', {
                         key: evalResult.audioUrl,
