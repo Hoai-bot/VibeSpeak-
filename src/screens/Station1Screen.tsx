@@ -34,6 +34,13 @@ export default function Station1Screen({ onBack }: Props) {
   const recognitionRef = useRef<any>(null);
   const recordingStartTimeRef = useRef<number>(0);
 
+  // 🛡️ HÀM BÁO LỖI AN TOÀN TRÁNH NGHẼN TOUCH RESPONDER TRÊN WEB
+  const safeAlert = (msg: string) => {
+    setTimeout(() => {
+      alert(msg);
+    }, 50);
+  };
+
   // 🎯 LẤY USER ID AN TOÀN VÀ ĐỒNG NHẤT
   useEffect(() => {
     const fetchUser = async () => {
@@ -184,7 +191,7 @@ export default function Station1Screen({ onBack }: Props) {
     if (!isRecording) {
       try {
         if (typeof navigator === 'undefined' || !navigator.mediaDevices) {
-          alert("🔒 Trình duyệt chưa cấp quyền Micro!");
+          safeAlert("🔒 Trình duyệt chưa cấp quyền Micro!");
           return;
         }
 
@@ -276,7 +283,7 @@ export default function Station1Screen({ onBack }: Props) {
         setIsRecording(true);
       } catch (err) {
         console.error("Lỗi Micro:", err);
-        alert("🔒 Vui lòng cho phép quyền 'Microphone' trên trình duyệt để ghi âm!");
+        safeAlert("🔒 Vui lòng cho phép quyền 'Microphone' trên trình duyệt để ghi âm!");
       }
     } else {
       // BẤM DỪNG THU ÂM
@@ -296,7 +303,7 @@ export default function Station1Screen({ onBack }: Props) {
         setIsProcessingAudio(false);
         setHasRecorded(false);
         setRecordedAudio(null);
-        alert("⚠️ Bạn vừa bấm tắt quá nhanh (dưới 1 giây)! Vui lòng giữ micro và phát âm rõ từ mục tiêu rồi mới bấm dừng.");
+        safeAlert("⚠️ Bạn vừa bấm tắt quá nhanh (dưới 1 giây)! Vui lòng giữ micro và phát âm rõ từ mục tiêu rồi mới bấm dừng.");
       }
     }
   };
@@ -304,7 +311,7 @@ export default function Station1Screen({ onBack }: Props) {
   // NỘP BÀI CHẤM ĐIỂM
   const handleSubmitAnswer = async () => {
     if (!hasRecorded || !recordedAudio || isProcessingAudio) {
-      alert("🔒 Vui lòng phát âm từ mục tiêu vào micro trước khi nộp bài!");
+      safeAlert("🔒 Vui lòng phát âm từ mục tiêu vào micro trước khi nộp bài!");
       return;
     }
 
@@ -340,7 +347,7 @@ export default function Station1Screen({ onBack }: Props) {
       }
     } catch (err) {
       console.error("Lỗi chấm điểm Trạm 1:", err);
-      alert("⚠️ Lỗi kết nối chấm điểm. Vui lòng thử nộp lại!");
+      safeAlert("⚠️ Lỗi kết nối chấm điểm. Vui lòng thử nộp lại!");
     } finally {
       setIsAnalyzing(false);
     }
@@ -479,7 +486,20 @@ export default function Station1Screen({ onBack }: Props) {
             {result.audioUrl ? (
               <View style={styles.audioPlayerBox}>
                 <Text style={styles.audioLabel}>🎧 Nghe lại bài phát âm của bạn:</Text>
-                <audio controls src={result.audioUrl} style={{ width: '100%', marginTop: 6, height: 36 }} />
+                {/* 🛡️ CÁCH LY PHẦN TỬ AUDIO KHỎI PANRESPONDER CỦA REACT NATIVE WEB */}
+                <View 
+                  style={{ width: '100%', marginTop: 6 }} 
+                  // @ts-ignore
+                  onStartShouldSetResponder={() => false}
+                  onMoveShouldSetResponder={() => false}
+                >
+                  {React.createElement('audio', {
+                    controls: true,
+                    playsInline: true,
+                    src: result.audioUrl,
+                    style: { width: '100%', height: 36, touchAction: 'manipulation' }
+                  })}
+                </View>
               </View>
             ) : null}
 
