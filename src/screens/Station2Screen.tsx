@@ -113,7 +113,7 @@ export default function Station2Screen({ onBack }: Props) {
   useEffect(() => {
     const fetchUser = async () => {
       try {
-        if (supabase) {
+        if (supabase && supabase.auth) {
           const { data } = await supabase.auth.getUser();
           if (data?.user) {
             setUserId(data.user.id);
@@ -196,7 +196,6 @@ export default function Station2Screen({ onBack }: Props) {
     };
   }, []);
 
-  // 🔄 CHUYỂN LƯỢT HỘI THOẠI NHANH
   const handleSwitchTurn = () => {
     setActivePlayer((prevPlayer) => (prevPlayer === 1 ? 2 : 1));
     setTotalRoundsCompleted((prev) => prev + 1);
@@ -212,7 +211,6 @@ export default function Station2Screen({ onBack }: Props) {
     setTurnTimer(getTimerByLevel(cefrLevel, newMode, exercise));
   };
 
-  // ⏱ ĐỒNG HỒ ĐẾM NGƯỢC TOÀN BỘ PHIÊN NÓI
   useEffect(() => {
     let timerInterval: NodeJS.Timeout | null = null;
 
@@ -405,22 +403,22 @@ export default function Station2Screen({ onBack }: Props) {
           } catch (e) {}
         }
 
-        // 🛡️ CHẶN BẤM TẮT DƯỚI 3 GIÂY
-        if (durationSeconds < 3.0) {
+        // 🛡️ CHẶN BẤM TẮT DƯỚI 2 GIÂY
+        if (durationSeconds < 2.0) {
           setIsEvaluating(false);
-          setHardwareWarning('⚠️ Bạn vừa bấm tắt quá nhanh (dưới 3 giây)! Vui lòng giữ bình tĩnh, đọc to câu trả lời tiếng Anh rồi mới bấm Dừng & Nộp bài.');
+          setHardwareWarning('⚠️ Bạn vừa bấm tắt quá nhanh (dưới 2 giây)! Vui lòng giữ bình tĩnh, đọc to câu trả lời tiếng Anh rồi mới bấm Dừng & Nộp bài.');
           if (audioStreamRef.current) {
             audioStreamRef.current.getTracks().forEach(track => track.stop());
           }
           return;
         }
 
-        const actualType = recorder.mimeType || resolvedMimeType || 'audio/mp4';
+        const actualType = recorder.mimeType || resolvedMimeType || 'audio/webm';
         const fullAudioBlob = new Blob(audioChunksRef.current, { type: actualType });
 
-        if (fullAudioBlob.size < 5000 && !fullTranscriptRef.current.trim()) {
+        if (fullAudioBlob.size < 4000 && !fullTranscriptRef.current.trim()) {
           setIsEvaluating(false);
-          setHardwareWarning('⚠️ Micro không thu được tín hiệu âm thanh rõ ràng hoặc âm lượng quá nhỏ. Vui lòng kiểm tra jack cắm tai nghe, đưa mic lại gần miệng và bấm THỬ LẠI!');
+          setHardwareWarning('⚠️ Micro không thu được tín hiệu âm thanh rõ ràng hoặc âm lượng quá nhỏ. Vui lòng kiểm tra micro và bấm THỬ LẠI!');
           if (audioStreamRef.current) {
             audioStreamRef.current.getTracks().forEach(track => track.stop());
           }
@@ -432,6 +430,7 @@ export default function Station2Screen({ onBack }: Props) {
         const capturedSpeech = fullTranscriptRef.current || '';
 
         try {
+          // 🎯 ĐÁNH GIÁ VỚI STATION_2
           const result = await executeWithRetry(
             async () => {
               return await evaluateSpeaking(
@@ -478,16 +477,15 @@ export default function Station2Screen({ onBack }: Props) {
             const r1 = exercise?.userRoleEn || exercise?.player1En || 'Vai 1';
             const r2 = exercise?.aiRoleEn || exercise?.player2En || 'Vai 2';
             pairDisplayName = `${studentIdentifier} (Cặp đôi: ${r1} & ${r2}) | Điểm: ${sharedScore}đ`;
-            feedbackDetail = `[HỘI THOẠI NHÓM ĐÔI - ${totalRoundsCompleted} lượt đối thoại | ĐỒNG ĐIỂM CẶP: ${sharedScore}đ]: ${result.detailedFeedback}`;
+            feedbackDetail = `[HỘI THOẠI NHÓM ĐÔI - ${totalRoundsCompleted} lượt | ĐỒNG ĐIỂM: ${sharedScore}đ]: ${result.detailedFeedback}`;
           } else if (mode === 'relay') {
             pairDisplayName = `${studentIdentifier} & Bạn đấu | Điểm tổng: ${sharedScore}đ`;
-            feedbackDetail = `[TIẾP SỨC RELAY - ĐỒNG ĐIỂM CẶP: ${sharedScore}đ]: ${result.detailedFeedback}`;
+            feedbackDetail = `[TIẾP SỨC RELAY - ĐỒNG ĐIỂM: ${sharedScore}đ]: ${result.detailedFeedback}`;
           }
 
-          // 🚀 TRẢ GIAO DIỆN NGAY LẬP TỨC
           setIsEvaluating(false);
 
-          // 🚀 TẢI DỮ LIỆU VÀ AUDIO LÊN SERVER NỀN
+          // 🚀 TẢI DỮ LIỆU VÀ ĐỒNG BỘ FILE AUDIO LÊN SUPABASE STORAGE
           (async () => {
             try {
               const savedSubmission = await saveSubmissionToCloud({
@@ -504,12 +502,22 @@ export default function Station2Screen({ onBack }: Props) {
               });
 
               if (savedSubmission?.id && fullAudioBlob && fullAudioBlob.size >= 1000) {
-                const fileName = `audio_${savedSubmission.id}_${Date.now()}.webm`;
+                const fileExt = actualType.includes('mp4') ? 'mp4' : 'webm';
+                const fileName = `audio_${savedSubmission.id}_${Date.now()}.${fileExt}`;
+
                 const { data: uploadData, error: uploadErr } = await supabase.storage
                   .from('submissions_audio')
-                  .upload(fileName, fullAudioBlob, { contentType: actualType, upsert: true });
+                  .upload(fileName, fullAudioBlob, { 
+                    contentType: actualType || 'audio/webm', 
+                    upsert: true 
+                  });
 
-                if (!uploadErr && uploadData?.path) {
+                if (uploadErr) {
+                  console.error("❌ Lỗi upload Supabase Storage:", uploadErr.message);
+                  return;
+                }
+
+                if (uploadData?.path) {
                   const { data: publicUrlData } = supabase.storage
                     .from('submissions_audio')
                     .getPublicUrl(uploadData.path);
@@ -542,7 +550,7 @@ export default function Station2Screen({ onBack }: Props) {
       setIsRecording(true);
       setIsGameActive(true);
     } catch (err) {
-      setHardwareWarning("🔒 Trình duyệt chưa được cấp quyền Microphone! Vui lòng bấm vào biểu tượng 🔒 hoặc Cài đặt trên thanh địa chỉ URL để BẬT Micro và tải lại trang.");
+      setHardwareWarning("🔒 Trình duyệt chưa được cấp quyền Microphone! Vui lòng cho phép quyền Microphone và tải lại trang.");
     }
   };
 
@@ -659,7 +667,7 @@ export default function Station2Screen({ onBack }: Props) {
                 </Text>
               </View>
 
-              {/* KHU VỰC THẺ VAI DIỄN ĐỐI THOẠI / TIẾP SỨC */}
+              {/* KHU VỰC THẺ VAI DIỄN */}
               {(mode === 'relay' || mode === 'roleplay') && (
                 <View style={styles.playersRow}>
                   <View style={[styles.playerCard, activePlayer === 1 && styles.activePlayerCard]}>
@@ -684,7 +692,6 @@ export default function Station2Screen({ onBack }: Props) {
                 </View>
               )}
 
-              {/* GỢI Ý ĐỀ BÀI */}
               <View style={styles.scriptBox}>
                 <Text style={styles.promptText}>🎯 "{exercise.promptEn || exercise.contextEn || ''}"</Text>
               </View>
@@ -705,7 +712,7 @@ export default function Station2Screen({ onBack }: Props) {
                 </View>
               )}
 
-              {/* 🎯 NÚT BẮT ĐẦU: ĐIỀU CHỈNH CHUẨN TỪNG CHẾ ĐỘ (SOLO / RELAY / ROLEPLAY) */}
+              {/* NÚT BẮT ĐẦU */}
               {!isRecording && !isEvaluating ? (
                 <TouchableOpacity style={styles.startBtn} onPress={startFullRecording}>
                   <Text style={styles.startBtnText}>
