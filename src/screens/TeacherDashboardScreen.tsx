@@ -499,11 +499,20 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
                 <View style={styles.audioPlayerSection}>
                   <Text style={styles.audioSectionTitle}>🎧 NGHE LẠI BÀI NÓI CỦA SINH VIÊN:</Text>
                   {sub.audioUrl ? (
-                    React.createElement('audio', { 
-                      controls: true, 
-                      src: sub.audioUrl, 
-                      style: { width: '100%', marginTop: '6px', height: '35px' } 
-                    })
+                    /* 🛡️ CÁCH LY PHẦN TỬ AUDIO KHỎI PANRESPONDER CỦA REACT NATIVE WEB */
+                    <View 
+                      style={{ width: '100%', marginTop: 6 }} 
+                      // @ts-ignore
+                      onStartShouldSetResponder={() => false}
+                      onMoveShouldSetResponder={() => false}
+                    >
+                      {React.createElement('audio', { 
+                        controls: true, 
+                        playsInline: true,
+                        src: sub.audioUrl, 
+                        style: { width: '100%', height: 35, touchAction: 'manipulation' } 
+                      })}
+                    </View>
                   ) : (
                     <Text style={{ color: '#FF8800', fontSize: 10, fontStyle: 'italic', marginTop: 4 }}>
                       ⚠️ Bản thu không đồng bộ được lên máy chủ do mạng Wi-Fi yếu (Chỉ lưu điểm & Text).
