@@ -18,6 +18,7 @@ export default function Station1Screen({ onBack }: Props) {
   const [isRecording, setIsRecording] = useState<boolean>(false);
   const [recordedAudio, setRecordedAudio] = useState<Blob | null>(null);
   const [hasRecorded, setHasRecorded] = useState<boolean>(false);
+  const [isProcessingAudio, setIsProcessingAudio] = useState<boolean>(false); // 🛡️ Khóa nút nộp bài khi đang nén file mới
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
   const [result, setResult] = useState<AssessmentResult | null>(null);
   const [userId, setUserId] = useState<string | undefined>(undefined);
@@ -30,6 +31,7 @@ export default function Station1Screen({ onBack }: Props) {
   const currentAudioRef = useRef<HTMLAudioElement | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const recognitionRef = useRef<any>(null);
+  const recordingStartTimeRef = useRef<number>(0);
 
   // Lấy user ID an toàn
   useEffect(() => {
@@ -174,12 +176,13 @@ export default function Station1Screen({ onBack }: Props) {
     setIsRecording(false);
     setRecordedAudio(null);
     setHasRecorded(false);
+    setIsProcessingAudio(false);
     setResult(null);
     setCapturedText('');
     audioChunksRef.current = [];
   };
 
-  // 🎯 HÀM THU ÂM CÓ KHẢ NĂNG RESET SẠCH BUFFER KHI BẤM THU LẠI
+  // 🎯 THU ÂM CHUẨN XÁC: RESET SẠCH FILE CŨ & KHÓA NÚT NỘP CHO ĐẾN KHI CÓ BLOB MỚI
   const handleToggleRecord = async () => {
     stopAllAudio();
 
@@ -190,9 +193,10 @@ export default function Station1Screen({ onBack }: Props) {
           return;
         }
 
-        // 💡 1. RESET TRIỆT ĐỂ BỘ NHỚ LƯỢT TRƯỚC ĐỂ KHÔNG BỊ TRÙNG ĐIỂM KHI NÂNG ĐIỂM
+        // 1. Reset sạch toàn bộ dữ liệu lượt trước
         setRecordedAudio(null);
         setHasRecorded(false);
+        setIsProcessingAudio(false);
         setResult(null);
         setCapturedText('');
         audioChunksRef.current = [];
@@ -257,12 +261,14 @@ export default function Station1Screen({ onBack }: Props) {
           }
         };
 
+        // Khi MediaRecorder đóng gói xong file âm thanh mới
         recorder.onstop = () => {
           const mimeUsed = recorder.mimeType || chosenMime || 'audio/webm';
           const blob = new Blob(audioChunksRef.current, { type: mimeUsed });
 
           setRecordedAudio(blob);
           setHasRecorded(true);
+          setIsProcessingAudio(false); // Đã có file âm thanh mới -> Mở khóa nút nộp bài
 
           if (mediaStreamRef.current) {
             mediaStreamRef.current.getTracks().forEach(t => t.stop());
@@ -270,27 +276,51 @@ export default function Station1Screen({ onBack }: Props) {
           }
         };
 
-        recorder.start(200);
+        recordingStartTimeRef.current = Date.now();
+        recorder.start(150);
         setIsRecording(true);
       } catch (err) {
-        console.error("Lỗi Micro Android/iOS:", err);
-        alert("🔒 Vui lòng kiểm tra biểu tượng 🔒 trên thanh địa chỉ trình duyệt và cho phép 'Microphone'!");
+        console.error("Lỗi Micro:", err);
+        alert("🔒 Vui lòng cho phép quyền 'Microphone' trên trình duyệt để ghi âm!");
       }
     } else {
+      // BẤM DỪNG THU ÂM
+      const durationSeconds = (Date.now() - recordingStartTimeRef.current) / 1000;
       setIsRecording(false);
+      setIsProcessingAudio(true); // Đang chờ recorder.onstop tạo file
+
       if (recognitionRef.current) {
         try { recognitionRef.current.stop(); } catch (e) {}
       }
       if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
         mediaRecorderRef.current.stop();
       }
+
+      // 🛡️ CHẶN BẤM TẮT DƯỚI 1 GIÂY
+      if (durationSeconds < 1.0) {
+        setIsProcessingAudio(false);
+        setHasRecorded(false);
+        setRecordedAudio(null);
+        alert("⚠️ Bạn vừa bấm tắt quá nhanh (dưới 1 giây)! Vui lòng giữ micro và phát âm rõ từ mục tiêu rồi mới bấm dừng.");
+      }
     }
   };
 
-  // Nộp bài chấm điểm AI
+  // NỘP BÀI CHẤM ĐIỂM
   const handleSubmitAnswer = async () => {
-    if (!hasRecorded || !recordedAudio) {
-      alert("🔒 Vui lòng bấm micro thu âm phát âm trước khi nộp bài!");
+    if (!hasRecorded || !recordedAudio || isProcessingAudio) {
+      alert("🔒 Vui lòng phát âm từ mục tiêu vào micro trước khi nộp bài!");
+      return;
+    }
+
+    // 🛡️ CHẶN FILE RỖNG / KHÔNG NÓI GÌ -> ĐÁNH TRƯỢT 0 ĐIỂM NGAY
+    if (recordedAudio.size < 3000 && !capturedText.trim()) {
+      setResult({
+        score: 0,
+        isWin: false,
+        transcript: "(Chưa phát hiện giọng nói)",
+        detailedFeedback: "❌ Micro chưa thu được tiếng hoặc âm lượng quá nhỏ! Vui lòng bấm 'Phát âm lại' và nói to, rõ ràng hơn."
+      });
       return;
     }
 
@@ -398,6 +428,8 @@ export default function Station1Screen({ onBack }: Props) {
               <Text style={styles.recordBtnText}>
                 {isRecording 
                   ? '🔴 ĐANG THU ÂM... (BẤM ĐỂ DỪNG)' 
+                  : isProcessingAudio
+                  ? '⏳ ĐANG LƯU BẢN THU MỚI...'
                   : hasRecorded 
                   ? '🔄 BẤM ĐỂ PHÁT ÂM LẠI (NÂNG ĐIỂM)' 
                   : '🎙 BẤM ĐỂ BẮT ĐẦU PHÁT ÂM'}
@@ -408,9 +440,12 @@ export default function Station1Screen({ onBack }: Props) {
               <ActivityIndicator size="large" color="#39FF14" style={{ marginVertical: 10 }} />
             ) : (
               <TouchableOpacity 
-                style={[styles.submitBtn, (!hasRecorded || isRecording) && styles.submitBtnDisabled]} 
+                style={[
+                  styles.submitBtn, 
+                  (!hasRecorded || isRecording || isProcessingAudio) && styles.submitBtnDisabled
+                ]} 
                 onPress={handleSubmitAnswer}
-                disabled={!hasRecorded || isRecording}
+                disabled={!hasRecorded || isRecording || isProcessingAudio}
               >
                 <Text style={styles.submitBtnText}>⚡ NỘP BÀI & CHẤM PHÁT ÂM AI</Text>
               </TouchableOpacity>
