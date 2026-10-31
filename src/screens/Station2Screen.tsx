@@ -37,6 +37,13 @@ export default function Station2Screen({ onBack }: Props) {
   const [customTopicInput, setCustomTopicInput] = useState<string>('');
   const [isUsingCustomTopic, setIsUsingCustomTopic] = useState<boolean>(false);
 
+  // 🛡️ HÀM BÁO LỖI AN TOÀN TRÁNH NGHẼN TOUCH RESPONDER TRÊN WEB
+  const safeAlert = (msg: string) => {
+    setTimeout(() => {
+      alert(msg);
+    }, 50);
+  };
+
   // 🎯 TÍNH THỜI GIAN THEO CẤP ĐỘ CEFR VÀ ĐỘ PHỨC TẠP CỦA CHỦ ĐỀ
   const getTimerByLevel = (level: string, currentMode: string = mode, currentExercise: any = exercise): number => {
     const lvl = level.toUpperCase();
@@ -231,7 +238,7 @@ export default function Station2Screen({ onBack }: Props) {
 
   const handleApplyCustomTopic = () => {
     if (!customTopicInput.trim()) {
-      alert("⚠️ Vui lòng dán hoặc nhập nội dung chủ đề từ sách giáo khoa trước!");
+      safeAlert("⚠️ Vui lòng dán hoặc nhập nội dung chủ đề từ sách giáo khoa trước!");
       return;
     }
 
@@ -304,7 +311,7 @@ export default function Station2Screen({ onBack }: Props) {
 
   const startFullRecording = async () => {
     if (!studentNameInput.trim()) {
-      alert("⚠️ Vui lòng nhập Họ tên hoặc Biệt danh của bạn ở phía trên trước khi bắt đầu!");
+      safeAlert("⚠️ Vui lòng nhập Họ tên hoặc Biệt danh của bạn ở phía trên trước khi bắt đầu!");
       return;
     }
 
@@ -536,7 +543,7 @@ export default function Station2Screen({ onBack }: Props) {
           })();
 
         } catch (netErr: any) {
-          alert(`⚠️ ${netErr.message || 'Lỗi gửi bài do mất kết nối!'}`);
+          safeAlert(`⚠️ ${netErr.message || 'Lỗi gửi bài do mất kết nối!'}`);
         } finally {
           setIsEvaluating(false);
           if (audioStreamRef.current) {
@@ -793,14 +800,22 @@ export default function Station2Screen({ onBack }: Props) {
                       <Text style={styles.audioLabel}>
                         {mode === 'solo' ? '🎧 Nghe lại bài thu âm của bạn:' : '🎧 Nghe lại toàn bộ file thu âm chung:'}
                       </Text>
-                      {React.createElement('audio', {
-                        key: evalResult.audioUrl,
-                        controls: true,
-                        playsInline: true,
-                        preload: 'auto',
-                        src: evalResult.audioUrl,
-                        style: { width: '100%', marginTop: 6, height: 36 }
-                      })}
+                      {/* 🛡️ CÁCH LY PHẦN TỬ AUDIO KHỎI PANRESPONDER CỦA REACT NATIVE WEB */}
+                      <View 
+                        style={{ width: '100%', marginTop: 6 }} 
+                        // @ts-ignore
+                        onStartShouldSetResponder={() => false}
+                        onMoveShouldSetResponder={() => false}
+                      >
+                        {React.createElement('audio', {
+                          key: evalResult.audioUrl,
+                          controls: true,
+                          playsInline: true,
+                          preload: 'auto',
+                          src: evalResult.audioUrl,
+                          style: { width: '100%', height: 36, touchAction: 'manipulation' }
+                        })}
+                      </View>
                     </View>
                   ) : null}
 
