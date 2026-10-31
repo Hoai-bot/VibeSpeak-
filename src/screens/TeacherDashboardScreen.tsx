@@ -9,6 +9,9 @@ interface Props {
   onBack: () => void;
 }
 
+type ModeFilter = 'ALL' | 'solo' | 'relay' | 'roleplay';
+type GradeFilter = 'ALL' | 'EXCELLENT' | 'PASS' | 'NEED_WORK';
+
 export default function TeacherDashboardScreen({ onBack }: Props) {
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [isTeacher, setIsTeacher] = useState<boolean>(false);
@@ -17,10 +20,13 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
   
   const [submissions, setSubmissions] = useState<RoleplaySubmission[]>([]);
   const [selectedClass, setSelectedClass] = useState<string>('ALL');
+  const [selectedMode, setSelectedMode] = useState<ModeFilter>('ALL');
+  const [selectedGrade, setSelectedGrade] = useState<GradeFilter>('ALL');
   const [customClassSearch, setCustomClassSearch] = useState<string>('');
+  const [isClassDropdownOpen, setIsClassDropdownOpen] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(true);
 
-  // 🎯 1. KIỂM TRA PHÂN QUYỀN GIÁO VIÊN KHI MỞ MÀN HÌNH
+  // 🎯 1. KIỂM TRA PHÂN QUYỀN GIÁO VIÊN
   useEffect(() => {
     const checkTeacherAuth = async () => {
       setLoading(true);
@@ -59,7 +65,7 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
 
           setTeacherAssignedClasses(assigned);
 
-          // Khôi phục lớp đã chọn trước đó nếu có
+          // Khôi phục lớp đã chọn trước đó từ localStorage
           const savedClass = typeof window !== 'undefined' ? localStorage.getItem('vibe_teacher_selected_class') : null;
           if (savedClass) {
             setSelectedClass(savedClass);
@@ -119,7 +125,7 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
 
   const handleSelectClass = (cls: string) => {
     setSelectedClass(cls);
-    setCustomClassSearch('');
+    setIsClassDropdownOpen(false);
     if (typeof window !== 'undefined') {
       localStorage.setItem('vibe_teacher_selected_class', cls);
     }
@@ -134,22 +140,40 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
     ? rawAvailableClasses
     : rawAvailableClasses.filter(cls => teacherAssignedClasses.includes(cls));
 
-  // 🎯 3. LỌC BÀI NỘP THEO LỚP & TÌM KIẾM SINH VIÊN
+  // 🎯 3. LỌC BÀI NỘP CHUẨN XÁC: TÌM KIẾM KHÔNG BỊ TRÀN SANG LỚP KHÁC
   const filteredSubmissions = submissions.filter((item) => {
     const itemClass = cleanClassName(item.className).toUpperCase();
     const studentName = String(item.studentName || '').toUpperCase();
+    const itemScore = Number(item.score) || 0;
+    const itemMode = String(item.mode || '').toLowerCase();
 
+    // 1. Phân quyền giáo viên
     if (!isAdmin && teacherAssignedClasses.length > 0 && !teacherAssignedClasses.includes(itemClass)) {
       return false;
     }
 
-    if (customClassSearch.trim().length > 0) {
-      const query = customClassSearch.trim().toUpperCase();
-      return itemClass.includes(query) || studentName.includes(query);
+    // 2. Lọc theo lớp được chọn
+    if (selectedClass !== 'ALL' && itemClass !== selectedClass.toUpperCase()) {
+      return false;
     }
 
-    if (selectedClass === 'ALL') return true;
-    return itemClass === selectedClass.toUpperCase();
+    // 3. Lọc theo chế độ làm bài (Mode)
+    if (selectedMode !== 'ALL' && itemMode !== selectedMode.toLowerCase()) {
+      return false;
+    }
+
+    // 4. Lọc theo phổ điểm
+    if (selectedGrade === 'EXCELLENT' && itemScore < 85) return false;
+    if (selectedGrade === 'PASS' && (itemScore < 70 || itemScore >= 85)) return false;
+    if (selectedGrade === 'NEED_WORK' && itemScore >= 70) return false;
+
+    // 5. Tìm kiếm sinh viên theo tên hoặc MSSV TRONG PHẠM VI LỚP ĐANG CHỌN
+    if (customClassSearch.trim().length > 0) {
+      const query = customClassSearch.trim().toUpperCase();
+      return studentName.includes(query) || itemClass.includes(query);
+    }
+
+    return true;
   });
 
   // 🎯 4. THỐNG KÊ LỚP HỌC
@@ -251,26 +275,63 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
           <Text style={styles.teacherBadgeRole}>
             {isAdmin 
               ? '👑 Quyền: QUẢN TRỊ VIÊN TOÀN TRƯỜNG' 
-              : `🏫 Đang quản lý: ${availableClasses.length} lớp`}
+              : `🏫 Đang quản lý: ${availableClasses.length} lớp được phân công`}
           </Text>
         </View>
 
-        {/* BỘ LỌC CHỌN LỚP DỄ DÀNG */}
+        {/* BỘ LỌC CHỌN LỚP NÂNG CAO */}
         <View style={styles.filterCard}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Text style={styles.filterTitle}>🏫 CHỌN LỚP ĐỂ XEM ĐIỂM:</Text>
-            <Text style={{ color: '#00FFFF', fontSize: 9, fontWeight: 'bold' }}>
-              Đang chọn: {selectedClass === 'ALL' ? 'TẤT CẢ LỚP' : selectedClass}
-            </Text>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <Text style={styles.filterTitle}>🏫 LỚP ĐANG XEM: <Text style={{ color: '#39FF14' }}>{selectedClass === 'ALL' ? 'TẤT CẢ LỚP' : selectedClass}</Text></Text>
+            
+            {/* Nút bấm mở nhanh danh mục thả xuống */}
+            <TouchableOpacity 
+              style={styles.dropdownToggleBtn}
+              onPress={() => setIsClassDropdownOpen(!isClassDropdownOpen)}
+            >
+              <Text style={styles.dropdownToggleText}>
+                {isClassDropdownOpen ? '▲ ĐÓNG DANH MỤC' : '▼ CHỌN NHANH LỚP'}
+              </Text>
+            </TouchableOpacity>
           </View>
-          
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginVertical: 10 }}>
+
+          {/* MENU CHỌN LỚP NHANH DẠNG THẢ XUỐNG KHI CÓ NHIỀU LỚP */}
+          {isClassDropdownOpen && (
+            <View style={styles.dropdownMenu}>
+              <TouchableOpacity
+                style={[styles.dropdownItem, selectedClass === 'ALL' && styles.dropdownItemActive]}
+                onPress={() => handleSelectClass('ALL')}
+              >
+                <Text style={[styles.dropdownItemText, selectedClass === 'ALL' && styles.dropdownItemTextActive]}>
+                  🌐 TẤT CẢ LỚP ({submissions.length} bài nộp)
+                </Text>
+              </TouchableOpacity>
+
+              {availableClasses.map((cls) => {
+                const count = submissions.filter(s => cleanClassName(s.className).toUpperCase() === cls).length;
+                return (
+                  <TouchableOpacity
+                    key={cls}
+                    style={[styles.dropdownItem, selectedClass === cls && styles.dropdownItemActive]}
+                    onPress={() => handleSelectClass(cls)}
+                  >
+                    <Text style={[styles.dropdownItemText, selectedClass === cls && styles.dropdownItemTextActive]}>
+                      🏫 Lớp {cls} ({count} bài nộp)
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
+
+          {/* DÃY CHIP CUỘN NGANG TIỆN DỤNG */}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginVertical: 8 }}>
             <TouchableOpacity
-              style={[styles.chip, selectedClass === 'ALL' && !customClassSearch && styles.chipActive]}
+              style={[styles.chip, selectedClass === 'ALL' && styles.chipActive]}
               onPress={() => handleSelectClass('ALL')}
             >
-              <Text style={[styles.chipText, selectedClass === 'ALL' && !customClassSearch && styles.chipTextActive]}>
-                🌐 TẤT CẢ LỚP ({submissions.length})
+              <Text style={[styles.chipText, selectedClass === 'ALL' && styles.chipTextActive]}>
+                🌐 TẤT CẢ ({submissions.length})
               </Text>
             </TouchableOpacity>
 
@@ -279,10 +340,10 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
               return (
                 <TouchableOpacity
                   key={cls}
-                  style={[styles.chip, selectedClass === cls && !customClassSearch && styles.chipActive]}
+                  style={[styles.chip, selectedClass === cls && styles.chipActive]}
                   onPress={() => handleSelectClass(cls)}
                 >
-                  <Text style={[styles.chipText, selectedClass === cls && !customClassSearch && styles.chipTextActive]}>
+                  <Text style={[styles.chipText, selectedClass === cls && styles.chipTextActive]}>
                     🏫 {cls} ({countInClass})
                   </Text>
                 </TouchableOpacity>
@@ -290,10 +351,48 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
             })}
           </ScrollView>
 
+          {/* BỘ LỌC CHẾ ĐỘ THI (MODE) & PHỔ ĐIỂM */}
+          <View style={styles.subFilterRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.subFilterLabel}>🎯 CHẾ ĐỘ THI:</Text>
+              <View style={{ flexDirection: 'row', gap: 4, marginTop: 4 }}>
+                {(['ALL', 'solo', 'relay', 'roleplay'] as ModeFilter[]).map((m) => (
+                  <TouchableOpacity
+                    key={m}
+                    style={[styles.miniChip, selectedMode === m && styles.miniChipActive]}
+                    onPress={() => setSelectedMode(m)}
+                  >
+                    <Text style={[styles.miniChipText, selectedMode === m && styles.miniChipTextActive]}>
+                      {m === 'ALL' ? 'TẤT CẢ' : m.toUpperCase()}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            <View style={{ flex: 1 }}>
+              <Text style={styles.subFilterLabel}>🏆 XẾP LOẠI:</Text>
+              <View style={{ flexDirection: 'row', gap: 4, marginTop: 4 }}>
+                {(['ALL', 'EXCELLENT', 'PASS', 'NEED_WORK'] as GradeFilter[]).map((g) => (
+                  <TouchableOpacity
+                    key={g}
+                    style={[styles.miniChip, selectedGrade === g && styles.miniChipActive]}
+                    onPress={() => setSelectedGrade(g)}
+                  >
+                    <Text style={[styles.miniChipText, selectedGrade === g && styles.miniChipTextActive]}>
+                      {g === 'ALL' ? 'TẤT CẢ' : g === 'EXCELLENT' ? 'GIỎI' : g === 'PASS' ? 'ĐẠT' : 'YẾU'}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          </View>
+
+          {/* Ô TÌM KIẾM SINH VIÊN BÊN TRONG LỚP */}
           <View style={styles.searchBox}>
             <TextInput
               style={styles.searchInput}
-              placeholder="🔎 Tìm nhanh sinh viên theo tên hoặc MSSV..."
+              placeholder={`🔎 Tìm sinh viên trong ${selectedClass === 'ALL' ? 'toàn trường' : selectedClass}...`}
               placeholderTextColor="#777"
               value={customClassSearch}
               onChangeText={setCustomClassSearch}
@@ -301,12 +400,12 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
           </View>
         </View>
 
-        {/* THỐNG KÊ VÀ XUẤT EXCEL */}
+        {/* BẢNG THỐNG KÊ VÀ XUẤT FILE EXCEL */}
         {filteredSubmissions.length > 0 && (
           <View style={styles.analyticsCard}>
             <View style={styles.analyticsHeaderRow}>
               <Text style={styles.analyticsTitle}>
-                📈 PHÂN TÍCH: [{selectedClass === 'ALL' ? 'TẤT CẢ LỚP' : selectedClass}]
+                📈 PHÂN TÍCH: [{selectedClass === 'ALL' ? 'TẤT CẢ LỚP' : selectedClass}] ({filteredSubmissions.length} BÀI)
               </Text>
               
               <TouchableOpacity 
@@ -397,7 +496,6 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
                 </Text>
                 <Text style={styles.timeText}>⏱ {sub.timestamp}</Text>
 
-                {/* 🎧 KHU VỰC NGHE LẠI ÂM THANH HOẶC HIỆN THÔNG BÁO NẾU LỖI MẠNG */}
                 <View style={styles.audioPlayerSection}>
                   <Text style={styles.audioSectionTitle}>🎧 NGHE LẠI BÀI NÓI CỦA SINH VIÊN:</Text>
                   {sub.audioUrl ? (
@@ -441,10 +539,26 @@ const styles = StyleSheet.create({
 
   filterCard: { backgroundColor: '#170B30', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#FFD700', marginBottom: 12 },
   filterTitle: { color: '#FFD700', fontSize: 10, fontWeight: 'bold' },
+  dropdownToggleBtn: { backgroundColor: '#221144', paddingVertical: 4, paddingHorizontal: 8, borderRadius: 4, borderWidth: 1, borderColor: '#00FFFF' },
+  dropdownToggleText: { color: '#00FFFF', fontSize: 9, fontWeight: 'bold' },
+  dropdownMenu: { backgroundColor: '#0D0620', borderRadius: 8, borderWidth: 1, borderColor: '#00FFFF', padding: 6, marginVertical: 8, maxHeight: 180 },
+  dropdownItem: { paddingVertical: 8, paddingHorizontal: 10, borderBottomWidth: 1, borderBottomColor: '#221144' },
+  dropdownItemActive: { backgroundColor: 'rgba(57, 255, 20, 0.15)' },
+  dropdownItemText: { color: '#DDD', fontSize: 10 },
+  dropdownItemTextActive: { color: '#39FF14', fontWeight: 'bold' },
+
   chip: { backgroundColor: '#0D0620', paddingVertical: 8, paddingHorizontal: 12, borderRadius: 6, borderWidth: 1, borderColor: '#332255', marginRight: 6 },
   chipActive: { backgroundColor: '#FFD700', borderColor: '#FFD700' },
   chipText: { color: '#AAAABB', fontSize: 9, fontWeight: 'bold' },
   chipTextActive: { color: '#000', fontWeight: '900' },
+
+  subFilterRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 8, marginVertical: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#221144' },
+  subFilterLabel: { color: '#AAAABB', fontSize: 8, fontWeight: 'bold' },
+  miniChip: { backgroundColor: '#0D0620', paddingVertical: 4, paddingHorizontal: 6, borderRadius: 4, borderWidth: 1, borderColor: '#332255' },
+  miniChipActive: { backgroundColor: '#00FFFF', borderColor: '#00FFFF' },
+  miniChipText: { color: '#8888AA', fontSize: 8, fontWeight: 'bold' },
+  miniChipTextActive: { color: '#000' },
+
   searchBox: { marginTop: 8 },
   searchInput: { backgroundColor: '#0D0620', color: '#FFF', padding: 8, borderRadius: 6, borderWidth: 1, borderColor: '#00FFFF', fontSize: 10 },
   
