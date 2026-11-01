@@ -7,6 +7,7 @@ import { saveSubmissionToCloud } from '../services/userService';
 import { harvestWeakWords } from '../services/weakPointsService';
 import { getOptimizedRecorderConfig, executeWithRetry } from '../utils/networkAudioHelper';
 import { supabase } from '../utils/supabase';
+import AudioWaveVisualizer from '../components/AudioWaveVisualizer'; // 🌊 IMPORT VISUALIZER
 
 interface Props {
   onBack: () => void;
@@ -40,10 +41,10 @@ function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
 
   const mediaRecorderRef = useRef<any>(null);
   const audioChunksRef = useRef<any[]>([]);
+  const [mediaStream, setMediaStream] = useState<MediaStream | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const recordingStartTimeRef = useRef<number>(0);
 
-  // 🛡️ HÀM BÁO LỖI AN TOÀN TRÁNH NGHẼN TOUCH RESPONDER TRÊN WEB
   const safeAlert = (msg: string) => {
     setTimeout(() => {
       alert(msg);
@@ -123,6 +124,7 @@ function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
         audio: { echoCancellation: true, noiseSuppression: true }
       });
       mediaStreamRef.current = stream;
+      setMediaStream(stream);
 
       const { options } = getOptimizedRecorderConfig();
       const mediaRecorder = new MediaRecorder(stream, options);
@@ -146,6 +148,7 @@ function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
 
     const durationSeconds = (Date.now() - recordingStartTimeRef.current) / 1000;
     setIsRecording(false);
+    setMediaStream(null);
 
     if (durationSeconds < 1.2) {
       if (mediaStreamRef.current) {
@@ -302,6 +305,9 @@ function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
             </TouchableOpacity>
           </View>
 
+          {/* 🌊 SÓNG ÂM THỜI GIAN THỰC */}
+          <AudioWaveVisualizer stream={mediaStream} isRecording={isRecording} barColor="#00FFCC" />
+
           <TouchableOpacity 
             style={[styles.recordBtn, isRecording && styles.recordBtnActive]} 
             onPress={isRecording ? stopRecording : startRecording}
@@ -344,7 +350,6 @@ function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
               </View>
 
               {audioUrl && (
-                /* 🛡️ CÁCH LY PHẦN TỬ AUDIO KHỎI PANRESPONDER */
                 <View 
                   style={styles.audioPlayerBox}
                   // @ts-ignore

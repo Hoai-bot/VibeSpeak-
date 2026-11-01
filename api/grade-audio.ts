@@ -77,7 +77,7 @@ export default async function handler(req: Request) {
       avgLogprob = sumLogprob / segments.length;
     }
 
-    // 🎯 Chuẩn hóa điểm thưởng âm học (2 - 15 điểm) phù hợp thực tế micro điện thoại
+    // 🎯 Chuẩn hóa điểm thưởng âm học (2 - 15 điểm)
     const normalizedLogprob = Math.max(-1.0, Math.min(0, avgLogprob));
     const acousticQualityBonus = Math.max(2, Math.min(15, Math.round((normalizedLogprob + 1.0) * 15)));
 
@@ -88,7 +88,7 @@ export default async function handler(req: Request) {
     const cleanPrompt = normalize(targetPrompt);
     let rawTranscript = normalize(transcript);
 
-    // 🎯 Giải mã từ ghép bị Whisper gộp nhầm
+    // 🎯 Giải mã từ ghép và từ viết tắt
     const compoundFixes: Record<string, string> = {
       'samsung': 'sum sung',
       'some sung': 'sum sung',
@@ -98,7 +98,13 @@ export default async function handler(req: Request) {
       'sunflower': 'sun flower',
       'seashore': 'sea shore',
       'seashells': 'sea shells',
-      'railway': 'rail way'
+      'railway': 'rail way',
+      "i've": 'i have',
+      "it's": 'it is',
+      "what'd": 'what did',
+      "don't": 'do not',
+      "can't": 'can not',
+      "you're": 'you are'
     };
 
     Object.keys(compoundFixes).forEach((key) => {
@@ -156,7 +162,7 @@ export default async function handler(req: Request) {
     };
 
     // =========================================================================
-    // 🎯 NHÁNH 1: TRẠM 1 - PRONUNCIATION LAB (THANG ĐIỂM XUẤT SẮC 92 - 100Đ)
+    // 🎯 NHÁNH 1: TRẠM 1 - PRONUNCIATION LAB
     // =========================================================================
     if (stationType === 'STATION_1' && targetPrompt) {
       const isMinimalPairDrill = cleanPrompt.includes('/');
@@ -169,11 +175,9 @@ export default async function handler(req: Request) {
         const spokeWordB = isWordSpoken(wordB, spokenWords);
 
         if (spokeWordA && spokeWordB) {
-          // 🌟 ĐỌC ĐÚNG CẢ CẶP: Điểm sàn xuất sắc 88đ + bonus âm học -> Đạt 93 - 100đ
           calculatedScore = Math.min(100, 88 + Math.round(acousticQualityBonus * 0.8));
           feedback = `🌟 Xuất sắc! Bạn đã phát âm phân biệt rất rõ cả cặp từ "${wordA}" và "${wordB}".`;
         } else if (spokeWordA || spokeWordB) {
-          // Luyện 1 từ trong cặp: 75 - 88đ
           const matchedWord = spokeWordA ? wordA : wordB;
           calculatedScore = Math.min(88, Math.max(72, 75 + Math.round(acousticQualityBonus * 0.8)));
           feedback = `👍 Bạn đã phát âm tốt từ "${matchedWord}". (Mẹo: Thử đọc cả cặp "${wordA} - ${wordB}" để đạt điểm tối đa 100 nhé!)`;
@@ -201,7 +205,6 @@ export default async function handler(req: Request) {
           }
         }
       } else {
-        // 🎯 SHADOWING / TONGUE TWISTERS:
         const targetWords = cleanPrompt.replace(/\//g, ' ').split(/\s+/).filter(Boolean);
         let matchedCount = 0;
         targetWords.forEach((w: string) => {
@@ -213,14 +216,39 @@ export default async function handler(req: Request) {
           calculatedScore = Math.max(20, acousticQualityBonus * 2);
           feedback = `❌ Phát âm chưa đúng câu mẫu. AI nghe được: "${transcript}".`;
         } else {
-          // Khớp 100% từ -> Cơ sở 85đ + bonus âm học -> Đạt 93 - 100đ
           calculatedScore = Math.min(100, Math.round(ratio * 85 + acousticQualityBonus));
           feedback = `Phát âm chuẩn xác ${matchedCount}/${targetWords.length} từ mục tiêu.`;
         }
       }
 
     // =========================================================================
-    // ⚡ NHÁNH 2: TRẠM 4 - SPEAKING EXPRESS (PHẢN XẠ NHANH 10 - 15 GIÂY)
+    // 👻 NHÁNH 2: TRẠM 3 - GHOST STATION (SHADOWING ECHO CHUYÊN SÂU)
+    // =========================================================================
+    } else if (stationType === 'STATION_3') {
+      const targetWords = cleanPrompt.replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(Boolean);
+      let matchedCount = 0;
+      targetWords.forEach((w: string) => {
+        if (isWordSpoken(w, spokenWords)) matchedCount++;
+      });
+
+      const accuracyRatio = targetWords.length > 0 ? (matchedCount / targetWords.length) : 0;
+
+      if (accuracyRatio === 0) {
+        calculatedScore = Math.max(15, acousticQualityBonus);
+        feedback = `❌ Chưa đuổi kịp ngữ điệu của Bóng Ma. AI nghe được: "${transcript}".`;
+      } else if (accuracyRatio >= 0.85) {
+        calculatedScore = Math.min(100, 88 + Math.round(acousticQualityBonus * 0.8));
+        feedback = `🌟 Xuất sắc! Bạn đã bắt kịp nhịp điệu của Bóng Ma (${matchedCount}/${targetWords.length} từ).`;
+      } else if (accuracyRatio >= 0.6) {
+        calculatedScore = Math.min(87, Math.round(accuracyRatio * 75 + acousticQualityBonus));
+        feedback = `👍 Khá tốt! Đã theo kịp đa số từ (${matchedCount}/${targetWords.length}). Cần mượt mà hơn ở các cụm nối âm.`;
+      } else {
+        calculatedScore = Math.max(30, Math.round(accuracyRatio * 60 + acousticQualityBonus));
+        feedback = `⚠️ Rớt nhịp khá nhiều (${matchedCount}/${targetWords.length} từ). Hãy dùng tính năng Cứu hộ Oasis để tập nối âm chậm nhé!`;
+      }
+
+    // =========================================================================
+    // ⚡ NHÁNH 3: TRẠM 4 - SPEAKING EXPRESS (PHẢN XẠ NHANH 10 - 15 GIÂY)
     // =========================================================================
     } else if (stationType === 'STATION_4') {
       const wordCount = spokenWords.length;
@@ -275,7 +303,7 @@ export default async function handler(req: Request) {
       }
 
     // =========================================================================
-    // 🎭 NHÁNH 3: TRẠM 2 - VOCABULARY ARENA (SOLO / RELAY / ROLEPLAY)
+    // 🎭 NHÁNH 4: TRẠM 2 - VOCABULARY ARENA (SOLO / RELAY / ROLEPLAY)
     // =========================================================================
     } else {
       const wordCount = spokenWords.length;
