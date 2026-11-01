@@ -33,7 +33,6 @@ const TOPIC_POOL = [
   'Education & Future Skills'
 ];
 
-// Mẫu câu dự phòng chuẩn hóa theo CEFR từ A1 đến C2
 const FALLBACK_QUESTIONS: Record<CEFRLevel, string[]> = {
   A1: [
     "I usually drink coffee every morning before going to work.",
@@ -63,8 +62,6 @@ const FALLBACK_QUESTIONS: Record<CEFRLevel, string[]> = {
 
 export const generateDynamicQuestion = async (level: CEFRLevel): Promise<GeneratedSentence> => {
   const randomTopic = TOPIC_POOL[Math.floor(Math.random() * TOPIC_POOL.length)];
-  
-  // Thử gọi Vercel Serverless API /api/generate-battle trước
   const battleData = await fetchCyberBattleTopic(randomTopic, level);
   
   if (battleData && battleData.bot_phrase) {
@@ -76,7 +73,6 @@ export const generateDynamicQuestion = async (level: CEFRLevel): Promise<Generat
     };
   }
 
-  // Nếu API lỗi, dùng dữ liệu Fallback an toàn
   const sentences = FALLBACK_QUESTIONS[level] || FALLBACK_QUESTIONS['B2'];
   const selectedText = sentences[Math.floor(Math.random() * sentences.length)];
 
@@ -88,9 +84,6 @@ export const generateDynamicQuestion = async (level: CEFRLevel): Promise<Generat
   };
 };
 
-/**
- * 🎯 Kết nối với Vercel Serverless API /api/evaluate qua aiService
- */
 export const gradeFlexibleArenaResponse = async (
   userTranscriptOrAudio: string,
   targetText: string
@@ -99,7 +92,6 @@ export const gradeFlexibleArenaResponse = async (
 
   if (evalResult) {
     const avgScore = Math.round((evalResult.pronunciation + evalResult.fluency + evalResult.reflexes) / 3);
-    
     return {
       score: avgScore,
       phoneticScore: evalResult.pronunciation,
@@ -122,9 +114,7 @@ export const gradeFlexibleArenaResponse = async (
   };
 };
 
-/**
- * 🎯 Chấm điểm âm thanh qua Backend Proxy (/api/evaluate) bảo vệ Groq API Key
- */
+// 🎯 CHẤM ĐIỂM ÂM THANH TRẠM 3 (GHOST SHADOWING) VỚI CƠ CHẾ GỠ DÍNH TỪ GHÉP & VIẾT TẮT
 export const transcribeAndGradeAudio = async (
   audioBlob: Blob, 
   referenceSentence: string
@@ -137,7 +127,6 @@ export const transcribeAndGradeAudio = async (
     formData.append('response_format', 'json');
     formData.append('language', 'en');
 
-    // 🎯 GỌI QUA BACKEND PROXY MÃ HÓA (KHÔNG LỘ API KEY)
     const encodedPrompt = encodeURIComponent(referenceSentence);
     const response = await fetch(`/api/evaluate?promptEn=${encodedPrompt}&station=3`, {
       method: 'POST',
@@ -151,9 +140,29 @@ export const transcribeAndGradeAudio = async (
     const data = await response.json();
     const transcript = (data.transcript || data.text || '').trim();
 
-    // Thuật toán so khớp độ tương đồng văn bản phát âm
-    const cleanTarget = referenceSentence.toLowerCase().replace(/[^a-z0-9 ]/g, '');
-    const cleanSpoken = transcript.toLowerCase().replace(/[^a-z0-9 ]/g, '');
+    // 🎯 CHUẨN HÓA VÀ GỠ CÁC TỪ GHÉP/TỪ VIẾT TẮT THƯỜNG GẶP TRONG SHADOWING
+    const expandCommonPatterns = (str: string) => {
+      let s = str.toLowerCase();
+      const replacements: Record<string, string> = {
+        'seashells': 'sea shells',
+        'seashore': 'sea shore',
+        "i've": 'i have',
+        "it's": 'it is',
+        "what'd": 'what did',
+        "don't": 'do not',
+        "can't": 'can not',
+        "you're": 'you are',
+        "they're": 'they are',
+        "we're": 'we are'
+      };
+      Object.keys(replacements).forEach((k) => {
+        s = s.replace(new RegExp(`\\b${k}\\b`, 'g'), replacements[k]);
+      });
+      return s.replace(/[^a-z0-9 ]/g, ' ').trim();
+    };
+
+    const cleanTarget = expandCommonPatterns(referenceSentence);
+    const cleanSpoken = expandCommonPatterns(transcript);
 
     if (!cleanSpoken) {
       return { 
@@ -174,14 +183,14 @@ export const transcribeAndGradeAudio = async (
     });
 
     const calculatedAccuracy = Math.round((matchCount / Math.max(1, targetWords.length)) * 100);
-    const finalScore = data.score !== undefined ? Number(data.score) : Math.min(100, Math.max(15, calculatedAccuracy));
+    const finalScore = data.score !== undefined ? Number(data.score) : Math.min(100, Math.max(20, calculatedAccuracy));
 
     return {
       transcript,
       transcribedText: transcript,
       score: finalScore,
       isWin: finalScore >= 60,
-      feedback: data.detailedFeedback || `Độ chính xác phát âm đạt ${finalScore}/100đ`
+      feedback: data.detailedFeedback || `Độ chính xác đọc đuổi đạt ${finalScore}/100đ`
     };
   } catch (error: any) {
     console.warn("⚠️ Lỗi qua Backend Proxy, sử dụng fallback dự phòng:", error);

@@ -32,11 +32,9 @@ function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [isPlayingTTS, setIsPlayingTTS] = useState<boolean>(false);
 
-  // THÔNG TIN HỌC VIÊN ĐỒNG BỘ VỚI HỆ THỐNG
   const [studentIdentifier, setStudentIdentifier] = useState<string>('Chiến Binh Shadow');
   const [studentClass, setStudentClass] = useState<string>('LỚP CHUNG');
 
-  // STATE CỨU HỘ OASIS TRẠM BÓNG MA
   const [ghostMissCount, setGhostMissCount] = useState<number>(0);
   const [showOasisModal, setShowOasisModal] = useState<boolean>(false);
 
@@ -45,7 +43,13 @@ function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const recordingStartTimeRef = useRef<number>(0);
 
-  // 🎯 1. TỰ ĐỘNG LẤY THÔNG TIN TỪ SUPABASE HOẶC LOCALSTORAGE ĐỂ ĐỒNG BỘ LỚP
+  // 🛡️ HÀM BÁO LỖI AN TOÀN TRÁNH NGHẼN TOUCH RESPONDER TRÊN WEB
+  const safeAlert = (msg: string) => {
+    setTimeout(() => {
+      alert(msg);
+    }, 50);
+  };
+
   useEffect(() => {
     const fetchStudentProfile = async () => {
       let currentName = 'Chiến Binh Shadow';
@@ -78,7 +82,6 @@ function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
     fetchStudentProfile();
   }, []);
 
-  // 🔊 PHÁT ÂM MẪU BÓNG MA (SHADOWING PROMPT)
   const playGhostAudio = (textToSpeak: string) => {
     if (!textToSpeak) return;
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
@@ -107,7 +110,7 @@ function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
   const startRecording = async () => {
     try {
       if (typeof navigator === 'undefined' || !navigator.mediaDevices) {
-        alert("🔒 Trình duyệt chưa cấp quyền Micro!");
+        safeAlert("🔒 Trình duyệt chưa cấp quyền Micro!");
         return;
       }
 
@@ -133,7 +136,7 @@ function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
       mediaRecorder.start(100);
       setIsRecording(true);
     } catch (err) {
-      alert('🔒 Lỗi: Vui lòng bật cấp quyền Micro trên thanh địa chỉ trình duyệt!');
+      safeAlert('🔒 Lỗi: Vui lòng bật cấp quyền Micro trên thanh địa chỉ trình duyệt!');
     }
   };
 
@@ -144,13 +147,12 @@ function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
     const durationSeconds = (Date.now() - recordingStartTimeRef.current) / 1000;
     setIsRecording(false);
 
-    // 🛡️ CHẶN THU ÂM QUÁ NGẮN HOẶC BẤM TẮT NGAY DƯỚI 1.2 GIÂY
     if (durationSeconds < 1.2) {
       if (mediaStreamRef.current) {
         mediaStreamRef.current.getTracks().forEach((t: any) => t.stop());
         mediaStreamRef.current = null;
       }
-      alert("⚠️ Bạn vừa bấm tắt quá nhanh! Hãy giữ micro và đọc theo toàn bộ câu mẫu nhé.");
+      safeAlert("⚠️ Bạn vừa bấm tắt quá nhanh! Hãy giữ micro và đọc theo toàn bộ câu mẫu nhé.");
       return;
     }
 
@@ -174,19 +176,17 @@ function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
 
       const audioBlob = await processAudio;
 
-      // 🛡️ CHẶN FILE RỖNG / KHÔNG CÓ TIẾNG
       if (audioBlob.size < 3500) {
         setScore(0);
         setSpokenTranscript("(Không phát hiện giọng nói)");
         setIsAnalyzing(false);
-        alert("❌ Micro không thu được âm thanh! Vui lòng đọc to rõ hơn.");
+        safeAlert("❌ Micro không thu được âm thanh! Vui lòng đọc to rõ hơn.");
         return;
       }
 
       const localAudio = URL.createObjectURL(audioBlob);
       setAudioUrl(localAudio);
 
-      // 🎯 RETRY NẾU API GROQ MẠNG CHẬP CHỜN
       const res = await executeWithRetry(
         async () => {
           return await transcribeAndGradeAudio(audioBlob, ghostSentence);
@@ -206,7 +206,6 @@ function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
       setScore(calculatedScore);
       setSpokenTranscript(recognizedText);
 
-      // 🎯 THU THẬP TỪ YẾU VÀO WEAK-POINT VAULT
       const diffResults = generateWordDiff(ghostSentence, recognizedText);
       const weakItemsForVault = diffResults.map((item) => ({
         word: item.word,
@@ -214,7 +213,6 @@ function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
       }));
       harvestWeakWords(weakItemsForVault, ghostSentence);
 
-      // 🚀 ĐỒNG BỘ LƯU LÊN SUPABASE (KÈM UPLOAD FILE ÂM THANH CHUẨN XÁC)
       (async () => {
         try {
           const savedSubmission = await saveSubmissionToCloud({
@@ -230,7 +228,6 @@ function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
             timestamp: new Date().toLocaleTimeString('vi-VN')
           });
 
-          // Upload trực tiếp audioBlob lên Storage Bucket submissions_audio
           if (savedSubmission?.id && audioBlob && audioBlob.size >= 1000 && supabase) {
             const fileExt = (mediaRecorder.mimeType || '').includes('mp4') ? 'mp4' : 'webm';
             const fileName = `ghost_${savedSubmission.id}_${Date.now()}.${fileExt}`;
@@ -257,7 +254,6 @@ function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
         }
       })();
 
-      // KÍCH HOẠT CỨU HỘ KHI ĐIỂM < 50 TRONG 2 LẦN LIÊN TIẾP
       if (calculatedScore < 50) {
         setGhostMissCount((prev) => {
           const next = prev + 1;
@@ -268,7 +264,7 @@ function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
         setGhostMissCount(0);
       }
     } catch (e: any) {
-      alert(`⚠️ Lỗi phân tích: ${e.message || 'Mạng yếu, vui lòng bấm thu âm lại!'}`);
+      safeAlert(`⚠️ Lỗi phân tích: ${e.message || 'Mạng yếu, vui lòng bấm thu âm lại!'}`);
     } finally {
       setIsAnalyzing(false);
     }
@@ -328,7 +324,6 @@ function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
                 SCORE: {score} / 100 ĐIỂM
               </Text>
 
-              {/* 🎯 HIGHLIGHT TỪ THEO KỊP VÀ TỪ BỊ RỚT LẠI */}
               <View style={styles.wordHighlightBox}>
                 <Text style={styles.wordHighlightTitle}>🎯 KẾT QUẢ ĐỌC ĐUỔI TỪNG TỪ:</Text>
                 <View style={styles.wordRow}>
@@ -349,14 +344,20 @@ function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
               </View>
 
               {audioUrl && (
-                <View style={styles.audioPlayerBox}>
+                /* 🛡️ CÁCH LY PHẦN TỬ AUDIO KHỎI PANRESPONDER */
+                <View 
+                  style={styles.audioPlayerBox}
+                  // @ts-ignore
+                  onStartShouldSetResponder={() => false}
+                  onMoveShouldSetResponder={() => false}
+                >
                   <Text style={styles.audioPlayerLabel}>🎧 Nghe lại bài đọc đuổi của bạn:</Text>
                   {React.createElement('audio', {
                     key: audioUrl,
                     controls: true,
                     playsInline: true,
                     src: audioUrl,
-                    style: { width: '100%', marginTop: 6, height: 35 }
+                    style: { width: '100%', marginTop: 6, height: 35, touchAction: 'manipulation' }
                   })}
                 </View>
               )}
@@ -369,7 +370,6 @@ function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
         </View>
       </ScrollView>
 
-      {/* 🌴 MODAL CỨU HỘ OASIS TRẠM BÓNG MA */}
       <Modal visible={showOasisModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
