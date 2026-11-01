@@ -12,6 +12,7 @@ import { updateUserProgress, saveSubmissionToCloud } from '../services/userServi
 import { harvestWeakWords, saveWeakPoint } from '../services/weakPointsService';
 import { getOptimizedRecorderConfig, executeWithRetry } from '../utils/networkAudioHelper';
 import { supabase } from '../utils/supabase'; // 💡 IMPORT TRỰC TIẾP TỪ UTILS
+import AudioWaveVisualizer from '../components/AudioWaveVisualizer'; // 🌊 IMPORT SÓNG ÂM THỜI GIAN THỰC
 import WeakPointsScreen from './WeakPointsScreen';
 
 interface Props {
@@ -37,6 +38,9 @@ export default function Station4Screen({ onBack }: Props) {
   const [hasRecorded, setHasRecorded] = useState<boolean>(false);
   const [recordedAudioUrl, setRecordedAudioUrl] = useState<string | null>(null);
 
+  // Quản lý luồng âm thanh thời gian thực cho Visualizer
+  const [activeStream, setActiveStream] = useState<MediaStream | null>(null);
+
   // Tính toán chỉ số WPM (Tốc độ trôi chảy)
   const [speakingDurationSeconds, setSpeakingDurationSeconds] = useState<number>(0);
   const recordingStartTimeRef = useRef<number>(0);
@@ -55,6 +59,13 @@ export default function Station4Screen({ onBack }: Props) {
   const recognitionRef = useRef<any>(null);
 
   const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
+
+  // 🛡️ HÀM BÁO LỖI AN TOÀN TRÁNH NGHỄN TOUCH RESPONDER TRÊN WEB
+  const safeAlert = (msg: string) => {
+    setTimeout(() => {
+      alert(msg);
+    }, 50);
+  };
 
   // 🎯 1. TỰ ĐỘNG LẤY USER ID VÀ THÔNG TIN HỌC VIÊN TỪ LOCALSTORAGE / SUPABASE
   useEffect(() => {
@@ -167,6 +178,7 @@ export default function Station4Screen({ onBack }: Props) {
       mediaStreamRef.current.getTracks().forEach(t => t.stop());
       mediaStreamRef.current = null;
     }
+    setActiveStream(null);
     setBattleState('idle');
     setIsRecording(false);
     setRecordedAudio(null);
@@ -225,11 +237,10 @@ export default function Station4Screen({ onBack }: Props) {
     if (!isRecording) {
       try {
         if (typeof navigator === 'undefined' || !navigator.mediaDevices) {
-          alert("🔒 Trình duyệt chưa cấp quyền Micro!");
+          safeAlert("🔒 Trình duyệt chưa cấp quyền Micro!");
           return;
         }
 
-        // 💡 Reset sạch bộ đệm trước khi thu lại
         setRecordedAudio(null);
         setHasRecorded(false);
         setRecordedAudioUrl(null);
@@ -274,6 +285,7 @@ export default function Station4Screen({ onBack }: Props) {
           }
         });
         mediaStreamRef.current = stream;
+        setActiveStream(stream);
 
         const { options } = getOptimizedRecorderConfig();
         const recorder = new MediaRecorder(stream, options);
@@ -296,6 +308,7 @@ export default function Station4Screen({ onBack }: Props) {
             mediaStreamRef.current.getTracks().forEach(t => t.stop());
             mediaStreamRef.current = null;
           }
+          setActiveStream(null);
         };
 
         recordingStartTimeRef.current = Date.now();
@@ -303,12 +316,13 @@ export default function Station4Screen({ onBack }: Props) {
         setIsRecording(true);
         setBattleState('battling');
       } catch (err) {
-        alert("🔒 Vui lòng kiểm tra biểu tượng 🔒 trên thanh địa chỉ trình duyệt và cho phép 'Microphone'!");
+        safeAlert("🔒 Vui lòng kiểm tra biểu tượng 🔒 trên thanh địa chỉ trình duyệt và cho phép 'Microphone'!");
       }
     } else {
       setIsRecording(false);
       const durationSec = Math.max(1, Math.round((Date.now() - recordingStartTimeRef.current) / 1000));
       setSpeakingDurationSeconds(durationSec);
+      setActiveStream(null);
 
       if (recognitionRef.current) {
         try { recognitionRef.current.stop(); } catch (e) {}
@@ -321,20 +335,20 @@ export default function Station4Screen({ onBack }: Props) {
       if (durationSec < 1.5) {
         setHasRecorded(false);
         setRecordedAudio(null);
-        alert("⚠️ Bạn vừa bấm tắt quá nhanh (dưới 1.5 giây)! Vui lòng nói to rõ câu trả lời rồi mới bấm dừng.");
+        safeAlert("⚠️ Bạn vừa bấm tắt quá nhanh (dưới 1.5 giây)! Vui lòng nói to rõ câu trả lời rồi mới bấm dừng.");
       }
     }
   };
 
   const handleSubmitAnswer = async () => {
     if (!hasRecorded || !recordedAudio) {
-      alert("🔒 Vui lòng ghi âm phản hồi của bạn trước khi nộp bài!");
+      safeAlert("🔒 Vui lòng ghi âm phản hồi của bạn trước khi nộp bài!");
       return;
     }
 
     // 🛡️ CHẶN FILE RỖNG / KHÔNG NÓI GÌ
     if (recordedAudio.size < 3000 && !capturedText.trim()) {
-      alert("❌ Micro không thu được âm thanh! Vui lòng bấm thu âm lại và nói to, rõ ràng hơn.");
+      safeAlert("❌ Micro không thu được âm thanh! Vui lòng bấm thu âm lại và nói to, rõ ràng hơn.");
       return;
     }
 
@@ -434,11 +448,12 @@ export default function Station4Screen({ onBack }: Props) {
 
     } catch (err: any) {
       console.error("Lỗi chấm điểm Trạm 4:", err);
-      alert(`⚠️ Lỗi chấm điểm: ${err.message || 'Mạng yếu, vui lòng bấm nộp lại!'}`);
+      safeAlert(`⚠️ Lỗi chấm điểm: ${err.message || 'Mạng yếu, vui lòng bấm nộp lại!'}`);
     } finally {
       setBattleState('ended');
       setRecordedAudio(null);
       setHasRecorded(false);
+      setActiveStream(null);
     }
   };
 
@@ -535,6 +550,9 @@ export default function Station4Screen({ onBack }: Props) {
             </Text>
           </TouchableOpacity>
 
+          {/* 🌊 DẢI SÓNG ÂM THỜI GIAN THỰC CHO TRẠM 4 */}
+          <AudioWaveVisualizer stream={activeStream} isRecording={isRecording} barColor="#39FF14" />
+
           {battleState !== 'ended' && (
             <TouchableOpacity 
               style={[styles.recordBtn, isRecording && styles.recordBtnActive]} 
@@ -610,12 +628,19 @@ export default function Station4Screen({ onBack }: Props) {
             ) : null}
 
             {(recordedAudioUrl || result.audioUrl) && (
-              <View style={styles.nativeAudioContainer}>
+              /* 🛡️ CÁCH LY PHẦN TỬ AUDIO KHỎI PANRESPONDER */
+              <View 
+                style={styles.nativeAudioContainer}
+                // @ts-ignore
+                onStartShouldSetResponder={() => false}
+                onMoveShouldSetResponder={() => false}
+              >
                 <Text style={styles.nativeAudioLabel}>🎧 NGHE LẠI BẢN THU PHẢN HỒI CỦA BẠN:</Text>
                 {React.createElement('audio', {
                   controls: true,
+                  playsInline: true,
                   src: result.audioUrl || recordedAudioUrl,
-                  style: { width: '100%', marginTop: 6, height: 36 }
+                  style: { width: '100%', marginTop: 6, height: 36, touchAction: 'manipulation' }
                 })}
               </View>
             )}
