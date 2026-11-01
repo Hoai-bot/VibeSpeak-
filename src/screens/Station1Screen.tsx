@@ -508,81 +508,108 @@ export default function Station1Screen({ onBack }: Props) {
               )}
             </View>
 
-            {/* 🎯 KHỐI ĐỐI CHIẾU IPA LỆCH TRỰC QUAN (PHONEME-LEVEL INSPECTOR) */}
-            {currentDrill?.contentEn && (
-              <View style={styles.ipaDiffContainer}>
-                <Text style={styles.ipaSectionTitle}>🔬 SOI ÂM VỊ CHI TIẾT (IPA PHONEMIC INSPECTOR):</Text>
-                
-                {currentDrill.contentEn
-                  .split('/')
-                  .map((w: string) => w.trim())
-                  .filter(Boolean)
-                  .map((word: string, idx: number) => {
-                    const comparison = getPhoneticComparison(word, result.transcript || '');
-                    return (
-                      <View 
-                        key={idx} 
-                        style={[
-                          styles.ipaCard, 
-                          comparison.isExactMatch ? styles.ipaCardCorrect : styles.ipaCardMismatch
-                        ]}
-                      >
-                        <View style={styles.ipaHeaderRow}>
-                          <Text style={styles.ipaWord}>{word.toUpperCase()}</Text>
-                          <Text style={[styles.ipaStatusBadge, { color: comparison.isExactMatch ? '#39FF14' : '#FF0055' }]}>
-                            {comparison.isExactMatch ? 'CHÍNH XÁC ✓' : 'LỆCH ÂM ✗'}
+            {/* 🎯 KHỐI ĐỐI CHIẾU IPA LỆCH TRỰC QUAN & HIGHLIGHT TỪ ĐỒNG BỘ */}
+            {(() => {
+              const compoundFixes: Record<string, string> = {
+                'samsung': 'sum sung',
+                'some sung': 'sum sung',
+                'sunsung': 'sun sung',
+                'barefoot': 'bare foot',
+                'bedroom': 'bed room',
+                'sunflower': 'sun flower',
+                'seashore': 'sea shore',
+                'seashells': 'sea shells',
+              };
+
+              let normalizedDisplayTranscript = (result.transcript || '').toLowerCase();
+              Object.keys(compoundFixes).forEach((key) => {
+                if (normalizedDisplayTranscript.includes(key)) {
+                  normalizedDisplayTranscript = normalizedDisplayTranscript.replace(
+                    new RegExp(`\\b${key}\\b`, 'g'),
+                    compoundFixes[key]
+                  );
+                }
+              });
+
+              return (
+                <>
+                  {currentDrill?.contentEn && (
+                    <View style={styles.ipaDiffContainer}>
+                      <Text style={styles.ipaSectionTitle}>🔬 SOI ÂM VỊ CHI TIẾT (IPA PHONEMIC INSPECTOR):</Text>
+                      
+                      {currentDrill.contentEn
+                        .split('/')
+                        .map((w: string) => w.trim())
+                        .filter(Boolean)
+                        .map((word: string, idx: number) => {
+                          const comparison = getPhoneticComparison(word, normalizedDisplayTranscript);
+                          return (
+                            <View 
+                              key={idx} 
+                              style={[
+                                styles.ipaCard, 
+                                comparison.isExactMatch ? styles.ipaCardCorrect : styles.ipaCardMismatch
+                              ]}
+                            >
+                              <View style={styles.ipaHeaderRow}>
+                                <Text style={styles.ipaWord}>{word.toUpperCase()}</Text>
+                                <Text style={[styles.ipaStatusBadge, { color: comparison.isExactMatch ? '#39FF14' : '#FF0055' }]}>
+                                  {comparison.isExactMatch ? 'CHÍNH XÁC ✓' : 'LỆCH ÂM ✗'}
+                                </Text>
+                              </View>
+
+                              {/* Thanh so sánh trực quan Target vs Heard */}
+                              <View style={styles.ipaCompareRow}>
+                                <View style={styles.ipaBox}>
+                                  <Text style={styles.ipaBoxLabel}>ÂM CHUẨN MỤC TIÊU</Text>
+                                  <Text style={styles.targetIpaText}>{comparison.targetIpa}</Text>
+                                </View>
+
+                                <Text style={styles.ipaVsArrow}>➔</Text>
+
+                                <View style={styles.ipaBox}>
+                                  <Text style={styles.ipaBoxLabel}>AI THU NHẬN ĐƯỢC</Text>
+                                  <Text style={[styles.heardIpaText, { color: comparison.isExactMatch ? '#39FF14' : '#FF0055' }]}>
+                                    {comparison.heardIpa || '(Không rõ)'}
+                                  </Text>
+                                </View>
+                              </View>
+
+                              {/* Hướng dẫn sửa khẩu hình */}
+                              {comparison.tip && (
+                                <View style={styles.ipaTipBox}>
+                                  <Text style={styles.ipaTipText}>💡 Mẹo khẩu hình: {comparison.tip}</Text>
+                                </View>
+                              )}
+                            </View>
+                          );
+                        })}
+                    </View>
+                  )}
+
+                  <View style={styles.wordHighlightBox}>
+                    <Text style={styles.wordHighlightTitle}>🎯 CHI TIẾT TỪNG TỪ MỤC TIÊU:</Text>
+                    <View style={styles.wordRow}>
+                      {generateWordDiff(currentDrill?.contentEn || '', normalizedDisplayTranscript).map((item, idx) => (
+                        <TouchableOpacity 
+                          key={idx} 
+                          style={[
+                            styles.wordBadge, 
+                            item.status === 'correct' ? styles.correctBadge : styles.incorrectBadge
+                          ]}
+                          onPress={() => playSampleAudio(item.word)}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={[styles.wordBadgeText, item.status === 'correct' ? styles.correctText : styles.incorrectText]}>
+                            {item.word} {item.status === 'correct' ? '✓' : '✗'}
                           </Text>
-                        </View>
-
-                        {/* Thanh so sánh trực quan Target vs Heard */}
-                        <View style={styles.ipaCompareRow}>
-                          <View style={styles.ipaBox}>
-                            <Text style={styles.ipaBoxLabel}>ÂM CHUẨN MỤC TIÊU</Text>
-                            <Text style={styles.targetIpaText}>{comparison.targetIpa}</Text>
-                          </View>
-
-                          <Text style={styles.ipaVsArrow}>➔</Text>
-
-                          <View style={styles.ipaBox}>
-                            <Text style={styles.ipaBoxLabel}>AI THU NHẬN ĐƯỢC</Text>
-                            <Text style={[styles.heardIpaText, { color: comparison.isExactMatch ? '#39FF14' : '#FF0055' }]}>
-                              {comparison.heardIpa || '(Không rõ)'}
-                            </Text>
-                          </View>
-                        </View>
-
-                        {/* Hướng dẫn sửa khẩu hình */}
-                        {comparison.tip && (
-                          <View style={styles.ipaTipBox}>
-                            <Text style={styles.ipaTipText}>💡 Mẹo khẩu hình: {comparison.tip}</Text>
-                          </View>
-                        )}
-                      </View>
-                    );
-                  })}
-              </View>
-            )}
-
-            <View style={styles.wordHighlightBox}>
-              <Text style={styles.wordHighlightTitle}>🎯 CHI TIẾT TỪNG TỪ MỤC TIÊU:</Text>
-              <View style={styles.wordRow}>
-                {generateWordDiff(currentDrill?.contentEn || '', result.transcript || '').map((item, idx) => (
-                  <TouchableOpacity 
-                    key={idx} 
-                    style={[
-                      styles.wordBadge, 
-                      item.status === 'correct' ? styles.correctBadge : styles.incorrectBadge
-                    ]}
-                    onPress={() => playSampleAudio(item.word)}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={[styles.wordBadgeText, item.status === 'correct' ? styles.correctText : styles.incorrectText]}>
-                      {item.word} {item.status === 'correct' ? '✓' : '✗'}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </View>
+                </>
+              );
+            })()}
 
             {result.audioUrl ? (
               <View style={styles.audioPlayerBox}>
