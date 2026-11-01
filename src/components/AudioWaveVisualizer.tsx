@@ -15,6 +15,7 @@ export default function AudioWaveVisualizer({ stream, isRecording, barColor = '#
   const sourceNodeRef = useRef<MediaStreamAudioSourceNode | null>(null);
 
   useEffect(() => {
+    // 1. Dọn dẹp tài nguyên khi dừng thu âm
     if (!isRecording || !stream) {
       if (animationFrameId.current) {
         cancelAnimationFrame(animationFrameId.current);
@@ -45,9 +46,25 @@ export default function AudioWaveVisualizer({ stream, isRecording, barColor = '#
         const audioCtx = new AudioCtx();
         audioContextRef.current = audioCtx;
 
-        // 🛡️ ĐẶC TRỊ SAFARI / IOS: Đánh thức AudioContext nếu đang ở trạng thái 'suspended'
+        // 🛡️ BƯỚC 1: Tự động đánh thức AudioContext nếu đang ở trạng thái 'suspended'
         if (audioCtx.state === 'suspended') {
           await audioCtx.resume();
+        }
+
+        // 🛡️ BƯỚC 2: Dự phòng cho iOS Safari - Gắn bộ mở khóa khi người dùng tương tác
+        const unlockAudioContext = async () => {
+          if (audioCtx.state === 'suspended') {
+            await audioCtx.resume();
+          }
+          if (audioCtx.state === 'running') {
+            window.removeEventListener('touchstart', unlockAudioContext);
+            window.removeEventListener('click', unlockAudioContext);
+          }
+        };
+
+        if (audioCtx.state === 'suspended') {
+          window.addEventListener('touchstart', unlockAudioContext, { passive: true });
+          window.addEventListener('click', unlockAudioContext, { passive: true });
         }
 
         if (!isMounted) return;
@@ -56,7 +73,8 @@ export default function AudioWaveVisualizer({ stream, isRecording, barColor = '#
         sourceNodeRef.current = sourceNode;
 
         const analyser = audioCtx.createAnalyser();
-        analyser.fftSize = 64; // 32 cột tần số
+        analyser.fftSize = 64; // 32 dải tần số
+        analyser.smoothingTimeConstant = 0.8;
         sourceNode.connect(analyser);
 
         const bufferLength = analyser.frequencyBinCount;
@@ -93,7 +111,7 @@ export default function AudioWaveVisualizer({ stream, isRecording, barColor = '#
 
         draw();
       } catch (err) {
-        console.warn("Visualizer Web Audio API initialisation bypassed:", err);
+        console.warn("Lỗi khởi tạo AudioContext Visualizer:", err);
       }
     };
 
