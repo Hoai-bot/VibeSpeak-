@@ -20,10 +20,15 @@ export default function Station1Screen({ onBack }: Props) {
   const [isRecording, setIsRecording] = useState<boolean>(false);
   const [recordedAudio, setRecordedAudio] = useState<Blob | null>(null);
   const [hasRecorded, setHasRecorded] = useState<boolean>(false);
-  const [isProcessingAudio, setIsProcessingAudio] = useState<boolean>(false); // 🛡️ Khóa nút nộp bài khi đang nén file mới
+  const [isProcessingAudio, setIsProcessingAudio] = useState<boolean>(false);
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
   const [result, setResult] = useState<AssessmentResult | null>(null);
   const [userId, setUserId] = useState<string | undefined>(undefined);
+
+  // 🎯 QUẢN LÝ TIẾN TRÌNH NÂNG ĐIỂM (SCORE COMPARISON & BEST SCORE)
+  const [bestScore, setBestScore] = useState<number>(0);
+  const [previousScore, setPreviousScore] = useState<number | null>(null);
+  const [attemptCount, setAttemptCount] = useState<number>(0);
   
   // Quản lý luồng âm thanh thời gian thực cho Visualizer
   const [activeStream, setActiveStream] = useState<MediaStream | null>(null);
@@ -45,7 +50,6 @@ export default function Station1Screen({ onBack }: Props) {
     }, 50);
   };
 
-  // 🎯 LẤY USER ID AN TOÀN VÀ ĐỒNG NHẤT
   useEffect(() => {
     const fetchUser = async () => {
       try {
@@ -60,7 +64,6 @@ export default function Station1Screen({ onBack }: Props) {
     fetchUser();
   }, []);
 
-  // Dừng toàn bộ âm thanh đang phát
   const stopAllAudio = () => {
     if (currentAudioRef.current) {
       currentAudioRef.current.pause();
@@ -73,15 +76,12 @@ export default function Station1Screen({ onBack }: Props) {
     setIsPlayingTTS(false);
   };
 
-  // 🔊 HÀM PHÁT ÂM MẪU CHUẨN
   const playSampleAudio = (textToSpeak: string) => {
     if (!textToSpeak) return;
     stopAllAudio();
     setIsPlayingTTS(true);
 
-    let cleanSpeechText = textToSpeak
-      .replace(/\//g, ', ')
-      .trim();
+    let cleanSpeechText = textToSpeak.replace(/\//g, ', ').trim();
 
     const ttsWordFixes: Record<string, string> = {
       'come in': 'cum, in',
@@ -156,6 +156,9 @@ export default function Station1Screen({ onBack }: Props) {
   const handleLoadNewDrill = (type: DrillType) => {
     stopAllAudio();
     resetSession();
+    setBestScore(0);
+    setPreviousScore(null);
+    setAttemptCount(0);
     const newDrill = getRandomStation1Drill(type);
     setCurrentDrill(newDrill);
   };
@@ -189,7 +192,7 @@ export default function Station1Screen({ onBack }: Props) {
     audioChunksRef.current = [];
   };
 
-  // 🎯 THU ÂM CHUẨN XÁC: RESET SẠCH FILE CŨ & KHÓA NÚT NỘP CHO ĐẾN KHI CÓ BLOB MỚI
+  // 🎯 THU ÂM CHUẨN XÁC: RESET SẠCH FILE CŨ, GIỮ NGUYÊN KẾT QUẢ ĐỂ HỌC VIÊN ĐỐI CHIẾU
   const handleToggleRecord = async () => {
     stopAllAudio();
 
@@ -200,11 +203,14 @@ export default function Station1Screen({ onBack }: Props) {
           return;
         }
 
-        // 1. Reset sạch toàn bộ dữ liệu lượt trước
+        // Lưu điểm hiện tại làm previousScore trước khi bắt đầu lượt thử mới
+        if (result && result.score > 0) {
+          setPreviousScore(result.score);
+        }
+
         setRecordedAudio(null);
         setHasRecorded(false);
         setIsProcessingAudio(false);
-        setResult(null);
         setCapturedText('');
         audioChunksRef.current = [];
 
@@ -275,14 +281,13 @@ export default function Station1Screen({ onBack }: Props) {
           }
         };
 
-        // Khi MediaRecorder đóng gói xong file âm thanh mới
         recorder.onstop = () => {
           const mimeUsed = recorder.mimeType || chosenMime || 'audio/webm';
           const blob = new Blob(audioChunksRef.current, { type: mimeUsed });
 
           setRecordedAudio(blob);
           setHasRecorded(true);
-          setIsProcessingAudio(false); // Đã có file âm thanh mới -> Mở khóa nút nộp bài
+          setIsProcessingAudio(false);
 
           if (mediaStreamRef.current) {
             mediaStreamRef.current.getTracks().forEach(t => t.stop());
@@ -302,7 +307,7 @@ export default function Station1Screen({ onBack }: Props) {
       // BẤM DỪNG THU ÂM
       const durationSeconds = (Date.now() - recordingStartTimeRef.current) / 1000;
       setIsRecording(false);
-      setIsProcessingAudio(true); // Đang chờ recorder.onstop tạo file
+      setIsProcessingAudio(true);
       setActiveStream(null);
 
       if (recognitionRef.current) {
@@ -312,12 +317,12 @@ export default function Station1Screen({ onBack }: Props) {
         mediaRecorderRef.current.stop();
       }
 
-      // 🛡️ CHẶN BẤM TẮT DƯỚI 1 GIÂY
-      if (durationSeconds < 1.0) {
+      // 🛡️ HẠ NGƯỠNG AN TOÀN CHO TỪ ĐƠN XUỐNG 0.6 GIÂY (PHÙ HỢP MINIMAL PAIRS NGẮN)
+      if (durationSeconds < 0.6) {
         setIsProcessingAudio(false);
         setHasRecorded(false);
         setRecordedAudio(null);
-        safeAlert("⚠️ Bạn vừa bấm tắt quá nhanh (dưới 1 giây)! Vui lòng giữ micro và phát âm rõ từ mục tiêu rồi mới bấm dừng.");
+        safeAlert("⚠️ Bản thu quá ngắn (dưới 0.6 giây)! Hãy giữ micro và đọc rõ từ mục tiêu rồi mới bấm dừng.");
       }
     }
   };
@@ -329,8 +334,8 @@ export default function Station1Screen({ onBack }: Props) {
       return;
     }
 
-    // 🛡️ CHẶN FILE RỖNG / KHÔNG NÓI GÌ -> ĐÁNH TRƯỢT 0 ĐIỂM NGAY
-    if (recordedAudio.size < 3000 && !capturedText.trim()) {
+    // 🛡️ HẠ NGƯỠNG DUNG LƯỢNG AN TOÀN XUỐNG 1500 BYTES CHO SAFARI/OPUS
+    if (recordedAudio.size < 1500 && !capturedText.trim()) {
       setResult({
         score: 0,
         isWin: false,
@@ -353,6 +358,9 @@ export default function Station1Screen({ onBack }: Props) {
         capturedText
       );
 
+      // Cập nhật Best Score và Attempt Count
+      setAttemptCount((prev) => prev + 1);
+      setBestScore((prev) => Math.max(prev, evalData.score));
       setResult(evalData);
       
       const isPass = (evalData.score >= 70) || evalData.isWin;
@@ -368,6 +376,7 @@ export default function Station1Screen({ onBack }: Props) {
   };
 
   const isPassed = (result?.score ?? 0) >= 70 || result?.isWin;
+  const scoreDiff = (previousScore !== null && result) ? result.score - previousScore : null;
 
   return (
     <View style={styles.container}>
@@ -437,7 +446,7 @@ export default function Station1Screen({ onBack }: Props) {
               <Text style={styles.refreshBtnText}>🔄 THỬ THÁCH BÀI KHÁC</Text>
             </TouchableOpacity>
 
-            {/* 🌊 DẢI SÓNG ÂM THỜI GIAN THỰC CHO TRẠM 1 */}
+            {/* 🌊 DẢI SÓNG ÂM THỜI GIAN THỰC */}
             <AudioWaveVisualizer stream={activeStream} isRecording={isRecording} barColor="#FF007F" />
 
             <TouchableOpacity 
@@ -466,7 +475,9 @@ export default function Station1Screen({ onBack }: Props) {
                 onPress={handleSubmitAnswer}
                 disabled={!hasRecorded || isRecording || isProcessingAudio}
               >
-                <Text style={styles.submitBtnText}>⚡ NỘP BÀI & CHẤM PHÁT ÂM AI</Text>
+                <Text style={styles.submitBtnText}>
+                  {attemptCount > 0 ? '⚡ NỘP BÀI ĐỂ NÂNG ĐIỂM' : '⚡ NỘP BÀI & CHẤM PHÁT ÂM AI'}
+                </Text>
               </TouchableOpacity>
             )}
           </View>
@@ -477,7 +488,24 @@ export default function Station1Screen({ onBack }: Props) {
             <Text style={[styles.resultTitle, { color: isPassed ? '#39FF14' : '#FF0055' }]}>
               {isPassed ? '🏆 PHÁT ÂM RẤT CHUẨN!' : '💀 CẦN LUYỆN TẬP THÊM'}
             </Text>
-            <Text style={styles.scoreText}>⚡ Điểm phát âm: {result.score} / 100 ĐIỂM</Text>
+            
+            <Text style={styles.scoreText}>⚡ Điểm lần này: {result.score} / 100 ĐIỂM</Text>
+
+            {/* 🎯 HUY HIỆU SO SÁNH TIẾN BỘ & ĐIỂM CAO NHẤT */}
+            <View style={styles.scoreComparisonRow}>
+              {bestScore > 0 && (
+                <View style={styles.bestScoreBadge}>
+                  <Text style={styles.bestScoreText}>👑 Kỷ lục bài này: {bestScore}đ</Text>
+                </View>
+              )}
+              {scoreDiff !== null && (
+                <View style={[styles.deltaBadge, { backgroundColor: scoreDiff >= 0 ? 'rgba(57, 255, 20, 0.2)' : 'rgba(255, 0, 85, 0.2)' }]}>
+                  <Text style={[styles.deltaText, { color: scoreDiff >= 0 ? '#39FF14' : '#FF0055' }]}>
+                    {scoreDiff >= 0 ? `▲ Tăng +${scoreDiff}đ` : `▼ Giảm ${scoreDiff}đ`}
+                  </Text>
+                </View>
+              )}
+            </View>
 
             <View style={styles.wordHighlightBox}>
               <Text style={styles.wordHighlightTitle}>🎯 CHI TIẾT TỪNG TỪ MỤC TIÊU:</Text>
@@ -503,7 +531,6 @@ export default function Station1Screen({ onBack }: Props) {
             {result.audioUrl ? (
               <View style={styles.audioPlayerBox}>
                 <Text style={styles.audioLabel}>🎧 Nghe lại bài phát âm của bạn:</Text>
-                {/* 🛡️ CÁCH LY PHẦN TỬ AUDIO KHỎI PANRESPONDER CỦA REACT NATIVE WEB */}
                 <View 
                   style={{ width: '100%', marginTop: 6 }} 
                   // @ts-ignore
@@ -562,7 +589,12 @@ const styles = StyleSheet.create({
   submitBtnDisabled: { backgroundColor: '#224422', opacity: 0.2 },
   submitBtnText: { color: '#000', fontSize: 11, fontWeight: '900' },
   resultTitle: { fontSize: 15, fontWeight: '900', marginBottom: 6 },
-  scoreText: { color: '#FFD700', fontSize: 13, fontWeight: '900', marginBottom: 10 },
+  scoreText: { color: '#FFD700', fontSize: 13, fontWeight: '900', marginBottom: 6 },
+  scoreComparisonRow: { flexDirection: 'row', gap: 8, marginBottom: 10, alignItems: 'center' },
+  bestScoreBadge: { backgroundColor: 'rgba(255, 215, 0, 0.15)', borderWidth: 1, borderColor: '#FFD700', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+  bestScoreText: { color: '#FFD700', fontSize: 10, fontWeight: 'bold' },
+  deltaBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+  deltaText: { fontSize: 10, fontWeight: '900' },
   wordHighlightBox: { backgroundColor: '#120826', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#00FFFF', width: '100%', marginVertical: 8 },
   wordHighlightTitle: { color: '#00FFFF', fontSize: 9, fontWeight: '900', marginBottom: 6 },
   wordRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
