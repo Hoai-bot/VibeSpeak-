@@ -12,6 +12,7 @@ export default function AudioWaveVisualizer({ stream, isRecording, barColor = '#
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const animationFrameId = useRef<number | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
+  const sourceNodeRef = useRef<MediaStreamAudioSourceNode | null>(null);
 
   useEffect(() => {
     if (!isRecording || !stream) {
@@ -19,11 +20,14 @@ export default function AudioWaveVisualizer({ stream, isRecording, barColor = '#
         cancelAnimationFrame(animationFrameId.current);
         animationFrameId.current = null;
       }
+      if (sourceNodeRef.current) {
+        try { sourceNodeRef.current.disconnect(); } catch (e) {}
+        sourceNodeRef.current = null;
+      }
       if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
         audioContextRef.current.close().catch(() => {});
         audioContextRef.current = null;
       }
-      // Xóa màn hình canvas khi dừng thu âm
       if (canvasRef.current) {
         const ctx = canvasRef.current.getContext('2d');
         if (ctx) ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
@@ -31,55 +35,78 @@ export default function AudioWaveVisualizer({ stream, isRecording, barColor = '#
       return;
     }
 
-    try {
-      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-      const audioCtx = new AudioCtx();
-      audioContextRef.current = audioCtx;
+    let isMounted = true;
 
-      const sourceNode = audioCtx.createMediaStreamSource(stream);
-      const analyser = audioCtx.createAnalyser();
-      analyser.fftSize = 64; // Tạo 32 thanh tần số sắc nét
-      sourceNode.connect(analyser);
+    const setupAudio = async () => {
+      try {
+        const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+        if (!AudioCtx) return;
 
-      const bufferLength = analyser.frequencyBinCount;
-      const dataArray = new Uint8Array(bufferLength);
+        const audioCtx = new AudioCtx();
+        audioContextRef.current = audioCtx;
 
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-
-      const draw = () => {
-        animationFrameId.current = requestAnimationFrame(draw);
-        analyser.getByteFrequencyData(dataArray);
-
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-        const barWidth = (canvas.width / bufferLength) * 1.5;
-        let x = 0;
-
-        for (let i = 0; i < bufferLength; i++) {
-          const barHeight = (dataArray[i] / 255) * canvas.height * 0.9;
-
-          // Hiệu ứng màu gradient hiện đại cho thanh sóng âm
-          const gradient = ctx.createLinearGradient(0, canvas.height - barHeight, 0, canvas.height);
-          gradient.addColorStop(0, '#39FF14');
-          gradient.addColorStop(1, barColor);
-
-          ctx.fillStyle = gradient;
-          ctx.fillRect(x, canvas.height - barHeight, barWidth - 2, barHeight);
-
-          x += barWidth + 1;
+        // 🛡️ ĐẶC TRỊ SAFARI / IOS: Đánh thức AudioContext nếu đang ở trạng thái 'suspended'
+        if (audioCtx.state === 'suspended') {
+          await audioCtx.resume();
         }
-      };
 
-      draw();
-    } catch (err) {
-      console.warn("Visualizer Web Audio API bypass:", err);
-    }
+        if (!isMounted) return;
+
+        const sourceNode = audioCtx.createMediaStreamSource(stream);
+        sourceNodeRef.current = sourceNode;
+
+        const analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 64; // 32 cột tần số
+        sourceNode.connect(analyser);
+
+        const bufferLength = analyser.frequencyBinCount;
+        const dataArray = new Uint8Array(bufferLength);
+
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+
+        const draw = () => {
+          if (!isMounted) return;
+          animationFrameId.current = requestAnimationFrame(draw);
+          analyser.getByteFrequencyData(dataArray);
+
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+          const barWidth = (canvas.width / bufferLength) * 1.5;
+          let x = 0;
+
+          for (let i = 0; i < bufferLength; i++) {
+            const barHeight = (dataArray[i] / 255) * canvas.height * 0.9;
+
+            const gradient = ctx.createLinearGradient(0, canvas.height - barHeight, 0, canvas.height);
+            gradient.addColorStop(0, '#39FF14');
+            gradient.addColorStop(1, barColor);
+
+            ctx.fillStyle = gradient;
+            ctx.fillRect(x, canvas.height - barHeight, barWidth - 2, barHeight);
+
+            x += barWidth + 1;
+          }
+        };
+
+        draw();
+      } catch (err) {
+        console.warn("Visualizer Web Audio API initialisation bypassed:", err);
+      }
+    };
+
+    setupAudio();
 
     return () => {
-      if (animationFrameId.current) cancelAnimationFrame(animationFrameId.current);
+      isMounted = false;
+      if (animationFrameId.current) {
+        cancelAnimationFrame(animationFrameId.current);
+      }
+      if (sourceNodeRef.current) {
+        try { sourceNodeRef.current.disconnect(); } catch (e) {}
+      }
       if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
         audioContextRef.current.close().catch(() => {});
       }

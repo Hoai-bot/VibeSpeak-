@@ -3,9 +3,59 @@ export const config = {
   runtime: 'edge',
 };
 
+// 🛡️ BỘ ĐỆM RATE-LIMIT DỰA TRÊN CLIENT IP (TỐI ĐA 15 YÊU CẦU / 60 GIÂY)
+interface RateLimitBucket {
+  count: number;
+  resetTime: number;
+}
+const rateLimitMap = new Map<string, RateLimitBucket>();
+const RATE_LIMIT_WINDOW_MS = 60 * 1000;
+const MAX_REQUESTS_PER_WINDOW = 15;
+
+function checkRateLimit(clientIp: string): { allowed: boolean; remaining: number } {
+  const now = Date.now();
+  const bucket = rateLimitMap.get(clientIp);
+
+  if (!bucket || now > bucket.resetTime) {
+    rateLimitMap.set(clientIp, { count: 1, resetTime: now + RATE_LIMIT_WINDOW_MS });
+    return { allowed: true, remaining: MAX_REQUESTS_PER_WINDOW - 1 };
+  }
+
+  if (bucket.count >= MAX_REQUESTS_PER_WINDOW) {
+    return { allowed: false, remaining: 0 };
+  }
+
+  bucket.count += 1;
+  return { allowed: true, remaining: MAX_REQUESTS_PER_WINDOW - bucket.count };
+}
+
 export default async function handler(req: Request) {
   if (req.method !== 'POST') {
     return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405 });
+  }
+
+  // 1. Kiểm tra Rate-Limit trước khi gọi bất kỳ dịch vụ AI nào
+  const clientIp = req.headers.get('x-forwarded-for')?.split(',')[0].trim() || 
+                   req.headers.get('x-real-ip') || 
+                   'anonymous-client';
+
+  const { allowed, remaining } = checkRateLimit(clientIp);
+  if (!allowed) {
+    return new Response(
+      JSON.stringify({
+        error: 'Too many requests',
+        message: '⚠️ Bạn đang gửi bài quá nhanh! Vui lòng chờ 1 phút trước khi thử lại để bảo vệ hệ thống.'
+      }),
+      {
+        status: 429,
+        headers: {
+          'Content-Type': 'application/json',
+          'Retry-After': '60',
+          'X-RateLimit-Limit': String(MAX_REQUESTS_PER_WINDOW),
+          'X-RateLimit-Remaining': '0',
+        }
+      }
+    );
   }
 
   try {
@@ -30,7 +80,7 @@ export default async function handler(req: Request) {
       );
     }
 
-    // 1. Gửi file âm thanh sang Groq Whisper với verbose_json để đo độ chuẩn âm học
+    // 2. Gửi file âm thanh sang Groq Whisper với verbose_json để đo độ chuẩn âm học
     const whisperFormData: any = new FormData();
     whisperFormData.append('file', audioFile);
     whisperFormData.append('model', 'whisper-large-v3');
@@ -423,7 +473,11 @@ export default async function handler(req: Request) {
       }),
       {
         status: 200,
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-RateLimit-Limit': String(MAX_REQUESTS_PER_WINDOW),
+          'X-RateLimit-Remaining': String(remaining),
+        },
       }
     );
   } catch (err: any) {
