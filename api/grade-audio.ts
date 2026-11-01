@@ -1,4 +1,6 @@
 // api/grade-audio.ts
+import { detectPhoneticTrap } from '../src/constants/phoneticTraps';
+
 export const config = {
   runtime: 'edge',
 };
@@ -212,7 +214,7 @@ export default async function handler(req: Request) {
     };
 
     // =========================================================================
-    // 🎯 NHÁNH 1: TRẠM 1 - PRONUNCIATION LAB
+    // 🎯 NHÁNH 1: TRẠM 1 - PRONUNCIATION LAB (ĐÃ MODULE HÓA PHONETIC TRAPS)
     // =========================================================================
     if (stationType === 'STATION_1' && targetPrompt) {
       const isMinimalPairDrill = cleanPrompt.includes('/');
@@ -221,53 +223,14 @@ export default async function handler(req: Request) {
         const pairWords = cleanPrompt.split('/').map((w: string) => w.trim()).filter(Boolean);
         const [wordA, wordB] = pairWords;
 
-        // 🎯 BẪY NGỮ ÂM ĐẶC BIỆT 1: leave / live (/iː/ vs /ɪ/)
-        const isLeaveLiveDrill = (wordA === 'leave' && wordB === 'live') || (wordA === 'live' && wordB === 'leave');
-        const spokenTextLower = rawTranscript.toLowerCase();
+        // 🛡️ TỰ ĐỘNG QUÉT BẪY NGỮ ÂM TỪ MODULE PHONETIC TRAPS
+        const detectedTrap = detectPhoneticTrap(wordA, wordB, spokenWords, rawTranscript);
 
-        const mispronouncedAsLaiv = isLeaveLiveDrill && (
-          spokenWords.includes('alive') ||
-          spokenWords.includes('life') ||
-          spokenWords.includes('line') ||
-          spokenTextLower.includes('live stream') ||
-          spokenTextLower.includes('live music')
-        );
-
-        // 🎯 BẪY NGỮ ÂM ĐẶC BIỆT 2: vine / fine (/aɪ/ bị đọc nhầm thành /ɪ/ hoặc phát âm kiểu Pháp "vi-nê / phi-nê")
-        const isVineFineDrill = (wordA === 'vine' && wordB === 'fine') || (wordA === 'fine' && wordB === 'vine');
-        
-        const mispronouncedAsVinFin = isVineFineDrill && (
-          spokenWords.includes('vin') ||
-          spokenWords.includes('fin') ||
-          spokenWords.includes('thin') ||
-          spokenWords.includes('pin') ||
-          spokenWords.includes('been') ||
-          spokenWords.includes('win')
-        );
-
-        const mispronouncedAsFrench = isVineFineDrill && (
-          spokenWords.includes('vina') ||
-          spokenWords.includes('fina') ||
-          spokenWords.includes('vinay') ||
-          spokenWords.includes('finay') ||
-          spokenWords.includes('vienna') ||
-          spokenWords.includes('venice') ||
-          spokenWords.includes('finer') ||
-          spokenWords.includes('vener') ||
-          spokenTextLower.includes('vi ne') ||
-          spokenTextLower.includes('phi ne')
-        );
-
-        if (mispronouncedAsLaiv) {
-          calculatedScore = Math.min(65, Math.max(45, 50 + acousticQualityBonus));
-          feedback = `⚠️ Chú ý: Từ "live" trong bài tập này là động từ, phát âm âm ngắn là /lɪv/ (như "lip"), không phát âm là /laɪv/ (như trong "livestream"). Hãy thử lại!`;
-        } else if (mispronouncedAsFrench) {
-          calculatedScore = Math.min(60, Math.max(40, 45 + acousticQualityBonus));
-          feedback = `⚠️ Chú ý: Đuôi "-e" trong "vine" và "fine" là âm câm! Từ này chỉ có 1 âm tiết, phát âm là /vaɪn/ và /faɪn/ (không đọc tách thành 2 âm tiết "vi-nê / phi-nê"). Hãy ngắt dứt khoát ở âm cuối /n/ nhé!`;
-        } else if (mispronouncedAsVinFin) {
-          calculatedScore = Math.min(65, Math.max(45, 50 + acousticQualityBonus));
-          feedback = `⚠️ Chú ý: Cặp từ "vine - fine" có nguyên âm đôi /aɪ/ (đọc là /vaɪn/ và /faɪn/). Bạn vừa phát âm thành âm ngắn /vɪn/ - /fɪn/ ("vin fin"). Hãy mở rộng khẩu hình và kéo dài âm /aɪ/ nhé!`;
+        if (detectedTrap) {
+          calculatedScore = Math.min(detectedTrap.scoreCap, Math.max(45, 50 + acousticQualityBonus));
+          feedback = detectedTrap.feedbackVi;
         } else {
+          // Luồng chấm điểm bình thường khi không dính bẫy
           const spokeWordA = isWordSpoken(wordA, spokenWords);
           const spokeWordB = isWordSpoken(wordB, spokenWords);
 
