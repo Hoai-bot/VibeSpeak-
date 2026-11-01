@@ -1,221 +1,143 @@
 // src/utils/exportExcelHelper.ts
-import { RoleplaySubmission } from '../services/userService';
+import * as XLSX from 'xlsx';
 
-const escapeXml = (unsafe: any): string => {
-  if (unsafe === null || unsafe === undefined) return '';
-  return String(unsafe)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;');
-};
+export interface SubmissionExportData {
+  id?: string;
+  studentName: string;
+  className?: string;
+  mode?: string;
+  cefrLevel?: string;
+  score: number;
+  transcript?: string;
+  feedback?: string;
+  audioUrl?: string;
+  created_at?: string;
+  timestamp?: string;
+}
 
-export const exportSubmissionsToExcel = (submissions: RoleplaySubmission[], fileName = 'Bang_Diem_VibeSpeak') => {
+/**
+ * 📊 Xuất danh sách bài nộp và báo cáo học tập ra file Excel .xlsx
+ * Bao gồm 2 Sheet:
+ *  1. Sheet "Báo cáo chi tiết": Từng bài nộp của học viên
+ *  2. Sheet "Thống kê tổng quan": Tổng số bài, điểm trung bình, tỷ lệ Đạt (>=70)
+ */
+export const exportSubmissionsToExcel = (
+  submissions: SubmissionExportData[],
+  selectedClass: string = 'ALL'
+) => {
   if (!submissions || submissions.length === 0) {
-    alert("⚠️ Không có dữ liệu bài nộp để xuất file!");
+    alert('⚠️ Không có dữ liệu bài nộp để xuất báo cáo!');
     return;
   }
 
-  let totalScore = 0;
-  let rowsXml = '';
+  // 1. Chuẩn bị dữ liệu Sheet Chi tiết
+  const detailedRows = submissions.map((item, index) => {
+    // Tách Họ tên và MSSV nếu có dạng "Tên (MSSV: 12345)"
+    let studentName = item.studentName || 'Chưa đặt tên';
+    let studentCode = 'GUEST';
 
-  submissions.forEach((item, index) => {
-    const score = Number(item.score) || 0;
-    totalScore += score;
-
-    let scoreStyle = 'ScoreMid';
-    let gradeLabel = 'Khá';
-    if (score >= 85) {
-      scoreStyle = 'ScoreHigh';
-      gradeLabel = 'Xuất Sắc';
-    } else if (score < 50) {
-      scoreStyle = 'ScoreLow';
-      gradeLabel = 'Cần Rèn Luyện';
+    const matchCode = studentName.match(/\(MSSV:\s*([^)]+)\)/i);
+    if (matchCode) {
+      studentCode = matchCode[1].trim();
+      studentName = studentName.replace(/\(MSSV:[^)]+\)/i, '').trim();
     }
 
-    const rowBg = index % 2 === 1 ? 'DataZebra' : 'DataCell';
+    const scoreNum = Number(item.score) || 0;
+    const isPass = scoreNum >= 70;
 
-    rowsXml += `
-    <Row ss:Height="40">
-      <Cell ss:StyleID="CenterCell"><Data ss:Type="Number">${index + 1}</Data></Cell>
-      <Cell ss:StyleID="${rowBg}"><Data ss:Type="String">${escapeXml(item.studentName || item.pairName || 'Học viên')}</Data></Cell>
-      <Cell ss:StyleID="CenterCell"><Data ss:Type="String">${escapeXml(item.className || 'LỚP CHUNG')}</Data></Cell>
-      <Cell ss:StyleID="CenterCell"><Data ss:Type="String">${escapeXml(item.mode || 'SOLO')}</Data></Cell>
-      <Cell ss:StyleID="CenterCell"><Data ss:Type="String">${escapeXml(item.cefrLevel || 'A1')}</Data></Cell>
-      <Cell ss:StyleID="${scoreStyle}"><Data ss:Type="Number">${score}</Data></Cell>
-      <Cell ss:StyleID="CenterCell"><Data ss:Type="String">${gradeLabel}</Data></Cell>
-      <Cell ss:StyleID="${rowBg}"><Data ss:Type="String">${escapeXml(item.transcript || '(Không có âm thanh)')}</Data></Cell>
-      <Cell ss:StyleID="${rowBg}"><Data ss:Type="String">${escapeXml(item.feedback || item.detailedFeedback || 'Đã ghi nhận')}</Data></Cell>
-      <Cell ss:StyleID="CenterCell"><Data ss:Type="String">${escapeXml(item.timestamp || '')}</Data></Cell>
-    </Row>`;
+    return {
+      'STT': index + 1,
+      'Mã Lớp': item.className || 'LỚP CHUNG',
+      'Họ và Tên': studentName,
+      'MSSV': studentCode,
+      'Trạm / Chế độ': item.mode || 'SPEAKING',
+      'Cấp độ CEFR': item.cefrLevel || 'B1',
+      'Điểm số (/100)': scoreNum,
+      'Kết quả': isPass ? 'ĐẠT (PASS)' : 'CHƯA ĐẠT (RETRY)',
+      'Lời thoại AI nhận diện': item.transcript || '(Không có bản ghi)',
+      'Nhận xét AI': item.feedback || '',
+      'Link file ghi âm': item.audioUrl || '',
+      'Thời gian nộp': item.created_at
+        ? new Date(item.created_at).toLocaleString('vi-VN')
+        : item.timestamp || ''
+    };
   });
 
-  const avgScore = (totalScore / submissions.length).toFixed(1);
+  // 2. Chuẩn bị dữ liệu Sheet Thống kê tổng quan (Summary)
+  const totalSubmissions = submissions.length;
+  const passCount = submissions.filter((s) => (Number(s.score) || 0) >= 70).length;
+  const failCount = totalSubmissions - passCount;
+  const passRate = totalSubmissions > 0 ? ((passCount / totalSubmissions) * 100).toFixed(1) + '%' : '0%';
+  const avgScore =
+    totalSubmissions > 0
+      ? (
+          submissions.reduce((acc, curr) => acc + (Number(curr.score) || 0), 0) /
+          totalSubmissions
+        ).toFixed(1)
+      : '0';
 
-  // Cấu trúc XML chuẩn Excel (SpreadsheetML)
-  const excelXml = `<?xml version="1.0" encoding="UTF-8"?>
-<?mso-application progid="Excel.Sheet"?>
-<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
- xmlns:o="urn:schemas-microsoft-com:office:office"
- xmlns:x="urn:schemas-microsoft-com:office:excel"
- xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
- <Styles>
-  <Style ss:ID="Default" ss:Name="Normal">
-   <Alignment ss:Vertical="Center"/>
-   <Font ss:FontName="Calibri" ss:Size="10"/>
-  </Style>
-  <!-- Style Banner Tiêu đề lớn -->
-  <Style ss:ID="HeaderBanner">
-   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
-   <Font ss:FontName="Calibri" ss:Size="14" ss:Bold="1" ss:Color="#FFFFFF"/>
-   <Interior ss:Color="#1A0B2E" ss:Pattern="Solid"/>
-  </Style>
-  <!-- Style Cột Tiêu đề bảng -->
-  <Style ss:ID="ColHeader">
-   <Alignment ss:Horizontal="Center" ss:Vertical="Center" ss:WrapText="1"/>
-   <Font ss:FontName="Calibri" ss:Size="10" ss:Bold="1" ss:Color="#FFFFFF"/>
-   <Interior ss:Color="#2D1152" ss:Pattern="Solid"/>
-   <Borders>
-    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#1A0B2E"/>
-    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#1A0B2E"/>
-    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#1A0B2E"/>
-    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#1A0B2E"/>
-   </Borders>
-  </Style>
-  <!-- Style Ô nội dung tự động xuống dòng WrapText -->
-  <Style ss:ID="DataCell">
-   <Alignment ss:Vertical="Center" ss:WrapText="1"/>
-   <Font ss:FontName="Calibri" ss:Size="10"/>
-   <Borders>
-    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E5E5"/>
-    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E5E5"/>
-    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E5E5"/>
-    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E5E5"/>
-   </Borders>
-  </Style>
-  <!-- Dòng xen kẽ (Zebra) -->
-  <Style ss:ID="DataZebra">
-   <Alignment ss:Vertical="Center" ss:WrapText="1"/>
-   <Font ss:FontName="Calibri" ss:Size="10"/>
-   <Interior ss:Color="#F9F6FC" ss:Pattern="Solid"/>
-   <Borders>
-    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E5E5"/>
-    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E5E5"/>
-    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E5E5"/>
-    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E5E5"/>
-   </Borders>
-  </Style>
-  <Style ss:ID="CenterCell">
-   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
-   <Font ss:FontName="Calibri" ss:Size="10"/>
-   <Borders>
-    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E5E5"/>
-    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E5E5"/>
-    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E5E5"/>
-    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E5E5"/>
-   </Borders>
-  </Style>
-  <!-- Style Màu Điểm Số -->
-  <Style ss:ID="ScoreHigh">
-   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
-   <Font ss:FontName="Calibri" ss:Size="10" ss:Bold="1" ss:Color="#008000"/>
-   <Borders>
-    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E5E5"/>
-    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E5E5"/>
-    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E5E5"/>
-    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E5E5"/>
-   </Borders>
-  </Style>
-  <Style ss:ID="ScoreMid">
-   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
-   <Font ss:FontName="Calibri" ss:Size="10" ss:Bold="1" ss:Color="#006699"/>
-   <Borders>
-    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E5E5"/>
-    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E5E5"/>
-    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E5E5"/>
-    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E5E5"/>
-   </Borders>
-  </Style>
-  <Style ss:ID="ScoreLow">
-   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
-   <Font ss:FontName="Calibri" ss:Size="10" ss:Bold="1" ss:Color="#CC0000"/>
-   <Borders>
-    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E5E5"/>
-    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E5E5"/>
-    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E5E5"/>
-    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E5E5"/>
-   </Borders>
-  </Style>
-  <!-- Style Dòng Tổng Kết -->
-  <Style ss:ID="SummaryRow">
-   <Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
-   <Font ss:FontName="Calibri" ss:Size="10" ss:Bold="1" ss:Color="#1A0B2E"/>
-   <Interior ss:Color="#E8DAF5" ss:Pattern="Solid"/>
-   <Borders>
-    <Border ss:Position="Bottom" ss:LineStyle="Double" ss:Weight="3" ss:Color="#1A0B2E"/>
-    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#1A0B2E"/>
-   </Borders>
-  </Style>
-  <Style ss:ID="SummaryScore">
-   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
-   <Font ss:FontName="Calibri" ss:Size="11" ss:Bold="1" ss:Color="#1A0B2E"/>
-   <Interior ss:Color="#E8DAF5" ss:Pattern="Solid"/>
-   <Borders>
-    <Border ss:Position="Bottom" ss:LineStyle="Double" ss:Weight="3" ss:Color="#1A0B2E"/>
-    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#1A0B2E"/>
-   </Borders>
-  </Style>
- </Styles>
- <Worksheet ss:Name="Bảng Điểm VibeSpeak">
-  <Table>
-   <!-- Định nghĩa độ rộng từng cột cố định -->
-   <Column ss:Width="35"/>  <!-- STT -->
-   <Column ss:Width="160"/> <!-- Họ Tên -->
-   <Column ss:Width="90"/>  <!-- Lớp -->
-   <Column ss:Width="90"/>  <!-- Mode -->
-   <Column ss:Width="65"/>  <!-- CEFR -->
-   <Column ss:Width="65"/>  <!-- Điểm -->
-   <Column ss:Width="90"/>  <!-- Đánh giá -->
-   <Column ss:Width="250"/> <!-- Transcript -->
-   <Column ss:Width="280"/> <!-- Feedback -->
-   <Column ss:Width="120"/> <!-- Thời gian -->
+  const summaryRows = [
+    { 'Chỉ số thống kê': 'Lớp học được lọc', 'Giá trị': selectedClass === 'ALL' ? 'Tất cả các lớp' : selectedClass },
+    { 'Chỉ số thống kê': 'Ngày xuất báo cáo', 'Giá trị': new Date().toLocaleString('vi-VN') },
+    { 'Chỉ số thống kê': 'Tổng số bài thực hành đã nộp', 'Giá trị': totalSubmissions },
+    { 'Chỉ số thống kê': 'Điểm số trung bình toàn lớp', 'Giá trị': `${avgScore} / 100` },
+    { 'Chỉ số thống kê': 'Số lượng bài Đạt (>= 70đ)', 'Giá trị': passCount },
+    { 'Chỉ số thống kê': 'Số lượng bài Cần luyện thêm (< 70đ)', 'Giá trị': failCount },
+    { 'Chỉ số thống kê': 'Tỷ lệ đạt chuẩn (Pass Rate)', 'Giá trị': passRate },
+  ];
 
-   <Row ss:Height="32">
-    <Cell ss:MergeAcross="9" ss:StyleID="HeaderBanner">
-      <Data ss:Type="String">VIBESPEAK - BẢNG ĐIỂM HỌC VIÊN LUYỆN NÓI CEFR (A1 - C2)</Data>
-    </Cell>
-   </Row>
-   <Row ss:Height="24">
-    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">STT</Data></Cell>
-    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">Họ &amp; Tên Học Viên</Data></Cell>
-    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">Mã Lớp</Data></Cell>
-    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">Chế Độ</Data></Cell>
-    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">Level</Data></Cell>
-    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">Điểm</Data></Cell>
-    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">Đánh Giá</Data></Cell>
-    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">Lời Thoại (Transcript)</Data></Cell>
-    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">Nhận Xét Chi Tiết (AI Feedback)</Data></Cell>
-    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">Thời Gian Nộp</Data></Cell>
-   </Row>
-   ${rowsXml}
-   <Row ss:Height="24">
-    <Cell ss:MergeAcross="4" ss:StyleID="SummaryRow"><Data ss:Type="String">ĐIỂM TRUNG BÌNH TOÀN ĐOÀN:</Data></Cell>
-    <Cell ss:StyleID="SummaryScore"><Data ss:Type="Number">${avgScore}</Data></Cell>
-    <Cell ss:MergeAcross="3" ss:StyleID="SummaryRow"><Data ss:Type="String"></Data></Cell>
-   </Row>
-  </Table>
- </Worksheet>
-</Workbook>`;
+  // 3. Tạo Workbook
+  const workbook = XLSX.utils.book_new();
 
-  // Tải file trực tiếp về máy tính người dùng
-  const blob = new Blob(['\uFEFF' + excelXml], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+  // Sheet 1: Thống kê tổng quan
+  const summarySheet = XLSX.utils.json_to_sheet(summaryRows);
+  summarySheet['!cols'] = [{ wch: 30 }, { wch: 30 }];
+  XLSX.utils.book_append_sheet(workbook, summarySheet, 'Tổng quan lớp');
+
+  // Sheet 2: Danh sách chi tiết
+  const detailSheet = XLSX.utils.json_to_sheet(detailedRows);
+  detailSheet['!cols'] = [
+    { wch: 6 },  // STT
+    { wch: 15 }, // Lớp
+    { wch: 25 }, // Tên
+    { wch: 14 }, // MSSV
+    { wch: 20 }, // Chế độ
+    { wch: 12 }, // CEFR
+    { wch: 15 }, // Điểm
+    { wch: 18 }, // Kết quả
+    { wch: 40 }, // Lời thoại
+    { wch: 45 }, // Nhận xét
+    { wch: 35 }, // Link audio
+    { wch: 20 }  // Thời gian
+  ];
+  XLSX.utils.book_append_sheet(workbook, detailSheet, 'Danh sách bài nộp');
+
+  // 4. Xuất file và kích hoạt tải về máy
+  const cleanClassName = selectedClass === 'ALL' ? 'Tat_Ca_Lop' : selectedClass.replace(/[^a-zA-Z0-9]/g, '_');
+  const dateStr = new Date().toISOString().slice(0, 10);
+  const fileName = `VibeSpeak_BaoCao_${cleanClassName}_${dateStr}.xlsx`;
+
+  XLSX.writeFile(workbook, fileName);
+};
+
+/**
+ * 📄 Tùy chọn dự phòng: Xuất CSV nhanh thuần văn bản
+ */
+export const exportSubmissionsToCSV = (
+  submissions: SubmissionExportData[],
+  selectedClass: string = 'ALL'
+) => {
+  if (!submissions || submissions.length === 0) return;
+
+  const detailSheet = XLSX.utils.json_to_sheet(submissions);
+  const csvContent = XLSX.utils.sheet_to_csv(detailSheet);
+
+  const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `${fileName}_${new Date().toISOString().slice(0, 10)}.xls`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  const link = document.createElement('a');
+  link.setAttribute('href', url);
+  link.setAttribute('download', `VibeSpeak_Export_${selectedClass}_${Date.now()}.csv`);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
 };
