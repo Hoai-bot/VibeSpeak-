@@ -85,12 +85,35 @@ export default async function handler(req: Request) {
 
     const normalize = (str: string) => str.toLowerCase().replace(/[^a-z0-9\s/]/g, '').trim();
     const cleanPrompt = normalize(targetPrompt);
-    const spokenWords = normalize(transcript).split(/\s+/).filter(Boolean);
+    let rawTranscript = normalize(transcript);
 
-    // 📚 TỪ ĐIỂN TỪ ĐỒNG ÂM (HOMOPHONES) PHỔ BIẾN TRÁNH BỊ CHẤM SAI CHÍNH TẢ
+    // 🎯 1. GIẢI MÃ CÁC TỪ GHÉP BỊ WHISPER GỘP KHI ĐỌC LIÊN TỤC
+    const compoundFixes: Record<string, string> = {
+      'samsung': 'sum sung',
+      'some sung': 'sum sung',
+      'sunsung': 'sun sung',
+      'barefoot': 'bare foot',
+      'bedroom': 'bed room',
+      'sunflower': 'sun flower',
+      'seashore': 'sea shore',
+      'seashells': 'sea shells',
+      'railway': 'rail way'
+    };
+
+    Object.keys(compoundFixes).forEach((key) => {
+      if (rawTranscript.includes(key)) {
+        rawTranscript = rawTranscript.replace(new RegExp(`\\b${key}\\b`, 'g'), compoundFixes[key]);
+      }
+    });
+
+    const spokenWords = rawTranscript.split(/\s+/).filter(Boolean);
+
+    // 🎯 2. TỪ ĐIỂN TỪ ĐỒNG ÂM (HOMOPHONES) TRÁNH BỊ CHẤM SAI CHÍNH TẢ
     const homophonesMap: Record<string, string[]> = {
       'bare': ['bear'],
       'bear': ['bare'],
+      'sum': ['some'],
+      'some': ['sum'],
       'sea': ['see'],
       'see': ['sea'],
       'meat': ['meet'],
@@ -132,7 +155,6 @@ export default async function handler(req: Request) {
     };
 
     if (stationType === 'STATION_1' && targetPrompt) {
-      // 🎯 XỬ LÝ CHUYÊN BIỆT CHO TRẠM 1: CẶP TỪ MINIMAL PAIRS HOẶC CÂU SHADOWING
       const isMinimalPairDrill = cleanPrompt.includes('/');
 
       if (isMinimalPairDrill) {
@@ -143,16 +165,13 @@ export default async function handler(req: Request) {
         const spokeWordB = isWordSpoken(wordB, spokenWords);
 
         if (spokeWordA && spokeWordB) {
-          // Sinh viên đọc phân biệt cả 2 từ (kể cả Whisper nhận chính tả đồng âm như bare -> bear)
           calculatedScore = Math.min(100, 85 + acousticQualityBonus);
           feedback = `🌟 Xuất sắc! Bạn đã phát âm phân biệt rất rõ cả cặp từ "${wordA}" và "${wordB}".`;
         } else if (spokeWordA || spokeWordB) {
-          // Sinh viên tập trung luyện 1 từ trong cặp
           const matchedWord = spokeWordA ? wordA : wordB;
           calculatedScore = Math.min(95, Math.max(70, 70 + acousticQualityBonus));
           feedback = `👍 Bạn đã phát âm tốt từ "${matchedWord}". (Mẹo: Thử đọc cả cặp "${wordA} - ${wordB}" để đạt điểm tối đa 100 nhé!)`;
         } else {
-          // Không khớp từ nào -> Đo độ tương đồng ngữ âm
           let bestSim = 0;
           pairWords.forEach((target: string) => {
             spokenWords.forEach((spoken: string) => {
@@ -176,7 +195,6 @@ export default async function handler(req: Request) {
           }
         }
       } else {
-        // Shadowing / Tongue Twisters thông thường
         const targetWords = cleanPrompt.replace(/\//g, ' ').split(/\s+/).filter(Boolean);
         let matchedCount = 0;
         targetWords.forEach((w: string) => {
@@ -193,7 +211,6 @@ export default async function handler(req: Request) {
         }
       }
     } else {
-      // 🎯 TRẠM 2: Nói tự do[cite: 11]
       const wordCount = spokenWords.length;
       if (wordCount >= 25) {
         calculatedScore = Math.min(100, 85 + Math.round(acousticQualityBonus * 0.6));
