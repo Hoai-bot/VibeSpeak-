@@ -61,7 +61,7 @@ export const PHONETIC_DICTIONARY: Record<string, PhoneticDetail> = {
     }
   },
 
-  // Cặp /e/ vs /æ/
+  // Cặp /e/ vs /æ/ (Bed / Bad)
   'bed': {
     word: 'bed',
     targetIpa: '/bed/',
@@ -74,6 +74,40 @@ export const PHONETIC_DICTIONARY: Record<string, PhoneticDetail> = {
     targetIpa: '/bæd/',
     trapMap: {
       'bed': { heardIpa: '/bed/', tip: 'Hạ hàm dưới sâu và căng góc miệng để tạo âm bẹt /æ/.' }
+    }
+  },
+
+  // Cặp /e/ vs /æ/ (Men / Man)
+  'men': {
+    word: 'men',
+    targetIpa: '/men/',
+    trapMap: {
+      'man': { 
+        heardIpa: '/mæn/', 
+        tip: 'Khẩu hình mở quá rộng thành âm bẹt /æ/ ("man")! Để phát âm /e/ ("men"), hãy khép hàm hẹp lại, chỉ mở hé miệng và căng khóe môi sang hai bên.' 
+      },
+      'main': { 
+        heardIpa: '/meɪn/', 
+        tip: 'Tránh kéo dài thành nguyên âm đôi /eɪ/ ("main"). Âm /e/ trong "men" là nguyên âm ngắn, dứt khoát.' 
+      },
+      'min': { 
+        heardIpa: '/mɪn/', 
+        tip: 'Đừng nâng lưỡi quá cao thành âm /ɪ/.' 
+      }
+    }
+  },
+  'man': {
+    word: 'man',
+    targetIpa: '/mæn/',
+    trapMap: {
+      'men': { 
+        heardIpa: '/men/', 
+        tip: 'Hàm dưới chưa hạ đủ sâu! Để phát âm /æ/ ("man"), hãy hạ hàm dưới xuống thật sâu, mở rộng miệng và đẩy lưỡi thấp xuống.' 
+      },
+      'mun': { 
+        heardIpa: '/mʌn/', 
+        tip: 'Căng cơ môi sang hai bên khi mở miệng để tránh biến thành âm /ʌ/.' 
+      }
     }
   },
 
