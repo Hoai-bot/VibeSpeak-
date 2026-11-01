@@ -92,7 +92,59 @@ export const PHONETIC_DICTIONARY: Record<string, PhoneticDetail> = {
     trapMap: {
       'think': { heardIpa: '/θɪŋk/', tip: 'Khép răng và để lưỡi phía sau chân răng trên khi thổi âm /s/.' }
     }
+  },
+
+  // Cặp /m/ vs /ŋ/ (Âm mũi kết thúc & từ dính chùm Samsung)
+  'sum': {
+    word: 'sum',
+    targetIpa: '/sʌm/',
+    trapMap: {
+      'sung': { heardIpa: '/sʌŋ/', tip: 'Khép chặt 2 môi ở âm cuối /m/ để luồng hơi thoát ra qua mũi.' },
+      'some': { heardIpa: '/sʌm/', tip: 'Đồng âm chính xác!' },
+      'sun': { heardIpa: '/sʌn/', tip: 'Khép môi tạo âm /m/, tránh chạm đầu lưỡi lên vòm họng thành /n/.' }
+    }
+  },
+  'sung': {
+    word: 'sung',
+    targetIpa: '/sʌŋ/',
+    trapMap: {
+      'sum': { heardIpa: '/sʌm/', tip: 'Nâng cuống lưỡi chạm vòm miệng mềm để tạo âm ngạc mềm /ŋ/, không khép 2 môi.' },
+      'sun': { heardIpa: '/sʌn/', tip: 'Âm đuôi là /ŋ/ (như "ng" tiếng Việt), giữ cuống lưỡi nâng cao.' }
+    }
+  },
+
+  // Cặp /l/ vs /r/ & /iː/ vs /e/, /ɪ/ (Lead / Read)
+  'lead': {
+    word: 'lead',
+    targetIpa: '/liːd/',
+    trapMap: {
+      'led': { heardIpa: '/led/', tip: 'Kéo dài khóe miệng sang hai bên để tạo âm /iː/ dài, tránh đọc thành âm /e/ ("led").' },
+      'read': { heardIpa: '/riːd/', tip: 'Đầu lưỡi chạm nướu răng cửa trên để bật âm /l/, tránh thụt lưỡi tạo âm /r/.' },
+      'lid': { heardIpa: '/lɪd/', tip: 'Kéo dài nguyên âm /iː/, không đọc giật ngắn thành âm /ɪ/.' }
+    }
+  },
+  'read': {
+    word: 'read',
+    targetIpa: '/riːd/',
+    trapMap: {
+      'rid': { heardIpa: '/rɪd/', tip: 'Kéo dài âm /iː/ dài, tránh đọc rút ngắn thành âm /ɪ/ ("rid").' },
+      'red': { heardIpa: '/red/', tip: '"read" ở thì hiện tại phát âm là /riːd/, không đọc thành quá khứ /red/.' },
+      'lead': { heardIpa: '/liːd/', tip: 'Uốn cong đầu lưỡi về phía sau và chu nhẹ môi để tạo âm /r/, không để đầu lưỡi chạm nướu răng.' },
+      'lid': { heardIpa: '/lɪd/', tip: 'Âm đầu là /r/ và nguyên âm là /iː/ dài (/riːd/).' }
+    }
   }
+};
+
+// Danh sách từ dính chùm thường gặp khi Whisper nhận diện
+const COMPOUND_EXPANSIONS: Record<string, string> = {
+  'samsung': 'sum sung',
+  'sunsung': 'sun sung',
+  'some sung': 'sum sung',
+  'barefoot': 'bare foot',
+  'bedroom': 'bed room',
+  'sunflower': 'sun flower',
+  'seashore': 'sea shore',
+  'seashells': 'sea shells',
 };
 
 /**
@@ -100,37 +152,38 @@ export const PHONETIC_DICTIONARY: Record<string, PhoneticDetail> = {
  */
 export function getPhoneticComparison(targetWord: string, actualTranscript: string) {
   const cleanTarget = targetWord.toLowerCase().replace(/[^a-z]/g, '');
-  const transcriptWords = actualTranscript.toLowerCase().replace(/[^a-z\s]/g, '').split(/\s+/);
+  let expandedTranscript = actualTranscript.toLowerCase();
+
+  // Giải mã từ ghép dính chùm trước khi đối chiếu
+  Object.keys(COMPOUND_EXPANSIONS).forEach((comp) => {
+    if (expandedTranscript.includes(comp)) {
+      expandedTranscript = expandedTranscript.replace(new RegExp(`\\b${comp}\\b`, 'g'), COMPOUND_EXPANSIONS[comp]);
+    }
+  });
+
+  const transcriptWords = expandedTranscript.replace(/[^a-z\s]/g, '').split(/\s+/).filter(Boolean);
   
   const dictEntry = PHONETIC_DICTIONARY[cleanTarget];
-  if (!dictEntry) {
-    return {
-      targetWord: cleanTarget,
-      targetIpa: `/${cleanTarget}/`,
-      heardIpa: null,
-      tip: null,
-      isExactMatch: transcriptWords.includes(cleanTarget)
-    };
-  }
+  const targetIpa = dictEntry ? dictEntry.targetIpa : `/${cleanTarget}/`;
 
-  // Nếu người học phát âm trúng từ mục tiêu
+  // 1. Nếu người học phát âm trúng từ mục tiêu
   if (transcriptWords.includes(cleanTarget)) {
     return {
       targetWord: cleanTarget,
-      targetIpa: dictEntry.targetIpa,
-      heardIpa: dictEntry.targetIpa,
+      targetIpa: targetIpa,
+      heardIpa: targetIpa,
       tip: 'Khẩu hình chuẩn xác!',
       isExactMatch: true
     };
   }
 
-  // Tìm xem người học rơi vào bẫy âm nào
-  if (dictEntry.trapMap) {
+  // 2. Tìm xem người học rơi vào bẫy âm nào
+  if (dictEntry && dictEntry.trapMap) {
     for (const trapKey of Object.keys(dictEntry.trapMap)) {
       if (transcriptWords.includes(trapKey)) {
         return {
           targetWord: cleanTarget,
-          targetIpa: dictEntry.targetIpa,
+          targetIpa: targetIpa,
           heardIpa: dictEntry.trapMap[trapKey].heardIpa,
           tip: dictEntry.trapMap[trapKey].tip,
           isExactMatch: false
@@ -139,12 +192,12 @@ export function getPhoneticComparison(targetWord: string, actualTranscript: stri
     }
   }
 
-  // Trường hợp đọc lệch chưa xác định cụ thể
+  // 3. Trường hợp đọc lệch chưa xác định cụ thể
   return {
     targetWord: cleanTarget,
-    targetIpa: dictEntry.targetIpa,
-    heardIpa: '/???/',
-    tip: 'Âm phát ra chưa rõ nét. Hãy nghe lại âm mẫu và chú ý khẩu hình môi/lưỡi.',
+    targetIpa: targetIpa,
+    heardIpa: transcriptWords.length > 0 ? `/${transcriptWords.join(' ')}/` : '/???/',
+    tip: 'Âm phát ra chưa rõ nét hoặc lệch âm. Hãy nghe lại âm mẫu và chú ý khẩu hình môi/lưỡi.',
     isExactMatch: false
   };
 }
