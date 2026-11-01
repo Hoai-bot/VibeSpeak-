@@ -65,6 +65,17 @@ export const PHONETIC_TRAPS: PhoneticTrapRule[] = [
     trapKeywords: ['thing', 'sing', 'tin', 'sin'],
     scoreCap: 65,
     feedbackVi: '⚠️ Chú ý: Âm /θ/ trong "think" cần đặt đầu lưỡi giữa hai hàm răng và thổi hơi, tránh phát âm thành /s/ ("sink") hoặc /t/ ("tin").',
+  },
+  // 7. lead / read (/liːd/ vs /riːd/) - Bẫy đọc thành /led/ và /rɪd/ ("led rid")
+  {
+    id: 'lead_read_confusion',
+    pair: ['lead', 'read'],
+    trapKeywords: [
+      'led', 'rid', 'red', 'lid', 'lit', 
+      'led rid', 'red rid', 'let read', 'let rid'
+    ],
+    scoreCap: 65,
+    feedbackVi: '⚠️ Chú ý: Cả "lead" và "read" ở thì hiện tại đều có nguyên âm dài /iː/ (đọc là /liːd/ và /riːd/). Bạn vừa phát âm thành âm ngắn /led/ (như "led/chì") hoặc /rɪd/ ("rid"). Hãy căng môi cười và kéo dài âm /iː/ nhé!',
   }
 ];
 
