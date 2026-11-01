@@ -87,6 +87,50 @@ export default async function handler(req: Request) {
     const cleanPrompt = normalize(targetPrompt);
     const spokenWords = normalize(transcript).split(/\s+/).filter(Boolean);
 
+    // 📚 TỪ ĐIỂN TỪ ĐỒNG ÂM (HOMOPHONES) PHỔ BIẾN TRÁNH BỊ CHẤM SAI CHÍNH TẢ
+    const homophonesMap: Record<string, string[]> = {
+      'bare': ['bear'],
+      'bear': ['bare'],
+      'sea': ['see'],
+      'see': ['sea'],
+      'meat': ['meet'],
+      'meet': ['meat'],
+      'sun': ['son'],
+      'son': ['sun'],
+      'wear': ['where'],
+      'where': ['wear'],
+      'pair': ['pear'],
+      'pear': ['pair'],
+      'right': ['write'],
+      'write': ['right'],
+      'air': ['heir'],
+      'heir': ['air'],
+      'buy': ['by', 'bye'],
+      'bye': ['buy', 'by'],
+      'by': ['buy', 'bye'],
+      'for': ['four'],
+      'four': ['for'],
+      'to': ['too', 'two'],
+      'too': ['to', 'two'],
+      'two': ['to', 'too'],
+      'one': ['won'],
+      'won': ['one'],
+      'flour': ['flower'],
+      'flower': ['flour'],
+      'peace': ['piece'],
+      'piece': ['peace'],
+      'wait': ['weight'],
+      'weight': ['wait'],
+      'break': ['brake'],
+      'brake': ['break']
+    };
+
+    const isWordSpoken = (target: string, spokenList: string[]) => {
+      if (spokenList.includes(target)) return true;
+      const equivalents = homophonesMap[target] || [];
+      return equivalents.some(eq => spokenList.includes(eq));
+    };
+
     if (stationType === 'STATION_1' && targetPrompt) {
       // 🎯 XỬ LÝ CHUYÊN BIỆT CHO TRẠM 1: CẶP TỪ MINIMAL PAIRS HOẶC CÂU SHADOWING
       const isMinimalPairDrill = cleanPrompt.includes('/');
@@ -95,20 +139,20 @@ export default async function handler(req: Request) {
         const pairWords = cleanPrompt.split('/').map((w: string) => w.trim()).filter(Boolean);
         const [wordA, wordB] = pairWords;
 
-        const spokeWordA = spokenWords.includes(wordA);
-        const spokeWordB = spokenWords.includes(wordB);
+        const spokeWordA = isWordSpoken(wordA, spokenWords);
+        const spokeWordB = isWordSpoken(wordB, spokenWords);
 
         if (spokeWordA && spokeWordB) {
-          // Sinh viên đọc phân biệt cả 2 từ -> Thang điểm 85 - 100
-          calculatedScore = Math.min(100, 75 + acousticQualityBonus);
+          // Sinh viên đọc phân biệt cả 2 từ (kể cả Whisper nhận chính tả đồng âm như bare -> bear)
+          calculatedScore = Math.min(100, 85 + acousticQualityBonus);
           feedback = `🌟 Xuất sắc! Bạn đã phát âm phân biệt rất rõ cả cặp từ "${wordA}" và "${wordB}".`;
         } else if (spokeWordA || spokeWordB) {
-          // Sinh viên tập trung luyện 1 từ -> Thang điểm linh hoạt theo chất lượng âm đọc (70 - 95 điểm)
+          // Sinh viên tập trung luyện 1 từ trong cặp
           const matchedWord = spokeWordA ? wordA : wordB;
-          calculatedScore = Math.min(95, Math.max(68, 70 + acousticQualityBonus));
+          calculatedScore = Math.min(95, Math.max(70, 70 + acousticQualityBonus));
           feedback = `👍 Bạn đã phát âm tốt từ "${matchedWord}". (Mẹo: Thử đọc cả cặp "${wordA} - ${wordB}" để đạt điểm tối đa 100 nhé!)`;
         } else {
-          // Không khớp chính xác -> Đo độ tương đồng ngữ âm
+          // Không khớp từ nào -> Đo độ tương đồng ngữ âm
           let bestSim = 0;
           pairWords.forEach((target: string) => {
             spokenWords.forEach((spoken: string) => {
@@ -136,7 +180,7 @@ export default async function handler(req: Request) {
         const targetWords = cleanPrompt.replace(/\//g, ' ').split(/\s+/).filter(Boolean);
         let matchedCount = 0;
         targetWords.forEach((w: string) => {
-          if (spokenWords.includes(w)) matchedCount++;
+          if (isWordSpoken(w, spokenWords)) matchedCount++;
         });
 
         const ratio = targetWords.length > 0 ? (matchedCount / targetWords.length) : 0;
