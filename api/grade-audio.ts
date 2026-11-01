@@ -171,37 +171,55 @@ export default async function handler(req: Request) {
         const pairWords = cleanPrompt.split('/').map((w: string) => w.trim()).filter(Boolean);
         const [wordA, wordB] = pairWords;
 
-        const spokeWordA = isWordSpoken(wordA, spokenWords);
-        const spokeWordB = isWordSpoken(wordB, spokenWords);
+        // 🎯 BẪY NGỮ ÂM ĐẶC BIỆT: leave / live (/iː/ vs /ɪ/)
+        const isLeaveLiveDrill = (wordA === 'leave' && wordB === 'live') || (wordA === 'live' && wordB === 'leave');
+        const spokenTextLower = rawTranscript.toLowerCase();
 
-        if (spokeWordA && spokeWordB) {
-          calculatedScore = Math.min(100, 88 + Math.round(acousticQualityBonus * 0.8));
-          feedback = `🌟 Xuất sắc! Bạn đã phát âm phân biệt rất rõ cả cặp từ "${wordA}" và "${wordB}".`;
-        } else if (spokeWordA || spokeWordB) {
-          const matchedWord = spokeWordA ? wordA : wordB;
-          calculatedScore = Math.min(88, Math.max(72, 75 + Math.round(acousticQualityBonus * 0.8)));
-          feedback = `👍 Bạn đã phát âm tốt từ "${matchedWord}". (Mẹo: Thử đọc cả cặp "${wordA} - ${wordB}" để đạt điểm tối đa 100 nhé!)`;
+        // Nếu người học phát âm nhầm thành /laɪv/ (Whisper thường bóc ra "alive", "life", "line" hoặc ngữ cảnh âm /aɪ/)
+        const mispronouncedAsLaiv = isLeaveLiveDrill && (
+          spokenWords.includes('alive') ||
+          spokenWords.includes('life') ||
+          spokenWords.includes('line') ||
+          spokenTextLower.includes('live stream') ||
+          spokenTextLower.includes('live music')
+        );
+
+        if (mispronouncedAsLaiv) {
+          calculatedScore = Math.min(65, Math.max(45, 50 + acousticQualityBonus));
+          feedback = `⚠️ Chú ý: Từ "live" trong bài tập này là động từ, phát âm âm ngắn là /lɪv/ (như "lip"), không phát âm là /laɪv/ (như trong "livestream"). Hãy thử lại!`;
         } else {
-          let bestSim = 0;
-          pairWords.forEach((target: string) => {
-            spokenWords.forEach((spoken: string) => {
-              const maxLen = Math.max(target.length, spoken.length);
-              if (maxLen === 0) return;
-              let matchCount = 0;
-              for (let i = 0; i < Math.min(target.length, spoken.length); i++) {
-                if (target[i] === spoken[i]) matchCount++;
-              }
-              const sim = matchCount / maxLen;
-              if (sim > bestSim) bestSim = sim;
-            });
-          });
+          const spokeWordA = isWordSpoken(wordA, spokenWords);
+          const spokeWordB = isWordSpoken(wordB, spokenWords);
 
-          if (bestSim >= 0.6) {
-            calculatedScore = Math.min(68, Math.round(bestSim * 50 + acousticQualityBonus));
-            feedback = `⚠️ Phát âm gần đúng (${transcript}) nhưng chưa chuẩn âm đích. Hãy nghe lại mẫu và thử lại!`;
+          if (spokeWordA && spokeWordB) {
+            calculatedScore = Math.min(100, 88 + Math.round(acousticQualityBonus * 0.8));
+            feedback = `🌟 Xuất sắc! Bạn đã phát âm phân biệt rất rõ cả cặp từ "${wordA}" và "${wordB}".`;
+          } else if (spokeWordA || spokeWordB) {
+            const matchedWord = spokeWordA ? wordA : wordB;
+            calculatedScore = Math.min(88, Math.max(72, 75 + Math.round(acousticQualityBonus * 0.8)));
+            feedback = `👍 Bạn đã phát âm tốt từ "${matchedWord}". (Mẹo: Thử đọc cả cặp "${wordA} - ${wordB}" để đạt điểm tối đa 100 nhé!)`;
           } else {
-            calculatedScore = Math.max(20, Math.round(acousticQualityBonus * 2));
-            feedback = `❌ Chưa nhận diện đúng cặp từ mục tiêu. AI nghe thành: "${transcript}".`;
+            let bestSim = 0;
+            pairWords.forEach((target: string) => {
+              spokenWords.forEach((spoken: string) => {
+                const maxLen = Math.max(target.length, spoken.length);
+                if (maxLen === 0) return;
+                let matchCount = 0;
+                for (let i = 0; i < Math.min(target.length, spoken.length); i++) {
+                  if (target[i] === spoken[i]) matchCount++;
+                }
+                const sim = matchCount / maxLen;
+                if (sim > bestSim) bestSim = sim;
+              });
+            });
+
+            if (bestSim >= 0.6) {
+              calculatedScore = Math.min(68, Math.round(bestSim * 50 + acousticQualityBonus));
+              feedback = `⚠️ Phát âm gần đúng (${transcript}) nhưng chưa chuẩn âm đích. Hãy nghe lại mẫu và thử lại!`;
+            } else {
+              calculatedScore = Math.max(20, Math.round(acousticQualityBonus * 2));
+              feedback = `❌ Chưa nhận diện đúng cặp từ mục tiêu. AI nghe thành: "${transcript}".`;
+            }
           }
         }
       } else {
