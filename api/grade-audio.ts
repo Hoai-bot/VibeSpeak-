@@ -76,6 +76,16 @@ export const PHONETIC_TRAPS: PhoneticTrapRule[] = [
     ],
     scoreCap: 65,
     feedbackVi: '⚠️ Chú ý: Cả "lead" và "read" ở thì hiện tại đều có nguyên âm dài /iː/ (đọc là /liːd/ và /riːd/). Bạn vừa phát âm thành âm ngắn /led/ (như "led/chì") hoặc /rɪd/ ("rid"). Hãy căng môi cười và kéo dài âm /iː/ nhé!',
+  },
+  // 8. men / man (/e/ vs /æ/) - Bẫy phát âm men bị bẹt thành man cả 2 từ
+  {
+    id: 'men_man_confusion',
+    pair: ['men', 'man'],
+    trapKeywords: [
+      'man man', 'men men', 'two man', 'a men'
+    ],
+    scoreCap: 65,
+    feedbackVi: '⚠️ Chú ý: Phân biệt rõ âm /e/ (trong "men" - mở hé miệng, kéo khóe môi) và âm /æ/ (trong "man" - hạ quai hàm sâu). AI hiện đang nghe cả hai từ thành cùng một âm!',
   }
 ];
 
@@ -331,12 +341,23 @@ export default async function handler(req: Request) {
         const pairWords = cleanPrompt.split('/').map((w: string) => w.trim()).filter(Boolean);
         const [wordA, wordB] = pairWords;
 
-        // 🛡️ TỰ ĐỘNG QUÉT BẪY NGỮ ÂM TỪ MODULE
+        // 🛡️ TỰ ĐỘNG QUÉT BẪY NGỮ ÂM TỪ MODULE PHONETIC TRAPS
         const detectedTrap = detectPhoneticTrap(wordA, wordB, spokenWords, rawTranscript);
+
+        // Bẫy phụ: Phát hiện đọc lặp lại 1 từ cho cả 2 mục tiêu (ví dụ: men/man đọc thành "man man" hoặc "men men")
+        const isDuplicateWordTrap = (wordA === 'men' && wordB === 'man') || (wordA === 'man' && wordB === 'men');
+        const countWordA = spokenWords.filter(w => w === wordA).length;
+        const countWordB = spokenWords.filter(w => w === wordB).length;
+        const isRepeatedSameWord = isDuplicateWordTrap && (countWordA >= 2 || countWordB >= 2) && (countWordA === 0 || countWordB === 0);
 
         if (detectedTrap) {
           calculatedScore = Math.min(detectedTrap.scoreCap, Math.max(45, 50 + acousticQualityBonus));
           feedback = detectedTrap.feedbackVi;
+        } else if (isRepeatedSameWord) {
+          calculatedScore = Math.min(60, Math.max(45, 50 + acousticQualityBonus));
+          const repeatedWord = countWordA >= 2 ? wordA : wordB;
+          const missingWord = countWordA >= 2 ? wordB : wordA;
+          feedback = `⚠️ Bạn vừa phát âm từ "${repeatedWord}" 2 lần! Hãy chú ý khẩu hình: "${missingWord}" cần mở miệng khác biệt rõ rệt so với "${repeatedWord}".`;
         } else {
           const spokeWordA = isWordSpoken(wordA, spokenWords);
           const spokeWordB = isWordSpoken(wordB, spokenWords);
