@@ -171,11 +171,10 @@ export default async function handler(req: Request) {
         const pairWords = cleanPrompt.split('/').map((w: string) => w.trim()).filter(Boolean);
         const [wordA, wordB] = pairWords;
 
-        // 🎯 BẪY NGỮ ÂM ĐẶC BIỆT: leave / live (/iː/ vs /ɪ/)
+        // 🎯 BẪY NGỮ ÂM ĐẶC BIỆT 1: leave / live (/iː/ vs /ɪ/)
         const isLeaveLiveDrill = (wordA === 'leave' && wordB === 'live') || (wordA === 'live' && wordB === 'leave');
         const spokenTextLower = rawTranscript.toLowerCase();
 
-        // Nếu người học phát âm nhầm thành /laɪv/ (Whisper thường bóc ra "alive", "life", "line" hoặc ngữ cảnh âm /aɪ/)
         const mispronouncedAsLaiv = isLeaveLiveDrill && (
           spokenWords.includes('alive') ||
           spokenWords.includes('life') ||
@@ -184,9 +183,23 @@ export default async function handler(req: Request) {
           spokenTextLower.includes('live music')
         );
 
+        // 🎯 BẪY NGỮ ÂM ĐẶC BIỆT 2: vine / fine (/aɪ/ bị đọc nhầm thành /ɪ/ "vin fin")
+        const isVineFineDrill = (wordA === 'vine' && wordB === 'fine') || (wordA === 'fine' && wordB === 'vine');
+        const mispronouncedAsVinFin = isVineFineDrill && (
+          spokenWords.includes('vin') ||
+          spokenWords.includes('fin') ||
+          spokenWords.includes('thin') ||
+          spokenWords.includes('pin') ||
+          spokenWords.includes('been') ||
+          spokenWords.includes('win')
+        );
+
         if (mispronouncedAsLaiv) {
           calculatedScore = Math.min(65, Math.max(45, 50 + acousticQualityBonus));
           feedback = `⚠️ Chú ý: Từ "live" trong bài tập này là động từ, phát âm âm ngắn là /lɪv/ (như "lip"), không phát âm là /laɪv/ (như trong "livestream"). Hãy thử lại!`;
+        } else if (mispronouncedAsVinFin) {
+          calculatedScore = Math.min(65, Math.max(45, 50 + acousticQualityBonus));
+          feedback = `⚠️ Chú ý: Cặp từ "vine - fine" có nguyên âm đôi /aɪ/ (đọc là /vaɪn/ và /faɪn/). Bạn vừa phát âm thành âm ngắn /vɪn/ - /fɪn/ ("vin fin"). Hãy mở rộng khẩu hình và kéo dài âm /aɪ/ nhé!`;
         } else {
           const spokeWordA = isWordSpoken(wordA, spokenWords);
           const spokeWordB = isWordSpoken(wordB, spokenWords);
