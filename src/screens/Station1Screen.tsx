@@ -6,6 +6,7 @@ import { evaluateSpeaking, AssessmentResult, generateWordDiff } from '../service
 import { updateUserProgress } from '../services/userService';
 import { supabase } from '../utils/supabase'; // 💡 IMPORT TRỰC TIẾP TỪ UTILS
 import AudioWaveVisualizer from '../components/AudioWaveVisualizer'; // 🌊 IMPORT SÓNG ÂM THỜI GIAN THỰC
+import { getPhoneticComparison } from '../constants/phoneticMap'; // 🔬 IMPORT BỘ SOI ÂM VỊ IPA
 
 interface Props {
   onBack: () => void;
@@ -507,6 +508,61 @@ export default function Station1Screen({ onBack }: Props) {
               )}
             </View>
 
+            {/* 🎯 KHỐI ĐỐI CHIẾU IPA LỆCH TRỰC QUAN (PHONEME-LEVEL INSPECTOR) */}
+            {currentDrill?.contentEn && (
+              <View style={styles.ipaDiffContainer}>
+                <Text style={styles.ipaSectionTitle}>🔬 SOI ÂM VỊ CHI TIẾT (IPA PHONEMIC INSPECTOR):</Text>
+                
+                {currentDrill.contentEn
+                  .split('/')
+                  .map((w: string) => w.trim())
+                  .filter(Boolean)
+                  .map((word: string, idx: number) => {
+                    const comparison = getPhoneticComparison(word, result.transcript || '');
+                    return (
+                      <View 
+                        key={idx} 
+                        style={[
+                          styles.ipaCard, 
+                          comparison.isExactMatch ? styles.ipaCardCorrect : styles.ipaCardMismatch
+                        ]}
+                      >
+                        <View style={styles.ipaHeaderRow}>
+                          <Text style={styles.ipaWord}>{word.toUpperCase()}</Text>
+                          <Text style={[styles.ipaStatusBadge, { color: comparison.isExactMatch ? '#39FF14' : '#FF0055' }]}>
+                            {comparison.isExactMatch ? 'CHÍNH XÁC ✓' : 'LỆCH ÂM ✗'}
+                          </Text>
+                        </View>
+
+                        {/* Thanh so sánh trực quan Target vs Heard */}
+                        <View style={styles.ipaCompareRow}>
+                          <View style={styles.ipaBox}>
+                            <Text style={styles.ipaBoxLabel}>ÂM CHUẨN MỤC TIÊU</Text>
+                            <Text style={styles.targetIpaText}>{comparison.targetIpa}</Text>
+                          </View>
+
+                          <Text style={styles.ipaVsArrow}>➔</Text>
+
+                          <View style={styles.ipaBox}>
+                            <Text style={styles.ipaBoxLabel}>AI THU NHẬN ĐƯỢC</Text>
+                            <Text style={[styles.heardIpaText, { color: comparison.isExactMatch ? '#39FF14' : '#FF0055' }]}>
+                              {comparison.heardIpa || '(Không rõ)'}
+                            </Text>
+                          </View>
+                        </View>
+
+                        {/* Hướng dẫn sửa khẩu hình */}
+                        {comparison.tip && (
+                          <View style={styles.ipaTipBox}>
+                            <Text style={styles.ipaTipText}>💡 Mẹo khẩu hình: {comparison.tip}</Text>
+                          </View>
+                        )}
+                      </View>
+                    );
+                  })}
+              </View>
+            )}
+
             <View style={styles.wordHighlightBox}>
               <Text style={styles.wordHighlightTitle}>🎯 CHI TIẾT TỪNG TỪ MỤC TIÊU:</Text>
               <View style={styles.wordRow}>
@@ -595,6 +651,99 @@ const styles = StyleSheet.create({
   bestScoreText: { color: '#FFD700', fontSize: 10, fontWeight: 'bold' },
   deltaBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
   deltaText: { fontSize: 10, fontWeight: '900' },
+
+  // STYLES CHO BỘ SOI ÂM VỊ IPA TRỰC QUAN
+  ipaDiffContainer: {
+    width: '100%',
+    backgroundColor: '#070314',
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#00FFFF',
+    padding: 12,
+    marginVertical: 10,
+  },
+  ipaSectionTitle: {
+    color: '#00FFFF',
+    fontSize: 10,
+    fontWeight: '900',
+    marginBottom: 8,
+    letterSpacing: 0.5,
+  },
+  ipaCard: {
+    backgroundColor: '#120826',
+    borderRadius: 10,
+    borderWidth: 1,
+    padding: 10,
+    marginBottom: 8,
+  },
+  ipaCardCorrect: {
+    borderColor: '#39FF14',
+  },
+  ipaCardMismatch: {
+    borderColor: '#FF0055',
+  },
+  ipaHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  ipaWord: {
+    color: '#FFF',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  ipaStatusBadge: {
+    fontSize: 9,
+    fontWeight: '900',
+  },
+  ipaCompareRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#05020D',
+    borderRadius: 8,
+    padding: 8,
+  },
+  ipaBox: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  ipaBoxLabel: {
+    color: '#8888AA',
+    fontSize: 8,
+    fontWeight: 'bold',
+    marginBottom: 2,
+  },
+  targetIpaText: {
+    color: '#39FF14',
+    fontSize: 13,
+    fontWeight: '900',
+    fontFamily: 'monospace',
+  },
+  heardIpaText: {
+    fontSize: 13,
+    fontWeight: '900',
+    fontFamily: 'monospace',
+  },
+  ipaVsArrow: {
+    color: '#8888AA',
+    fontSize: 12,
+    fontWeight: 'bold',
+    paddingHorizontal: 8,
+  },
+  ipaTipBox: {
+    marginTop: 6,
+    backgroundColor: '#1A0B2E',
+    borderRadius: 6,
+    padding: 6,
+  },
+  ipaTipText: {
+    color: '#FFD700',
+    fontSize: 9,
+    lineHeight: 13,
+  },
+
   wordHighlightBox: { backgroundColor: '#120826', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#00FFFF', width: '100%', marginVertical: 8 },
   wordHighlightTitle: { color: '#00FFFF', fontSize: 9, fontWeight: '900', marginBottom: 6 },
   wordRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
