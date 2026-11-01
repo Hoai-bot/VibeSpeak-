@@ -5,6 +5,7 @@ import { getRandomStation1Drill, DrillType } from '../services/drills/station1Se
 import { evaluateSpeaking, AssessmentResult, generateWordDiff } from '../services/arena/assessmentService';
 import { updateUserProgress } from '../services/userService';
 import { supabase } from '../utils/supabase'; // 💡 IMPORT TRỰC TIẾP TỪ UTILS
+import AudioWaveVisualizer from '../components/AudioWaveVisualizer'; // 🌊 IMPORT SÓNG ÂM THỜI GIAN THỰC
 
 interface Props {
   onBack: () => void;
@@ -24,6 +25,9 @@ export default function Station1Screen({ onBack }: Props) {
   const [result, setResult] = useState<AssessmentResult | null>(null);
   const [userId, setUserId] = useState<string | undefined>(undefined);
   
+  // Quản lý luồng âm thanh thời gian thực cho Visualizer
+  const [activeStream, setActiveStream] = useState<MediaStream | null>(null);
+
   // Lưu văn bản bóc tách thực tế từ giọng nói
   const [capturedText, setCapturedText] = useState<string>('');
 
@@ -34,7 +38,7 @@ export default function Station1Screen({ onBack }: Props) {
   const recognitionRef = useRef<any>(null);
   const recordingStartTimeRef = useRef<number>(0);
 
-  // 🛡️ HÀM BÁO LỖI AN TOÀN TRÁNH NGHẼN TOUCH RESPONDER TRÊN WEB
+  // 🛡️ HÀM BÁO LỖI AN TOÀN TRÁNH NGHỄN TOUCH RESPONDER TRÊN WEB
   const safeAlert = (msg: string) => {
     setTimeout(() => {
       alert(msg);
@@ -175,6 +179,7 @@ export default function Station1Screen({ onBack }: Props) {
       mediaStreamRef.current.getTracks().forEach(track => track.stop());
       mediaStreamRef.current = null;
     }
+    setActiveStream(null);
     setIsRecording(false);
     setRecordedAudio(null);
     setHasRecorded(false);
@@ -233,8 +238,15 @@ export default function Station1Screen({ onBack }: Props) {
           }
         }
 
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          } 
+        });
         mediaStreamRef.current = stream;
+        setActiveStream(stream);
 
         let chosenMime = '';
         if (typeof MediaRecorder !== 'undefined') {
@@ -276,6 +288,7 @@ export default function Station1Screen({ onBack }: Props) {
             mediaStreamRef.current.getTracks().forEach(t => t.stop());
             mediaStreamRef.current = null;
           }
+          setActiveStream(null);
         };
 
         recordingStartTimeRef.current = Date.now();
@@ -290,6 +303,7 @@ export default function Station1Screen({ onBack }: Props) {
       const durationSeconds = (Date.now() - recordingStartTimeRef.current) / 1000;
       setIsRecording(false);
       setIsProcessingAudio(true); // Đang chờ recorder.onstop tạo file
+      setActiveStream(null);
 
       if (recognitionRef.current) {
         try { recognitionRef.current.stop(); } catch (e) {}
@@ -422,6 +436,9 @@ export default function Station1Screen({ onBack }: Props) {
             >
               <Text style={styles.refreshBtnText}>🔄 THỬ THÁCH BÀI KHÁC</Text>
             </TouchableOpacity>
+
+            {/* 🌊 DẢI SÓNG ÂM THỜI GIAN THỰC CHO TRẠM 1 */}
+            <AudioWaveVisualizer stream={activeStream} isRecording={isRecording} barColor="#FF007F" />
 
             <TouchableOpacity 
               style={[styles.recordBtn, isRecording && styles.recordBtnActive]} 
