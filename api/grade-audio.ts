@@ -21,7 +21,7 @@ export default async function handler(req: Request) {
     const audioFile = formData.get('audio') || formData.get('file');
     const targetPrompt = formData.get('prompt') || formData.get('targetSentence') || '';
     const stationType = (formData.get('stationType') || 'STATION_1').toUpperCase();
-    const cefrLevel = formData.get('level') || 'A1';
+    const cefrLevel = (formData.get('level') || 'B2').toUpperCase();
 
     if (!audioFile) {
       return new Response(
@@ -30,7 +30,7 @@ export default async function handler(req: Request) {
       );
     }
 
-    // 1. Gửi file âm thanh sang Whisper của Groq với verbose_json để lấy độ tự tin âm học (avg_logprob)
+    // 1. Gửi file âm thanh sang Groq Whisper với verbose_json để đo độ chuẩn âm học
     const whisperFormData: any = new FormData();
     whisperFormData.append('file', audioFile);
     whisperFormData.append('model', 'whisper-large-v3');
@@ -56,20 +56,20 @@ export default async function handler(req: Request) {
     const whisperData = await whisperResponse.json();
     const transcript = (whisperData.text || '').trim();
 
-    // 🛡️ CHẶN NẠP BÀI RỖNG / KHÔNG NÓI GÌ Ở CẢ 2 TRẠM
+    // 🛡️ CHẶN FILE RỖNG / KHÔNG NÓI GÌ
     if (!transcript) {
       return new Response(
         JSON.stringify({
           score: 0,
           transcript: "(Không phát hiện giọng nói)",
-          feedback: "❌ Không nhận diện được âm thanh phát âm! Vui lòng bấm làm lại và đọc to, rõ ràng hơn.",
+          feedback: "❌ Không nhận diện được âm thanh phát âm! Vui lòng bấm làm lại và nói to, rõ ràng hơn.",
           isWin: false,
         }),
         { status: 200, headers: { 'Content-Type': 'application/json' } }
       );
     }
 
-    // 🎯 Trích xuất chỉ số âm học avg_logprob để tạo độ chênh lệch điểm số khi phát âm lại
+    // 🎯 Trích xuất chỉ số âm học avg_logprob
     const segments = whisperData.segments || [];
     let avgLogprob = -0.4;
     if (segments.length > 0 && typeof segments[0].avg_logprob === 'number') {
@@ -77,7 +77,7 @@ export default async function handler(req: Request) {
       avgLogprob = sumLogprob / segments.length;
     }
 
-    // Chuyển avg_logprob sang điểm thưởng âm học (0 - 25 điểm)
+    // Điểm thưởng chất lượng âm học (0 - 25 điểm)
     const acousticQualityBonus = Math.max(0, Math.min(25, Math.round((avgLogprob + 0.9) * 30)));
 
     let calculatedScore = 75;
@@ -87,7 +87,7 @@ export default async function handler(req: Request) {
     const cleanPrompt = normalize(targetPrompt);
     let rawTranscript = normalize(transcript);
 
-    // 🎯 1. GIẢI MÃ CÁC TỪ GHÉP BỊ WHISPER GỘP KHI ĐỌC LIÊN TỤC
+    // 🎯 Giải mã từ ghép bị gộp
     const compoundFixes: Record<string, string> = {
       'samsung': 'sum sung',
       'some sung': 'sum sung',
@@ -108,7 +108,7 @@ export default async function handler(req: Request) {
 
     const spokenWords = rawTranscript.split(/\s+/).filter(Boolean);
 
-    // 🎯 2. TỪ ĐIỂN TỪ ĐỒNG ÂM (HOMOPHONES) TRÁNH BỊ CHẤM SAI CHÍNH TẢ
+    // 🎯 Bảng từ đồng âm
     const homophonesMap: Record<string, string[]> = {
       'bare': ['bear'],
       'bear': ['bare'],
@@ -154,6 +154,9 @@ export default async function handler(req: Request) {
       return equivalents.some(eq => spokenList.includes(eq));
     };
 
+    // =========================================================================
+    // 🎯 NHÁNH 1: TRẠM 1 - PRONUNCIATION LAB (MINIMAL PAIRS & SHADOWING)
+    // =========================================================================
     if (stationType === 'STATION_1' && targetPrompt) {
       const isMinimalPairDrill = cleanPrompt.includes('/');
 
@@ -210,11 +213,72 @@ export default async function handler(req: Request) {
           feedback = `Phát âm chuẩn xác ${matchedCount}/${targetWords.length} từ mục tiêu.`;
         }
       }
-    } else {
-      // 🎯 TRẠM 2: VOCABULARY ARENA (SOLO / RELAY / ROLEPLAY)
+
+    // =========================================================================
+    // ⚡ NHÁNH 2: TRẠM 4 - SPEAKING EXPRESS (PHẢN XẠ NHANH 10 - 15 GIÂY)
+    // =========================================================================
+    } else if (stationType === 'STATION_4') {
       const wordCount = spokenWords.length;
 
-      // 🛡️ LỌC CÁC CÂU ẢO GIÁC DO WHISPER TỰ SINH KHI IM LẶNG
+      // 🛡️ Lọc ảo giác âm thanh
+      const hallucinationPhrases = ['thank you', 'thanks for watching', 'subtitles by', 'bye', 'goodbye'];
+      const isHallucination = wordCount <= 2 && hallucinationPhrases.some(h => transcript.toLowerCase().includes(h));
+
+      if (isHallucination || wordCount < 3) {
+        calculatedScore = Math.max(20, Math.min(40, wordCount * 10));
+        feedback = `⚠️ Phản hồi quá ngắn hoặc chỉ là từ đệm (${wordCount} từ). Hãy đưa ra câu trả lời trực diện cho tình huống!`;
+      } else {
+        // 🎯 Khung số từ phản xạ nhanh chuẩn theo CEFR (10-15s)
+        let targetExcellent = 12; // >= 12 từ là xuất sắc
+        let targetGood = 8;       // >= 8 từ là đạt khá
+        let targetPass = 5;       // >= 5 từ là đạt yêu cầu
+
+        if (cefrLevel === 'A1' || cefrLevel === 'A2') {
+          targetExcellent = 9;
+          targetGood = 6;
+          targetPass = 4;
+        } else if (cefrLevel === 'C1' || cefrLevel === 'C2') {
+          targetExcellent = 16;
+          targetGood = 11;
+          targetPass = 7;
+        }
+
+        // 🎯 Điểm thưởng từ khóa tình huống (Contextual Match)
+        let keywordBonus = 0;
+        if (targetPrompt) {
+          const promptKeywords = cleanPrompt
+            .replace(/[^a-z0-9\s]/g, ' ')
+            .split(/\s+/)
+            .filter((w: string) => w.length >= 4);
+
+          const matchedKeywords = promptKeywords.filter((kw: string) => spokenWords.includes(kw));
+          if (matchedKeywords.length > 0) {
+            keywordBonus = Math.min(12, matchedKeywords.length * 4); // Thưởng tối đa 12 điểm
+          }
+        }
+
+        // 🎯 Tính điểm phản xạ Trạm 4
+        if (wordCount >= targetExcellent) {
+          calculatedScore = Math.min(100, 86 + Math.round(acousticQualityBonus * 0.4) + keywordBonus);
+          feedback = `🚀 Phản xạ siêu nhanh & trôi chảy (${wordCount} từ)! Câu trả lời đủ ý, bật ra tức thì rất tự nhiên [${cefrLevel}].`;
+        } else if (wordCount >= targetGood) {
+          calculatedScore = Math.min(94, 76 + Math.round(acousticQualityBonus * 0.4) + keywordBonus);
+          feedback = `👍 Tốc độ phản xạ rất tốt (${wordCount} từ)! Hoàn thành trọn vẹn yêu cầu phản hồi nhanh.`;
+        } else if (wordCount >= targetPass) {
+          calculatedScore = Math.min(84, 66 + Math.round(acousticQualityBonus * 0.4) + keywordBonus);
+          feedback = `👌 Đạt yêu cầu phản xạ cơ bản (${wordCount} từ). Hãy mở rộng thêm 1 chi tiết nữa để đạt điểm tối đa!`;
+        } else {
+          calculatedScore = Math.max(40, wordCount * 8 + 15 + keywordBonus);
+          feedback = `💡 Câu trả lời hơi cụt (${wordCount} từ). Hãy cố gắng trả lời thành câu hoàn chỉnh trong 15s.`;
+        }
+      }
+
+    // =========================================================================
+    // 🎭 NHÁNH 3: TRẠM 2 - VOCABULARY ARENA (SOLO / RELAY / ROLEPLAY)
+    // =========================================================================
+    } else {
+      const wordCount = spokenWords.length;
+
       const hallucinationPhrases = ['thank you', 'thanks for watching', 'subtitles by', 'bye', 'goodbye'];
       const isHallucination = wordCount <= 3 && hallucinationPhrases.some(h => transcript.toLowerCase().includes(h));
 
@@ -222,31 +286,28 @@ export default async function handler(req: Request) {
         calculatedScore = Math.max(20, Math.min(35, wordCount * 6 + 10));
         feedback = `⚠️ Phản hồi quá ngắn hoặc chỉ ghi nhận tiếng ồn/từ chào (${wordCount} từ). Hãy đối thoại hoặc nói câu hoàn chỉnh theo chủ đề!`;
       } else {
-        // 🎯 ĐIỀU CHỈNH NGƯỠNG ĐỘ DÀI THEO CẤP ĐỘ CEFR
         let minExcellentWords = 22;
         let minGoodWords = 14;
         let minPassWords = 8;
 
-        const lvl = String(cefrLevel).toUpperCase();
-        if (lvl === 'A1') {
+        if (cefrLevel === 'A1') {
           minExcellentWords = 16;
           minGoodWords = 10;
           minPassWords = 5;
-        } else if (lvl === 'A2') {
+        } else if (cefrLevel === 'A2') {
           minExcellentWords = 20;
           minGoodWords = 12;
           minPassWords = 7;
-        } else if (lvl === 'B2') {
+        } else if (cefrLevel === 'B2') {
           minExcellentWords = 28;
           minGoodWords = 18;
           minPassWords = 10;
-        } else if (lvl === 'C1' || lvl === 'C2') {
+        } else if (cefrLevel === 'C1' || cefrLevel === 'C2') {
           minExcellentWords = 35;
           minGoodWords = 22;
           minPassWords = 12;
         }
 
-        // 🎯 KIỂM TRA ĐỘ BÁM SÁT CHỦ ĐỀ (TOPIC RELEVANCE BONUS)
         let topicRelevanceBonus = 0;
         if (targetPrompt) {
           const promptKeywords = cleanPrompt
@@ -260,19 +321,18 @@ export default async function handler(req: Request) {
           }
         }
 
-        // 🎯 TÍNH ĐIỂM TỔNG HỢP
         if (wordCount >= minExcellentWords) {
           calculatedScore = Math.min(100, 85 + Math.round(acousticQualityBonus * 0.4) + topicRelevanceBonus);
-          feedback = `🌟 Bài nói rất phong phú (${wordCount} từ)! Phản xạ tự nhiên, lưu loát và bám sát chủ đề [${lvl}].`;
+          feedback = `🌟 Bài nói rất phong phú (${wordCount} từ)! Phản xạ tự nhiên, lưu loát và bám sát chủ đề [${cefrLevel}].`;
         } else if (wordCount >= minGoodWords) {
           calculatedScore = Math.min(94, 75 + Math.round(acousticQualityBonus * 0.4) + topicRelevanceBonus);
-          feedback = `👍 Rất tốt (${wordCount} từ)! Diễn đạt mạch lạc và hoàn thành yêu cầu [${lvl}].`;
+          feedback = `👍 Rất tốt (${wordCount} từ)! Diễn đạt mạch lạc và hoàn thành yêu cầu [${cefrLevel}].`;
         } else if (wordCount >= minPassWords) {
           calculatedScore = Math.min(84, 65 + Math.round(acousticQualityBonus * 0.4) + topicRelevanceBonus);
           feedback = `👌 Đạt yêu cầu cơ bản (${wordCount} từ). Nên triển khai thêm chi tiết để đạt điểm xuất sắc.`;
         } else {
           calculatedScore = Math.max(35, wordCount * 6 + 15 + topicRelevanceBonus);
-          feedback = `⚠️ Bài nói hơi ngắn so với chuẩn [${lvl}] (${wordCount} từ). Cần nói dài và mở rộng ý hơn.`;
+          feedback = `⚠️ Bài nói hơi ngắn so với chuẩn [${cefrLevel}] (${wordCount} từ). Cần nói dài và mở rộng ý hơn.`;
         }
       }
     }
