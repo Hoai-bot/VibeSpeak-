@@ -30,11 +30,12 @@ export default async function handler(req: Request) {
       );
     }
 
-    // 1. Gửi file âm thanh sang Whisper của Groq
+    // 1. Gửi file âm thanh sang Whisper của Groq với verbose_json để lấy độ tự tin âm học (avg_logprob)
     const whisperFormData: any = new FormData();
     whisperFormData.append('file', audioFile);
     whisperFormData.append('model', 'whisper-large-v3');
     whisperFormData.append('language', 'en');
+    whisperFormData.append('response_format', 'verbose_json');
 
     const whisperResponse = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
       method: 'POST',
@@ -68,67 +69,100 @@ export default async function handler(req: Request) {
       );
     }
 
-    let calculatedScore = 0;
+    // 🎯 Trích xuất chỉ số âm học avg_logprob để tạo độ chênh lệch điểm số khi phát âm lại
+    const segments = whisperData.segments || [];
+    let avgLogprob = -0.4;
+    if (segments.length > 0 && typeof segments[0].avg_logprob === 'number') {
+      const sumLogprob = segments.reduce((acc: number, s: any) => acc + (s.avg_logprob || 0), 0);
+      avgLogprob = sumLogprob / segments.length;
+    }
+
+    // Chuyển avg_logprob sang điểm thưởng âm học (0 - 25 điểm)
+    const acousticQualityBonus = Math.max(0, Math.min(25, Math.round((avgLogprob + 0.9) * 30)));
+
+    let calculatedScore = 75;
     let feedback = '';
 
+    const normalize = (str: string) => str.toLowerCase().replace(/[^a-z0-9\s/]/g, '').trim();
+    const cleanPrompt = normalize(targetPrompt);
+    const spokenWords = normalize(transcript).split(/\s+/).filter(Boolean);
+
     if (stationType === 'STATION_1' && targetPrompt) {
-      // 🎯 TRẠM 1: Minimal Pairs / Shadowing
-      const normalize = (str: string) => str.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim();
-      const targetWords = normalize(targetPrompt).split(/\s+/).filter(Boolean);
-      const spokenWords = normalize(transcript).split(/\s+/).filter(Boolean);
+      // 🎯 XỬ LÝ CHUYÊN BIỆT CHO TRẠM 1: CẶP TỪ MINIMAL PAIRS HOẶC CÂU SHADOWING
+      const isMinimalPairDrill = cleanPrompt.includes('/');
 
-      let totalScoreWeight = 0;
+      if (isMinimalPairDrill) {
+        const pairWords = cleanPrompt.split('/').map((w: string) => w.trim()).filter(Boolean);
+        const [wordA, wordB] = pairWords;
 
-      targetWords.forEach((target) => {
-        if (spokenWords.includes(target)) {
-          totalScoreWeight += 1.0;
+        const spokeWordA = spokenWords.includes(wordA);
+        const spokeWordB = spokenWords.includes(wordB);
+
+        if (spokeWordA && spokeWordB) {
+          // Sinh viên đọc phân biệt cả 2 từ -> Thang điểm 85 - 100
+          calculatedScore = Math.min(100, 75 + acousticQualityBonus);
+          feedback = `🌟 Xuất sắc! Bạn đã phát âm phân biệt rất rõ cả cặp từ "${wordA}" và "${wordB}".`;
+        } else if (spokeWordA || spokeWordB) {
+          // Sinh viên tập trung luyện 1 từ -> Thang điểm linh hoạt theo chất lượng âm đọc (70 - 95 điểm)
+          const matchedWord = spokeWordA ? wordA : wordB;
+          calculatedScore = Math.min(95, Math.max(68, 70 + acousticQualityBonus));
+          feedback = `👍 Bạn đã phát âm tốt từ "${matchedWord}". (Mẹo: Thử đọc cả cặp "${wordA} - ${wordB}" để đạt điểm tối đa 100 nhé!)`;
         } else {
-          // Đo lường độ tương đồng ngữ âm cho cặp từ tối thiểu
+          // Không khớp chính xác -> Đo độ tương đồng ngữ âm
           let bestSim = 0;
-          spokenWords.forEach((spoken) => {
-            const maxLen = Math.max(target.length, spoken.length);
-            if (maxLen === 0) return;
-            let matchChars = 0;
-            const minLen = Math.min(target.length, spoken.length);
-            for (let i = 0; i < minLen; i++) {
-              if (target[i] === spoken[i]) matchChars++;
-            }
-            const sim = matchChars / maxLen;
-            if (sim > bestSim) bestSim = sim;
+          pairWords.forEach((target: string) => {
+            spokenWords.forEach((spoken: string) => {
+              const maxLen = Math.max(target.length, spoken.length);
+              if (maxLen === 0) return;
+              let matchCount = 0;
+              for (let i = 0; i < Math.min(target.length, spoken.length); i++) {
+                if (target[i] === spoken[i]) matchCount++;
+              }
+              const sim = matchCount / maxLen;
+              if (sim > bestSim) bestSim = sim;
+            });
           });
 
           if (bestSim >= 0.6) {
-            totalScoreWeight += bestSim * 0.7; // Thưởng điểm phát âm tương đồng
+            calculatedScore = Math.min(65, Math.round(bestSim * 50 + acousticQualityBonus * 0.5));
+            feedback = `⚠️ Phát âm gần đúng (${transcript}) nhưng chưa chuẩn âm đích. Hãy nghe lại mẫu và thử lại!`;
+          } else {
+            calculatedScore = Math.max(20, Math.round(acousticQualityBonus));
+            feedback = `❌ Chưa nhận diện đúng cặp từ mục tiêu. AI nghe thành: "${transcript}".`;
           }
         }
-      });
-
-      const matchedCount = targetWords.filter((w) => spokenWords.includes(w)).length;
-      const ratio = targetWords.length > 0 ? totalScoreWeight / targetWords.length : 0;
-
-      // Không khớp từ và không có âm tương đồng -> cho điểm liệt (20đ) thay vì mức 50đ cố định
-      if (ratio === 0) {
-        calculatedScore = 20;
-        feedback = `❌ Phát âm chưa đúng từ mục tiêu (${transcript}). Hãy nghe lại mẫu và thử lại!`;
       } else {
-        calculatedScore = Math.min(100, Math.round(ratio * 70 + 30));
-        feedback = `Phát âm chuẩn xác ${matchedCount}/${targetWords.length} từ mục tiêu.`;
+        // Shadowing / Tongue Twisters thông thường
+        const targetWords = cleanPrompt.replace(/\//g, ' ').split(/\s+/).filter(Boolean);
+        let matchedCount = 0;
+        targetWords.forEach((w: string) => {
+          if (spokenWords.includes(w)) matchedCount++;
+        });
+
+        const ratio = targetWords.length > 0 ? (matchedCount / targetWords.length) : 0;
+        if (ratio === 0) {
+          calculatedScore = Math.max(20, acousticQualityBonus);
+          feedback = `❌ Phát âm chưa đúng câu mẫu. AI nghe được: "${transcript}".`;
+        } else {
+          calculatedScore = Math.min(100, Math.round(ratio * 70 + acousticQualityBonus));
+          feedback = `Phát âm chuẩn xác ${matchedCount}/${targetWords.length} từ mục tiêu.`;
+        }
       }
     } else {
-      // 🎯 TRẠM 2: Nói tự do
-      const wordCount = transcript.split(/\s+/).filter(Boolean).length;
+      // 🎯 TRẠM 2: Nói tự do[cite: 11]
+      const wordCount = spokenWords.length;
       if (wordCount >= 25) {
-        calculatedScore = 95;
-        feedback = `🌟 Bài nói rất phong phú (${wordCount} từ)! Phản xạ tự nhiên và trôi chảy.`;
+        calculatedScore = Math.min(100, 85 + Math.round(acousticQualityBonus * 0.6));
+        feedback = `🌟 Bài nói rất phong phú (${wordCount} từ)! Phản xạ tự nhiên và trôi chảy.`;[cite: 11]
       } else if (wordCount >= 15) {
-        calculatedScore = 88;
-        feedback = `👍 Rất tốt (${wordCount} từ)! Diễn đạt mạch lạc và rõ ý.`;
+        calculatedScore = Math.min(95, 75 + Math.round(acousticQualityBonus * 0.6));
+        feedback = `👍 Rất tốt (${wordCount} từ)! Diễn đạt mạch lạc và rõ ý.`;[cite: 11]
       } else if (wordCount >= 8) {
-        calculatedScore = 78;
-        feedback = `👌 Đạt yêu cầu cơ bản (${wordCount} từ).`;
+        calculatedScore = Math.min(85, 65 + Math.round(acousticQualityBonus * 0.6));
+        feedback = `👌 Đạt yêu cầu cơ bản (${wordCount} từ).`;[cite: 11]
       } else {
-        calculatedScore = Math.max(30, wordCount * 6 + 15);
-        feedback = `⚠️ Bài nói hơi ngắn (${wordCount} từ). Cần nói dài hơn.`;
+        calculatedScore = Math.max(30, wordCount * 6 + 15);[cite: 11]
+        feedback = `⚠️ Bài nói hơi ngắn (${wordCount} từ). Cần nói dài hơn.`;[cite: 11]
       }
     }
 
