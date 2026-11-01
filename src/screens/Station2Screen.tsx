@@ -11,6 +11,7 @@ import { saveSubmissionToCloud } from '../services/userService';
 import { harvestWeakWords } from '../services/weakPointsService';
 import { getOptimizedRecorderConfig, executeWithRetry } from '../utils/networkAudioHelper';
 import { supabase } from '../utils/supabase';
+import AudioWaveVisualizer from '../components/AudioWaveVisualizer'; // 🌊 IMPORT SÓNG ÂM THỜI GIAN THỰC
 
 interface Props {
   onBack: () => void;
@@ -37,7 +38,10 @@ export default function Station2Screen({ onBack }: Props) {
   const [customTopicInput, setCustomTopicInput] = useState<string>('');
   const [isUsingCustomTopic, setIsUsingCustomTopic] = useState<boolean>(false);
 
-  // 🛡️ HÀM BÁO LỖI AN TOÀN TRÁNH NGHẼN TOUCH RESPONDER TRÊN WEB
+  // Quản lý luồng âm thanh thời gian thực cho Visualizer
+  const [activeStream, setActiveStream] = useState<MediaStream | null>(null);
+
+  // 🛡️ HÀM BÁO LỖI AN TOÀN TRÁNH NGHỄN TOUCH RESPONDER TRÊN WEB
   const safeAlert = (msg: string) => {
     setTimeout(() => {
       alert(msg);
@@ -371,6 +375,7 @@ export default function Station2Screen({ onBack }: Props) {
         }
       });
       audioStreamRef.current = stream;
+      setActiveStream(stream);
 
       let recorderOptions: any = {};
       let resolvedMimeType = '';
@@ -413,6 +418,7 @@ export default function Station2Screen({ onBack }: Props) {
         // 🛡️ CHẶN BẤM TẮT DƯỚI 2 GIÂY
         if (durationSeconds < 2.0) {
           setIsEvaluating(false);
+          setActiveStream(null);
           setHardwareWarning('⚠️ Bạn vừa bấm tắt quá nhanh (dưới 2 giây)! Vui lòng giữ bình tĩnh, đọc to câu trả lời tiếng Anh rồi mới bấm Dừng & Nộp bài.');
           if (audioStreamRef.current) {
             audioStreamRef.current.getTracks().forEach(track => track.stop());
@@ -425,6 +431,7 @@ export default function Station2Screen({ onBack }: Props) {
 
         if (fullAudioBlob.size < 4000 && !fullTranscriptRef.current.trim()) {
           setIsEvaluating(false);
+          setActiveStream(null);
           setHardwareWarning('⚠️ Micro không thu được tín hiệu âm thanh rõ ràng hoặc âm lượng quá nhỏ. Vui lòng kiểm tra micro và bấm THỬ LẠI!');
           if (audioStreamRef.current) {
             audioStreamRef.current.getTracks().forEach(track => track.stop());
@@ -546,6 +553,7 @@ export default function Station2Screen({ onBack }: Props) {
           safeAlert(`⚠️ ${netErr.message || 'Lỗi gửi bài do mất kết nối!'}`);
         } finally {
           setIsEvaluating(false);
+          setActiveStream(null);
           if (audioStreamRef.current) {
             audioStreamRef.current.getTracks().forEach(track => track.stop());
           }
@@ -566,6 +574,7 @@ export default function Station2Screen({ onBack }: Props) {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
       setIsGameActive(false);
+      setActiveStream(null);
     }
   };
 
@@ -718,6 +727,9 @@ export default function Station2Screen({ onBack }: Props) {
                   </TouchableOpacity>
                 </View>
               )}
+
+              {/* 🌊 DẢI SÓNG ÂM THỜI GIAN THỰC CHO TRẠM 2 */}
+              <AudioWaveVisualizer stream={activeStream} isRecording={isRecording} barColor="#00FFFF" />
 
               {/* NÚT BẮT ĐẦU */}
               {!isRecording && !isEvaluating ? (
