@@ -613,7 +613,7 @@ Return JSON ONLY:
       );
 
     // =========================================================================
-    // 🎭 NHÁNH 4: TRẠM 2 - VOCABULARY ARENA (ĐÁNH GIÁ THỰC TẾ & LINH HOẠT)
+    // 🎭 NHÁNH 4: TRẠM 2 - VOCABULARY ARENA (ĐÁNH GIÁ THỰC TẾ & BẮT LỖI LẠC ĐỀ)
     // =========================================================================
     } else {
       const wordCount = spokenWords.length;
@@ -630,23 +630,54 @@ Return JSON ONLY:
             feedback: feedback,
             isWin: false,
             errorWords: [],
-            criteria: { pronunciation: 30, vocabulary: 30, grammar: 30, fluency: 30, content: 30 }
+            criteria: { pronunciation: 30, vocabulary: 30, grammar: 30, fluency: 30, content: 20 }
           }),
           { status: 200, headers: { 'Content-Type': 'application/json' } }
         );
       }
 
+      // 1. 🎯 KIỂM TRA ĐỘ BÁM SÁT CHỦ ĐỀ (OFF-TOPIC / RELEVANCE DETECTOR)
+      const lowerTranscript = transcript.toLowerCase();
+      const lowerPrompt = targetPrompt.toLowerCase();
+
+      // Trích xuất các danh từ/động từ trọng tâm từ đề bài (bỏ stop words)
+      const stopWords = ['describe', 'talk', 'about', 'your', 'you', 'the', 'and', 'with', 'that', 'this', 'have', 'what', 'where', 'when', 'which', 'tell', 'enrolled', 'special'];
+      const corePromptKeywords = lowerPrompt
+        .replace(/[^a-z0-9\s]/g, ' ')
+        .split(/\s+/)
+        .filter(w => w.length >= 3 && !stopWords.includes(w));
+
+      // Đếm số từ khóa liên quan xuất hiện trong bài nói
+      let matchedTopicKeywords = 0;
+      corePromptKeywords.forEach(kw => {
+        if (lowerTranscript.includes(kw) || 
+           (kw.endsWith('s') && lowerTranscript.includes(kw.slice(0, -1))) ||
+           (kw.endsWith('ed') && lowerTranscript.includes(kw.slice(0, -2)))) {
+          matchedTopicKeywords++;
+        }
+      });
+
+      // Kiểm tra các trường hợp lạc đề phổ biến (Ví dụ: Đề hỏi khóa học trực tuyến nhưng nói về quê/gia đình)
+      const isOnlineCoursePrompt = lowerPrompt.includes('course') || lowerPrompt.includes('online') || lowerPrompt.includes('tutorial');
+      const isFamilyHometownSpeech = lowerTranscript.includes('hometown') || lowerTranscript.includes('went home') || (lowerTranscript.includes('parents') && !lowerTranscript.includes('course'));
+      
+      const isCompletelyOffTopic = (isOnlineCoursePrompt && isFamilyHometownSpeech) || (corePromptKeywords.length >= 2 && matchedTopicKeywords === 0);
+
+      let contentScore = isCompletelyOffTopic ? 30 : 70;
       let grammarScore = 65;
       let vocabScore = 70;
-      let contentScore = 70;
       let fluencyScore = Math.min(95, Math.max(45, wordCount * 2));
       let pronunciationScore = Math.min(100, Math.max(50, 70 + acousticQualityBonus * 2));
       let errorWordsList: { word: string; correction: string; reason: string }[] = [];
       let dynamicFeedback = '';
 
-      // 1. 🛡️ BỘ QUÉT TẠI CHỖ CHUẨN XÁC (LOCAL REAL-TIME HEURISTIC SCANNER)
-      const lowerTranscript = transcript.toLowerCase();
-      const lowerPrompt = targetPrompt.toLowerCase();
+      if (isCompletelyOffTopic) {
+        errorWordsList.push({
+          word: 'hometown',
+          correction: 'online course / tutorial',
+          reason: 'Lạc đề nghiêm trọng: Đề bài yêu cầu miêu tả "khóa học trực tuyến (online course)", bài nói đang kể về "quê hương (hometown)".'
+        });
+      }
 
       // A. Bắt lỗi nuốt âm đuôi số nhiều sau số đếm (Ví dụ: "five member" -> members)
       const countNumbers = ['two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'];
@@ -692,7 +723,7 @@ Return JSON ONLY:
             reason: 'Sai thì: Dùng thì hiện tại đơn "is" khi giới thiệu gia đình hoặc bản thân.'
           });
         }
-        if (spokenWords.includes('went')) {
+        if (spokenWords.includes('went') && !isOnlineCoursePrompt) {
           errorWordsList.push({
             word: 'went',
             correction: 'go / usually go',
@@ -706,7 +737,7 @@ Return JSON ONLY:
             reason: 'Sai thì: Giới thiệu quê hương nên dùng thì hiện tại đơn, không dùng "visited".'
           });
         }
-        if (spokenWords.includes('yesterday')) {
+        if (spokenWords.includes('yesterday') && !isOnlineCoursePrompt) {
           errorWordsList.push({
             word: 'yesterday',
             correction: 'every day / usually',
@@ -735,7 +766,7 @@ Return JSON ONLY:
         });
       }
 
-      // 2. 🤖 GỌI GROQ LLM PHÂN TÍCH ĐA TIÊU CHÍ VÀ TẠO PHẢN HỒI THỰC TẾ
+      // 2. 🤖 GỌI GROQ LLM PHÂN TÍCH CHUYÊN SÂU NỘI DUNG & NGỮ PHÁP
       try {
         const groqLlmResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
           method: 'POST',
@@ -745,24 +776,26 @@ Return JSON ONLY:
           },
           body: JSON.stringify({
             model: 'llama-3.1-8b-instant',
-            temperature: 0.2,
+            temperature: 0.1,
             max_tokens: 350,
             messages: [
               {
                 role: 'system',
-                content: `You are a real-world CEFR English speaking examiner evaluating a ${cefrLevel} student.
-Analyze the transcript against the prompt. Identify tense inconsistency, unnatural wording, or missing objects.
-Return JSON format ONLY:
+                content: `You are a strict CEFR speaking examiner evaluating a ${cefrLevel} student.
+Examine whether the student answered the PROMPT topic.
+CRITICAL RULE: If the student speaks off-topic (e.g. prompt asks about "online course" but student talks about "hometown / visiting parents"), you MUST assign content_score between 20-35.
+Return JSON ONLY:
 {
   "vocab_score": number,
   "grammar_score": number,
   "content_score": number,
-  "feedback_vi": "Nhận xét tự nhiên bằng tiếng Việt, ngắn gọn trong 1-2 câu, trích dẫn thẳng từ sai và cách sửa"
+  "is_off_topic": boolean,
+  "feedback_vi": "Nhận xét tiếng Việt cụ thể chỉ thẳng việc nói lạc đề và cách khắc phục"
 }`
               },
               {
                 role: 'user',
-                content: `Prompt: "${targetPrompt}"\nStudent: "${transcript}"`
+                content: `Prompt: "${targetPrompt}"\nStudent spoken: "${transcript}"`
               }
             ]
           })
@@ -774,43 +807,50 @@ Return JSON format ONLY:
           const jsonMatch = rawContent.match(/\{[\s\S]*\}/);
           if (jsonMatch) {
             const parsed = JSON.parse(jsonMatch[0]);
+            if (typeof parsed.content_score === 'number') {
+              contentScore = parsed.is_off_topic ? Math.min(35, parsed.content_score) : parsed.content_score;
+            }
             if (typeof parsed.vocab_score === 'number') vocabScore = parsed.vocab_score;
             if (typeof parsed.grammar_score === 'number') grammarScore = parsed.grammar_score;
-            if (typeof parsed.content_score === 'number') contentScore = parsed.content_score;
-            if (parsed.feedback_vi && parsed.feedback_vi.length > 15) {
+            if (parsed.feedback_vi && parsed.feedback_vi.length > 10) {
               dynamicFeedback = parsed.feedback_vi;
             }
           }
         }
       } catch (llmErr) {
-        console.warn("LLM API call bypassed, using local engine:", llmErr);
+        console.warn("LLM API call bypassed:", llmErr);
       }
 
-      // 3. TÍNH ĐIỂM THỰC TẾ
+      // 3. TÍNH ĐIỂM TỔNG & PHẢN HỒI THỰC TẾ
       const penalty = errorWordsList.length * 9;
       calculatedScore = Math.max(
-        35,
+        25,
         Math.min(
           95,
           Math.round(
             (pronunciationScore * 0.2 +
              acousticQualityBonus * 0.1 +
-             vocabScore * 0.25 +
-             grammarScore * 0.25 +
-             contentScore * 0.1 +
+             vocabScore * 0.2 +
+             grammarScore * 0.2 +
+             contentScore * 0.2 +
              fluencyScore * 0.1) - penalty
           )
         )
       );
 
+      // Nếu lạc đề hoàn toàn, điểm tổng tối đa chỉ 55 điểm (trượt)
+      if (isCompletelyOffTopic) {
+        calculatedScore = Math.min(55, calculatedScore);
+      }
+
       if (!dynamicFeedback) {
-        if (errorWordsList.length > 0) {
+        if (isCompletelyOffTopic) {
+          dynamicFeedback = `⚠️ Bài nói bị lạc đề! Đề bài yêu cầu miêu tả "khóa học trực tuyến (online course)" nhưng bạn lại nói về "quê hương (hometown)". Bạn cần nói về tên khóa học, môn học hoặc kỹ năng bạn đã học trên mạng.`;
+        } else if (errorWordsList.length > 0) {
           const firstErr = errorWordsList[0];
-          dynamicFeedback = `Bạn cần chú ý sửa từ "${firstErr.word}" ➔ "${firstErr.correction}" (${firstErr.reason}). Hãy nói câu hoàn chỉnh và dùng đúng thì theo đề bài nhé!`;
-        } else if (calculatedScore >= 80) {
-          dynamicFeedback = `Bài nói diễn đạt tốt, từ ngữ tự nhiên và đúng trọng tâm chủ đề [${cefrLevel}]!`;
+          dynamicFeedback = `Bạn cần chú ý sửa từ "${firstErr.word}" ➔ "${firstErr.correction}". ${firstErr.reason}`;
         } else {
-          dynamicFeedback = `Bạn đã nắm được ý chính của đề bài, hãy mở rộng thêm chi tiết để câu nói trọn vẹn hơn.`;
+          dynamicFeedback = `Bài nói tự nhiên, tuy nhiên cần phát triển thêm chi tiết bám sát chủ đề để đạt điểm cao hơn.`;
         }
       }
 
