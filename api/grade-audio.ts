@@ -344,20 +344,19 @@ export default async function handler(req: Request) {
         // 🛡️ TỰ ĐỘNG QUÉT BẪY NGỮ ÂM TỪ MODULE PHONETIC TRAPS
         const detectedTrap = detectPhoneticTrap(wordA, wordB, spokenWords, rawTranscript);
 
-        // Bẫy phụ: Phát hiện đọc lặp lại 1 từ cho cả 2 mục tiêu (ví dụ: men/man đọc thành "man man" hoặc "men men")
+        // 🛡️ PHÁT HIỆN LỖI ĐỌC LẶP 1 TỪ CHO CẢ 2 MỤC TIÊU (VÍ DỤ MEN / MAN THÀNH "MAN MAN")
         const isDuplicateWordTrap = (wordA === 'men' && wordB === 'man') || (wordA === 'man' && wordB === 'men');
         const countWordA = spokenWords.filter(w => w === wordA).length;
         const countWordB = spokenWords.filter(w => w === wordB).length;
-        const isRepeatedSameWord = isDuplicateWordTrap && (countWordA >= 2 || countWordB >= 2) && (countWordA === 0 || countWordB === 0);
 
         if (detectedTrap) {
           calculatedScore = Math.min(detectedTrap.scoreCap, Math.max(45, 50 + acousticQualityBonus));
           feedback = detectedTrap.feedbackVi;
-        } else if (isRepeatedSameWord) {
-          calculatedScore = Math.min(60, Math.max(45, 50 + acousticQualityBonus));
+        } else if (isDuplicateWordTrap && (countWordA >= 2 || countWordB >= 2) && (countWordA === 0 || countWordB === 0)) {
+          calculatedScore = 55;
           const repeatedWord = countWordA >= 2 ? wordA : wordB;
           const missingWord = countWordA >= 2 ? wordB : wordA;
-          feedback = `⚠️ Bạn vừa phát âm từ "${repeatedWord}" 2 lần! Hãy chú ý khẩu hình: "${missingWord}" cần mở miệng khác biệt rõ rệt so với "${repeatedWord}".`;
+          feedback = `⚠️ Bạn vừa phát âm từ "${repeatedWord}" 2 lần! Hãy chú ý khẩu hình: "${missingWord}" cần sự khác biệt rõ về độ mở của khuôn miệng.`;
         } else {
           const spokeWordA = isWordSpoken(wordA, spokenWords);
           const spokeWordB = isWordSpoken(wordB, spokenWords);
@@ -492,85 +491,136 @@ export default async function handler(req: Request) {
       }
 
     // =========================================================================
-    // 🎭 NHÁNH 4: TRẠM 2 - VOCABULARY ARENA (SOLO / RELAY / ROLEPLAY)
+    // 🎭 NHÁNH 4: TRẠM 2 - VOCABULARY ARENA (ĐÁNH GIÁ 6 TIÊU CHÍ CHUYÊN SÂU)
     // =========================================================================
     } else {
       const wordCount = spokenWords.length;
-
       const hallucinationPhrases = ['thank you', 'thanks for watching', 'subtitles by', 'bye', 'goodbye'];
       const isHallucination = wordCount <= 3 && hallucinationPhrases.some(h => transcript.toLowerCase().includes(h));
 
-      if (isHallucination || wordCount < 4) {
-        calculatedScore = Math.max(20, Math.min(35, wordCount * 6 + 10));
-        feedback = `⚠️ Phản hồi quá ngắn hoặc chỉ ghi nhận tiếng ồn/từ chào (${wordCount} từ). Hãy đối thoại hoặc nói câu hoàn chỉnh theo chủ đề!`;
-      } else {
-        let minExcellentWords = 22;
-        let minGoodWords = 14;
-        let minPassWords = 8;
+      if (isHallucination || wordCount < 5) {
+        calculatedScore = Math.max(15, wordCount * 6);
+        feedback = `⚠️ Bài nói quá ngắn (${wordCount} từ). Hãy đối thoại hoàn chỉnh câu để AI có thể đánh giá!`;
+        return new Response(
+          JSON.stringify({
+            score: calculatedScore,
+            transcript: transcript,
+            feedback: feedback,
+            isWin: false,
+            detailedScores: { pronunciation: 20, intonation: 20, vocabulary: 20, grammar: 20, content: 20, fluency: 20 },
+            errorWords: []
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
 
-        if (cefrLevel === 'A1') {
-          minExcellentWords = 16;
-          minGoodWords = 10;
-          minPassWords = 5;
-        } else if (cefrLevel === 'A2') {
-          minExcellentWords = 20;
-          minGoodWords = 12;
-          minPassWords = 7;
-        } else if (cefrLevel === 'B2') {
-          minExcellentWords = 28;
-          minGoodWords = 18;
-          minPassWords = 10;
-        } else if (cefrLevel === 'C1' || cefrLevel === 'C2') {
-          minExcellentWords = 35;
-          minGoodWords = 22;
-          minPassWords = 12;
+      // 🤖 GỌI GROQ LLAMA PHÂN TÍCH 6 TIÊU CHÍ VÀ CHỈ RA LỖI SAI TỪ VỰNG / NGỮ PHÁP
+      let grammarScore = 75;
+      let vocabScore = 75;
+      let contentScore = 75;
+      let fluencyScore = Math.min(95, Math.max(50, wordCount * 2));
+      let pronunciationScore = Math.min(100, Math.max(50, 70 + acousticQualityBonus * 2));
+      let errorWordsList: { word: string; correction: string; reason: string }[] = [];
+
+      try {
+        const groqLlmResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${groqApiKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            model: 'llama-3.1-8b-instant',
+            response_format: { type: 'json_object' },
+            temperature: 0.1,
+            messages: [
+              {
+                role: 'system',
+                content: `You are an expert CEFR English speaking examiner. Analyze the transcript for a B1-B2 spoken dialogue.
+Evaluate 6 criteria: Pronunciation, Intonation, Vocabulary, Grammar, Content, Fluency (0-100 each).
+Identify context/collocation errors (e.g. "often to buy" instead of "offer to buy", "your hot" instead of "your heart").
+Output JSON ONLY in this format:
+{
+  "vocabulary_score": number,
+  "grammar_score": number,
+  "content_score": number,
+  "detected_errors": [
+    { "word": "often", "correction": "offer", "reason": "Dùng sai từ ngữ cảnh: 'offer to buy' (đề nghị đền) chứ không phải 'often to buy'" },
+    { "word": "hot", "correction": "heart", "reason": "Phát âm chệch từ: 'your heart will feel better' chứ không phải 'your hot'" }
+  ],
+  "pedagogical_feedback_vi": "Nhận xét tiếng Việt súc tích, chỉ rõ lỗi ngữ pháp/từ vựng cần sửa"
+}`
+              },
+              {
+                role: 'user',
+                content: `Prompt/Topic context: ${targetPrompt || 'Giving advice / Daily roleplay'}\nSpoken Transcript: "${transcript}"`
+              }
+            ]
+          })
+        });
+
+        if (groqLlmResponse.ok) {
+          const llmData = await groqLlmResponse.json();
+          const analysis = JSON.parse(llmData.choices[0].message.content);
+
+          vocabScore = analysis.vocabulary_score || 70;
+          grammarScore = analysis.grammar_score || 70;
+          contentScore = analysis.content_score || 75;
+          errorWordsList = analysis.detected_errors || [];
+          feedback = analysis.pedagogical_feedback_vi || '';
         }
+      } catch (e) {
+        console.warn("LLM Evaluation fallback:", e);
+      }
 
-        let topicRelevanceBonus = 0;
-        if (targetPrompt) {
-          const promptKeywords = cleanPrompt
-            .replace(/[^a-z0-9\s]/g, ' ')
-            .split(/\s+/)
-            .filter((w: string) => w.length >= 4);
+      // Trừ điểm phạt nếu có lỗi dùng sai từ nghiêm trọng như "often to buy"
+      const penalty = errorWordsList.length * 7;
+      calculatedScore = Math.max(
+        35,
+        Math.min(
+          95,
+          Math.round(
+            (pronunciationScore * 0.2 +
+             acousticQualityBonus * 0.1 +
+             vocabScore * 0.25 +
+             grammarScore * 0.25 +
+             contentScore * 0.1 +
+             fluencyScore * 0.1) - penalty
+          )
+        )
+      );
 
-          const matchedTopicWords = promptKeywords.filter((kw: string) => spokenWords.includes(kw));
-          if (matchedTopicWords.length > 0) {
-            topicRelevanceBonus = Math.min(10, matchedTopicWords.length * 3);
+      if (!feedback) {
+        feedback = errorWordsList.length > 0
+          ? `⚠️ Phát hiện ${errorWordsList.length} lỗi từ vựng/ngữ pháp (ví dụ: ${errorWordsList[0].word} -> ${errorWordsList[0].correction}). Cần hoàn thiện độ chuẩn xác!`
+          : `🌟 Bài nói phong phú (${wordCount} từ), ngữ pháp và phản xạ rất tự nhiên [${cefrLevel}].`;
+      }
+
+      return new Response(
+        JSON.stringify({
+          score: calculatedScore,
+          transcript: transcript,
+          feedback: feedback,
+          isWin: calculatedScore >= 70,
+          errorWords: errorWordsList,
+          criteria: {
+            pronunciation: pronunciationScore,
+            vocabulary: vocabScore,
+            grammar: grammarScore,
+            fluency: fluencyScore,
+            content: contentScore
           }
+        }),
+        {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/json',
+            'X-RateLimit-Limit': String(MAX_REQUESTS_PER_WINDOW),
+            'X-RateLimit-Remaining': String(remaining),
+          },
         }
-
-        if (wordCount >= minExcellentWords) {
-          calculatedScore = Math.min(100, 85 + Math.round(acousticQualityBonus * 0.4) + topicRelevanceBonus);
-          feedback = `🌟 Bài nói rất phong phú (${wordCount} từ)! Phản xạ tự nhiên, lưu loát và bám sát chủ đề [${cefrLevel}].`;
-        } else if (wordCount >= minGoodWords) {
-          calculatedScore = Math.min(94, 75 + Math.round(acousticQualityBonus * 0.4) + topicRelevanceBonus);
-          feedback = `👍 Rất tốt (${wordCount} từ)! Diễn đạt mạch lạc và hoàn thành yêu cầu [${cefrLevel}].`;
-        } else if (wordCount >= minPassWords) {
-          calculatedScore = Math.min(84, 65 + Math.round(acousticQualityBonus * 0.4) + topicRelevanceBonus);
-          feedback = `👌 Đạt yêu cầu cơ bản (${wordCount} từ). Nên triển khai thêm chi tiết để đạt điểm xuất sắc.`;
-        } else {
-          calculatedScore = Math.max(35, wordCount * 6 + 15 + topicRelevanceBonus);
-          feedback = `⚠️ Bài nói hơi ngắn so với chuẩn [${cefrLevel}] (${wordCount} từ). Cần nói dài và mở rộng ý hơn.`;
-        }
-      }
+      );
     }
-
-    return new Response(
-      JSON.stringify({
-        score: calculatedScore,
-        transcript: transcript,
-        feedback: feedback,
-        isWin: calculatedScore >= 70,
-      }),
-      {
-        status: 200,
-        headers: {
-          'Content-Type': 'application/json',
-          'X-RateLimit-Limit': String(MAX_REQUESTS_PER_WINDOW),
-          'X-RateLimit-Remaining': String(remaining),
-        },
-      }
-    );
   } catch (err: any) {
     return new Response(
       JSON.stringify({ error: err.message || 'Lỗi xử lý Whisper Serverless' }),
