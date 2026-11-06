@@ -6,12 +6,12 @@ import { getInstantSoloTopic, generateSoloTopic } from '../services/arena/soloSe
 import { getInstantRelayChallenge, generateRelayChallenge } from '../services/arena/relayService';
 import { getInstantRoleplayScenario, generateRoleplayScenario } from '../services/arena/roleplayService';
 
-import { evaluateSpeaking, AssessmentResult, analyzeSpokenTranscript } from '../services/arena/assessmentService';
+import { evaluateSpeaking, AssessmentResult } from '../services/arena/assessmentService';
 import { saveSubmissionToCloud } from '../services/userService';
 import { harvestWeakWords } from '../services/weakPointsService';
 import { executeWithRetry } from '../utils/networkAudioHelper';
 import { supabase } from '../utils/supabase';
-import AudioWaveVisualizer from '../components/AudioWaveVisualizer'; // 🌊 IMPORT SÓNG ÂM THỜI GIAN THỰC
+import AudioWaveVisualizer from '../components/AudioWaveVisualizer';
 
 interface Props {
   onBack: () => void;
@@ -38,17 +38,14 @@ export default function Station2Screen({ onBack }: Props) {
   const [customTopicInput, setCustomTopicInput] = useState<string>('');
   const [isUsingCustomTopic, setIsUsingCustomTopic] = useState<boolean>(false);
 
-  // Quản lý luồng âm thanh thời gian thực cho Visualizer
   const [activeStream, setActiveStream] = useState<MediaStream | null>(null);
 
-  // 🛡️ HÀM BÁO LỖI AN TOÀN TRÁNH NGHỄN TOUCH RESPONDER TRÊN WEB
   const safeAlert = (msg: string) => {
     setTimeout(() => {
       alert(msg);
     }, 50);
   };
 
-  // 🎯 TÍNH THỜI GIAN THEO CẤP ĐỘ CEFR VÀ ĐỘ PHỨC TẠP CỦA CHỦ ĐỀ
   const getTimerByLevel = (level: string, currentMode: string = mode, currentExercise: any = exercise): number => {
     const lvl = level.toUpperCase();
     let baseSeconds = 20;
@@ -104,7 +101,7 @@ export default function Station2Screen({ onBack }: Props) {
   const [isRecording, setIsRecording] = useState<boolean>(false);
   const [isEvaluating, setIsEvaluating] = useState<boolean>(false);
   const [evalStatusText, setEvalStatusText] = useState<string>('🤖 AI đang phân tích âm thanh & bóc tách toàn bộ lời thoại...');
-  const [evalResult, setEvalResult] = useState<any | null>(null);
+  const [evalResult, setEvalResult] = useState<AssessmentResult | null>(null);
   
   const [hardwareWarning, setHardwareWarning] = useState<string | null>(null);
   const [playerScores, setPlayerScores] = useState<PlayerResult>({});
@@ -140,7 +137,6 @@ export default function Station2Screen({ onBack }: Props) {
     fetchUser();
   }, []);
 
-  // 💾 TỰ ĐỘNG KHÔI PHỤC THÔNG TIN TỪ LOCALSTORAGE
   useEffect(() => {
     if (typeof window !== 'undefined' && window.localStorage) {
       const savedName = localStorage.getItem('vibe_student_name');
@@ -174,7 +170,6 @@ export default function Station2Screen({ onBack }: Props) {
     }
   };
 
-  // 💡 GIỮ MÀN HÌNH ĐIỆN THOẠI LUÔN SÁNG
   useEffect(() => {
     let wakeLockSentinel: any = null;
 
@@ -333,40 +328,6 @@ export default function Station2Screen({ onBack }: Props) {
       audioChunksRef.current = [];
       fullTranscriptRef.current = '';
 
-      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-      if (SpeechRecognition) {
-        try {
-          const recognition = new SpeechRecognition();
-          recognition.continuous = true;
-          recognition.interimResults = false;
-          recognition.maxAlternatives = 1;
-          recognition.lang = 'en-US';
-
-          let transcriptBuffer = '';
-          recognition.onresult = (event: any) => {
-            for (let i = event.resultIndex; i < event.results.length; ++i) {
-              if (event.results[i].isFinal) {
-                transcriptBuffer += event.results[i][0].transcript + ' ';
-              }
-            }
-            if (transcriptBuffer.trim()) {
-              fullTranscriptRef.current = transcriptBuffer.trim();
-            }
-          };
-
-          recognition.onend = () => {
-            if (isRecording && recognitionRef.current) {
-              try { recognitionRef.current.start(); } catch (e) {}
-            }
-          };
-
-          recognition.start();
-          recognitionRef.current = recognition;
-        } catch (e) {
-          console.warn("SpeechRecognition Android Bypass:", e);
-        }
-      }
-
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
@@ -415,11 +376,10 @@ export default function Station2Screen({ onBack }: Props) {
           } catch (e) {}
         }
 
-        // 🛡️ CHẶN BẤM TẮT DƯỚI 2 GIÂY
         if (durationSeconds < 2.0) {
           setIsEvaluating(false);
           setActiveStream(null);
-          setHardwareWarning('⚠️ Bạn vừa bấm tắt quá nhanh (dưới 2 giây)! Vui lòng giữ bình tĩnh, đọc to câu trả lời tiếng Anh rồi mới bấm Dừng & Nộp bài.');
+          setHardwareWarning('⚠️ Bạn vừa bấm tắt quá nhanh (dưới 2 giây)! Vui lòng đọc to câu trả lời rồi mới bấm Nộp bài.');
           if (audioStreamRef.current) {
             audioStreamRef.current.getTracks().forEach(track => track.stop());
           }
@@ -432,7 +392,7 @@ export default function Station2Screen({ onBack }: Props) {
         if (fullAudioBlob.size < 4000 && !fullTranscriptRef.current.trim()) {
           setIsEvaluating(false);
           setActiveStream(null);
-          setHardwareWarning('⚠️ Micro không thu được tín hiệu âm thanh rõ ràng hoặc âm lượng quá nhỏ. Vui lòng kiểm tra micro và bấm THỬ LẠI!');
+          setHardwareWarning('⚠️ Micro không thu được tín hiệu âm thanh rõ ràng. Vui lòng kiểm tra micro và bấm THỬ LẠI!');
           if (audioStreamRef.current) {
             audioStreamRef.current.getTracks().forEach(track => track.stop());
           }
@@ -444,7 +404,6 @@ export default function Station2Screen({ onBack }: Props) {
         const capturedSpeech = fullTranscriptRef.current || '';
 
         try {
-          // 🎯 ĐÁNH GIÁ VỚI STATION_2
           const result = await executeWithRetry(
             async () => {
               return await evaluateSpeaking(
@@ -460,7 +419,7 @@ export default function Station2Screen({ onBack }: Props) {
               maxRetries: 3,
               timeoutMs: 16000,
               onRetry: (attempt) => {
-                setEvalStatusText(`⚠️ Mạng yếu, đang thử kết nối lại lần ${attempt}/3...`);
+                setEvalStatusText(`⚠️ Đang thử kết nối lại lần ${attempt}/3...`);
               }
             }
           );
@@ -469,8 +428,7 @@ export default function Station2Screen({ onBack }: Props) {
           setEvalResult(result);
 
           if (result.transcript) {
-            const spokenAnalysis = analyzeSpokenTranscript(result.transcript);
-            harvestWeakWords(spokenAnalysis, exercise?.promptEn || exercise?.topic);
+            harvestWeakWords([], exercise?.promptEn || exercise?.topic);
           }
 
           const sharedScore = result.score;
@@ -490,16 +448,15 @@ export default function Station2Screen({ onBack }: Props) {
           } else if (mode === 'roleplay') {
             const r1 = exercise?.userRoleEn || exercise?.player1En || 'Vai 1';
             const r2 = exercise?.aiRoleEn || exercise?.player2En || 'Vai 2';
-            pairDisplayName = `${studentIdentifier} (Cặp đôi: ${r1} & ${r2}) | Điểm: ${sharedScore}đ`;
-            feedbackDetail = `[HỘI THOẠI NHÓM ĐÔI - ${totalRoundsCompleted} lượt | ĐỒNG ĐIỂM: ${sharedScore}đ]: ${result.detailedFeedback}`;
+            pairDisplayName = `${studentIdentifier} (${r1} & ${r2}) | Điểm: ${sharedScore}đ`;
+            feedbackDetail = `[ROLEPLAY - ĐỒNG ĐIỂM: ${sharedScore}đ]: ${result.detailedFeedback}`;
           } else if (mode === 'relay') {
             pairDisplayName = `${studentIdentifier} & Bạn đấu | Điểm tổng: ${sharedScore}đ`;
-            feedbackDetail = `[TIẾP SỨC RELAY - ĐỒNG ĐIỂM: ${sharedScore}đ]: ${result.detailedFeedback}`;
+            feedbackDetail = `[RELAY - ĐỒNG ĐIỂM: ${sharedScore}đ]: ${result.detailedFeedback}`;
           }
 
           setIsEvaluating(false);
 
-          // 🚀 TẢI DỮ LIỆU VÀ ĐỒNG BỘ FILE AUDIO LÊN SUPABASE STORAGE
           (async () => {
             try {
               const savedSubmission = await saveSubmissionToCloud({
@@ -526,10 +483,7 @@ export default function Station2Screen({ onBack }: Props) {
                     upsert: true 
                   });
 
-                if (uploadErr) {
-                  console.error("❌ Lỗi upload Supabase Storage:", uploadErr.message);
-                  return;
-                }
+                if (uploadErr) return;
 
                 if (uploadData?.path) {
                   const { data: publicUrlData } = supabase.storage
@@ -683,7 +637,6 @@ export default function Station2Screen({ onBack }: Props) {
                 </Text>
               </View>
 
-              {/* KHU VỰC THẺ VAI DIỄN */}
               {(mode === 'relay' || mode === 'roleplay') && (
                 <View style={styles.playersRow}>
                   <View style={[styles.playerCard, activePlayer === 1 && styles.activePlayerCard]}>
@@ -728,10 +681,8 @@ export default function Station2Screen({ onBack }: Props) {
                 </View>
               )}
 
-              {/* 🌊 DẢI SÓNG ÂM THỜI GIAN THỰC CHO TRẠM 2 */}
               <AudioWaveVisualizer stream={activeStream} isRecording={isRecording} barColor="#00FFFF" />
 
-              {/* NÚT BẮT ĐẦU */}
               {!isRecording && !isEvaluating ? (
                 <TouchableOpacity style={styles.startBtn} onPress={startFullRecording}>
                   <Text style={styles.startBtnText}>
@@ -793,19 +744,19 @@ export default function Station2Screen({ onBack }: Props) {
                         </View>
                         <View style={styles.criteriaItem}>
                           <Text style={styles.criteriaLabel}>Từ vựng</Text>
-                          <Text style={styles.criteriaScore}>{evalResult.criteria.vocabulary || 75}đ</Text>
+                          <Text style={styles.criteriaScore}>{evalResult.criteria.vocabulary || 70}đ</Text>
                         </View>
                         <View style={styles.criteriaItem}>
                           <Text style={styles.criteriaLabel}>Ngữ pháp</Text>
-                          <Text style={styles.criteriaScore}>{evalResult.criteria.grammar || 75}đ</Text>
+                          <Text style={styles.criteriaScore}>{evalResult.criteria.grammar || 65}đ</Text>
                         </View>
                         <View style={styles.criteriaItem}>
                           <Text style={styles.criteriaLabel}>Lưu loát</Text>
-                          <Text style={styles.criteriaScore}>{evalResult.criteria.fluency || 75}đ</Text>
+                          <Text style={styles.criteriaScore}>{evalResult.criteria.fluency || 70}đ</Text>
                         </View>
                         <View style={styles.criteriaItem}>
                           <Text style={styles.criteriaLabel}>Nội dung</Text>
-                          <Text style={styles.criteriaScore}>{evalResult.criteria.content || 75}đ</Text>
+                          <Text style={styles.criteriaScore}>{evalResult.criteria.content || 70}đ</Text>
                         </View>
                       </View>
                     </View>
@@ -842,7 +793,7 @@ export default function Station2Screen({ onBack }: Props) {
                                 onPress={() => {
                                   if (foundError) {
                                     alert(
-                                      `💡 Góp ý sửa từ vựng:\n\n• Từ dùng chưa chuẩn: "${foundError.word}"\n• Nên đổi thành: "${foundError.correction}"\n• Lý do: ${foundError.reason}`
+                                      `💡 Hướng dẫn sửa từ:\n\n• Từ chưa chuẩn: "${foundError.word}"\n• Nên đổi thành: "${foundError.correction}"\n• Lý do: ${foundError.reason}`
                                     );
                                   }
                                 }}
@@ -863,7 +814,6 @@ export default function Station2Screen({ onBack }: Props) {
                       <Text style={styles.audioLabel}>
                         {mode === 'solo' ? '🎧 Nghe lại bài thu âm của bạn:' : '🎧 Nghe lại toàn bộ file thu âm chung:'}
                       </Text>
-                      {/* 🛡️ CÁCH LY PHẦN TỬ AUDIO KHỎI PANRESPONDER CỦA REACT NATIVE WEB */}
                       <View 
                         style={{ width: '100%', marginTop: 6 }} 
                         // @ts-ignore
@@ -883,7 +833,7 @@ export default function Station2Screen({ onBack }: Props) {
                   ) : null}
 
                   <Text style={styles.transcriptText}>💬 Lời thoại ghi nhận: "{evalResult.transcript}"</Text>
-                  <Text style={styles.feedbackText}>💡 Nhận xét AI: {evalResult.detailedFeedback || evalResult.feedback}</Text>
+                  <Text style={styles.feedbackText}>💡 Nhận xét AI: {evalResult.detailedFeedback}</Text>
                 </View>
               )}
 

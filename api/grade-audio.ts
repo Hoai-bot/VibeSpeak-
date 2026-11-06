@@ -154,7 +154,6 @@ export default async function handler(req: Request) {
     return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405 });
   }
 
-  // 1. Kiểm tra Rate-Limit trước khi gọi dịch vụ AI
   const clientIp = req.headers.get('x-forwarded-for')?.split(',')[0].trim() || 
                    req.headers.get('x-real-ip') || 
                    'anonymous-client';
@@ -200,7 +199,6 @@ export default async function handler(req: Request) {
       );
     }
 
-    // 2. Gửi file âm thanh sang Groq Whisper với verbose_json để đo độ chuẩn âm học
     const whisperFormData: any = new FormData();
     whisperFormData.append('file', audioFile);
     whisperFormData.append('model', 'whisper-large-v3');
@@ -226,7 +224,6 @@ export default async function handler(req: Request) {
     const whisperData = await whisperResponse.json();
     const transcript = (whisperData.text || '').trim();
 
-    // 🛡️ CHẶN FILE RỖNG / KHÔNG NÓI GÌ
     if (!transcript) {
       return new Response(
         JSON.stringify({
@@ -234,12 +231,13 @@ export default async function handler(req: Request) {
           transcript: "(Không phát hiện giọng nói)",
           feedback: "❌ Không nhận diện được âm thanh phát âm! Vui lòng bấm làm lại và nói to, rõ ràng hơn.",
           isWin: false,
+          errorWords: [],
+          criteria: null
         }),
         { status: 200, headers: { 'Content-Type': 'application/json' } }
       );
     }
 
-    // 🎯 Trích xuất chỉ số âm học avg_logprob
     const segments = whisperData.segments || [];
     let avgLogprob = -0.4;
     if (segments.length > 0 && typeof segments[0].avg_logprob === 'number') {
@@ -247,7 +245,6 @@ export default async function handler(req: Request) {
       avgLogprob = sumLogprob / segments.length;
     }
 
-    // 🎯 Chuẩn hóa điểm thưởng âm học (2 - 15 điểm)
     const normalizedLogprob = Math.max(-1.0, Math.min(0, avgLogprob));
     const acousticQualityBonus = Math.max(2, Math.min(15, Math.round((normalizedLogprob + 1.0) * 15)));
 
@@ -258,7 +255,6 @@ export default async function handler(req: Request) {
     const cleanPrompt = normalize(targetPrompt);
     let rawTranscript = normalize(transcript);
 
-    // 🎯 Giải mã từ ghép và từ viết tắt
     const compoundFixes: Record<string, string> = {
       'samsung': 'sum sung',
       'some sung': 'sum sung',
@@ -285,7 +281,6 @@ export default async function handler(req: Request) {
 
     const spokenWords = rawTranscript.split(/\s+/).filter(Boolean);
 
-    // 🎯 Bảng từ đồng âm phổ biến (Homophones Map)
     const homophonesMap: Record<string, string[]> = {
       'bare': ['bear'],
       'bear': ['bare'],
@@ -341,10 +336,8 @@ export default async function handler(req: Request) {
         const pairWords = cleanPrompt.split('/').map((w: string) => w.trim()).filter(Boolean);
         const [wordA, wordB] = pairWords;
 
-        // 🛡️ TỰ ĐỘNG QUÉT BẪY NGỮ ÂM TỪ MODULE PHONETIC TRAPS
         const detectedTrap = detectPhoneticTrap(wordA, wordB, spokenWords, rawTranscript);
 
-        // 🛡️ PHÁT HIỆN LỖI ĐỌC LẶP 1 TỪ CHO CẢ 2 MỤC TIÊU (VÍ DỤ MEN / MAN THÀNH "MAN MAN")
         const isDuplicateWordTrap = (wordA === 'men' && wordB === 'man') || (wordA === 'man' && wordB === 'men');
         const countWordA = spokenWords.filter(w => w === wordA).length;
         const countWordB = spokenWords.filter(w => w === wordB).length;
@@ -410,7 +403,7 @@ export default async function handler(req: Request) {
       }
 
     // =========================================================================
-    // 👻 NHÁNH 2: TRẠM 3 - GHOST STATION (SHADOWING ECHO CHUYÊN SÂU)
+    // 👻 NHÁNH 2: TRẠM 3 - GHOST STATION
     // =========================================================================
     } else if (stationType === 'STATION_3') {
       const targetWords = cleanPrompt.replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(Boolean);
@@ -436,11 +429,10 @@ export default async function handler(req: Request) {
       }
 
     // =========================================================================
-    // ⚡ NHÁNH 3: TRẠM 4 - SPEAKING EXPRESS (PHẢN XẠ NHANH 10 - 15 GIÂY)
+    // ⚡ NHÁNH 3: TRẠM 4 - SPEAKING EXPRESS
     // =========================================================================
     } else if (stationType === 'STATION_4') {
       const wordCount = spokenWords.length;
-
       const hallucinationPhrases = ['thank you', 'thanks for watching', 'subtitles by', 'bye', 'goodbye'];
       const isHallucination = wordCount <= 2 && hallucinationPhrases.some(h => transcript.toLowerCase().includes(h));
 
@@ -491,7 +483,7 @@ export default async function handler(req: Request) {
       }
 
     // =========================================================================
-    // 🎭 NHÁNH 4: TRẠM 2 - VOCABULARY ARENA (ĐÁNH GIÁ 6 TIÊU CHÍ CHUYÊN SÂU)
+    // 🎭 NHÁNH 4: TRẠM 2 - VOCABULARY ARENA (ĐÁNH GIÁ THỰC TẾ & LINH HOẠT)
     // =========================================================================
     } else {
       const wordCount = spokenWords.length;
@@ -507,22 +499,113 @@ export default async function handler(req: Request) {
             transcript: transcript,
             feedback: feedback,
             isWin: false,
-            detailedScores: { pronunciation: 20, intonation: 20, vocabulary: 20, grammar: 20, content: 20, fluency: 20 },
-            errorWords: []
+            errorWords: [],
+            criteria: { pronunciation: 30, vocabulary: 30, grammar: 30, fluency: 30, content: 30 }
           }),
           { status: 200, headers: { 'Content-Type': 'application/json' } }
         );
       }
 
-      // 🤖 GỌI GROQ LLAMA PHÂN TÍCH 6 TIÊU CHÍ CHUẨN XÁC
-      let grammarScore = 60;
-      let vocabScore = 65;
-      let contentScore = 65;
+      let grammarScore = 65;
+      let vocabScore = 70;
+      let contentScore = 70;
       let fluencyScore = Math.min(95, Math.max(45, wordCount * 2));
       let pronunciationScore = Math.min(100, Math.max(50, 70 + acousticQualityBonus * 2));
       let errorWordsList: { word: string; correction: string; reason: string }[] = [];
       let dynamicFeedback = '';
 
+      // 1. 🛡️ BỘ QUÉT TẠI CHỖ CHUẨN XÁC (LOCAL REAL-TIME HEURISTIC SCANNER)
+      const lowerTranscript = transcript.toLowerCase();
+      const lowerPrompt = targetPrompt.toLowerCase();
+
+      // A. Bắt lỗi nuốt âm đuôi số nhiều sau số đếm (Ví dụ: "five member" -> members)
+      const countNumbers = ['two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'];
+      for (let i = 0; i < spokenWords.length - 1; i++) {
+        const curr = spokenWords[i];
+        const next = spokenWords[i + 1];
+        if (countNumbers.includes(curr)) {
+          if (next === 'member' || next === 'members') {
+            const hasSuspiciousLogprob = avgLogprob < -0.28 || lowerTranscript.includes(`${curr} member `);
+            if (hasSuspiciousLogprob || next === 'member') {
+              errorWordsList.push({
+                word: next,
+                correction: 'members',
+                reason: `Thiếu âm đuôi: Sau số đếm "${curr}", danh từ phải có đuôi số nhiều và phát âm rõ âm /z/ ("${curr} members").`
+              });
+            }
+          }
+        }
+      }
+
+      // B. Bắt lỗi sai thì ngữ cảnh bài nói
+      const isRoutinePrompt = 
+        lowerPrompt.includes('family') || 
+        lowerPrompt.includes('job') || 
+        lowerPrompt.includes('hometown') || 
+        lowerPrompt.includes('commute') || 
+        lowerPrompt.includes('describe') || 
+        lowerPrompt.includes('daily') || 
+        lowerPrompt.includes('routine');
+
+      if (isRoutinePrompt) {
+        if (spokenWords.includes('were')) {
+          errorWordsList.push({
+            word: 'were',
+            correction: 'are',
+            reason: 'Sai thì: Gia đình hiện tại vẫn tồn tại, hãy dùng "There are" thay vì quá khứ "There were".'
+          });
+        }
+        if (spokenWords.includes('was')) {
+          errorWordsList.push({
+            word: 'was',
+            correction: 'is',
+            reason: 'Sai thì: Dùng thì hiện tại đơn "is" khi giới thiệu gia đình hoặc bản thân.'
+          });
+        }
+        if (spokenWords.includes('went')) {
+          errorWordsList.push({
+            word: 'went',
+            correction: 'go / usually go',
+            reason: 'Lệch chủ đề & sai thì: Đề bài yêu cầu miêu tả thực tế, không kể chuyện quá khứ "went".'
+          });
+        }
+        if (spokenWords.includes('visited')) {
+          errorWordsList.push({
+            word: 'visited',
+            correction: 'visit / usually go to',
+            reason: 'Sai thì: Giới thiệu quê hương nên dùng thì hiện tại đơn, không dùng "visited".'
+          });
+        }
+        if (spokenWords.includes('yesterday')) {
+          errorWordsList.push({
+            word: 'yesterday',
+            correction: 'every day / usually',
+            reason: 'Không dùng mốc thời gian quá khứ "yesterday" cho bài nói thói quen/miêu tả.'
+          });
+        }
+      }
+
+      // C. Bắt lỗi kế hoạch tương lai (tomorrow / plan)
+      if (lowerPrompt.includes('tomorrow') || lowerPrompt.includes('future') || lowerPrompt.includes('plan')) {
+        if (spokenWords.includes('wanted')) {
+          errorWordsList.push({
+            word: 'wanted',
+            correction: 'want to / plan to',
+            reason: 'Sai thì: Đang nói kế hoạch ngày mai, hãy dùng "want" thay vì quá khứ "wanted".'
+          });
+        }
+      }
+
+      // D. Bẫy cụm từ dùng sai ngữ cảnh
+      if (lowerTranscript.includes('often to buy')) {
+        errorWordsList.push({
+          word: 'often',
+          correction: 'offer',
+          reason: 'Dùng sai từ: "offer to buy" (đề nghị mua/đền bù) chứ không phải "often to buy".'
+        });
+      }
+
+      // 2. 🤖 GỌI GROQ LLM PHÂN TÍCH ĐA TIÊU CHÍ VÀ TẠO PHẢN HỒI THỰC TẾ
       try {
         const groqLlmResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
           method: 'POST',
@@ -532,38 +615,24 @@ export default async function handler(req: Request) {
           },
           body: JSON.stringify({
             model: 'llama-3.1-8b-instant',
-            response_format: { type: 'json_object' },
-            temperature: 0.1,
+            temperature: 0.2,
+            max_tokens: 350,
             messages: [
               {
                 role: 'system',
-                content: `You are an expert CEFR English oral examiner.
-Analyze the user's spoken transcript against the given prompt/topic.
-Detect grammatical errors, tense inconsistencies, and unnatural phrases (such as mixing past tense "visited/last week", future "will go", and present continuous "am cooking" unnaturally, or saying "on my foot" instead of "on foot").
-
-You MUST return a JSON object with this exact schema:
+                content: `You are a real-world CEFR English speaking examiner evaluating a ${cefrLevel} student.
+Analyze the transcript against the prompt. Identify tense inconsistency, unnatural wording, or missing objects.
+Return JSON format ONLY:
 {
-  "vocabulary_score": number,
+  "vocab_score": number,
   "grammar_score": number,
   "content_score": number,
-  "detected_errors": [
-    {
-      "word": "visited",
-      "correction": "visit / love visiting",
-      "reason": "Sai thì: Đề bài yêu cầu giới thiệu quê hương nói chung, không dùng thì quá khứ đơn"
-    },
-    {
-      "word": "cooking",
-      "correction": "enjoy",
-      "reason": "Ý câu lạc đề so với câu hỏi về quê hương"
-    }
-  ],
-  "pedagogical_feedback_vi": "Nhận xét tiếng Việt cụ thể, thân thiện, chỉ rõ câu/từ sai và cách sửa tự nhiên"
+  "feedback_vi": "Nhận xét tự nhiên bằng tiếng Việt, ngắn gọn trong 1-2 câu, trích dẫn thẳng từ sai và cách sửa"
 }`
               },
               {
                 role: 'user',
-                content: `Prompt/Topic: "${targetPrompt || 'Talk about your hometown and your favorite place in it.'}"\nTarget Level: ${cefrLevel}\nSpoken Transcript: "${transcript}"`
+                content: `Prompt: "${targetPrompt}"\nStudent: "${transcript}"`
               }
             ]
           })
@@ -571,55 +640,24 @@ You MUST return a JSON object with this exact schema:
 
         if (groqLlmResponse.ok) {
           const llmData = await groqLlmResponse.json();
-          let rawContent = llmData.choices[0]?.message?.content || '{}';
-          rawContent = rawContent.replace(/```json/g, '').replace(/```/g, '').trim();
-          const analysis = JSON.parse(rawContent);
-
-          vocabScore = Number(analysis.vocabulary_score) || 65;
-          grammarScore = Number(analysis.grammar_score) || 55;
-          contentScore = Number(analysis.content_score) || 60;
-          errorWordsList = Array.isArray(analysis.detected_errors) ? analysis.detected_errors : [];
-          dynamicFeedback = analysis.pedagogical_feedback_vi || '';
-        } else {
-          const errText = await groqLlmResponse.text();
-          console.error("❌ Groq LLM API Error:", groqLlmResponse.status, errText);
-        }
-      } catch (e: any) {
-        console.error("❌ Exception calling Groq LLM:", e.message || e);
-      }
-
-      // 🎯 BỘ QUÉT DỰ PHÒNG TẠI CHỖ (LOCAL REGEX CHECK) NẾU GROQ LLM GẶP SỰ CỐ
-      if (errorWordsList.length === 0) {
-        const lowerTranscript = transcript.toLowerCase();
-        
-        // 1. Bắt lỗi quá khứ khi đề bài là giới thiệu thói quen / quê hương
-        if (targetPrompt.toLowerCase().includes('hometown') || targetPrompt.toLowerCase().includes('commute')) {
-          if (lowerTranscript.includes('visited')) {
-            errorWordsList.push({
-              word: 'visited',
-              correction: 'visit / usually go to',
-              reason: 'Sai thì: Giới thiệu quê hương nên dùng thì hiện tại đơn, không dùng "visited"'
-            });
-          }
-          if (lowerTranscript.includes('went')) {
-            errorWordsList.push({
-              word: 'went',
-              correction: 'go',
-              reason: 'Sai thì: Dùng thì hiện tại đơn để diễn tả thói quen'
-            });
-          }
-          if (lowerTranscript.includes('cooking')) {
-            errorWordsList.push({
-              word: 'cooking',
-              correction: 'eating / living',
-              reason: 'Nội dung chưa ăn nhập với chủ đề miêu tả quê hương'
-            });
+          const rawContent = llmData.choices[0]?.message?.content || '{}';
+          const jsonMatch = rawContent.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            const parsed = JSON.parse(jsonMatch[0]);
+            if (typeof parsed.vocab_score === 'number') vocabScore = parsed.vocab_score;
+            if (typeof parsed.grammar_score === 'number') grammarScore = parsed.grammar_score;
+            if (typeof parsed.content_score === 'number') contentScore = parsed.content_score;
+            if (parsed.feedback_vi && parsed.feedback_vi.length > 15) {
+              dynamicFeedback = parsed.feedback_vi;
+            }
           }
         }
+      } catch (llmErr) {
+        console.warn("LLM API call bypassed, using local engine:", llmErr);
       }
 
-      // Trừ điểm phạt thực tế theo số lượng từ sai
-      const penalty = errorWordsList.length * 8;
+      // 3. TÍNH ĐIỂM THỰC TẾ
+      const penalty = errorWordsList.length * 9;
       calculatedScore = Math.max(
         35,
         Math.min(
@@ -635,15 +673,14 @@ You MUST return a JSON object with this exact schema:
         )
       );
 
-      // Nếu không có feedback từ LLM, tự sinh feedback dựa trên các từ sai phát hiện được
       if (!dynamicFeedback) {
         if (errorWordsList.length > 0) {
           const firstErr = errorWordsList[0];
-          dynamicFeedback = `Bạn đang nói về quê hương nên dùng thì hiện tại đơn nhé. Hãy chú ý đổi từ "${firstErr.word}" thành "${firstErr.correction}" để câu nói tự nhiên và đúng ngữ cảnh hơn!`;
+          dynamicFeedback = `Bạn cần chú ý sửa từ "${firstErr.word}" ➔ "${firstErr.correction}" (${firstErr.reason}). Hãy nói câu hoàn chỉnh và dùng đúng thì theo đề bài nhé!`;
         } else if (calculatedScore >= 80) {
-          dynamicFeedback = `Bài nói tự nhiên, phản xạ tốt và đúng trọng tâm chủ đề [${cefrLevel}]!`;
+          dynamicFeedback = `Bài nói diễn đạt tốt, từ ngữ tự nhiên và đúng trọng tâm chủ đề [${cefrLevel}]!`;
         } else {
-          dynamicFeedback = `Bạn cần chú ý tính nhất quán về thì của động từ và mở rộng thêm chi tiết cho câu nói.`;
+          dynamicFeedback = `Bạn đã nắm được ý chính của đề bài, hãy mở rộng thêm chi tiết để câu nói trọn vẹn hơn.`;
         }
       }
 
@@ -656,8 +693,8 @@ You MUST return a JSON object with this exact schema:
           errorWords: errorWordsList,
           criteria: {
             pronunciation: pronunciationScore,
-            vocabulary: vocabScore,
-            grammar: grammarScore,
+            vocabulary: Math.max(35, vocabScore - Math.round(penalty * 0.5)),
+            grammar: Math.max(30, grammarScore - penalty),
             fluency: fluencyScore,
             content: contentScore
           }
