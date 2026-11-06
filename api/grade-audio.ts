@@ -86,6 +86,16 @@ export const PHONETIC_TRAPS: PhoneticTrapRule[] = [
     ],
     scoreCap: 65,
     feedbackVi: '⚠️ Chú ý: Phân biệt rõ âm /e/ (trong "men" - mở hé miệng, kéo khóe môi) và âm /æ/ (trong "man" - hạ quai hàm sâu). AI hiện đang nghe cả hai từ thành cùng một âm!',
+  },
+  // 9. cat / cut (/æ/ vs /ʌ/) - Bẫy phát âm bẹt miệng nhầm với âm thả lỏng hạ hàm
+  {
+    id: 'cat_cut_confusion',
+    pair: ['cat', 'cut'],
+    trapKeywords: [
+      'cat cat', 'cut cut', 'cot', 'caught'
+    ],
+    scoreCap: 65,
+    feedbackVi: '⚠️ Chú ý: Phân biệt rõ âm /æ/ (trong "cat" - bẹt khóe môi sang hai bên) và âm /ʌ/ (trong "cut" - miệng mở tự nhiên, thả lỏng hạ hàm dưới theo chiều dọc). AI hiện đang nghe cả hai từ thành cùng một âm!',
   }
 ];
 
@@ -338,18 +348,19 @@ export default async function handler(req: Request) {
 
         const detectedTrap = detectPhoneticTrap(wordA, wordB, spokenWords, rawTranscript);
 
-        const isDuplicateWordTrap = (wordA === 'men' && wordB === 'man') || (wordA === 'man' && wordB === 'men');
+        // 🌟 TỔNG QUÁT HÓA PHÁT HIỆN ĐỌC LẶP TỪ CHO MỌI CẶP TỪ
         const countWordA = spokenWords.filter(w => w === wordA).length;
         const countWordB = spokenWords.filter(w => w === wordB).length;
+        const isDuplicateWordTrap = (countWordA >= 2 && countWordB === 0) || (countWordB >= 2 && countWordA === 0);
 
         if (detectedTrap) {
           calculatedScore = Math.min(detectedTrap.scoreCap, Math.max(45, 50 + acousticQualityBonus));
           feedback = detectedTrap.feedbackVi;
-        } else if (isDuplicateWordTrap && (countWordA >= 2 || countWordB >= 2) && (countWordA === 0 || countWordB === 0)) {
+        } else if (isDuplicateWordTrap) {
           calculatedScore = 55;
           const repeatedWord = countWordA >= 2 ? wordA : wordB;
           const missingWord = countWordA >= 2 ? wordB : wordA;
-          feedback = `⚠️ Bạn vừa phát âm từ "${repeatedWord}" 2 lần! Hãy chú ý khẩu hình: "${missingWord}" cần sự khác biệt rõ về độ mở của khuôn miệng.`;
+          feedback = `⚠️ Bạn vừa phát âm từ "${repeatedWord}" 2 lần! Hãy chú ý khẩu hình: từ "${missingWord}" cần sự phân biệt rõ ràng về khẩu hình khuôn miệng. Hãy nghe lại âm mẫu và thử lại!`;
         } else {
           const spokeWordA = isWordSpoken(wordA, spokenWords);
           const spokeWordB = isWordSpoken(wordB, spokenWords);
