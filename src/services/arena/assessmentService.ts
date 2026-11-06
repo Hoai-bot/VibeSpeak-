@@ -1,11 +1,27 @@
 // src/services/arena/assessmentService.ts
 
+export interface ErrorWordItem {
+  word: string;
+  correction: string;
+  reason: string;
+}
+
+export interface CriteriaBreakdown {
+  pronunciation?: number;
+  vocabulary?: number;
+  grammar?: number;
+  fluency?: number;
+  content?: number;
+}
+
 export interface AssessmentResult {
   score: number;
   transcript: string;
   detailedFeedback: string;
   audioUrl?: string;
   isWin?: boolean;
+  errorWords?: ErrorWordItem[];
+  criteria?: CriteriaBreakdown | null;
 }
 
 export type StationType = 'STATION_1' | 'STATION_2' | 'STATION_3' | 'STATION_4' | string;
@@ -122,21 +138,22 @@ export const evaluateSpeaking = async (
   capturedSpeech?: string
 ): Promise<AssessmentResult> => {
   try {
-    // 💡 KHAI BÁO NGAY Ở ĐẦU ĐỂ TRÁNH LỖI REFERENCEERROR: currentStation is not defined
     const currentStation = String(stationType || 'STATION_1').toUpperCase();
     let recognizedTranscript = (capturedSpeech || '').trim();
 
-    // 1. Kiểm tra kích thước file âm thanh (dưới 1KB là thu âm rỗng hoặc chưa bật mic)
+    // 1. Kiểm tra kích thước file âm thanh
     if ((!audioBlob || audioBlob.size < 1000) && !recognizedTranscript) {
       return {
         score: 0,
         isWin: false,
         transcript: "(Chưa ghi nhận được âm thanh)",
-        detailedFeedback: "❌ Micro chưa thu được tiếng hoặc âm thanh quá ngắn. Vui lòng kiểm tra quyền Micro và nói to hơn!"
+        detailedFeedback: "❌ Micro chưa thu được tiếng hoặc âm thanh quá ngắn. Vui lòng kiểm tra quyền Micro và nói to hơn!",
+        errorWords: [],
+        criteria: null
       };
     }
 
-    // 2. Gửi file ghi âm lên API Groq Whisper (/api/grade-audio) để bóc tách lời thoại tiếng Anh
+    // 2. Gửi file ghi âm lên API Groq Whisper & LLM (/api/grade-audio)
     if (audioBlob && audioBlob.size >= 1000) {
       try {
         const formData = new FormData();
@@ -156,12 +173,15 @@ export const evaluateSpeaking = async (
           if (data?.transcript) {
             recognizedTranscript = data.transcript.trim();
           }
-          if (data?.score) {
+          if (typeof data?.score === 'number') {
             return {
               score: data.score,
-              isWin: data.score >= 70,
+              isWin: typeof data.isWin === 'boolean' ? data.isWin : data.score >= 70,
               transcript: recognizedTranscript || data.transcript,
-              detailedFeedback: data.feedback || `Hoàn thành bài nói cấp độ ${cefrLevel || 'A1'}!`
+              detailedFeedback: data.feedback || `Hoàn thành bài nói cấp độ ${cefrLevel || 'A1'}!`,
+              audioUrl: data.audioUrl,
+              errorWords: Array.isArray(data.errorWords) ? data.errorWords : [],
+              criteria: data.criteria || null
             };
           }
         }
@@ -170,7 +190,7 @@ export const evaluateSpeaking = async (
       }
     }
 
-    // 3. Phương án xử lý khi không nhận diện được chữ (Im lặng, mic hỏng hoặc nói quá nhỏ)
+    // 3. Phương án xử lý khi không nhận diện được chữ
     let calculatedScore = 75;
     let feedbackMessage = "";
 
@@ -181,7 +201,9 @@ export const evaluateSpeaking = async (
           score: Math.floor(Math.random() * 8) + 75,
           isWin: true,
           transcript: `(Đã ghi nhận bài nói ${promptPreview} qua Micro thiết bị)`,
-          detailedFeedback: `✅ AI đã thu nhận bản ghi âm. Cần chú ý phát âm tròn vành rõ chữ hơn để đạt điểm tối đa!`
+          detailedFeedback: `✅ AI đã thu nhận bản ghi âm. Cần chú ý phát âm tròn vành rõ chữ hơn để đạt điểm tối đa!`,
+          errorWords: [],
+          criteria: null
         };
       }
 
@@ -189,13 +211,14 @@ export const evaluateSpeaking = async (
         score: 30,
         isWin: false,
         transcript: "(Không phát hiện giọng nói hoặc âm thanh quá ngắn)",
-        detailedFeedback: "❌ Bài làm chưa đạt yêu cầu! Bạn chưa nói câu trả lời hoặc thời gian nói quá ngắn. Vui lòng bấm làm lại và nói to, rõ ràng!"
+        detailedFeedback: "❌ Bài làm chưa đạt yêu cầu! Bạn chưa nói câu trả lời hoặc thời gian nói quá ngắn. Vui lòng bấm làm lại và nói to, rõ ràng!",
+        errorWords: [],
+        criteria: null
       };
     }
 
-    // 4. Phân luồng chấm điểm
+    // 4. Phân luồng chấm điểm dự phòng phía Client (nếu API rớt mạng)
     if (currentStation === 'STATION_1' && targetPrompt) {
-      // 🎯 TRẠM 1: Đánh giá Minimal Pairs & Shadowing (Tính độ tương đồng âm thanh chi tiết)
       const normalize = (str: string) => str.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim();
       const targetWords = normalize(targetPrompt).split(/\s+/).filter(Boolean);
       const spokenWords = normalize(recognizedTranscript).split(/\s+/).filter(Boolean);
@@ -230,8 +253,16 @@ export const evaluateSpeaking = async (
       
       const matchedCount = targetWords.filter(w => spokenWords.includes(w)).length;
       feedbackMessage = `Phản xạ phát âm: Đã khớp chuẩn xác ${matchedCount}/${targetWords.length} từ mục tiêu.`;
+
+      return {
+        score: calculatedScore,
+        isWin: calculatedScore >= 70,
+        transcript: recognizedTranscript,
+        detailedFeedback: feedbackMessage,
+        errorWords: [],
+        criteria: null
+      };
     } else {
-      // 🎯 TRẠM 2: Bài nói tự do mở rộng (SOLO / RELAY / ROLEPLAY)
       const analysis = analyzeSpokenTranscript(recognizedTranscript);
       const wordCount = analysis.length;
       const grammarErrors = analysis.filter(item => item.hasGrammarError).length;
@@ -253,21 +284,25 @@ export const evaluateSpeaking = async (
         calculatedScore = Math.max(40, wordCount * 6 + 20);
         feedbackMessage = `⚠️ Bài nói hơi ngắn (${wordCount} từ). Cần bổ sung thêm thông tin.`;
       }
-    }
 
-    return {
-      score: calculatedScore,
-      isWin: calculatedScore >= 70,
-      transcript: recognizedTranscript,
-      detailedFeedback: feedbackMessage
-    };
+      return {
+        score: calculatedScore,
+        isWin: calculatedScore >= 70,
+        transcript: recognizedTranscript,
+        detailedFeedback: feedbackMessage,
+        errorWords: [],
+        criteria: null
+      };
+    }
 
   } catch (err) {
     return {
       score: 50,
       isWin: false,
       transcript: "(Lỗi xử lý bài nói)",
-      detailedFeedback: "❌ Đã có lỗi xảy ra trong quá trình chấm điểm. Vui lòng thử lại!"
+      detailedFeedback: "❌ Đã có lỗi xảy ra trong quá trình chấm điểm. Vui lòng thử lại!",
+      errorWords: [],
+      criteria: null
     };
   }
 };
