@@ -514,13 +514,14 @@ export default async function handler(req: Request) {
         );
       }
 
-      // 🤖 GỌI GROQ LLAMA PHÂN TÍCH 6 TIÊU CHÍ VÀ CHỈ RA LỖI SAI TỪ VỰNG / NGỮ PHÁP
-      let grammarScore = 75;
-      let vocabScore = 75;
-      let contentScore = 75;
-      let fluencyScore = Math.min(95, Math.max(50, wordCount * 2));
+      // 🤖 GỌI GROQ LLAMA: PHÂN TÍCH THỰC TẾ, LINH HOẠT VÀ TỰ NHIÊN
+      let grammarScore = 70;
+      let vocabScore = 70;
+      let contentScore = 70;
+      let fluencyScore = Math.min(95, Math.max(45, wordCount * 2));
       let pronunciationScore = Math.min(100, Math.max(50, 70 + acousticQualityBonus * 2));
       let errorWordsList: { word: string; correction: string; reason: string }[] = [];
+      let dynamicFeedback = '';
 
       try {
         const groqLlmResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -532,28 +533,33 @@ export default async function handler(req: Request) {
           body: JSON.stringify({
             model: 'llama-3.1-8b-instant',
             response_format: { type: 'json_object' },
-            temperature: 0.1,
+            temperature: 0.3, // Tăng nhẹ độ linh hoạt tự nhiên của câu từ
             messages: [
               {
                 role: 'system',
-                content: `You are an expert CEFR English speaking examiner. Analyze the transcript for a B1-B2 spoken dialogue.
-Evaluate 6 criteria: Pronunciation, Intonation, Vocabulary, Grammar, Content, Fluency (0-100 each).
-Identify context/collocation errors (e.g. "often to buy" instead of "offer to buy", "your hot" instead of "your heart").
-Output JSON ONLY in this format:
+                content: `Bạn là một giáo viên tiếng Anh bản xứ giao tiếp thực chiến, chấm điểm nói cấp độ ${cefrLevel}.
+Nhiệm vụ: Đánh giá bài nói của học viên dựa trên bối cảnh đề bài.
+YÊU CẦU ĐẶC BIỆT VỀ LỜI NHẬN XÉT (pedagogical_feedback_vi):
+- Tuyệt đối KHÔNG dùng các câu mẫu sáo rỗng, rập khuôn như: "Bài nói rất phong phú...", "Ngữ pháp và phản xạ rất tự nhiên...".
+- Nhận xét phải cá nhân hóa theo đúng những gì học viên vừa nói:
+  + Nếu có lỗi (sai thì ngữ pháp, dùng sai từ, câu cụt): Chỉ thẳng cụm từ cụ thể mà học viên nói sai và gợi ý cách nói tự nhiên của người bản xứ (Ví dụ: "Bạn đang nói về kế hoạch ngày mai nên dùng 'want to' thay vì 'wanted' nhé; câu cuối 'lazy I want' hơi cụt, nên nói 'I feel a bit lazy' sẽ tự nhiên hơn!").
+  + Nếu bài nói trôi chảy và đúng ngữ pháp: Khen ngợi trực tiếp ý tưởng hoặc từ vựng hay mà học viên đã dùng.
+- Giọng văn: Thân thiện, khích lệ, thực tế, ngắn gọn trong 1-2 câu.
+
+Phản hồi dưới dạng JSON thuần túy:
 {
-  "vocabulary_score": number,
-  "grammar_score": number,
-  "content_score": number,
+  "vocabulary_score": number (0-100),
+  "grammar_score": number (0-100),
+  "content_score": number (0-100),
   "detected_errors": [
-    { "word": "often", "correction": "offer", "reason": "Dùng sai từ ngữ cảnh: 'offer to buy' (đề nghị đền) chứ không phải 'often to buy'" },
-    { "word": "hot", "correction": "heart", "reason": "Phát âm chệch từ: 'your heart will feel better' chứ không phải 'your hot'" }
+    { "word": "từ_viết_sai", "correction": "từ_chuẩn", "reason": "lý do ngắn gọn" }
   ],
-  "pedagogical_feedback_vi": "Nhận xét tiếng Việt súc tích, chỉ rõ lỗi ngữ pháp/từ vựng cần sửa"
+  "pedagogical_feedback_vi": "Lời nhận xét tự nhiên, linh hoạt và chân thực"
 }`
               },
               {
                 role: 'user',
-                content: `Prompt/Topic context: ${targetPrompt || 'Giving advice / Daily roleplay'}\nSpoken Transcript: "${transcript}"`
+                content: `Chủ đề bài tập: "${targetPrompt || 'Giao tiếp hàng ngày'}"\nTrình độ mục tiêu: ${cefrLevel}\nBài nói của học viên: "${transcript}"`
               }
             ]
           })
@@ -561,20 +567,22 @@ Output JSON ONLY in this format:
 
         if (groqLlmResponse.ok) {
           const llmData = await groqLlmResponse.json();
-          const analysis = JSON.parse(llmData.choices[0].message.content);
+          let rawContent = llmData.choices[0]?.message?.content || '{}';
+          rawContent = rawContent.replace(/```json/g, '').replace(/```/g, '').trim();
+          const analysis = JSON.parse(rawContent);
 
-          vocabScore = analysis.vocabulary_score || 70;
-          grammarScore = analysis.grammar_score || 70;
-          contentScore = analysis.content_score || 75;
-          errorWordsList = analysis.detected_errors || [];
-          feedback = analysis.pedagogical_feedback_vi || '';
+          vocabScore = typeof analysis.vocabulary_score === 'number' ? analysis.vocabulary_score : 65;
+          grammarScore = typeof analysis.grammar_score === 'number' ? analysis.grammar_score : 60;
+          contentScore = typeof analysis.content_score === 'number' ? analysis.content_score : 65;
+          errorWordsList = Array.isArray(analysis.detected_errors) ? analysis.detected_errors : [];
+          dynamicFeedback = analysis.pedagogical_feedback_vi || '';
         }
       } catch (e) {
         console.warn("LLM Evaluation fallback:", e);
       }
 
-      // Trừ điểm phạt nếu có lỗi dùng sai từ nghiêm trọng như "often to buy"
-      const penalty = errorWordsList.length * 7;
+      // Trừ điểm phạt thực tế theo số lượng lỗi
+      const penalty = errorWordsList.length * 8;
       calculatedScore = Math.max(
         35,
         Math.min(
@@ -590,17 +598,22 @@ Output JSON ONLY in this format:
         )
       );
 
-      if (!feedback) {
-        feedback = errorWordsList.length > 0
-          ? `⚠️ Phát hiện ${errorWordsList.length} lỗi từ vựng/ngữ pháp (ví dụ: ${errorWordsList[0].word} -> ${errorWordsList[0].correction}). Cần hoàn thiện độ chuẩn xác!`
-          : `🌟 Bài nói phong phú (${wordCount} từ), ngữ pháp và phản xạ rất tự nhiên [${cefrLevel}].`;
+      // Nếu LLM gặp lỗi không sinh được phản hồi, sinh nhận xét bám sát thực tế chứ không dùng mẫu cứng
+      if (!dynamicFeedback) {
+        if (errorWordsList.length > 0) {
+          dynamicFeedback = `Bạn cần chú ý sửa từ "${errorWordsList[0].word}" thành "${errorWordsList[0].correction}". Hãy cố gắng nói tròn câu và chú ý thì của câu nhé!`;
+        } else if (calculatedScore >= 80) {
+          dynamicFeedback = `Ý tưởng diễn đạt khá tốt và rõ ràng! Hãy tiếp tục duy trì tốc độ nói tự nhiên này.`;
+        } else {
+          dynamicFeedback = `Bạn đã nắm được ý chính của đề bài, tuy nhiên cần mở rộng thêm chi tiết để câu nói trọn vẹn hơn.`;
+        }
       }
 
       return new Response(
         JSON.stringify({
           score: calculatedScore,
           transcript: transcript,
-          feedback: feedback,
+          feedback: dynamicFeedback,
           isWin: calculatedScore >= 70,
           errorWords: errorWordsList,
           criteria: {
