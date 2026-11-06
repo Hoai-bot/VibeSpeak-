@@ -429,7 +429,7 @@ export default async function handler(req: Request) {
       }
 
     // =========================================================================
-    // ⚡ NHÁNH 3: TRẠM 4 - SPEAKING EXPRESS
+    // ⚡ NHÁNH 3: TRẠM 4 - SPEAKING EXPRESS (PHẢN XẠ NHANH 10 - 15 GIÂY)
     // =========================================================================
     } else if (stationType === 'STATION_4') {
       const wordCount = spokenWords.length;
@@ -437,50 +437,180 @@ export default async function handler(req: Request) {
       const isHallucination = wordCount <= 2 && hallucinationPhrases.some(h => transcript.toLowerCase().includes(h));
 
       if (isHallucination || wordCount < 3) {
-        calculatedScore = Math.max(20, Math.min(40, wordCount * 10));
-        feedback = `⚠️ Phản hồi quá ngắn hoặc chỉ là từ đệm (${wordCount} từ). Hãy đưa ra câu trả lời trực diện cho tình huống!`;
-      } else {
-        let targetExcellent = 12;
-        let targetGood = 8;
-        let targetPass = 5;
+        calculatedScore = Math.max(20, wordCount * 8);
+        feedback = `⚠️ Phản hồi quá ngắn (${wordCount} từ). Hãy đưa ra câu trả lời trực diện cho tình huống!`;
+        return new Response(
+          JSON.stringify({
+            score: calculatedScore,
+            transcript: transcript,
+            feedback: feedback,
+            isWin: false,
+            errorWords: [],
+            criteria: { pronunciation: 30, vocabulary: 30, grammar: 30, fluency: 30, content: 20 }
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
 
-        if (cefrLevel === 'A1' || cefrLevel === 'A2') {
-          targetExcellent = 9;
-          targetGood = 6;
-          targetPass = 4;
-        } else if (cefrLevel === 'C1' || cefrLevel === 'C2') {
-          targetExcellent = 16;
-          targetGood = 11;
-          targetPass = 7;
-        }
+      let grammarScore = 65;
+      let vocabScore = 70;
+      let contentScore = 70;
+      let fluencyScore = Math.min(95, Math.max(50, wordCount * 5));
+      let pronunciationScore = Math.min(100, Math.max(50, 70 + acousticQualityBonus * 2));
+      let errorWordsList: { word: string; correction: string; reason: string }[] = [];
+      let dynamicFeedback = '';
 
-        let keywordBonus = 0;
-        if (targetPrompt) {
-          const promptKeywords = cleanPrompt
-            .replace(/[^a-z0-9\s]/g, ' ')
-            .split(/\s+/)
-            .filter((w: string) => w.length >= 4);
+      // 1. 🛡️ QUÉT BẪY LỖI NGỮ PHÁP TẠI CHỖ (LOCAL SCANNER)
+      const lowerTranscript = transcript.toLowerCase();
+      const lowerPrompt = targetPrompt.toLowerCase();
 
-          const matchedKeywords = promptKeywords.filter((kw: string) => spokenWords.includes(kw));
-          if (matchedKeywords.length > 0) {
-            keywordBonus = Math.min(12, matchedKeywords.length * 4);
+      // Bắt lỗi nuốt âm số nhiều sau số đếm ("two friend" -> friends)
+      const countNums = ['two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'];
+      for (let i = 0; i < spokenWords.length - 1; i++) {
+        const curr = spokenWords[i];
+        const next = spokenWords[i + 1];
+        if (countNums.includes(curr)) {
+          if (['friend', 'day', 'hour', 'minute', 'dollar', 'person', 'member'].includes(next)) {
+            errorWordsList.push({
+              word: next,
+              correction: next === 'person' ? 'people' : `${next}s`,
+              reason: `Sau số đếm "${curr}", danh từ phải chia số nhiều.`
+            });
           }
         }
+      }
 
-        if (wordCount >= targetExcellent) {
-          calculatedScore = Math.min(100, 86 + Math.round(acousticQualityBonus * 0.4) + keywordBonus);
-          feedback = `🚀 Phản xạ siêu nhanh & trôi chảy (${wordCount} từ)! Câu trả lời đủ ý, bật ra tức thì rất tự nhiên [${cefrLevel}].`;
-        } else if (wordCount >= targetGood) {
-          calculatedScore = Math.min(94, 76 + Math.round(acousticQualityBonus * 0.4) + keywordBonus);
-          feedback = `👍 Tốc độ phản xạ rất tốt (${wordCount} từ)! Hoàn thành trọn vẹn yêu cầu phản hồi nhanh.`;
-        } else if (wordCount >= targetPass) {
-          calculatedScore = Math.min(84, 66 + Math.round(acousticQualityBonus * 0.4) + keywordBonus);
-          feedback = `👌 Đạt yêu cầu phản xạ cơ bản (${wordCount} từ). Hãy mở rộng thêm 1 chi tiết nữa để đạt điểm tối đa!`;
-        } else {
-          calculatedScore = Math.max(40, wordCount * 8 + 15 + keywordBonus);
-          feedback = `💡 Câu trả lời hơi cụt (${wordCount} từ). Hãy cố gắng trả lời thành câu hoàn chỉnh trong 15s.`;
+      // Bắt lỗi câu hỏi phản xạ tương lai/lời khuyên mà dùng thì quá khứ
+      if (lowerPrompt.includes('what would you') || lowerPrompt.includes('what should') || lowerPrompt.includes('how do you plan')) {
+        if (spokenWords.includes('went')) {
+          errorWordsList.push({
+            word: 'went',
+            correction: 'would go / will go',
+            reason: 'Tình huống giả định/tương lai, không dùng quá khứ "went".'
+          });
+        }
+        if (spokenWords.includes('bought')) {
+          errorWordsList.push({
+            word: 'bought',
+            correction: 'would buy / buy',
+            reason: 'Tình huống giả định/kế hoạch, không dùng quá khứ "bought".'
+          });
         }
       }
+
+      // 2. 🤖 GỌI GROQ LLM ĐÁNH GIÁ CHẤT LƯỢNG PHẢN XẠ & BỐI CẢNH
+      try {
+        const groqLlmResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${groqApiKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            model: 'llama-3.1-8b-instant',
+            temperature: 0.2,
+            max_tokens: 300,
+            messages: [
+              {
+                role: 'system',
+                content: `You are an expert examiner for rapid English speaking responses (15s express prompt, CEFR ${cefrLevel}).
+Evaluate whether the student answered directly and correctly.
+Return JSON ONLY:
+{
+  "vocab_score": number,
+  "grammar_score": number,
+  "content_score": number,
+  "detected_errors": [
+    { "word": "incorrect_word", "correction": "better_word", "reason": "reason in Vietnamese" }
+  ],
+  "feedback_vi": "Nhận xét tiếng Việt ngắn gọn 1-2 câu, chân thực và chỉ rõ điểm cần sửa"
+}`
+              },
+              {
+                role: 'user',
+                content: `Prompt: "${targetPrompt}"\nStudent: "${transcript}"`
+              }
+            ]
+          })
+        });
+
+        if (groqLlmResponse.ok) {
+          const llmData = await groqLlmResponse.json();
+          const rawContent = llmData.choices[0]?.message?.content || '{}';
+          const jsonMatch = rawContent.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            const parsed = JSON.parse(jsonMatch[0]);
+            if (typeof parsed.vocab_score === 'number') vocabScore = parsed.vocab_score;
+            if (typeof parsed.grammar_score === 'number') grammarScore = parsed.grammar_score;
+            if (typeof parsed.content_score === 'number') contentScore = parsed.content_score;
+            if (Array.isArray(parsed.detected_errors) && parsed.detected_errors.length > 0) {
+              parsed.detected_errors.forEach((err: any) => {
+                if (!errorWordsList.some(e => e.word.toLowerCase() === err.word?.toLowerCase())) {
+                  errorWordsList.push(err);
+                }
+              });
+            }
+            if (parsed.feedback_vi && parsed.feedback_vi.length > 10) {
+              dynamicFeedback = parsed.feedback_vi;
+            }
+          }
+        }
+      } catch (llmErr) {
+        console.warn("LLM API Express bypassed:", llmErr);
+      }
+
+      // 3. TÍNH ĐIỂM TỔNG HỢP (KẾT HỢP TỐC ĐỘ, ĐỘ CHÍNH XÁC VÀ NỘI DUNG)
+      const penalty = errorWordsList.length * 8;
+      calculatedScore = Math.max(
+        35,
+        Math.min(
+          96,
+          Math.round(
+            (pronunciationScore * 0.2 +
+             acousticQualityBonus * 0.1 +
+             vocabScore * 0.25 +
+             grammarScore * 0.25 +
+             contentScore * 0.1 +
+             fluencyScore * 0.1) - penalty
+          )
+        )
+      );
+
+      if (!dynamicFeedback) {
+        if (errorWordsList.length > 0) {
+          const firstErr = errorWordsList[0];
+          dynamicFeedback = `Phản xạ nhanh, tuy nhiên cần chú ý sửa "${firstErr.word}" ➔ "${firstErr.correction}" để câu trả lời chuẩn ngữ pháp hơn!`;
+        } else if (calculatedScore >= 80) {
+          dynamicFeedback = `🚀 Phản xạ siêu nhanh và tự nhiên! Câu trả lời trúng trọng tâm tình huống [${cefrLevel}].`;
+        } else {
+          dynamicFeedback = `👌 Phản hồi đạt yêu cầu cơ bản, hãy cố gắng mở rộng thêm 1 chi tiết nhỏ để câu nói thuyết phục hơn.`;
+        }
+      }
+
+      return new Response(
+        JSON.stringify({
+          score: calculatedScore,
+          transcript: transcript,
+          feedback: dynamicFeedback,
+          isWin: calculatedScore >= 70,
+          errorWords: errorWordsList,
+          criteria: {
+            pronunciation: pronunciationScore,
+            vocabulary: Math.max(35, vocabScore - Math.round(penalty * 0.5)),
+            grammar: Math.max(30, grammarScore - penalty),
+            fluency: fluencyScore,
+            content: contentScore
+          }
+        }),
+        {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/json',
+            'X-RateLimit-Limit': String(MAX_REQUESTS_PER_WINDOW),
+            'X-RateLimit-Remaining': String(remaining),
+          },
+        }
+      );
 
     // =========================================================================
     // 🎭 NHÁNH 4: TRẠM 2 - VOCABULARY ARENA (ĐÁNH GIÁ THỰC TẾ & LINH HOẠT)
