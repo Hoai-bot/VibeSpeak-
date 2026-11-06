@@ -9,7 +9,7 @@ import { getInstantRoleplayScenario, generateRoleplayScenario } from '../service
 import { evaluateSpeaking, AssessmentResult, analyzeSpokenTranscript } from '../services/arena/assessmentService';
 import { saveSubmissionToCloud } from '../services/userService';
 import { harvestWeakWords } from '../services/weakPointsService';
-import { getOptimizedRecorderConfig, executeWithRetry } from '../utils/networkAudioHelper';
+import { executeWithRetry } from '../utils/networkAudioHelper';
 import { supabase } from '../utils/supabase';
 import AudioWaveVisualizer from '../components/AudioWaveVisualizer'; // 🌊 IMPORT SÓNG ÂM THỜI GIAN THỰC
 
@@ -104,7 +104,7 @@ export default function Station2Screen({ onBack }: Props) {
   const [isRecording, setIsRecording] = useState<boolean>(false);
   const [isEvaluating, setIsEvaluating] = useState<boolean>(false);
   const [evalStatusText, setEvalStatusText] = useState<string>('🤖 AI đang phân tích âm thanh & bóc tách toàn bộ lời thoại...');
-  const [evalResult, setEvalResult] = useState<AssessmentResult | null>(null);
+  const [evalResult, setEvalResult] = useState<any | null>(null);
   
   const [hardwareWarning, setHardwareWarning] = useState<string | null>(null);
   const [playerScores, setPlayerScores] = useState<PlayerResult>({});
@@ -781,6 +781,35 @@ export default function Station2Screen({ onBack }: Props) {
                       ? `🏆 ĐIỂM BÀI NÓI SOLO CỦA BẠN: ${evalResult.score}/100` 
                       : `🏆 ĐIỂM CHUNG TỔNG THỂ CHO CẢ 2 BẠN: ${evalResult.score}/100`}
                   </Text>
+
+                  {/* 📊 BẢNG ĐIỂM TIÊU CHÍ CEFR */}
+                  {evalResult.criteria && (
+                    <View style={styles.criteriaContainer}>
+                      <Text style={styles.criteriaHeader}>📊 ĐÁNH GIÁ 5 TIÊU CHÍ CHI TIẾT:</Text>
+                      <View style={styles.criteriaGrid}>
+                        <View style={styles.criteriaItem}>
+                          <Text style={styles.criteriaLabel}>Phát âm</Text>
+                          <Text style={styles.criteriaScore}>{evalResult.criteria.pronunciation || 75}đ</Text>
+                        </View>
+                        <View style={styles.criteriaItem}>
+                          <Text style={styles.criteriaLabel}>Từ vựng</Text>
+                          <Text style={styles.criteriaScore}>{evalResult.criteria.vocabulary || 75}đ</Text>
+                        </View>
+                        <View style={styles.criteriaItem}>
+                          <Text style={styles.criteriaLabel}>Ngữ pháp</Text>
+                          <Text style={styles.criteriaScore}>{evalResult.criteria.grammar || 75}đ</Text>
+                        </View>
+                        <View style={styles.criteriaItem}>
+                          <Text style={styles.criteriaLabel}>Lưu loát</Text>
+                          <Text style={styles.criteriaScore}>{evalResult.criteria.fluency || 75}đ</Text>
+                        </View>
+                        <View style={styles.criteriaItem}>
+                          <Text style={styles.criteriaLabel}>Nội dung</Text>
+                          <Text style={styles.criteriaScore}>{evalResult.criteria.content || 75}đ</Text>
+                        </View>
+                      </View>
+                    </View>
+                  )}
                   
                   {evalResult.transcript ? (
                     <View style={styles.wordHighlightBox}>
@@ -789,20 +818,42 @@ export default function Station2Screen({ onBack }: Props) {
                           ? '🎙 TOÀN BỘ TỪ NGỮ GHI NHẬN ĐƯỢC TỪ BÀI NÓI:' 
                           : '🎙 TOÀN BỘ LỜI THOẠI THU ĐƯỢC:'}
                       </Text>
+
+                      {/* 🎯 HIỂN THỊ LỜI THOẠI KÈM PHÁT HIỆN LỖI SAI (ĐỎ ✗ / XANH ✓) */}
                       <View style={styles.wordRow}>
-                        {analyzeSpokenTranscript(evalResult.transcript).map((item, idx) => (
-                          <View 
-                            key={idx} 
-                            style={[
-                              styles.wordBadge, 
-                              item.isConfident ? styles.correctBadge : styles.warningBadge
-                            ]}
-                          >
-                            <Text style={[styles.wordBadgeText, item.isConfident ? styles.correctText : styles.warningText]}>
-                              {item.word} {item.isConfident ? '✓' : '⚠️'}
-                            </Text>
-                          </View>
-                        ))}
+                        {evalResult.transcript
+                          .replace(/[.,/#!$%^&*;:{}=\-_`~()?"']/g, ' ')
+                          .split(/\s+/)
+                          .filter(Boolean)
+                          .map((word: string, idx: number) => {
+                            const cleanWord = word.toLowerCase().replace(/[^a-z0-9]/g, '');
+                            const foundError = evalResult.errorWords?.find(
+                              (err: any) => err.word?.toLowerCase() === cleanWord
+                            );
+                            const isWrong = Boolean(foundError);
+
+                            return (
+                              <TouchableOpacity
+                                key={idx}
+                                style={[
+                                  styles.wordBadge,
+                                  isWrong ? styles.wordBadgeError : styles.wordBadgeCorrect
+                                ]}
+                                onPress={() => {
+                                  if (foundError) {
+                                    alert(
+                                      `💡 Góp ý sửa từ vựng:\n\n• Từ dùng chưa chuẩn: "${foundError.word}"\n• Nên đổi thành: "${foundError.correction}"\n• Lý do: ${foundError.reason}`
+                                    );
+                                  }
+                                }}
+                                activeOpacity={isWrong ? 0.6 : 1}
+                              >
+                                <Text style={[styles.wordBadgeText, isWrong ? styles.textError : styles.textCorrect]}>
+                                  {word} {isWrong ? '✗' : '✓'}
+                                </Text>
+                              </TouchableOpacity>
+                            );
+                          })}
                       </View>
                     </View>
                   ) : null}
@@ -832,7 +883,7 @@ export default function Station2Screen({ onBack }: Props) {
                   ) : null}
 
                   <Text style={styles.transcriptText}>💬 Lời thoại ghi nhận: "{evalResult.transcript}"</Text>
-                  <Text style={styles.feedbackText}>💡 Nhận xét AI: {evalResult.detailedFeedback}</Text>
+                  <Text style={styles.feedbackText}>💡 Nhận xét AI: {evalResult.detailedFeedback || evalResult.feedback}</Text>
                 </View>
               )}
 
@@ -913,16 +964,25 @@ const styles = StyleSheet.create({
   recordBtnText: { color: '#FFF', fontSize: 11, fontWeight: '900' },
   
   evalBox: { backgroundColor: '#130A2A', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#332255', width: '100%', marginTop: 12 },
-  evalScore: { color: '#39FF14', fontSize: 12, fontWeight: '900', marginBottom: 4, textAlign: 'center' },
+  evalScore: { color: '#39FF14', fontSize: 12, fontWeight: '900', marginBottom: 8, textAlign: 'center' },
+  
+  criteriaContainer: { backgroundColor: '#0D0620', padding: 8, borderRadius: 8, borderWidth: 1, borderColor: '#00FFFF', width: '100%', marginBottom: 10 },
+  criteriaHeader: { color: '#00FFFF', fontSize: 9, fontWeight: '900', marginBottom: 6 },
+  criteriaGrid: { flexDirection: 'row', justifyContent: 'space-between', width: '100%' },
+  criteriaItem: { alignItems: 'center', flex: 1 },
+  criteriaLabel: { color: '#8888AA', fontSize: 8, fontWeight: 'bold', marginBottom: 2 },
+  criteriaScore: { color: '#39FF14', fontSize: 11, fontWeight: '900' },
+
   wordHighlightBox: { backgroundColor: '#120826', padding: 8, borderRadius: 8, borderWidth: 1, borderColor: '#00FFFF', width: '100%', marginVertical: 8 },
   wordHighlightTitle: { color: '#00FFFF', fontSize: 9, fontWeight: '900', marginBottom: 6 },
   wordRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   wordBadge: { paddingHorizontal: 6, paddingVertical: 3, borderRadius: 6, borderWidth: 1 },
-  correctBadge: { backgroundColor: 'rgba(57, 255, 20, 0.15)', borderColor: '#39FF14' },
-  warningBadge: { backgroundColor: 'rgba(255, 215, 0, 0.15)', borderColor: '#FFD700' },
+  wordBadgeCorrect: { backgroundColor: 'rgba(57, 255, 20, 0.15)', borderColor: '#39FF14' },
+  wordBadgeError: { backgroundColor: 'rgba(255, 0, 85, 0.25)', borderColor: '#FF0055' },
   wordBadgeText: { fontSize: 10, fontWeight: 'bold' },
-  correctText: { color: '#39FF14' },
-  warningText: { color: '#FFD700' },
+  textCorrect: { color: '#39FF14' },
+  textError: { color: '#FF0055' },
+
   audioPlayerBox: { backgroundColor: '#1A0B2E', padding: 8, borderRadius: 8, width: '100%', marginBottom: 8, borderWidth: 1, borderColor: '#00FFFF' },
   audioLabel: { color: '#00FFFF', fontSize: 10, fontWeight: 'bold' },
   transcriptText: { color: '#FFF', fontSize: 10, fontStyle: 'italic', marginBottom: 6 },
