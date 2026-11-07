@@ -531,59 +531,66 @@ export default function Station1Screen({ onBack }: Props) {
                 }
               });
 
+              const isMinimalPair = currentDrill?.contentEn?.includes('/');
+              const inspectionItems: string[] = isMinimalPair
+                ? currentDrill.contentEn.split('/').map((w: string) => w.trim()).filter(Boolean)
+                : currentDrill.contentEn
+                    .replace(/[.,/#!$%^&*;:{}=\-_`~()?"']/g, ' ')
+                    .split(/\s+/)
+                    .map((w: string) => w.trim())
+                    .filter((w: string) => w.length >= 3);
+
               return (
                 <>
                   {currentDrill?.contentEn && (
                     <View style={styles.ipaDiffContainer}>
                       <Text style={styles.ipaSectionTitle}>🔬 SOI ÂM VỊ CHI TIẾT (IPA PHONEMIC INSPECTOR):</Text>
                       
-                      {currentDrill.contentEn
-                        .split('/')
-                        .map((w: string) => w.trim())
-                        .filter(Boolean)
-                        .map((word: string, idx: number) => {
-                          const comparison = getPhoneticComparison(word, normalizedDisplayTranscript);
-                          return (
-                            <View 
-                              key={idx} 
-                              style={[
-                                styles.ipaCard, 
-                                comparison.isExactMatch ? styles.ipaCardCorrect : styles.ipaCardMismatch
-                              ]}
-                            >
-                              <View style={styles.ipaHeaderRow}>
-                                <Text style={styles.ipaWord}>{word.toUpperCase()}</Text>
-                                <Text style={[styles.ipaStatusBadge, { color: comparison.isExactMatch ? '#39FF14' : '#FF0055' }]}>
-                                  {comparison.isExactMatch ? 'CHÍNH XÁC ✓' : 'LỆCH ÂM ✗'}
+                      {inspectionItems.map((word: string, idx: number) => {
+                        const comparison = getPhoneticComparison(word, normalizedDisplayTranscript);
+                        return (
+                          <View 
+                            key={idx} 
+                            style={[
+                              styles.ipaCard, 
+                              comparison.isExactMatch ? styles.ipaCardCorrect : styles.ipaCardMismatch
+                            ]}
+                          >
+                            <View style={styles.ipaHeaderRow}>
+                              <Text style={styles.ipaWord}>{word.toUpperCase()}</Text>
+                              <Text style={[styles.ipaStatusBadge, { color: comparison.isExactMatch ? '#39FF14' : '#FF0055' }]}>
+                                {comparison.isExactMatch ? 'CHÍNH XÁC ✓' : 'LỆCH ÂM ✗'}
+                              </Text>
+                            </View>
+
+                            {/* Thanh so sánh trực quan Target vs Heard - Chống tràn layout */}
+                            <View style={styles.ipaCompareRow}>
+                              <View style={styles.ipaBox}>
+                                <Text style={styles.ipaBoxLabel}>ÂM CHUẨN MỤC TIÊU</Text>
+                                <Text style={styles.targetIpaText}>{comparison.targetIpa || `/${word.toLowerCase()}/`}</Text>
+                              </View>
+
+                              <View style={styles.arrowContainer}>
+                                <Text style={styles.ipaVsArrow}>➔</Text>
+                              </View>
+
+                              <View style={styles.ipaBox}>
+                                <Text style={[styles.ipaBoxLabel, { textAlign: 'right' }]}>AI THU NHẬN ĐƯỢC</Text>
+                                <Text style={[styles.heardIpaText, { color: comparison.isExactMatch ? '#39FF14' : '#FF0055' }]}>
+                                  {comparison.heardIpa || '(Không rõ)'}
                                 </Text>
                               </View>
-
-                              {/* Thanh so sánh trực quan Target vs Heard */}
-                              <View style={styles.ipaCompareRow}>
-                                <View style={styles.ipaBox}>
-                                  <Text style={styles.ipaBoxLabel}>ÂM CHUẨN MỤC TIÊU</Text>
-                                  <Text style={styles.targetIpaText}>{comparison.targetIpa}</Text>
-                                </View>
-
-                                <Text style={styles.ipaVsArrow}>➔</Text>
-
-                                <View style={styles.ipaBox}>
-                                  <Text style={styles.ipaBoxLabel}>AI THU NHẬN ĐƯỢC</Text>
-                                  <Text style={[styles.heardIpaText, { color: comparison.isExactMatch ? '#39FF14' : '#FF0055' }]}>
-                                    {comparison.heardIpa || '(Không rõ)'}
-                                  </Text>
-                                </View>
-                              </View>
-
-                              {/* Hướng dẫn sửa khẩu hình */}
-                              {comparison.tip && (
-                                <View style={styles.ipaTipBox}>
-                                  <Text style={styles.ipaTipText}>💡 Mẹo khẩu hình: {comparison.tip}</Text>
-                                </View>
-                              )}
                             </View>
-                          );
-                        })}
+
+                            {/* Hướng dẫn sửa khẩu hình */}
+                            {comparison.tip && (
+                              <View style={styles.ipaTipBox}>
+                                <Text style={styles.ipaTipText}>💡 Mẹo khẩu hình: {comparison.tip}</Text>
+                              </View>
+                            )}
+                          </View>
+                        );
+                      })}
                     </View>
                   )}
 
@@ -679,7 +686,7 @@ const styles = StyleSheet.create({
   deltaBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
   deltaText: { fontSize: 10, fontWeight: '900' },
 
-  // STYLES CHO BỘ SOI ÂM VỊ IPA TRỰC QUAN
+  // STYLES CHO BỘ SOI ÂM VỊ IPA TRỰC QUAN (CHỐNG TRÀN CHỮ TUYỆT ĐỐI)
   ipaDiffContainer: {
     width: '100%',
     backgroundColor: '#070314',
@@ -702,6 +709,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     padding: 10,
     marginBottom: 8,
+    width: '100%',
   },
   ipaCardCorrect: {
     borderColor: '#39FF14',
@@ -713,12 +721,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 6,
+    marginBottom: 8,
+    gap: 6,
   },
   ipaWord: {
     color: '#FFF',
     fontSize: 12,
     fontWeight: '900',
+    flex: 1,
+    flexShrink: 1,
   },
   ipaStatusBadge: {
     fontSize: 9,
@@ -731,9 +742,17 @@ const styles = StyleSheet.create({
     backgroundColor: '#05020D',
     borderRadius: 8,
     padding: 8,
+    width: '100%',
+    gap: 4,
   },
   ipaBox: {
     flex: 1,
+    flexShrink: 1,
+    minWidth: 0,
+  },
+  arrowContainer: {
+    paddingHorizontal: 4,
+    justifyContent: 'center',
     alignItems: 'center',
   },
   ipaBoxLabel: {
@@ -744,20 +763,28 @@ const styles = StyleSheet.create({
   },
   targetIpaText: {
     color: '#39FF14',
-    fontSize: 13,
-    fontWeight: '900',
-    fontFamily: 'monospace',
+    fontSize: 11,
+    fontWeight: '800',
+    lineHeight: 16,
+    flexWrap: 'wrap',
+    // @ts-ignore
+    wordBreak: 'break-word',
+    overflowWrap: 'break-word',
   },
   heardIpaText: {
-    fontSize: 13,
-    fontWeight: '900',
-    fontFamily: 'monospace',
+    fontSize: 11,
+    fontWeight: '800',
+    lineHeight: 16,
+    textAlign: 'right',
+    flexWrap: 'wrap',
+    // @ts-ignore
+    wordBreak: 'break-word',
+    overflowWrap: 'break-word',
   },
   ipaVsArrow: {
-    color: '#8888AA',
+    color: '#FF007F',
     fontSize: 12,
     fontWeight: 'bold',
-    paddingHorizontal: 8,
   },
   ipaTipBox: {
     marginTop: 6,
