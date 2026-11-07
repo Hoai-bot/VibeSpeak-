@@ -1,8 +1,7 @@
 // src/screens/GhostStationScreen.tsx
 import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Modal, ActivityIndicator, ScrollView } from 'react-native';
-import { transcribeAndGradeAudio } from '../services/groqClient';
-import { generateWordDiff } from '../services/arena/assessmentService';
+import { evaluateSpeaking, generateWordDiff } from '../services/arena/assessmentService';
 import { saveSubmissionToCloud } from '../services/userService';
 import { harvestWeakWords } from '../services/weakPointsService';
 import { getOptimizedRecorderConfig, executeWithRetry } from '../utils/networkAudioHelper';
@@ -190,9 +189,17 @@ function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
       const localAudio = URL.createObjectURL(audioBlob);
       setAudioUrl(localAudio);
 
+      // 🎯 SỬ DỤNG evaluateSpeaking ĐỂ ĐỒNG BỘ VỚI PIPELINE /api/grade-audio
       const res = await executeWithRetry(
         async () => {
-          return await transcribeAndGradeAudio(audioBlob, ghostSentence);
+          return await evaluateSpeaking(
+            audioBlob,
+            'B1',
+            'STATION_3',
+            ghostSentence,
+            undefined,
+            ''
+          );
         },
         {
           maxRetries: 3,
