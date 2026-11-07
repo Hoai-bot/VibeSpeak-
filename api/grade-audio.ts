@@ -414,7 +414,7 @@ export default async function handler(req: Request) {
       }
 
     // =========================================================================
-    // 👻 NHÁNH 2: TRẠM 3 - GHOST STATION
+    // 👻 NHÁNH 2: TRẠM 3 - GHOST STATION (SHADOWING ECHO CHUYÊN SÂU)
     // =========================================================================
     } else if (stationType === 'STATION_3') {
       const targetWords = cleanPrompt.replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(Boolean);
@@ -438,6 +438,31 @@ export default async function handler(req: Request) {
         calculatedScore = Math.max(30, Math.round(accuracyRatio * 60 + acousticQualityBonus));
         feedback = `⚠️ Rớt nhịp khá nhiều (${matchedCount}/${targetWords.length} từ). Hãy dùng tính năng Cứu hộ Oasis để tập nối âm chậm nhé!`;
       }
+
+      return new Response(
+        JSON.stringify({
+          score: calculatedScore,
+          transcript: transcript,
+          feedback: feedback,
+          isWin: calculatedScore >= 70,
+          errorWords: [],
+          criteria: {
+            pronunciation: Math.min(100, Math.round(accuracyRatio * 90 + acousticQualityBonus)),
+            vocabulary: 80,
+            grammar: 85,
+            fluency: Math.min(100, Math.round(accuracyRatio * 95)),
+            content: 90
+          }
+        }),
+        {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/json',
+            'X-RateLimit-Limit': String(MAX_REQUESTS_PER_WINDOW),
+            'X-RateLimit-Remaining': String(remaining),
+          },
+        }
+      );
 
     // =========================================================================
     // ⚡ NHÁNH 3: TRẠM 4 - SPEAKING EXPRESS (PHẢN XẠ NHANH 10 - 15 GIÂY)
