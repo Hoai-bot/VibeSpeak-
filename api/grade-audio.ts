@@ -413,6 +413,32 @@ export default async function handler(req: Request) {
         }
       }
 
+      // 🎯 TRẢ VỀ RESPONSE TRỰC TIẾP CHO TRẠM 1
+      return new Response(
+        JSON.stringify({
+          score: calculatedScore,
+          transcript: transcript,
+          feedback: feedback,
+          isWin: calculatedScore >= 70,
+          errorWords: [],
+          criteria: {
+            pronunciation: calculatedScore,
+            vocabulary: 85,
+            grammar: 90,
+            fluency: 85,
+            content: 90
+          }
+        }),
+        {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/json',
+            'X-RateLimit-Limit': String(MAX_REQUESTS_PER_WINDOW),
+            'X-RateLimit-Remaining': String(remaining),
+          },
+        }
+      );
+
     // =========================================================================
     // 👻 NHÁNH 2: TRẠM 3 - GHOST STATION (SHADOWING ECHO CHUYÊN SÂU)
     // =========================================================================
