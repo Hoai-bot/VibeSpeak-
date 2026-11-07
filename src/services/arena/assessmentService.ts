@@ -26,11 +26,48 @@ export interface AssessmentResult {
 
 export type StationType = 'STATION_1' | 'STATION_2' | 'STATION_3' | 'STATION_4' | string;
 
-// 🎯 DÀNH CHO TRẠM 1: So sánh từ mẫu và từ đọc được
+// 🎯 DÀNH CHO TRẠM 1: So sánh từ mẫu và từ đọc được kèm Từ điển đồng âm (Homophones)
 export interface WordDiff {
   word: string;
   status: 'correct' | 'incorrect' | 'missing';
 }
+
+const HOMOPHONES_MAP: Record<string, string[]> = {
+  'sum': ['some'],
+  'some': ['sum'],
+  'sun': ['son'],
+  'son': ['sun'],
+  'sea': ['see'],
+  'see': ['sea'],
+  'bare': ['bear'],
+  'bear': ['bare'],
+  'meat': ['meet'],
+  'meet': ['meat'],
+  'wear': ['where'],
+  'where': ['wear'],
+  'pair': ['pear'],
+  'pear': ['pair'],
+  'right': ['write'],
+  'write': ['right'],
+  'buy': ['by', 'bye'],
+  'bye': ['buy', 'by'],
+  'by': ['buy', 'bye'],
+  'for': ['four'],
+  'four': ['for'],
+  'to': ['too', 'two'],
+  'two': ['to', 'too'],
+  'too': ['to', 'two'],
+  'one': ['won'],
+  'won': ['one'],
+  'flour': ['flower'],
+  'flower': ['flour'],
+  'peace': ['piece'],
+  'piece': ['peace'],
+  'wait': ['weight'],
+  'weight': ['wait'],
+  'break': ['brake'],
+  'brake': ['break']
+};
 
 export function generateWordDiff(targetText: string, capturedTranscript: string): WordDiff[] {
   if (!targetText) return [];
@@ -39,7 +76,11 @@ export function generateWordDiff(targetText: string, capturedTranscript: string)
   const cleanCaptured = (capturedTranscript || "").replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, "").toLowerCase().split(/\s+/).filter(Boolean);
 
   return cleanTarget.map((word) => {
-    if (cleanCaptured.includes(word)) {
+    const isDirectMatch = cleanCaptured.includes(word);
+    const homophones = HOMOPHONES_MAP[word] || [];
+    const isHomophoneMatch = homophones.some(h => cleanCaptured.includes(h));
+
+    if (isDirectMatch || isHomophoneMatch) {
       return { word, status: 'correct' };
     } else {
       return { word, status: 'incorrect' };
@@ -226,7 +267,10 @@ export const evaluateSpeaking = async (
       let totalWordScore = 0;
 
       targetWords.forEach(target => {
-        if (spokenWords.includes(target)) {
+        const homophones = HOMOPHONES_MAP[target] || [];
+        const isMatched = spokenWords.includes(target) || homophones.some(h => spokenWords.includes(h));
+
+        if (isMatched) {
           totalWordScore += 1.0;
         } else {
           let bestSim = 0;
@@ -251,7 +295,10 @@ export const evaluateSpeaking = async (
       const accuracyRatio = targetWords.length > 0 ? (totalWordScore / targetWords.length) : 0;
       calculatedScore = Math.min(100, Math.max(40, Math.round(accuracyRatio * 60 + 40)));
       
-      const matchedCount = targetWords.filter(w => spokenWords.includes(w)).length;
+      const matchedCount = targetWords.filter(w => {
+        const homophones = HOMOPHONES_MAP[w] || [];
+        return spokenWords.includes(w) || homophones.some(h => spokenWords.includes(h));
+      }).length;
       feedbackMessage = `Phản xạ phát âm: Đã khớp chuẩn xác ${matchedCount}/${targetWords.length} từ mục tiêu.`;
 
       return {
