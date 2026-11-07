@@ -96,6 +96,16 @@ export const PHONETIC_TRAPS: PhoneticTrapRule[] = [
     ],
     scoreCap: 65,
     feedbackVi: '⚠️ Chú ý: Phân biệt rõ âm /æ/ (trong "cat" - bẹt khóe môi sang hai bên) và âm /ʌ/ (trong "cut" - miệng mở tự nhiên, thả lỏng hạ hàm dưới theo chiều dọc). AI hiện đang nghe cả hai từ thành cùng một âm!',
+  },
+  // 10. zoo / sue (/z/ vs /s/) - Bẫy phân biệt phụ âm rung hữu thanh và âm gió vô thanh
+  {
+    id: 'zoo_sue_voicing',
+    pair: ['zoo', 'sue'],
+    trapKeywords: [
+      'sue sue', 'zoo zoo', 'so sue', 'sue zoo', 'zou', 'su'
+    ],
+    scoreCap: 65,
+    feedbackVi: '⚠️ Chú ý: Phân biệt rõ âm /z/ trong "zoo" (dây thanh quản RUNG mạnh ở cổ họng) và âm /s/ trong "sue" (âm gió không rung). Cả hai từ đều dùng nguyên âm dài /uː/ (đọc tròn môi kéo dài /zuː/ - /suː/, không đọc biến âm thành "zou" hay "sui").',
   }
 ];
 
