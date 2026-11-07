@@ -358,7 +358,6 @@ export default async function handler(req: Request) {
 
         const detectedTrap = detectPhoneticTrap(wordA, wordB, spokenWords, rawTranscript);
 
-        // 🌟 TỔNG QUÁT HÓA PHÁT HIỆN ĐỌC LẶP TỪ CHO MỌI CẶP TỪ
         const countWordA = spokenWords.filter(w => w === wordA).length;
         const countWordB = spokenWords.filter(w => w === wordB).length;
         const isDuplicateWordTrap = (countWordA >= 2 && countWordB === 0) || (countWordB >= 2 && countWordA === 0);
@@ -423,7 +422,6 @@ export default async function handler(req: Request) {
         }
       }
 
-      // 🎯 TRẢ VỀ RESPONSE TRỰC TIẾP CHO TRẠM 1
       return new Response(
         JSON.stringify({
           score: calculatedScore,
@@ -524,19 +522,15 @@ export default async function handler(req: Request) {
         );
       }
 
-      let grammarScore = 65;
-      let vocabScore = 70;
-      let contentScore = 70;
+      let grammarScore = 80;
+      let vocabScore = 80;
+      let contentScore = 80;
       let fluencyScore = Math.min(95, Math.max(50, wordCount * 5));
       let pronunciationScore = Math.min(100, Math.max(50, 70 + acousticQualityBonus * 2));
       let errorWordsList: { word: string; correction: string; reason: string }[] = [];
       let dynamicFeedback = '';
 
       // 1. 🛡️ QUÉT BẪY LỖI NGỮ PHÁP TẠI CHỖ (LOCAL SCANNER)
-      const lowerTranscript = transcript.toLowerCase();
-      const lowerPrompt = targetPrompt.toLowerCase();
-
-      // Bắt lỗi nuốt âm số nhiều sau số đếm ("two friend" -> friends)
       const countNums = ['two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'];
       for (let i = 0; i < spokenWords.length - 1; i++) {
         const curr = spokenWords[i];
@@ -552,24 +546,6 @@ export default async function handler(req: Request) {
         }
       }
 
-      // Bắt lỗi câu hỏi phản xạ tương lai/lời khuyên mà dùng thì quá khứ
-      if (lowerPrompt.includes('what would you') || lowerPrompt.includes('what should') || lowerPrompt.includes('how do you plan')) {
-        if (spokenWords.includes('went')) {
-          errorWordsList.push({
-            word: 'went',
-            correction: 'would go / will go',
-            reason: 'Tình huống giả định/tương lai, không dùng quá khứ "went".'
-          });
-        }
-        if (spokenWords.includes('bought')) {
-          errorWordsList.push({
-            word: 'bought',
-            correction: 'would buy / buy',
-            reason: 'Tình huống giả định/kế hoạch, không dùng quá khứ "bought".'
-          });
-        }
-      }
-
       // 2. 🤖 GỌI GROQ LLM ĐÁNH GIÁ CHẤT LƯỢNG PHẢN XẠ & BỐI CẢNH
       try {
         const groqLlmResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -580,13 +556,14 @@ export default async function handler(req: Request) {
           },
           body: JSON.stringify({
             model: 'llama-3.1-8b-instant',
-            temperature: 0.2,
-            max_tokens: 300,
+            temperature: 0.1,
+            max_tokens: 350,
             messages: [
               {
                 role: 'system',
-                content: `You are an expert examiner for rapid English speaking responses (15s express prompt, CEFR ${cefrLevel}).
-Evaluate whether the student answered directly and correctly.
+                content: `You are an expert Cambridge/IELTS speaking examiner evaluating a CEFR ${cefrLevel} student for a 15-second rapid speaking prompt.
+Evaluate all aspects (tenses, conditionals, natural phrases, pronunciation, content).
+If the response is correct and fluent, give generous scores (85-95).
 Return JSON ONLY:
 {
   "vocab_score": number,
@@ -595,7 +572,7 @@ Return JSON ONLY:
   "detected_errors": [
     { "word": "incorrect_word", "correction": "better_word", "reason": "reason in Vietnamese" }
   ],
-  "feedback_vi": "Nhận xét tiếng Việt ngắn gọn 1-2 câu, chân thực và chỉ rõ điểm cần sửa"
+  "feedback_vi": "Nhận xét tiếng Việt ngắn gọn 1-2 câu, chân thực và chỉ rõ điểm làm tốt hoặc điểm cần sửa"
 }`
               },
               {
@@ -636,7 +613,7 @@ Return JSON ONLY:
       calculatedScore = Math.max(
         35,
         Math.min(
-          96,
+          98,
           Math.round(
             (pronunciationScore * 0.2 +
              acousticQualityBonus * 0.1 +
@@ -685,7 +662,7 @@ Return JSON ONLY:
       );
 
     // =========================================================================
-    // 🎭 NHÁNH 4: TRẠM 2 - VOCABULARY ARENA (ĐÁNH GIÁ THỰC TẾ & BẮT LỖI LẠC ĐỀ)
+    // 🎭 NHÁNH 4: TRẠM 2 - VOCABULARY ARENA (ĐÁNH GIÁ ĐA THÌ & NGỮ PHÁP TOÀN DIỆN)
     // =========================================================================
     } else {
       const wordCount = spokenWords.length;
@@ -708,18 +685,16 @@ Return JSON ONLY:
         );
       }
 
-      // 1. 🎯 KIỂM TRA ĐỘ BÁM SÁT CHỦ ĐỀ (OFF-TOPIC / RELEVANCE DETECTOR)
       const lowerTranscript = transcript.toLowerCase();
       const lowerPrompt = targetPrompt.toLowerCase();
 
-      // Trích xuất các danh từ/động từ trọng tâm từ đề bài (bỏ stop words)
-      const stopWords = ['describe', 'talk', 'about', 'your', 'you', 'the', 'and', 'with', 'that', 'this', 'have', 'what', 'where', 'when', 'which', 'tell', 'enrolled', 'special'];
+      // 1. 🎯 KIỂM TRA ĐỘ BÁM SÁT CHỦ ĐỀ (OFF-TOPIC DETECTOR)
+      const stopWords = ['describe', 'talk', 'about', 'your', 'you', 'the', 'and', 'with', 'that', 'this', 'have', 'what', 'where', 'when', 'which', 'tell', 'enrolled', 'special', 'favorite'];
       const corePromptKeywords = lowerPrompt
         .replace(/[^a-z0-9\s]/g, ' ')
         .split(/\s+/)
         .filter(w => w.length >= 3 && !stopWords.includes(w));
 
-      // Đếm số từ khóa liên quan xuất hiện trong bài nói
       let matchedTopicKeywords = 0;
       corePromptKeywords.forEach(kw => {
         if (lowerTranscript.includes(kw) || 
@@ -729,17 +704,10 @@ Return JSON ONLY:
         }
       });
 
-      // Kiểm tra các trường hợp lạc đề phổ biến (Ví dụ: Đề hỏi khóa học trực tuyến nhưng nói về quê/gia đình)
       const isOnlineCoursePrompt = lowerPrompt.includes('course') || lowerPrompt.includes('online') || lowerPrompt.includes('tutorial');
       const isFamilyHometownSpeech = lowerTranscript.includes('hometown') || lowerTranscript.includes('went home') || (lowerTranscript.includes('parents') && !lowerTranscript.includes('course'));
-      
       const isCompletelyOffTopic = (isOnlineCoursePrompt && isFamilyHometownSpeech) || (corePromptKeywords.length >= 2 && matchedTopicKeywords === 0);
 
-      let contentScore = isCompletelyOffTopic ? 30 : 70;
-      let grammarScore = 65;
-      let vocabScore = 70;
-      let fluencyScore = Math.min(95, Math.max(45, wordCount * 2));
-      let pronunciationScore = Math.min(100, Math.max(50, 70 + acousticQualityBonus * 2));
       let errorWordsList: { word: string; correction: string; reason: string }[] = [];
       let dynamicFeedback = '';
 
@@ -751,94 +719,48 @@ Return JSON ONLY:
         });
       }
 
-      // A. Bắt lỗi nuốt âm đuôi số nhiều sau số đếm (Ví dụ: "five member" -> members)
-      const countNumbers = ['two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'];
+      // 2. 🛡️ QUÉT BẪY LỖI NGỮ PHÁP TIẾNG VIỆT ĐẶC THÙ (LOCAL SCANNER)
+      const countNumbers = ['two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'many', 'several'];
       for (let i = 0; i < spokenWords.length - 1; i++) {
         const curr = spokenWords[i];
         const next = spokenWords[i + 1];
         if (countNumbers.includes(curr)) {
-          if (next === 'member' || next === 'members') {
-            const hasSuspiciousLogprob = avgLogprob < -0.28 || lowerTranscript.includes(`${curr} member `);
-            if (hasSuspiciousLogprob || next === 'member') {
-              errorWordsList.push({
-                word: next,
-                correction: 'members',
-                reason: `Thiếu âm đuôi: Sau số đếm "${curr}", danh từ phải có đuôi số nhiều và phát âm rõ âm /z/ ("${curr} members").`
-              });
-            }
+          const singulars: Record<string, string> = {
+            'friend': 'friends',
+            'member': 'members',
+            'person': 'people',
+            'year': 'years',
+            'day': 'days',
+            'book': 'books',
+            'child': 'children'
+          };
+          if (singulars[next]) {
+            errorWordsList.push({
+              word: next,
+              correction: singulars[next],
+              reason: `Danh từ số nhiều: Sau "${curr}", danh từ phải dùng dạng số nhiều "${singulars[next]}".`
+            });
           }
         }
       }
 
-      // B. Bắt lỗi sai thì ngữ cảnh bài nói
-      const isRoutinePrompt = 
-        lowerPrompt.includes('family') || 
-        lowerPrompt.includes('job') || 
-        lowerPrompt.includes('hometown') || 
-        lowerPrompt.includes('commute') || 
-        lowerPrompt.includes('describe') || 
-        lowerPrompt.includes('daily') || 
-        lowerPrompt.includes('routine');
+      // 3. 🎯 TÍNH ĐIỂM CƠ BẢN DỰA TRÊN CHẤT LƯỢNG THỰC TẾ CỦA BÀI NÓI (ZERO ERROR BONUS)
+      const hasNoErrors = errorWordsList.length === 0;
+      
+      let baseGrammar = hasNoErrors ? Math.min(96, 88 + (wordCount >= 20 ? 8 : 4)) : Math.max(40, 75 - errorWordsList.length * 10);
+      let baseVocab = hasNoErrors ? Math.min(94, 82 + (wordCount >= 20 ? 8 : 4)) : 70;
+      let baseContent = isCompletelyOffTopic ? 30 : (hasNoErrors ? Math.min(95, 86 + (wordCount >= 20 ? 8 : 4)) : 75);
+      
+      const hasConnectors = ['and', 'so', 'because', 'but', 'also', 'although', 'however', 'when', 'while'].some(c => lowerTranscript.includes(c));
+      let baseFluency = Math.min(95, Math.max(68, 72 + (wordCount >= 25 ? 16 : 8) + (hasConnectors ? 5 : 0)));
 
-      if (isRoutinePrompt) {
-        if (spokenWords.includes('were')) {
-          errorWordsList.push({
-            word: 'were',
-            correction: 'are',
-            reason: 'Sai thì: Gia đình hiện tại vẫn tồn tại, hãy dùng "There are" thay vì quá khứ "There were".'
-          });
-        }
-        if (spokenWords.includes('was')) {
-          errorWordsList.push({
-            word: 'was',
-            correction: 'is',
-            reason: 'Sai thì: Dùng thì hiện tại đơn "is" khi giới thiệu gia đình hoặc bản thân.'
-          });
-        }
-        if (spokenWords.includes('went') && !isOnlineCoursePrompt) {
-          errorWordsList.push({
-            word: 'went',
-            correction: 'go / usually go',
-            reason: 'Lệch chủ đề & sai thì: Đề bài yêu cầu miêu tả thực tế, không kể chuyện quá khứ "went".'
-          });
-        }
-        if (spokenWords.includes('visited')) {
-          errorWordsList.push({
-            word: 'visited',
-            correction: 'visit / usually go to',
-            reason: 'Sai thì: Giới thiệu quê hương nên dùng thì hiện tại đơn, không dùng "visited".'
-          });
-        }
-        if (spokenWords.includes('yesterday') && !isOnlineCoursePrompt) {
-          errorWordsList.push({
-            word: 'yesterday',
-            correction: 'every day / usually',
-            reason: 'Không dùng mốc thời gian quá khứ "yesterday" cho bài nói thói quen/miêu tả.'
-          });
-        }
-      }
+      let grammarScore = baseGrammar;
+      let vocabScore = baseVocab;
+      let contentScore = baseContent;
+      let fluencyScore = baseFluency;
+      let pronunciationScore = Math.min(100, Math.max(65, 75 + acousticQualityBonus * 1.8));
 
-      // C. Bắt lỗi kế hoạch tương lai (tomorrow / plan)
-      if (lowerPrompt.includes('tomorrow') || lowerPrompt.includes('future') || lowerPrompt.includes('plan')) {
-        if (spokenWords.includes('wanted')) {
-          errorWordsList.push({
-            word: 'wanted',
-            correction: 'want to / plan to',
-            reason: 'Sai thì: Đang nói kế hoạch ngày mai, hãy dùng "want" thay vì quá khứ "wanted".'
-          });
-        }
-      }
-
-      // D. Bẫy cụm từ dùng sai ngữ cảnh
-      if (lowerTranscript.includes('often to buy')) {
-        errorWordsList.push({
-          word: 'often',
-          correction: 'offer',
-          reason: 'Dùng sai từ: "offer to buy" (đề nghị mua/đền bù) chứ không phải "often to buy".'
-        });
-      }
-
-      // 2. 🤖 GỌI GROQ LLM PHÂN TÍCH CHUYÊN SÂU NỘI DUNG & NGỮ PHÁP
+      // 4. 🤖 GỌI GROQ LLM CHUYÊN SÂU (KIỂM TRA TẤT CẢ CÁC THÌ & ĐIỂM NGỮ PHÁP CEFR)
       try {
         const groqLlmResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
           method: 'POST',
@@ -849,25 +771,38 @@ Return JSON ONLY:
           body: JSON.stringify({
             model: 'llama-3.1-8b-instant',
             temperature: 0.1,
-            max_tokens: 350,
+            max_tokens: 450,
             messages: [
               {
                 role: 'system',
-                content: `You are a strict CEFR speaking examiner evaluating a ${cefrLevel} student.
-Examine whether the student answered the PROMPT topic.
-CRITICAL RULE: If the student speaks off-topic (e.g. prompt asks about "online course" but student talks about "hometown / visiting parents"), you MUST assign content_score between 20-35.
+                content: `You are an expert Cambridge/IELTS speaking examiner evaluating a CEFR ${cefrLevel} student.
+Analyze the transcript comprehensively across ALL grammar tenses and structures:
+- Present Simple, Continuous, Perfect, Perfect Continuous
+- Past Simple, Continuous, Perfect, Perfect Continuous
+- Future tenses (will, be going to, future continuous, future perfect)
+- Conditionals (Zero, 1, 2, 3, Mixed), Passives, Relative clauses, Subject-Verb agreement, Prepositions.
+
+Rules:
+1. If the student uses grammar correctly (even advanced tenses or simple present with correct 3rd person like "she is", "she has", "she teaches"), reward with high grammar_score (85-98).
+2. If there are genuine errors (e.g. tense inconsistency, wrong verb form, missing auxiliary verb), identify them in detected_errors.
+3. If off-topic, set content_score between 20-35 and is_off_topic: true.
+4. If fluent with no errors, give 88-96 across all criteria.
+
 Return JSON ONLY:
 {
   "vocab_score": number,
   "grammar_score": number,
   "content_score": number,
   "is_off_topic": boolean,
-  "feedback_vi": "Nhận xét tiếng Việt cụ thể chỉ thẳng việc nói lạc đề và cách khắc phục"
+  "detected_errors": [
+    { "word": "error_word_or_phrase", "correction": "corrected_word_or_phrase", "reason": "Lý do bằng tiếng Việt giải thích rõ ngữ pháp và thì" }
+  ],
+  "feedback_vi": "Nhận xét sư phạm tiếng Việt ngắn gọn 1-2 câu, khen ngợi việc dùng đúng thì/cấu trúc hoặc chỉ rõ điểm ngữ pháp cần sửa"
 }`
               },
               {
                 role: 'user',
-                content: `Prompt: "${targetPrompt}"\nStudent spoken: "${transcript}"`
+                content: `Prompt Topic: "${targetPrompt || 'General speaking context'}"\nStudent spoken transcript: "${transcript}"`
               }
             ]
           })
@@ -880,49 +815,64 @@ Return JSON ONLY:
           if (jsonMatch) {
             const parsed = JSON.parse(jsonMatch[0]);
             if (typeof parsed.content_score === 'number') {
-              contentScore = parsed.is_off_topic ? Math.min(35, parsed.content_score) : parsed.content_score;
+              contentScore = parsed.is_off_topic ? Math.min(35, parsed.content_score) : Math.max(contentScore, parsed.content_score);
             }
-            if (typeof parsed.vocab_score === 'number') vocabScore = parsed.vocab_score;
-            if (typeof parsed.grammar_score === 'number') grammarScore = parsed.grammar_score;
-            if (parsed.feedback_vi && parsed.feedback_vi.length > 10) {
+            if (typeof parsed.vocab_score === 'number') vocabScore = Math.max(vocabScore - 4, parsed.vocab_score);
+            if (typeof parsed.grammar_score === 'number') grammarScore = Math.max(grammarScore - 4, parsed.grammar_score);
+            
+            // Hợp nhất lỗi ngữ pháp phát hiện từ LLM vào danh sách lỗi
+            if (Array.isArray(parsed.detected_errors) && parsed.detected_errors.length > 0) {
+              parsed.detected_errors.forEach((err: any) => {
+                if (err.word && !errorWordsList.some(e => e.word.toLowerCase() === err.word.toLowerCase())) {
+                  errorWordsList.push({
+                    word: err.word,
+                    correction: err.correction || '',
+                    reason: err.reason || 'Lỗi cấu trúc hoặc thì ngữ pháp.'
+                  });
+                }
+              });
+            }
+
+            if (parsed.feedback_vi && parsed.feedback_vi.length > 15) {
               dynamicFeedback = parsed.feedback_vi;
             }
           }
         }
       } catch (llmErr) {
-        console.warn("LLM API call bypassed:", llmErr);
+        console.warn("LLM API call bypassed, using dynamic fallback:", llmErr);
       }
 
-      // 3. TÍNH ĐIỂM TỔNG & PHẢN HỒI THỰC TẾ
-      const penalty = errorWordsList.length * 9;
+      // 5. TÍNH ĐIỂM TỔNG HỢP CÔNG BẰNG & THỰC CHẤT
+      const penalty = errorWordsList.length * 8;
       calculatedScore = Math.max(
-        25,
+        30,
         Math.min(
-          95,
+          98,
           Math.round(
-            (pronunciationScore * 0.2 +
-             acousticQualityBonus * 0.1 +
+            (pronunciationScore * 0.25 +
              vocabScore * 0.2 +
-             grammarScore * 0.2 +
+             grammarScore * 0.25 +
              contentScore * 0.2 +
              fluencyScore * 0.1) - penalty
           )
         )
       );
 
-      // Nếu lạc đề hoàn toàn, điểm tổng tối đa chỉ 55 điểm (trượt)
       if (isCompletelyOffTopic) {
         calculatedScore = Math.min(55, calculatedScore);
       }
 
+      // 6. NHẬN XÉT CỤ THỂ, TRÁNH RẬP KHUÔN
       if (!dynamicFeedback) {
         if (isCompletelyOffTopic) {
-          dynamicFeedback = `⚠️ Bài nói bị lạc đề! Đề bài yêu cầu miêu tả "khóa học trực tuyến (online course)" nhưng bạn lại nói về "quê hương (hometown)". Bạn cần nói về tên khóa học, môn học hoặc kỹ năng bạn đã học trên mạng.`;
+          dynamicFeedback = `⚠️ Bài nói bị lạc đề! Bạn cần chú ý đọc kỹ yêu cầu của chủ đề để trả lời đúng trọng tâm.`;
         } else if (errorWordsList.length > 0) {
           const firstErr = errorWordsList[0];
-          dynamicFeedback = `Bạn cần chú ý sửa từ "${firstErr.word}" ➔ "${firstErr.correction}". ${firstErr.reason}`;
+          dynamicFeedback = `Phát âm rõ ràng, tuy nhiên cần lưu ý sửa từ "${firstErr.word}" ➔ "${firstErr.correction}". ${firstErr.reason}`;
+        } else if (calculatedScore >= 85) {
+          dynamicFeedback = `🌟 Xuất sắc! Bạn diễn đạt rất tự nhiên, phát âm chuẩn xác, các cấu trúc ngữ pháp và thì được dùng rất chuẩn xác, câu cú gắn kết mạch lạc.`;
         } else {
-          dynamicFeedback = `Bài nói tự nhiên, tuy nhiên cần phát triển thêm chi tiết bám sát chủ đề để đạt điểm cao hơn.`;
+          dynamicFeedback = `👍 Bài nói mạch lạc và đúng trọng tâm. Hãy tiếp tục phát huy vốn từ vựng và ngữ pháp phong phú hơn nhé!`;
         }
       }
 
@@ -935,8 +885,8 @@ Return JSON ONLY:
           errorWords: errorWordsList,
           criteria: {
             pronunciation: pronunciationScore,
-            vocabulary: Math.max(35, vocabScore - Math.round(penalty * 0.5)),
-            grammar: Math.max(30, grammarScore - penalty),
+            vocabulary: vocabScore,
+            grammar: grammarScore,
             fluency: fluencyScore,
             content: contentScore
           }
