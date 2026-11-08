@@ -103,7 +103,7 @@ const SCENARIO_LIBRARY: Record<string, { title: string; context: string; prompt:
   ]
 };
 
-// 🎯 HÀM DÒ TÌM MIME TYPE THU ÂM CHUẨN XÁC THEO TỪNG HỆ ĐIỀU HÀNH (ANDROID, IOS, WINDOWS, MACOS)
+// 🎯 HÀM DÒ TÌM MIME TYPE THU ÂM CHUẨN XÁC THEO TỪNG HỆ ĐIỀU HÀNH
 const getSupportedAudioMimeType = (): { mimeType: string; extension: string } => {
   if (typeof window === 'undefined' || !(window as any).MediaRecorder) {
     return { mimeType: '', extension: 'webm' };
@@ -131,7 +131,6 @@ const getSupportedAudioMimeType = (): { mimeType: string; extension: string } =>
   return { mimeType: '', extension: 'webm' };
 };
 
-// Hàm sinh đề động thủ tục (Procedural Generator) khi offline hoặc không có API Key
 const createProceduralFallback = (tier: Station2Tier, level: CefrLevel, counter: number): ChallengeItem => {
   const key = `${tier}_${level}`;
   const list = SCENARIO_LIBRARY[key] || SCENARIO_LIBRARY['SOLO_B1'];
@@ -164,14 +163,14 @@ export default function Station2Screen({ onBack }: Props) {
   const [teacherAssignments, setTeacherAssignments] = useState<ChallengeItem[]>([]);
   const [loadingAssignments, setLoadingAssignments] = useState<boolean>(true);
 
-  // 🎯 QUẢN LÝ ĐỀ BÀI HIỆN TẠI
+  // Quản lý đề bài hiện tại
   const [currentChallenge, setCurrentChallenge] = useState<ChallengeItem>(() => {
     return createProceduralFallback('ROLEPLAY', 'B1', 0);
   });
   const [switchCount, setSwitchCount] = useState<number>(0);
   const [isGeneratingAiTopic, setIsGeneratingAiTopic] = useState<boolean>(false);
 
-  // Quản lý Text-To-Speech (Cloud Audio + Fallback Web Speech)
+  // Quản lý Text-To-Speech (Cloud Audio + Fallback)
   const [isPlayingSample, setIsPlayingSample] = useState<boolean>(false);
   const synthRef = useRef<SpeechSynthesis | null>(null);
   const cloudAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -291,6 +290,7 @@ export default function Station2Screen({ onBack }: Props) {
   // Thu âm & phòng thu đa nền tảng
   const [isNormalPracticing, setIsNormalPracticing] = useState<boolean>(false);
   const [isRecordingNormal, setIsRecordingNormal] = useState<boolean>(false);
+  const [isEvaluating, setIsEvaluating] = useState<boolean>(false);
   const [normalTimer, setNormalTimer] = useState<number>(0);
   const normalMediaRecorderRef = useRef<any>(null);
   const normalAudioChunksRef = useRef<any[]>([]);
@@ -298,6 +298,11 @@ export default function Station2Screen({ onBack }: Props) {
   const normalAnimFrameRef = useRef<any>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const activeMimeTypeRef = useRef<{ mimeType: string; extension: string }>({ mimeType: '', extension: 'webm' });
+
+  // 🎙️ Phụ đề nhận diện giọng nói thực tế thời gian thực (Live STT)
+  const [liveTranscript, setLiveTranscript] = useState<string>('');
+  const liveTranscriptRef = useRef<string>('');
+  const speechRecognitionRef = useRef<any>(null);
 
   const [recordedAudioUrl, setRecordedAudioUrl] = useState<string | null>(null);
   const [isTeacherExamining, setIsTeacherExamining] = useState<boolean>(false);
@@ -347,7 +352,6 @@ export default function Station2Screen({ onBack }: Props) {
     return () => stopSampleAudio();
   }, []);
 
-  // Tự động cập nhật đề khi thay đổi Tầng hoặc Cấp độ
   useEffect(() => {
     if (topicOrigin === 'TEACHER_DASHBOARD') {
       const filtered = teacherAssignments.filter(t => t.tier === selectedTier && t.level === selectedLevel);
@@ -361,7 +365,6 @@ export default function Station2Screen({ onBack }: Props) {
     setSwitchCount(0);
   }, [selectedTier, selectedLevel, topicOrigin]);
 
-  // 🤖 HÀM GỌI GROQ AI SINH ĐỀ VỚI SEED THỜI GIAN THẬT
   const generateNewAiChallenge = async (): Promise<ChallengeItem | null> => {
     try {
       const apiKey = process.env.EXPO_PUBLIC_GROQ_API_KEY;
@@ -418,7 +421,6 @@ Output ONLY a raw JSON object (no markdown, no backticks):
     }
   };
 
-  // 🎲 NÚT ĐỔI CHỦ ĐỀ
   const handleNextTopic = async () => {
     stopSampleAudio();
     setIsGeneratingAiTopic(true);
@@ -476,13 +478,15 @@ Output ONLY a raw JSON object (no markdown, no backticks):
     }
   };
 
-  // 🎙️ Thu âm đa nền tảng
+  // 🎙️ Thu âm đa nền tảng kết hợp Live Speech-to-Text
   const startNormalRecording = async () => {
     stopSampleAudio();
     try {
       normalAudioChunksRef.current = [];
       normalPitchHistoryRef.current = [];
       setNormalTimer(0);
+      setLiveTranscript('');
+      liveTranscriptRef.current = '';
 
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       
@@ -499,6 +503,31 @@ Output ONLY a raw JSON object (no markdown, no backticks):
 
       mediaRecorder.start(100);
       setIsRecordingNormal(true);
+
+      // Kích hoạt Live Speech Recognition trực tiếp trên trình duyệt
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        try {
+          const recognition = new SpeechRecognition();
+          recognition.continuous = true;
+          recognition.interimResults = true;
+          recognition.lang = 'en-US';
+          recognition.onresult = (event: any) => {
+            let live = '';
+            for (let i = 0; i < event.results.length; i++) {
+              live += event.results[i][0].transcript + ' ';
+            }
+            const cleanLive = live.trim();
+            liveTranscriptRef.current = cleanLive;
+            setLiveTranscript(cleanLive);
+          };
+          recognition.onerror = () => {};
+          recognition.start();
+          speechRecognitionRef.current = recognition;
+        } catch (e) {
+          console.warn("Không thể kích hoạt Web SpeechRecognition:", e);
+        }
+      }
 
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
       const audioCtx = new AudioCtx();
@@ -568,6 +597,11 @@ Output ONLY a raw JSON object (no markdown, no backticks):
   };
 
   const stopNormalRecording = () => {
+    if (speechRecognitionRef.current) {
+      try { speechRecognitionRef.current.stop(); } catch (e) {}
+      speechRecognitionRef.current = null;
+    }
+
     if (normalAnimFrameRef.current) cancelAnimationFrame(normalAnimFrameRef.current);
     if (normalMediaRecorderRef.current && normalMediaRecorderRef.current.state !== 'inactive') {
       normalMediaRecorderRef.current.stop();
@@ -590,21 +624,77 @@ Output ONLY a raw JSON object (no markdown, no backticks):
     return () => { if (timer) clearInterval(timer); };
   }, [isRecordingNormal]);
 
-  // ⭐️ ĐÃ SỬA: Giữ nguyên phòng thu (`isNormalPracticing`) để người dùng nghe lại và xem lại kết quả
+  // ⭐️ BỘ CHẤM ĐIỂM CHÍNH XÁC: Nhận diện giọng nói thực tế + Phân tách tiêu chí READ_SAMPLE vs FREE_SPEECH
   const finishSubmissionAndEvaluate = async (audioBlob: Blob, pitchHistory: number[], localAudioUrl?: string) => {
+    setIsEvaluating(true);
     if (localAudioUrl) {
       setRecordedAudioUrl(localAudioUrl);
     } else {
       setRecordedAudioUrl(URL.createObjectURL(audioBlob));
     }
 
-    const evaluated = evaluateSpeechSubmission({
-      transcript: currentChallenge?.prompt || '',
-      targetPrompt: currentChallenge?.prompt || '',
-      pitchHistory,
-      durationSeconds: Math.max(normalTimer, 6),
-      cefrLevel: currentChallenge?.level || selectedLevel
-    });
+    let actualTranscript = liveTranscriptRef.current.trim();
+
+    // 1. Dùng Groq Whisper STT tăng cường nếu có API Key
+    if (process.env.EXPO_PUBLIC_GROQ_API_KEY && (!actualTranscript || actualTranscript.length < 5)) {
+      try {
+        const formData = new FormData();
+        const ext = activeMimeTypeRef.current.extension || 'webm';
+        formData.append('file', audioBlob, `speech.${ext}`);
+        formData.append('model', 'whisper-large-v3-turbo');
+        formData.append('language', 'en');
+
+        const whisperRes = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${process.env.EXPO_PUBLIC_GROQ_API_KEY}`,
+          },
+          body: formData,
+        });
+
+        if (whisperRes.ok) {
+          const whisperData = await whisperRes.json();
+          if (whisperData.text && whisperData.text.trim()) {
+            actualTranscript = whisperData.text.trim();
+            setLiveTranscript(actualTranscript);
+          }
+        }
+      } catch (err) {
+        console.warn("Whisper STT fallback error:", err);
+      }
+    }
+
+    // 2. Phân tách tiêu chí chấm điểm
+    let evaluated: any;
+    const duration = Math.max(normalTimer, 2);
+
+    if (practiceMode === 'READ_SAMPLE') {
+      // Chế độ 1: Đọc theo mẫu chuẩn -> Đo lường độ chính xác phát âm & nối âm so với câu mẫu
+      evaluated = evaluateSpeechSubmission({
+        transcript: actualTranscript, // Câu thực tế học viên phát âm (im lặng = rỗng -> trừ điểm chính xác)
+        targetPrompt: currentChallenge?.prompt || '',
+        pitchHistory,
+        durationSeconds: duration,
+        cefrLevel: currentChallenge?.level || selectedLevel
+      });
+    } else {
+      // Chế độ 2: Tự do phản xạ -> Không ép từ ngữ phải giống hệt câu mẫu!
+      // Đánh giá phát âm, độ mượt của chính câu học viên tự nói
+      evaluated = evaluateSpeechSubmission({
+        transcript: actualTranscript,
+        targetPrompt: actualTranscript || currentChallenge?.prompt || '',
+        pitchHistory,
+        durationSeconds: duration,
+        cefrLevel: currentChallenge?.level || selectedLevel
+      });
+
+      // Nếu học viên phản xạ được câu dài và hợp lý, thưởng điểm Spontaneity & Content
+      if (actualTranscript.split(' ').length >= 4) {
+        evaluated.spontaneityScore = Math.min(100, Math.max(evaluated.spontaneityScore, 85));
+        evaluated.rubrics.content.score = Math.min(100, Math.max(evaluated.rubrics.content.score, 88));
+        evaluated.totalScore = Math.round((evaluated.totalScore + evaluated.spontaneityScore) / 2);
+      }
+    }
 
     let audioUrl = '';
     try {
@@ -626,7 +716,7 @@ Output ONLY a raw JSON object (no markdown, no backticks):
         await supabase.from('submissions').insert([{
           student_name: authUser?.user?.user_metadata?.full_name || 'Học viên Trạm 2',
           student_code: authUser?.user?.email?.split('@')[0] || 'STU_S2',
-          class_name: `Trạm 2: ${selectedTier} (${selectedLevel}) [${practiceMode === 'READ_SAMPLE' ? 'Đọc mẫu' : 'Tự nói'}]`,
+          class_name: `Trạm 2: ${selectedTier} (${selectedLevel}) [${practiceMode === 'READ_SAMPLE' ? 'Đọc mẫu' : 'Tự do'}]`,
           mode: `STATION_2_${selectedTier}`,
           cefr_level: currentChallenge?.level || selectedLevel,
           score: evaluated.totalScore,
@@ -635,7 +725,7 @@ Output ONLY a raw JSON object (no markdown, no backticks):
           pitch_variance: evaluated.rubrics.intonation.score,
           is_script_suspected: evaluated.isScriptSuspected,
           audio_url: audioUrl,
-          transcript: currentChallenge?.prompt || '',
+          transcript: actualTranscript || '(Học viên không phát âm)',
           feedback: `[Phát âm: ${evaluated.rubrics.pronunciation.score} | Ngữ điệu: ${evaluated.rubrics.intonation.score} | Trôi chảy: ${evaluated.rubrics.fluency.score}]`
         }]);
       }
@@ -643,9 +733,9 @@ Output ONLY a raw JSON object (no markdown, no backticks):
       console.warn("Lỗi lưu kết quả bài nộp:", err);
     }
 
+    setIsEvaluating(false);
     setFeedbackResult(evaluated);
     setIsTeacherExamining(false);
-    // ⭐️ KHÔNG gọi setIsNormalPracticing(false) để phòng thu luôn mở kèm thanh nghe lại
     setDetailedModalVisible(true);
   };
 
@@ -962,6 +1052,18 @@ Output ONLY a raw JSON object (no markdown, no backticks):
               />
             </View>
 
+            {/* 🎙️ PHỤ ĐỀ NHẬN DIỆN GIỌNG NÓI TRỰC TIẾP (LIVE SUBTITLE) */}
+            {(isRecordingNormal || liveTranscript) && (
+              <View style={styles.liveSubtitleBox}>
+                <Text style={styles.liveSubtitleLabel}>
+                  {isRecordingNormal ? '🎙️ Đang nghe giọng nói của bạn:' : '📝 Văn bản bạn vừa nói:'}
+                </Text>
+                <Text style={styles.liveSubtitleText}>
+                  {liveTranscript || '... (hãy nói vào micro tiếng Anh)'}
+                </Text>
+              </View>
+            )}
+
             {/* 🎧 THANH NGHE LẠI BẢN THU TRONG PHÒNG THU */}
             {recordedAudioUrl && !isRecordingNormal && (
               <View style={styles.audioReviewBox}>
@@ -984,7 +1086,12 @@ Output ONLY a raw JSON object (no markdown, no backticks):
               </View>
             )}
 
-            {!isRecordingNormal ? (
+            {isEvaluating ? (
+              <View style={styles.evaluatingBox}>
+                <ActivityIndicator size="small" color="#00FFFF" />
+                <Text style={styles.evaluatingText}>⚡ AI ĐANG PHÂN TÍCH PHÁT ÂM & CHẤM ĐIỂM CHI TIẾT...</Text>
+              </View>
+            ) : !isRecordingNormal ? (
               <View style={{ flexDirection: 'row', gap: 10 }}>
                 <TouchableOpacity 
                   style={[styles.startRecordBtn, recordedAudioUrl ? { flex: 1 } : { width: '100%' }]} 
@@ -1140,8 +1247,16 @@ const styles = StyleSheet.create({
   promptDisplayBox: { backgroundColor: '#130628', padding: 14, borderRadius: 10, borderWidth: 1, borderColor: '#332255', marginBottom: 12 },
   promptModeNotice: { color: '#00FFFF', fontSize: 9.5, fontWeight: 'bold' },
   promptDisplayText: { color: '#FFFFFF', fontSize: 13, lineHeight: 20, fontWeight: 'bold' },
-  liveWaveformBox: { marginBottom: 14 },
+  liveWaveformBox: { marginBottom: 10 },
   liveWaveformLabel: { color: '#39FF14', fontSize: 9.5, fontWeight: 'bold', marginBottom: 6 },
+
+  liveSubtitleBox: { backgroundColor: '#0D0A24', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#5533AA', marginBottom: 12 },
+  liveSubtitleLabel: { color: '#FFD700', fontSize: 9, fontWeight: 'bold', marginBottom: 4 },
+  liveSubtitleText: { color: '#00FFFF', fontSize: 12, fontStyle: 'italic', lineHeight: 18 },
+
+  evaluatingBox: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingVertical: 14, backgroundColor: '#0D0620', borderRadius: 10, borderWidth: 1, borderColor: '#00FFFF', marginVertical: 6 },
+  evaluatingText: { color: '#00FFFF', fontSize: 10, fontWeight: 'bold' },
+
   startRecordBtn: { backgroundColor: '#FF0055', paddingVertical: 12, borderRadius: 10, alignItems: 'center' },
   startRecordBtnText: { color: '#FFF', fontSize: 11.5, fontWeight: '900' },
   reopenModalBtn: { flex: 1, backgroundColor: '#0D0620', borderWidth: 1.5, borderColor: '#00FFFF', paddingVertical: 12, borderRadius: 10, alignItems: 'center' },
