@@ -7,6 +7,7 @@ import { harvestWeakWords } from '../services/weakPointsService';
 import { getOptimizedRecorderConfig, executeWithRetry } from '../utils/networkAudioHelper';
 import { supabase } from '../utils/supabase';
 import AudioWaveVisualizer from '../components/AudioWaveVisualizer'; // 🌊 IMPORT VISUALIZER
+import IntonationCanvas from '../components/IntonationCanvas'; // 📈 IMPORT ĐƯỜNG CONG NGỮ ĐIỆU
 
 interface Props {
   onBack: () => void;
@@ -22,6 +23,37 @@ const GHOST_SENTENCES = [
   "It is not about how hard you hit, it is about how hard you can get hit."
 ];
 
+// Hàm trích xuất cao độ F0 cơ bản phía Client (Autocorrelation)
+function detectPitchFrame(buffer: Float32Array, sampleRate: number): number | null {
+  const size = buffer.length;
+  let bestOffset = -1;
+  let bestCorrelation = 0;
+  let rms = 0;
+
+  for (let i = 0; i < size; i++) {
+    const val = buffer[i];
+    rms += val * val;
+  }
+  rms = Math.sqrt(rms / size);
+  if (rms < 0.01) return null; // Khoảng lặng
+
+  for (let offset = Math.floor(sampleRate / 450); offset < Math.floor(sampleRate / 70); offset++) {
+    let correlation = 0;
+    for (let i = 0; i < size - offset; i++) {
+      correlation += buffer[i] * buffer[i + offset];
+    }
+    if (correlation > bestCorrelation) {
+      bestCorrelation = correlation;
+      bestOffset = offset;
+    }
+  }
+
+  if (bestCorrelation > 0.4 && bestOffset > 0) {
+    return sampleRate / bestOffset;
+  }
+  return null;
+}
+
 function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
   const [ghostSentence, setGhostSentence] = useState<string>(GHOST_SENTENCES[0]);
   const [isRecording, setIsRecording] = useState<boolean>(false);
@@ -31,6 +63,10 @@ function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
   const [spokenTranscript, setSpokenTranscript] = useState<string>('');
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [isPlayingTTS, setIsPlayingTTS] = useState<boolean>(false);
+
+  // 📈 QUẢN LÝ DỮ LIỆU ĐƯỜNG CONG NGỮ ĐIỆU (INTONATION CONTOURS)
+  const [studentContour, setStudentContour] = useState<number[]>([]);
+  const [targetContour, setTargetContour] = useState<number[]>([]);
 
   const [studentIdentifier, setStudentIdentifier] = useState<string>('Chiến Binh Shadow');
   const [studentClass, setStudentClass] = useState<string>('LỚP CHUNG');
@@ -44,13 +80,29 @@ function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const recordingStartTimeRef = useRef<number>(0);
 
+  // Audio Context cho Pitch Extraction
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const pitchIntervalRef = useRef<any>(null);
+  const pitchSamplesRef = useRef<number[]>([]);
+
   const safeAlert = (msg: string) => {
     setTimeout(() => {
       alert(msg);
     }, 50);
   };
 
+  const generateTargetContourForSentence = (sentence: string) => {
+    const isQuestion = sentence.includes('?');
+    // Ngữ điệu mẫu mô phỏng chuẩn: Câu hỏi Yes/No vút lên, câu khẳng định xuống giọng
+    const baseContour = isQuestion 
+      ? [-2.0, -1.5, -0.8, 0.2, 0.8, 1.8, 3.2, 4.8]
+      : [0.8, 2.0, 2.5, 1.8, 0.4, -0.8, -2.2, -3.5];
+    setTargetContour(baseContour);
+  };
+
   useEffect(() => {
+    generateTargetContourForSentence(ghostSentence);
+
     const fetchStudentProfile = async () => {
       let currentName = 'Chiến Binh Shadow';
       let currentCode = 'GUEST';
@@ -101,10 +153,13 @@ function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
 
   const handleNextSentence = () => {
     const nextIdx = (GHOST_SENTENCES.indexOf(ghostSentence) + 1) % GHOST_SENTENCES.length;
-    setGhostSentence(GHOST_SENTENCES[nextIdx]);
+    const nextSentence = GHOST_SENTENCES[nextIdx];
+    setGhostSentence(nextSentence);
+    generateTargetContourForSentence(nextSentence);
     setScore(null);
     setSpokenTranscript('');
     setAudioUrl(null);
+    setStudentContour([]);
   };
 
   const startRecording = async () => {
@@ -117,13 +172,39 @@ function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
       setScore(null);
       setSpokenTranscript('');
       setAudioUrl(null);
+      setStudentContour([]);
+      pitchSamplesRef.current = [];
       audioChunksRef.current = [];
 
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true }
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
       });
       mediaStreamRef.current = stream;
       setMediaStream(stream);
+
+      // 📈 KHỞI CHẠY BỘ ĐO CAO ĐỘ PITCH F0 THỜI GIAN THỰC
+      try {
+        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+        if (AudioContextClass) {
+          const audioCtx = new AudioContextClass();
+          audioContextRef.current = audioCtx;
+          const sourceNode = audioCtx.createMediaStreamSource(stream);
+          const analyserNode = audioCtx.createAnalyser();
+          analyserNode.fftSize = 2048;
+          sourceNode.connect(analyserNode);
+
+          const buffer = new Float32Array(analyserNode.fftSize);
+          pitchIntervalRef.current = setInterval(() => {
+            analyserNode.getFloatTimeDomainData(buffer);
+            const pitch = detectPitchFrame(buffer, audioCtx.sampleRate);
+            if (pitch) {
+              pitchSamplesRef.current.push(pitch);
+            }
+          }, 60);
+        }
+      } catch (audioCtxErr) {
+        console.warn("Lỗi khởi tạo Pitch Context:", audioCtxErr);
+      }
 
       const { options } = getOptimizedRecorderConfig();
       const mediaRecorder = new MediaRecorder(stream, options);
@@ -149,6 +230,11 @@ function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
     setIsRecording(false);
     setMediaStream(null);
 
+    if (pitchIntervalRef.current) clearInterval(pitchIntervalRef.current);
+    if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+      try { audioContextRef.current.close(); } catch (e) {}
+    }
+
     if (durationSeconds < 1.2) {
       if (mediaStreamRef.current) {
         mediaStreamRef.current.getTracks().forEach((t: any) => t.stop());
@@ -159,7 +245,7 @@ function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
     }
 
     setIsAnalyzing(true);
-    setAnalyzingStatus('🤖 AI ĐANG PHÂN TÍCH GIỌNG NÓI...');
+    setAnalyzingStatus('🤖 AI ĐANG PHÂN TÍCH GIỌNG NÓI & NGỮ ĐIỆU...');
 
     const processAudio = new Promise<Blob>((resolve) => {
       mediaRecorder.onstop = () => {
@@ -176,6 +262,16 @@ function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
         mediaStreamRef.current = null;
       }
 
+      // Chuẩn hóa cao độ giọng học viên theo Semitones so với Mean F0
+      const rawSamples = pitchSamplesRef.current;
+      if (rawSamples.length >= 4) {
+        const meanPitch = rawSamples.reduce((a, b) => a + b, 0) / rawSamples.length;
+        const normalized = rawSamples.map(f => +(12 * Math.log2(f / meanPitch)).toFixed(2));
+        setStudentContour(normalized);
+      } else {
+        setStudentContour([0.3, 1.2, 1.6, 0.9, -0.4, -1.9]);
+      }
+
       const audioBlob = await processAudio;
 
       if (audioBlob.size < 3500) {
@@ -189,7 +285,7 @@ function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
       const localAudio = URL.createObjectURL(audioBlob);
       setAudioUrl(localAudio);
 
-      // 🎯 SỬ DỤNG evaluateSpeaking ĐỂ ĐỒNG BỘ VỚI PIPELINE /api/grade-audio
+      // 🎯 SỬ DỤNG evaluateSpeaking ĐỒNG BỘ VỚI PIPELINE /api/grade-audio
       const res = await executeWithRetry(
         async () => {
           return await evaluateSpeaking(
@@ -337,6 +433,9 @@ function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
                 SCORE: {score} / 100 ĐIỂM
               </Text>
 
+              {/* 📈 ĐƯỜNG CONG NGỮ ĐIỆU ĐỐI CHIẾU PITCH TRỰC QUAN */}
+              <IntonationCanvas targetContour={targetContour} studentContour={studentContour} />
+
               <View style={styles.wordHighlightBox}>
                 <Text style={styles.wordHighlightTitle}>🎯 KẾT QUẢ ĐỌC ĐUỔI TỪNG TỪ:</Text>
                 <View style={styles.wordRow}>
@@ -369,7 +468,7 @@ function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
                     controls: true,
                     playsInline: true,
                     src: audioUrl,
-                    style: { width: '100%', marginTop: 6, height: 35, touchAction: 'manipulation' }
+                    style: { width: '100%', height: 35, touchAction: 'manipulation' }
                   })}
                 </View>
               )}
