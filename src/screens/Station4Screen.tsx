@@ -1,708 +1,161 @@
 // src/screens/Station4Screen.tsx
-import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
-import { evaluateSpeaking, AssessmentResult } from '../services/arena/assessmentService';
-import { 
-  getInstantStation4Exercise, 
-  generateStation4Exercise, 
-  clearStation4History,
-  SpeakingExpressExercise 
-} from '../services/arena/station4Service';
-import { updateUserProgress, saveSubmissionToCloud } from '../services/userService';
-import { harvestWeakWords, saveWeakPoint } from '../services/weakPointsService';
-import { getOptimizedRecorderConfig, executeWithRetry } from '../utils/networkAudioHelper';
-import { supabase } from '../utils/supabase'; // 💡 IMPORT TRỰC TIẾP TỪ UTILS
-import AudioWaveVisualizer from '../components/AudioWaveVisualizer'; // 🌊 IMPORT SÓNG ÂM THỜI GIAN THỰC
-import WeakPointsScreen from './WeakPointsScreen';
+import React, { useState } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
+import AntiCheatSpeakingSession from '../components/AntiCheatSpeakingSession';
+import { analyzeSpeechSpontaneity } from '../utils/spontaneityDetector';
+import { supabase } from '../utils/supabase';
 
 interface Props {
   onBack: () => void;
 }
 
-export default function Station4Screen({ onBack }: Props) {
-  const [cefrLevel, setCefrLevel] = useState<string>('B2');
-  const [loading, setLoading] = useState<boolean>(false);
-  const [isPlayingTTS, setIsPlayingTTS] = useState<boolean>(false);
-  const [showWeakPoints, setShowWeakPoints] = useState<boolean>(false);
-
-  // THÔNG TIN HỌC VIÊN ĐỒNG BỘ VỚI HỆ THỐNG
-  const [studentIdentifier, setStudentIdentifier] = useState<string>('Chiến Binh Express');
-  const [studentClass, setStudentClass] = useState<string>('LỚP CHUNG');
-
-  const [exercise, setExercise] = useState<SpeakingExpressExercise | null>(null);
-  const [battleState, setBattleState] = useState<'idle' | 'battling' | 'analyzing' | 'ended'>('idle');
-  const [analyzingStatusText, setAnalyzingStatusText] = useState<string>('⚡ AI ĐANG BÓC TÁCH GIỌNG NÓI & PHÂN TÍCH PHẢN ỨNG...');
-  
-  const [isRecording, setIsRecording] = useState<boolean>(false);
-  const [recordedAudio, setRecordedAudio] = useState<Blob | null>(null);
-  const [hasRecorded, setHasRecorded] = useState<boolean>(false);
-  const [recordedAudioUrl, setRecordedAudioUrl] = useState<string | null>(null);
-
-  // Quản lý luồng âm thanh thời gian thực cho Visualizer
-  const [activeStream, setActiveStream] = useState<MediaStream | null>(null);
-
-  // Tính toán chỉ số WPM (Tốc độ trôi chảy)
-  const [speakingDurationSeconds, setSpeakingDurationSeconds] = useState<number>(0);
-  const recordingStartTimeRef = useRef<number>(0);
-
-  // Lưu lời thoại nhận diện thực tế
-  const [capturedText, setCapturedText] = useState<string>('');
-
-  const [result, setResult] = useState<AssessmentResult | null>(null);
-  const [userId, setUserId] = useState<string | undefined>(undefined);
-
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
-  const currentAudioRef = useRef<HTMLAudioElement | null>(null);
-  const mediaStreamRef = useRef<MediaStream | null>(null);
-  const requestIdRef = useRef<number>(0);
-  const recognitionRef = useRef<any>(null);
-
-  const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
-
-  // 🛡️ HÀM BÁO LỖI AN TOÀN TRÁNH NGHỄN TOUCH RESPONDER TRÊN WEB
-  const safeAlert = (msg: string) => {
-    setTimeout(() => {
-      alert(msg);
-    }, 50);
-  };
-
-  // 🎯 1. TỰ ĐỘNG LẤY USER ID VÀ THÔNG TIN HỌC VIÊN TỪ LOCALSTORAGE / SUPABASE
-  useEffect(() => {
-    const fetchUserProfile = async () => {
-      let currentName = 'Chiến Binh Express';
-      let currentCode = 'GUEST';
-      let currentClass = 'LỚP CHUNG';
-
-      if (typeof window !== 'undefined' && window.localStorage) {
-        const savedName = localStorage.getItem('vibe_student_name');
-        const savedCode = localStorage.getItem('vibe_student_code');
-        const savedClass = localStorage.getItem('vibe_student_class');
-
-        if (savedName) currentName = savedName;
-        if (savedCode) currentCode = savedCode;
-        if (savedClass) currentClass = savedClass;
-      }
-
-      try {
-        if (supabase && supabase.auth) {
-          const { data } = await supabase.auth.getUser();
-          if (data?.user) {
-            setUserId(data.user.id);
-            if (data.user.user_metadata?.full_name && currentName === 'Chiến Binh Express') {
-              currentName = data.user.user_metadata.full_name;
-            }
-          }
-        }
-      } catch (e) {
-        console.warn("Không lấy được user ID:", e);
-      }
-
-      setStudentIdentifier(`${currentName} (${currentCode ? `MSSV: ${currentCode}` : 'GUEST'})`);
-      setStudentClass(currentClass);
-    };
-
-    fetchUserProfile();
-  }, []);
-
-  const getResultHeader = (score: number) => {
-    if (score >= 85) return { title: '🏆 PHẢN HỒI XUẤT SẮC!', color: '#39FF14' };
-    if (score >= 70) return { title: '👍 PHẢN HỒI ĐẠT YÊU CẦU (KHÁ)', color: '#00FFFF' };
-    if (score >= 50) return { title: '⚠️ PHẢN HỒI TRUNG BÌNH (CẦN CẢI THIỆN)', color: '#FFD700' };
-    return { title: '💀 PHẢN HỒI CHƯA ĐẠT', color: '#FF0055' };
-  };
-
-  const stopAllAudio = () => {
-    if (currentAudioRef.current) {
-      currentAudioRef.current.pause();
-      currentAudioRef.current.currentTime = 0;
-      currentAudioRef.current = null;
-    }
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-    }
-    setIsPlayingTTS(false);
-  };
-
-  const playPromptTTS = (textToSpeak: string) => {
-    if (!textToSpeak) return;
-    stopAllAudio();
-
-    try {
-      setIsPlayingTTS(true);
-      const encodedText = encodeURIComponent(textToSpeak);
-      const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodedText}&tl=en&client=tw-ob`;
-
-      const audio = new Audio(ttsUrl);
-      currentAudioRef.current = audio;
-      
-      audio.onplay = () => setIsPlayingTTS(true);
-      audio.onended = () => setIsPlayingTTS(false);
-      audio.onerror = () => fallbackBrowserTTS(textToSpeak);
-
-      audio.play().catch(() => fallbackBrowserTTS(textToSpeak));
-    } catch (err) {
-      fallbackBrowserTTS(textToSpeak);
-    }
-  };
-
-  const fallbackBrowserTTS = (textToSpeak: string) => {
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-      
-      const utterance = new SpeechSynthesisUtterance(textToSpeak);
-      utterance.lang = 'en-US';
-      utterance.rate = 0.9;
-      utterance.pitch = 1.0;
-
-      utterance.onstart = () => setIsPlayingTTS(true);
-      utterance.onend = () => setIsPlayingTTS(false);
-      utterance.onerror = () => setIsPlayingTTS(false);
-
-      window.speechSynthesis.speak(utterance);
-    }
-  };
-
-  const resetState = () => {
-    stopAllAudio();
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-      try { mediaRecorderRef.current.stop(); } catch (e) {}
-    }
-    if (recognitionRef.current) {
-      try { 
-        recognitionRef.current.abort(); 
-        recognitionRef.current = null;
-      } catch (e) {}
-    }
-    if (mediaStreamRef.current) {
-      mediaStreamRef.current.getTracks().forEach(t => t.stop());
-      mediaStreamRef.current = null;
-    }
-    setActiveStream(null);
-    setBattleState('idle');
-    setIsRecording(false);
-    setRecordedAudio(null);
-    setHasRecorded(false);
-    setRecordedAudioUrl(null);
-    setCapturedText('');
-    setResult(null);
-    audioChunksRef.current = [];
-  };
-
-  const loadExerciseData = async (level: string) => {
-    const currentRequestId = ++requestIdRef.current;
-    stopAllAudio();
-    resetState();
-
-    try {
-      const instantData = getInstantStation4Exercise(level);
-      if (instantData) {
-        setExercise(instantData);
-      }
-    } catch (err) {
-      console.warn("Lỗi nạp Flash Data Trạm 4:", err);
-    }
-
-    setLoading(true);
-    try {
-      const aiData = await generateStation4Exercise(level);
-      if (currentRequestId === requestIdRef.current && aiData && aiData.promptEn) {
-        setExercise(aiData);
-      }
-    } catch (err) {
-      console.warn("Dùng Flash Data cho Trạm 4:", err);
-    } finally {
-      if (currentRequestId === requestIdRef.current) {
-        setLoading(false);
-      }
-    }
-  };
-
-  const handleLevelChange = (newLevel: string) => {
-    if (newLevel === cefrLevel) return;
-    clearStation4History();
-    setCefrLevel(newLevel);
-  };
-
-  useEffect(() => {
-    loadExerciseData(cefrLevel);
-    return () => {
-      stopAllAudio();
-    };
-  }, [cefrLevel]);
-
-  const handleToggleRecord = async () => {
-    stopAllAudio();
-
-    if (!isRecording) {
-      try {
-        if (typeof navigator === 'undefined' || !navigator.mediaDevices) {
-          safeAlert("🔒 Trình duyệt chưa cấp quyền Micro!");
-          return;
-        }
-
-        setRecordedAudio(null);
-        setHasRecorded(false);
-        setRecordedAudioUrl(null);
-        setCapturedText('');
-        audioChunksRef.current = [];
-
-        if (recognitionRef.current) {
-          try { 
-            recognitionRef.current.abort(); 
-            recognitionRef.current = null;
-          } catch (e) {}
-        }
-
-        const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-        if (SpeechRecognition) {
-          try {
-            const recognition = new SpeechRecognition();
-            recognition.continuous = true;
-            recognition.interimResults = true;
-            recognition.lang = 'en-US';
-
-            recognition.onresult = (event: any) => {
-              let current = '';
-              for (let i = 0; i < event.results.length; ++i) {
-                current += event.results[i][0].transcript + ' ';
-              }
-              if (current.trim()) setCapturedText(current.trim());
-            };
-
-            recognition.start();
-            recognitionRef.current = recognition;
-          } catch (e) {
-            console.warn("SpeechRecognition Android Bypass:", e);
-          }
-        }
-
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true,
-          }
-        });
-        mediaStreamRef.current = stream;
-        setActiveStream(stream);
-
-        const { options } = getOptimizedRecorderConfig();
-        const recorder = new MediaRecorder(stream, options);
-        mediaRecorderRef.current = recorder;
-
-        recorder.ondataavailable = (e) => {
-          if (e.data && e.data.size > 0) {
-            audioChunksRef.current.push(e.data);
-          }
-        };
-
-        recorder.onstop = () => {
-          const mimeUsed = recorder.mimeType || 'audio/webm';
-          const blob = new Blob(audioChunksRef.current, { type: mimeUsed });
-
-          setRecordedAudio(blob);
-          setHasRecorded(true);
-
-          if (mediaStreamRef.current) {
-            mediaStreamRef.current.getTracks().forEach(t => t.stop());
-            mediaStreamRef.current = null;
-          }
-          setActiveStream(null);
-        };
-
-        recordingStartTimeRef.current = Date.now();
-        recorder.start(100);
-        setIsRecording(true);
-        setBattleState('battling');
-      } catch (err) {
-        safeAlert("🔒 Vui lòng kiểm tra biểu tượng 🔒 trên thanh địa chỉ trình duyệt và cho phép 'Microphone'!");
-      }
-    } else {
-      setIsRecording(false);
-      const durationSec = Math.max(1, Math.round((Date.now() - recordingStartTimeRef.current) / 1000));
-      setSpeakingDurationSeconds(durationSec);
-      setActiveStream(null);
-
-      if (recognitionRef.current) {
-        try { recognitionRef.current.stop(); } catch (e) {}
-      }
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-        mediaRecorderRef.current.stop();
-      }
-
-      // 🛡️ CHẶN BẤM TẮT DƯỚI 1.5 GIÂY
-      if (durationSec < 1.5) {
-        setHasRecorded(false);
-        setRecordedAudio(null);
-        safeAlert("⚠️ Bạn vừa bấm tắt quá nhanh (dưới 1.5 giây)! Vui lòng nói to rõ câu trả lời rồi mới bấm dừng.");
-      }
-    }
-  };
-
-  const handleSubmitAnswer = async () => {
-    if (!hasRecorded || !recordedAudio) {
-      safeAlert("🔒 Vui lòng ghi âm phản hồi của bạn trước khi nộp bài!");
-      return;
-    }
-
-    // 🛡️ CHẶN FILE RỖNG / KHÔNG NÓI GÌ
-    if (recordedAudio.size < 3000 && !capturedText.trim()) {
-      safeAlert("❌ Micro không thu được âm thanh! Vui lòng bấm thu âm lại và nói to, rõ ràng hơn.");
-      return;
-    }
-
-    if (isRecording) setIsRecording(false);
-
-    let audioBlobForUpload = recordedAudio;
-    let localUrl = '';
-    if (typeof window !== 'undefined' && window.URL) {
-      localUrl = URL.createObjectURL(recordedAudio);
-      setRecordedAudioUrl(localUrl);
-    }
-
-    setBattleState('analyzing');
-    setAnalyzingStatusText('⚡ AI ĐANG BÓC TÁCH GIỌNG NÓI & PHÂN TÍCH PHẢN ỨNG...');
-
-    try {
-      const targetPrompt = (exercise?.promptEn || 'General speaking challenge').trim();
-      
-      const evalData = await executeWithRetry(
-        async () => {
-          return await evaluateSpeaking(
-            recordedAudio, 
-            cefrLevel, 
-            'STATION_4', 
-            targetPrompt, 
-            userId, 
-            capturedText
-          );
-        },
-        {
-          maxRetries: 3,
-          timeoutMs: 16000,
-          onRetry: (attempt) => {
-            setAnalyzingStatusText(`⚠️ MẠNG YẾU, ĐANG THỬ KẾT NỐI LẠI LẦN ${attempt}/3...`);
-          }
-        }
-      );
-
-      if (localUrl) evalData.audioUrl = localUrl;
-      setResult(evalData);
-      updateUserProgress(4, evalData.isWin ? 50 : 10, evalData.isWin);
-
-      if (evalData.transcript) {
-        harvestWeakWords([], targetPrompt);
-      }
-
-      if (evalData.score < 60) {
-        saveWeakPoint('station4', targetPrompt, evalData.score);
-      }
-
-      // 🚀 TẢI BÀI LÊN SUPABASE VÀ ĐỒNG BỘ FILE ÂM THANH STORAGE
-      (async () => {
-        try {
-          const savedSubmission = await saveSubmissionToCloud({
-            studentName: studentIdentifier,
-            pairName: 'Speaking Express',
-            className: studentClass,
-            score: evalData.score,
-            mode: 'EXPRESS',
-            cefrLevel: cefrLevel,
-            transcript: evalData.transcript,
-            audioUrl: '',
-            feedback: `[EXPRESS ${cefrLevel}]: Tốc độ phản hồi đạt ${evalData.score}/100đ. Nhận xét: ${evalData.detailedFeedback}`,
-            timestamp: new Date().toLocaleTimeString('vi-VN')
-          });
-
-          if (savedSubmission?.id && audioBlobForUpload && audioBlobForUpload.size >= 1000 && supabase) {
-            const fileExt = (audioBlobForUpload.type || '').includes('mp4') ? 'mp4' : 'webm';
-            const fileName = `express_${savedSubmission.id}_${Date.now()}.${fileExt}`;
-
-            const { data: uploadData, error: uploadErr } = await supabase.storage
-              .from('submissions_audio')
-              .upload(fileName, audioBlobForUpload, { 
-                contentType: audioBlobForUpload.type || 'audio/webm', 
-                upsert: true 
-              });
-
-            if (!uploadErr && uploadData?.path) {
-              const { data: publicUrlData } = supabase.storage
-                .from('submissions_audio')
-                .getPublicUrl(uploadData.path);
-
-              if (publicUrlData?.publicUrl) {
-                await supabase
-                  .from('submissions')
-                  .update({ audioUrl: publicUrlData.publicUrl })
-                  .eq('id', savedSubmission.id);
-              }
-            }
-          }
-        } catch (saveErr) {
-          console.warn("Lỗi lưu điểm / upload audio Express:", saveErr);
-        }
-      })();
-
-    } catch (err: any) {
-      console.error("Lỗi chấm điểm Trạm 4:", err);
-      safeAlert(`⚠️ Lỗi chấm điểm: ${err.message || 'Mạng yếu, vui lòng bấm nộp lại!'}`);
-    } finally {
-      setBattleState('ended');
-      setRecordedAudio(null);
-      setHasRecorded(false);
-      setActiveStream(null);
-    }
-  };
-
-  const calculateWPM = (text: string, durationSec: number): number => {
-    if (!text || durationSec <= 0) return 0;
-    const wordCount = text.trim().split(/\s+/).filter(Boolean).length;
-    return Math.round((wordCount / durationSec) * 60);
-  };
-
-  const wpmValue = result?.transcript ? calculateWPM(result.transcript, speakingDurationSeconds) : 0;
-
-  if (showWeakPoints) {
-    return (
-      <WeakPointsScreen 
-        onBack={() => setShowWeakPoints(false)} 
-        onSelectPractice={(promptText) => {
-          setShowWeakPoints(false);
-          if (exercise) {
-            setExercise({
-              ...exercise,
-              promptEn: promptText,
-              title: "Ôn Luyện Cụm Yếu",
-            });
-          }
-        }}
-      />
-    );
+interface ExpressTopic {
+  id: string;
+  topic: string;
+  prompt: string;
+  keywords: string[];
+  level: string;
+}
+
+const EXPRESS_TOPICS: ExpressTopic[] = [
+  {
+    id: 't1',
+    topic: 'Trí tuệ nhân tạo & Thị trường lao động',
+    prompt: 'Do you believe artificial intelligence will displace more jobs than it creates in the next decade? Provide one concrete argument.',
+    keywords: ['Automation', 'Displacement', 'Adaptability', 'Productivity'],
+    level: 'B2 - C1'
+  },
+  {
+    id: 't2',
+    topic: 'Năng lượng tái tạo & Chính sách kinh tế',
+    prompt: 'Should developing countries prioritize rapid economic growth over strict environmental regulations? Justify your stance.',
+    keywords: ['Sustainable growth', 'Emissions', 'Trade-off', 'Incentives'],
+    level: 'C1 - C2'
+  },
+  {
+    id: 't3',
+    topic: 'Làm việc từ xa & Văn hóa doanh nghiệp',
+    prompt: 'How does remote work impact spontaneous collaboration and corporate identity in global enterprises?',
+    keywords: ['Virtual bonding', 'Autonomy', 'Cohesion', 'Asynchronous'],
+    level: 'C1 - C2'
   }
+];
+
+export default function Station4Screen({ onBack }: Props) {
+  const [selectedTopic, setSelectedTopic] = useState<ExpressTopic | null>(null);
+  const [isExamining, setIsExamining] = useState<boolean>(false);
+  const [lastResult, setLastResult] = useState<any>(null);
+
+  const handleStartExam = (topic: ExpressTopic) => {
+    setSelectedTopic(topic);
+    setIsExamining(true);
+    setLastResult(null);
+  };
+
+  const handleRecordingComplete = async (audioBlob: Blob, pitchHistory: number[]) => {
+    const spontaneity = analyzeSpeechSpontaneity(pitchHistory);
+
+    let audioUrl = '';
+    try {
+      if (supabase) {
+        const fileName = `station4_${Date.now()}_${Math.random().toString(36).substring(7)}.webm`;
+        const { data: uploadData, error: uploadErr } = await supabase.storage
+          .from('submissions')
+          .upload(fileName, audioBlob, { contentType: 'audio/webm' });
+
+        if (!uploadErr && uploadData) {
+          const { data: urlData } = supabase.storage.from('submissions').getPublicUrl(fileName);
+          audioUrl = urlData?.publicUrl || '';
+        }
+
+        const { data: authUser } = await supabase.auth.getUser();
+        await supabase.from('submissions').insert([{
+          student_name: authUser?.user?.user_metadata?.full_name || 'Chiến binh Trạm 4',
+          student_code: authUser?.user?.email?.split('@')[0] || 'STU_S4',
+          class_name: 'Trạm 4: Speaking Express',
+          mode: 'STATION_4_EXPRESS',
+          cefr_level: selectedTopic?.level || 'C1',
+          score: Math.min(100, spontaneity.score + 5),
+          manual_score: null,
+          spontaneity_score: spontaneity.score,
+          pitch_variance: spontaneity.pitchVariance,
+          is_script_suspected: spontaneity.isScriptSuspected,
+          audio_url: audioUrl,
+          transcript: selectedTopic?.prompt || '',
+          feedback: spontaneity.isScriptSuspected 
+            ? '⚠️ Nghi vấn đọc kịch bản: Nhịp điệu đơn điệu, thiếu biến thiên ngữ điệu F0 khi lập luận.' 
+            : '✅ Tư duy phản xạ học thuật xuất sắc: Ngữ điệu tự nhiên, ngắt nhịp tư duy logic.'
+        }]);
+      }
+    } catch (err) {
+      console.warn("Lỗi nộp bài Trạm 4:", err);
+    }
+
+    setLastResult(spontaneity);
+    setIsExamining(false);
+  };
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack} style={styles.backBtn}>
-          <Text style={styles.backText}>🔙 MAP</Text>
+          <Text style={styles.backBtnText}>🔙 MAP</Text>
         </TouchableOpacity>
-        
-        <Text style={styles.title}>🎯 TRẠM 4: SPEAKING EXPRESS</Text>
-
-        <TouchableOpacity onPress={() => setShowWeakPoints(true)} style={styles.weakBtn}>
-          <Text style={styles.weakBtnText}>🎯 YẾU</Text>
-        </TouchableOpacity>
+        <Text style={styles.title}>⚡ TRẠM 4: SPEAKING EXPRESS (B2 - C2)</Text>
       </View>
 
-      <ScrollView contentContainerStyle={{ alignItems: 'center', width: '100%', paddingBottom: 30 }}>
-        <Text style={styles.studentInfoBadge}>
-          👤 {studentIdentifier} | 🏫 {studentClass}
-        </Text>
-
-        <Text style={styles.sectionLabel}>CHỌN LEVEL CẤP ĐỘ:</Text>
-        <View style={styles.cefrRow}>
-          {CEFR_LEVELS.map((lvl) => (
-            <TouchableOpacity 
-              key={lvl} 
-              style={[styles.cefrBadge, cefrLevel === lvl && styles.cefrBadgeActive]} 
-              onPress={() => handleLevelChange(lvl)}
-            >
-              <Text style={[styles.cefrText, cefrLevel === lvl && styles.cefrTextActive]}>{lvl}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        <View style={styles.box}>
-          <Text style={styles.boxTitle}>📌 THỬ THÁCH PHẢN ỨNG NHANH [{cefrLevel}]</Text>
-          
-          {exercise ? (
-            <View style={{ width: '100%', alignItems: 'center' }}>
-              <Text style={styles.scenarioTitle}>{exercise.title || `Thử thách [${cefrLevel}]`}</Text>
-              <Text style={styles.promptText}>🎯 Tình huống: "{exercise.promptEn || 'No prompt available'}"</Text>
-              
-              {exercise.promptVi && (
-                <Text style={styles.promptViText}>👉 Dịch: "{exercise.promptVi}"</Text>
-              )}
-
-              <TouchableOpacity 
-                style={[styles.ttsBtn, isPlayingTTS && styles.ttsBtnActive]} 
-                onPress={() => exercise.promptEn && playPromptTTS(exercise.promptEn)}
-              >
-                <Text style={styles.ttsBtnText}>
-                  {isPlayingTTS ? '🔊 ĐANG PHÁT GIỌNG NÓI...' : '🔊 NGHE TÌNH HUỐNG (NATURAL VOICE)'}
-                </Text>
-              </TouchableOpacity>
-
-              <Text style={styles.requirementText}>
-                ⚡ THỜI GIAN PHẢN XẠ: {exercise.timeLimitSeconds || 15} GIÂY | TỪ KHÓA: {exercise.suggestedKeywords?.join(', ') || 'Chưa có từ khóa'}
-              </Text>
-            </View>
-          ) : (
-            <ActivityIndicator size="small" color="#FF007F" style={{ marginVertical: 15 }} />
-          )}
-
-          <TouchableOpacity style={styles.refreshBtn} onPress={() => loadExerciseData(cefrLevel)} disabled={loading}>
-            <Text style={styles.refreshBtnText}>
-              {loading ? '🔄 ĐANG ĐỔI THỬ THÁCH...' : '🔄 ĐỔI THỬ THÁCH MỚI'}
+      <ScrollView contentContainerStyle={{ paddingBottom: 30 }}>
+        {!isExamining && (
+          <>
+            <Text style={styles.subtitle}>
+              Đấu trường phản biện cấp cao: Đề bài chỉ xuất hiện trong 5 giây đếm ngược để nắm ý chính, sau đó sẽ lập tức ẩn đi để chống chụp màn hình. Micro tự bật và engine F0 sẽ kiểm tra tính tự nhiên của giọng nói.
             </Text>
-          </TouchableOpacity>
 
-          {/* 🌊 DẢI SÓNG ÂM THỜI GIAN THỰC CHO TRẠM 4 */}
-          <AudioWaveVisualizer stream={activeStream} isRecording={isRecording} barColor="#39FF14" />
+            {lastResult && (
+              <View style={[styles.resultBox, lastResult.isScriptSuspected ? styles.resultBoxWarning : styles.resultBoxSuccess]}>
+                <Text style={styles.resultTitle}>
+                  {lastResult.isScriptSuspected ? '⚠️ PHÁT HIỆN DẤU HIỆU ĐỌC BÀI' : '🎉 BẢN THU PHẢN BIỆN TỰ NHIÊN'}
+                </Text>
+                <Text style={styles.resultText}>Điểm tự nhiên (Spontaneity): {lastResult.score}/100đ</Text>
+                <Text style={styles.resultText}>Độ biến thiên cao độ F0: {lastResult.pitchVariance} Hz</Text>
+                <Text style={styles.resultSubtext}>
+                  {lastResult.isScriptSuspected 
+                    ? 'Tần số F0 quá phẳng (<20 Hz). Dữ liệu này sẽ được gắn cờ báo cáo lên Cổng Giảng viên.' 
+                    : 'Ngữ điệu linh hoạt, có sự nhấn nhá luận điểm chuẩn phong thái thuyết trình tự nhiên.'}
+                </Text>
+              </View>
+            )}
 
-          {battleState !== 'ended' && (
-            <TouchableOpacity 
-              style={[styles.recordBtn, isRecording && styles.recordBtnActive]} 
-              onPress={handleToggleRecord}
-            >
-              <Text style={styles.recordBtnText}>
-                {isRecording 
-                  ? '🔴 ĐANG THU ÂM PHẢN HỒI... (BẤM ĐỂ DỪNG)' 
-                  : hasRecorded 
-                  ? '✅ ĐÃ CÓ BẢN THU (BẤM THU LẠI)' 
-                  : '🎙 BẤM ĐỂ BẮT ĐẦU NÓI'}
-              </Text>
-            </TouchableOpacity>
-          )}
-
-          {battleState !== 'ended' && (
-            <TouchableOpacity 
-              style={[styles.submitBtn, (!hasRecorded || !recordedAudio) && styles.submitBtnDisabled]} 
-              onPress={handleSubmitAnswer} 
-              disabled={!hasRecorded || !recordedAudio}
-            >
-              <Text style={styles.submitBtnText}>
-                {hasRecorded ? '⚡ NỘP BÀI & CHẤM ĐIỂM AI' : '🔒 BẮT BUỘC THU ÂM TRƯỚC KHI NỘP'}
-              </Text>
-            </TouchableOpacity>
-          )}
-        </View>
-
-        {battleState === 'analyzing' && (
-          <View style={styles.box}>
-            <ActivityIndicator size="large" color="#39FF14" style={{ marginBottom: 15 }} />
-            <Text style={styles.searchingText}>{analyzingStatusText}</Text>
-          </View>
+            <Text style={styles.sectionHeader}>🔥 CHỦ ĐỀ PHẢN BIỆN CHUYÊN SÂU:</Text>
+            {EXPRESS_TOPICS.map((top) => (
+              <View key={top.id} style={styles.card}>
+                <View style={styles.cardHeader}>
+                  <Text style={styles.topicText}>💡 {top.topic}</Text>
+                  <Text style={styles.levelBadge}>{top.level}</Text>
+                </View>
+                <Text style={styles.promptPreview}>Câu hỏi: {top.prompt}</Text>
+                <View style={styles.keywordRow}>
+                  {top.keywords.map((kw, idx) => (
+                    <Text key={idx} style={styles.keywordBadge}>#{kw}</Text>
+                  ))}
+                </View>
+                <TouchableOpacity style={styles.startBtn} onPress={() => handleStartExam(top)}>
+                  <Text style={styles.startBtnText}>⚡ VÀO THI PHẢN BIỆN (5S PHẢN XẠ)</Text>
+                </TouchableOpacity>
+              </View>
+            ))}
+          </>
         )}
 
-        {battleState === 'ended' && result && (
-          <View style={styles.box}>
-            <Text style={[styles.resultTitle, { color: getResultHeader(result.score).color }]}>
-              {getResultHeader(result.score).title}
-            </Text>
-            <Text style={styles.scoreText}>⚡ TỔNG ĐIỂM TRẠM 4: {result.score} / 100 ĐIỂM</Text>
-
-            {/* 📊 BẢNG ĐIỂM 5 TIÊU CHÍ CHI TIẾT */}
-            {result.criteria && (
-              <View style={styles.criteriaContainer}>
-                <Text style={styles.criteriaHeader}>📊 ĐÁNH GIÁ 5 TIÊU CHÍ PHẢN XẠ:</Text>
-                <View style={styles.criteriaGrid}>
-                  <View style={styles.criteriaItem}>
-                    <Text style={styles.criteriaLabel}>Phát âm</Text>
-                    <Text style={styles.criteriaScore}>{result.criteria.pronunciation || 75}đ</Text>
-                  </View>
-                  <View style={styles.criteriaItem}>
-                    <Text style={styles.criteriaLabel}>Từ vựng</Text>
-                    <Text style={styles.criteriaScore}>{result.criteria.vocabulary || 70}đ</Text>
-                  </View>
-                  <View style={styles.criteriaItem}>
-                    <Text style={styles.criteriaLabel}>Ngữ pháp</Text>
-                    <Text style={styles.criteriaScore}>{result.criteria.grammar || 65}đ</Text>
-                  </View>
-                  <View style={styles.criteriaItem}>
-                    <Text style={styles.criteriaLabel}>Lưu loát</Text>
-                    <Text style={styles.criteriaScore}>{result.criteria.fluency || 70}đ</Text>
-                  </View>
-                  <View style={styles.criteriaItem}>
-                    <Text style={styles.criteriaLabel}>Nội dung</Text>
-                    <Text style={styles.criteriaScore}>{result.criteria.content || 70}đ</Text>
-                  </View>
-                </View>
-              </View>
-            )}
-
-            <View style={styles.wpmBox}>
-              <Text style={styles.wpmTitle}>⚡ TỐC ĐỘ TRÔI CHẢY (FLUENCY): {wpmValue} WPM</Text>
-              <Text style={styles.wpmDesc}>
-                {wpmValue >= 110 
-                  ? '🚀 Phản xạ rất trôi chảy & tự nhiên!' 
-                  : wpmValue >= 75 
-                  ? '👍 Tốc độ đạt yêu cầu đàm thoại.' 
-                  : '💡 Tốc độ hơi chậm, hãy tăng độ phản xạ hơn nhé!'}
-              </Text>
-            </View>
-
-            {/* 🎯 BÓC TÁCH TỪ NGỮ: TỪ ĐÚNG TICK XANH ✓ / TỪ SAI VIỀN ĐỎ ✗ */}
-            {result.transcript ? (
-              <View style={styles.wordHighlightBox}>
-                <Text style={styles.wordHighlightTitle}>🎙 CÁC TỪ AI GHI NHẬN TỪ PHẢN HỒI NÓI:</Text>
-                <View style={styles.wordRow}>
-                  {result.transcript
-                    .replace(/[.,/#!$%^&*;:{}=\-_`~()?"']/g, ' ')
-                    .split(/\s+/)
-                    .filter(Boolean)
-                    .map((word: string, idx: number) => {
-                      const cleanWord = word.toLowerCase().replace(/[^a-z0-9]/g, '');
-                      const foundError = result.errorWords?.find(
-                        (err: any) => err.word?.toLowerCase() === cleanWord
-                      );
-                      const isWrong = Boolean(foundError);
-
-                      return (
-                        <TouchableOpacity
-                          key={idx}
-                          style={[
-                            styles.wordBadge,
-                            isWrong ? styles.wordBadgeError : styles.wordBadgeCorrect
-                          ]}
-                          onPress={() => {
-                            if (foundError) {
-                              alert(
-                                `💡 Hướng dẫn sửa từ:\n\n• Từ chưa chuẩn: "${foundError.word}"\n• Nên đổi thành: "${foundError.correction}"\n• Lý do: ${foundError.reason}`
-                              );
-                            }
-                          }}
-                          activeOpacity={isWrong ? 0.6 : 1}
-                        >
-                          <Text style={[styles.wordBadgeText, isWrong ? styles.textError : styles.textCorrect]}>
-                            {word} {isWrong ? '✗' : '✓'}
-                          </Text>
-                        </TouchableOpacity>
-                      );
-                    })}
-                </View>
-              </View>
-            ) : null}
-
-            {(recordedAudioUrl || result.audioUrl) && (
-              <View 
-                style={styles.nativeAudioContainer}
-                // @ts-ignore
-                onStartShouldSetResponder={() => false}
-                onMoveShouldSetResponder={() => false}
-              >
-                <Text style={styles.nativeAudioLabel}>🎧 NGHE LẠI BẢN THU PHẢN HỒI CỦA BẠN:</Text>
-                {React.createElement('audio', {
-                  controls: true,
-                  playsInline: true,
-                  src: result.audioUrl || recordedAudioUrl,
-                  style: { width: '100%', marginTop: 6, height: 36, touchAction: 'manipulation' }
-                })}
-              </View>
-            )}
-
-            <View style={styles.scriptBox}>
-              <Text style={styles.scriptLabel}>📝 ÂM AI NGHE ĐƯỢC THỰC TẾ:</Text>
-              <Text style={styles.scriptContent}>"{result.transcript || '(Không nghe rõ từ)'}"</Text>
-            </View>
-
-            <Text style={styles.feedbackText}>{result.detailedFeedback}</Text>
-
-            <TouchableOpacity style={styles.refreshBtn} onPress={() => loadExerciseData(cefrLevel)}>
-              <Text style={styles.refreshBtnText}>🔄 THỬ BỐI CẢNH PHẢN HỒI MỚI</Text>
-            </TouchableOpacity>
-          </View>
+        {isExamining && selectedTopic && (
+          <AntiCheatSpeakingSession
+            promptText={selectedTopic.prompt}
+            situationPrompt={`Từ khóa gợi ý: ${selectedTopic.keywords.join(', ')}`}
+            prepTimeSeconds={5}
+            autoHidePrompt={true}
+            onRecordingComplete={handleRecordingComplete}
+            onCancel={() => setIsExamining(false)}
+          />
         )}
       </ScrollView>
     </View>
@@ -710,65 +163,26 @@ export default function Station4Screen({ onBack }: Props) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#05020D', padding: 20, paddingTop: 50 },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 15 },
-  backBtn: { padding: 8, backgroundColor: '#0D0620', borderRadius: 8, borderWidth: 1, borderColor: '#FF007F' },
-  backText: { color: '#FF007F', fontSize: 10, fontWeight: 'bold' },
-  title: { color: '#FF007F', fontSize: 12, fontWeight: '900' },
-  weakBtn: { paddingVertical: 6, paddingHorizontal: 10, backgroundColor: '#1A0B2E', borderRadius: 8, borderWidth: 1, borderColor: '#FF007F' },
-  weakBtnText: { color: '#FF007F', fontSize: 10, fontWeight: '900' },
-  studentInfoBadge: { color: '#39FF14', fontSize: 10, fontWeight: 'bold', marginBottom: 10 },
-  sectionLabel: { color: '#FFD700', fontSize: 10, fontWeight: 'bold', alignSelf: 'flex-start', marginBottom: 6 },
-  cefrRow: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginBottom: 15 },
-  cefrBadge: { backgroundColor: '#0D0620', paddingVertical: 6, paddingHorizontal: 10, borderRadius: 6, borderWidth: 1, borderColor: '#332255' },
-  cefrBadgeActive: { backgroundColor: '#39FF14', borderColor: '#39FF14' },
-  cefrText: { color: '#8888AA', fontSize: 10, fontWeight: 'bold' },
-  cefrTextActive: { color: '#000' },
-  box: { backgroundColor: '#0D0620', padding: 18, borderRadius: 16, borderWidth: 2, borderColor: '#FF007F', width: '100%', alignItems: 'center', marginBottom: 20 },
-  boxTitle: { color: '#FFD700', fontSize: 11, fontWeight: '900', marginBottom: 12 },
-  scenarioTitle: { color: '#00FFFF', fontSize: 13, fontWeight: '900', marginBottom: 6 },
-  promptText: { color: '#FFF', fontSize: 13, fontWeight: '800', textAlign: 'center', lineHeight: 18, marginBottom: 8 },
-  promptViText: { color: '#FFD700', fontSize: 11, fontWeight: '600', textAlign: 'center', marginBottom: 10, fontStyle: 'italic' },
-  ttsBtn: { backgroundColor: '#1A0B2E', paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8, borderWidth: 1, borderColor: '#00FFFF', marginBottom: 10, alignItems: 'center', width: '100%' },
-  ttsBtnActive: { backgroundColor: '#00FFFF' },
-  ttsBtnText: { color: '#00FFFF', fontSize: 10, fontWeight: 'bold' },
-  requirementText: { color: '#FFD700', fontSize: 10, fontWeight: 'bold', textAlign: 'center', marginBottom: 12 },
-  searchingText: { color: '#00FFFF', fontSize: 11, fontWeight: 'bold', textAlign: 'center' },
-  refreshBtn: { backgroundColor: '#1A0B2E', padding: 8, borderRadius: 8, borderWidth: 1, borderColor: '#00FFFF', width: '100%', alignItems: 'center', marginBottom: 12 },
-  refreshBtnText: { color: '#00FFFF', fontSize: 10, fontWeight: 'bold' },
-  recordBtn: { backgroundColor: '#1A0B2E', padding: 12, borderRadius: 10, borderWidth: 2, borderColor: '#FF007F', width: '100%', alignItems: 'center', marginBottom: 10 },
-  recordBtnActive: { backgroundColor: '#FF0055', borderColor: '#FF0055' },
-  recordBtnText: { color: '#FFF', fontSize: 10, fontWeight: '900' },
-  submitBtn: { backgroundColor: '#39FF14', padding: 14, borderRadius: 12, width: '100%', alignItems: 'center' },
-  submitBtnDisabled: { backgroundColor: '#224422', opacity: 0.2 },
-  submitBtnText: { color: '#000', fontSize: 11, fontWeight: '900' },
-  resultTitle: { fontSize: 15, fontWeight: '900', marginBottom: 6 },
-  scoreText: { color: '#FFD700', fontSize: 13, fontWeight: '900', marginBottom: 10 },
-  wpmBox: { backgroundColor: '#130A2A', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#FFD700', width: '100%', marginBottom: 10, alignItems: 'center' },
-  wpmTitle: { color: '#FFD700', fontSize: 11, fontWeight: '900' },
-  wpmDesc: { color: '#AAAABB', fontSize: 9, marginTop: 3 },
-
-  criteriaContainer: { backgroundColor: '#0D0620', padding: 8, borderRadius: 8, borderWidth: 1, borderColor: '#00FFFF', width: '100%', marginBottom: 10 },
-  criteriaHeader: { color: '#00FFFF', fontSize: 9, fontWeight: '900', marginBottom: 6 },
-  criteriaGrid: { flexDirection: 'row', justifyContent: 'space-between', width: '100%' },
-  criteriaItem: { alignItems: 'center', flex: 1 },
-  criteriaLabel: { color: '#8888AA', fontSize: 8, fontWeight: 'bold', marginBottom: 2 },
-  criteriaScore: { color: '#39FF14', fontSize: 11, fontWeight: '900' },
-
-  wordHighlightBox: { backgroundColor: '#120826', padding: 8, borderRadius: 8, borderWidth: 1, borderColor: '#00FFFF', width: '100%', marginBottom: 10 },
-  wordHighlightTitle: { color: '#00FFFF', fontSize: 9, fontWeight: '900', marginBottom: 6 },
-  wordRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  wordBadge: { paddingHorizontal: 6, paddingVertical: 3, borderRadius: 6, borderWidth: 1 },
-  wordBadgeCorrect: { backgroundColor: 'rgba(57, 255, 20, 0.15)', borderColor: '#39FF14' },
-  wordBadgeError: { backgroundColor: 'rgba(255, 0, 85, 0.25)', borderColor: '#FF0055' },
-  wordBadgeText: { fontSize: 10, fontWeight: 'bold' },
-  textCorrect: { color: '#39FF14' },
-  textError: { color: '#FF0055' },
-
-  nativeAudioLabel: { color: '#00FFFF', fontSize: 10, fontWeight: 'bold' },
-  nativeAudioContainer: { width: '100%', backgroundColor: '#1A0B2E', padding: 10, borderRadius: 10, borderWidth: 1, borderColor: '#00FFFF', marginBottom: 12, alignItems: 'center' },
-  scriptBox: { backgroundColor: '#1A0B2E', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#332255', width: '100%', marginBottom: 12 },
-  scriptLabel: { color: '#FFD700', fontSize: 10, fontWeight: 'bold', marginBottom: 4 },
-  scriptContent: { color: '#FFF', fontSize: 11, fontStyle: 'italic', marginBottom: 6 },
-  feedbackText: { color: '#FFF', fontSize: 11, textAlign: 'center', lineHeight: 16, marginBottom: 15 }
+  container: { flex: 1, backgroundColor: '#05020D', padding: 18, paddingTop: 45 },
+  header: { flexDirection: 'row', alignItems: 'center', marginBottom: 15, gap: 10 },
+  backBtn: { padding: 8, backgroundColor: '#0D0620', borderRadius: 8, borderWidth: 1, borderColor: '#00FFFF' },
+  backBtnText: { color: '#00FFFF', fontSize: 10, fontWeight: 'bold' },
+  title: { color: '#FFD700', fontSize: 13, fontWeight: '900', flexShrink: 1 },
+  subtitle: { color: '#AAAABB', fontSize: 10, lineHeight: 16, marginBottom: 16 },
+  sectionHeader: { color: '#00FFFF', fontSize: 11, fontWeight: '900', marginBottom: 10 },
+  card: { backgroundColor: '#0D0620', padding: 16, borderRadius: 12, borderWidth: 1.5, borderColor: '#FF007F', marginBottom: 12 },
+  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  topicText: { color: '#00FFFF', fontSize: 12, fontWeight: '900' },
+  levelBadge: { color: '#000', backgroundColor: '#FFD700', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, fontSize: 9, fontWeight: '900' },
+  promptPreview: { color: '#FFF', fontSize: 11, lineHeight: 17, marginBottom: 10 },
+  keywordRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 14 },
+  keywordBadge: { color: '#39FF14', backgroundColor: '#1A0B2E', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, fontSize: 9, borderWidth: 1, borderColor: '#332255' },
+  startBtn: { backgroundColor: '#39FF14', paddingVertical: 10, borderRadius: 8, alignItems: 'center' },
+  startBtnText: { color: '#000', fontSize: 11, fontWeight: '900' },
+  resultBox: { padding: 14, borderRadius: 10, borderWidth: 1.5, marginBottom: 16 },
+  resultBoxSuccess: { backgroundColor: '#062013', borderColor: '#39FF14' },
+  resultBoxWarning: { backgroundColor: '#280812', borderColor: '#FF0055' },
+  resultTitle: { fontSize: 12, fontWeight: '900', marginBottom: 6, color: '#FFF' },
+  resultText: { color: '#FFF', fontSize: 11, marginBottom: 3 },
+  resultSubtext: { color: '#AAAABB', fontSize: 9, fontStyle: 'italic', marginTop: 4 }
 });
