@@ -34,20 +34,15 @@ export default function IntonationCanvas({ targetContour, studentContour, height
         </View>
       </View>
 
-      <View 
-        style={{ width, height, justifyContent: 'center', alignItems: 'center' }}
-        // @ts-ignore
-        onStartShouldSetResponder={() => false}
-        onMoveShouldSetResponder={() => false}
-      >
+      {/* Dùng pointerEvents: 'none' để SVG thuần không can thiệp vào Touch Responder của React Native */}
+      <View style={{ width, height, justifyContent: 'center', alignItems: 'center', pointerEvents: 'none' }}>
         {React.createElement(
           'svg',
           {
             width,
             height,
-            style: { overflow: 'visible', width: '100%', height: '100%' }
+            style: { overflow: 'visible', width: '100%', height: '100%', pointerEvents: 'none' }
           },
-          // Trục cao độ trung tâm
           React.createElement('line', {
             x1: 0,
             y1: height / 2,
@@ -56,7 +51,6 @@ export default function IntonationCanvas({ targetContour, studentContour, height
             stroke: '#221133',
             strokeDasharray: '4 4'
           }),
-          // Đường câu mẫu (Vàng Gold)
           React.createElement('path', {
             d: buildPath(targetContour),
             stroke: '#FFD700',
@@ -64,7 +58,6 @@ export default function IntonationCanvas({ targetContour, studentContour, height
             fill: 'none',
             opacity: 0.85
           }),
-          // Đường ngữ điệu người học (Xanh Cyan)
           hasData
             ? React.createElement('path', {
                 d: buildPath(studentContour),
