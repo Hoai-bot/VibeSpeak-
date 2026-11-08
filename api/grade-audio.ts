@@ -613,7 +613,7 @@ export default async function handler(req: Request) {
         }
       }
 
-      // 2. 🤖 GỌI GROQ LLM ĐÁNH GIÁ CHẤT LƯỢNG PHẢN XẠ & BỐI CẢNH
+      // 2. 🤖 GỌI GROQ LLM ĐÁNH GIÁ CHẤT LƯỢNG PHẢN XẠ & BỐI CẢNH (C1-C2 EXECUTIVE EVALUATION)
       try {
         const groqLlmResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
           method: 'POST',
@@ -628,18 +628,27 @@ export default async function handler(req: Request) {
             messages: [
               {
                 role: 'system',
-                content: `You are an expert Cambridge/IELTS speaking examiner evaluating a CEFR ${cefrLevel} student for a 15-second rapid speaking prompt.
-Evaluate all aspects (tenses, conditionals, natural phrases, pronunciation, content).
-If the response is correct and fluent, give generous scores (85-95).
+                content: `You are an executive communications coach and expert Cambridge/IELTS examiner evaluating a CEFR ${cefrLevel} student on a high-stakes 15-second rapid response prompt (Business/Crisis PR/Executive Alignment).
+
+CRITICAL EVALUATION MATRIX FOR CEFR ${cefrLevel}:
+1. C1-C2 ADVANCED CRITERIA:
+   - Executive Presence & Diplomatic Tone: Look for assertive, constructive phrasing (e.g., "While I acknowledge...", "I propose gating rollout...", "Let us formally scope...").
+   - Deflection & Problem-solving: Did the student address the conflict/crisis without combative phrasing or premature liability admission?
+   - Lexical Resource: Reward high-register collocations (e.g., "compromise roadmap", "freeze non-essential OPEX", "mitigate fallout", "contingency plan").
+   - If CEFR is C1/C2 and the student uses simplistic/childish phrasing (e.g., "I will fire people because money", "I am angry at you"), cap vocab_score at 60 and feedback must advise professional executive terminology.
+2. GENERAL CEFR RULES:
+   - If fluent, tactful, and answers the prompt within 10-15s, award 88-96.
+   - If response is incomplete or misses the prompt challenge, assign content_score 45-60.
+
 Return JSON ONLY:
 {
   "vocab_score": number,
   "grammar_score": number,
   "content_score": number,
   "detected_errors": [
-    { "word": "incorrect_word", "correction": "better_word", "reason": "reason in Vietnamese" }
+    { "word": "incorrect_word", "correction": "better_word", "reason": "Lý do bằng tiếng Việt chỉ rõ cách nâng cấp từ vựng/cách diễn đạt ngoại giao" }
   ],
-  "feedback_vi": "Nhận xét tiếng Việt ngắn gọn 1-2 câu, chân thực và chỉ rõ điểm làm tốt hoặc điểm cần sửa"
+  "feedback_vi": "Nhận xét sư phạm tiếng Việt sắc bén 1-2 câu, chỉ rõ nghệ thuật ứng biến ngoại giao, phong thái điều hành và từ vựng chuyên ngành"
 }`
               },
               {
@@ -755,8 +764,8 @@ Return JSON ONLY:
       const lowerTranscript = transcript.toLowerCase();
       const lowerPrompt = targetPrompt.toLowerCase();
 
-      // 1. 🎯 KIỂM TRA ĐỘ BÁM SÁT CHỦ ĐỀ (OFF-TOPIC DETECTOR)
-      const stopWords = ['describe', 'talk', 'about', 'your', 'you', 'the', 'and', 'with', 'that', 'this', 'have', 'what', 'where', 'when', 'which', 'tell', 'enrolled', 'special', 'favorite', 'help'];
+      // 1. 🎯 KIỂM TRA ĐỘ BÁM SÁT CHỦ ĐỀ (OFF-TOPIC DETECTOR VỚI ACADEMIC / BUSINESS KEYWORDS)
+      const stopWords = ['describe', 'talk', 'about', 'your', 'you', 'the', 'and', 'with', 'that', 'this', 'have', 'what', 'where', 'when', 'which', 'tell', 'enrolled', 'special', 'favorite', 'help', 'evaluate', 'analyze', 'extent', 'discuss', 'propose', 'deliver', 'whether', 'merely', 'particularly', 'regarding'];
       const corePromptKeywords = lowerPrompt
         .replace(/[^a-z0-9\s]/g, ' ')
         .split(/\s+/)
@@ -903,7 +912,7 @@ Return JSON ONLY:
       let fluencyScore = baseFluency;
       let pronunciationScore = Math.min(100, Math.max(65, 75 + acousticQualityBonus * 1.8));
 
-      // 4. 🤖 GỌI GROQ LLM CHUYÊN SÂU
+      // 4. 🤖 GỌI GROQ LLM CHUYÊN SÂU (C1-C2 ACADEMIC & STRATEGIC DISCOURSE MATRIX)
       try {
         const groqLlmResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
           method: 'POST',
@@ -918,14 +927,23 @@ Return JSON ONLY:
             messages: [
               {
                 role: 'system',
-                content: `You are an expert Cambridge/IELTS speaking examiner evaluating a CEFR ${cefrLevel} student.
-CRITICAL RULES FOR TENSES & CONTEXT:
-1. Examine if the student uses the CORRECT TENSE FOR THE CONTEXT OF THE PROMPT:
-   - Routine/Duty/Habit prompt (e.g. "how you help with housework", "daily routine") MUST use Present Simple (e.g. "I often cook", "I help my parents"). If the student uses Past Simple (e.g. "I cooked yesterday"), penalize grammar_score and flag the tense mismatch!
-   - Past experience prompt (e.g. "last holiday") requires Past tenses.
-2. If speech is truncated/incomplete (ends with unfinished phrase like "My parents"), cap grammar_score and content_score at 60.
-3. If off-topic, set content_score between 20-35 and is_off_topic: true.
-4. If the student speaks fluently with full sentences and correct contextual tenses, score 85-96.
+                content: `You are a distinguished Cambridge CAE/CPE (CEFR ${cefrLevel}) and IELTS Academic speaking examiner.
+You are evaluating a student on an Academic/Business discourse topic: "${targetPrompt}".
+
+CRITICAL EVALUATION MATRIX:
+1. CEFR C1-C2 ACADEMIC & STRATEGIC DISCOURSE:
+   - Syntactic Sophistication: Look for advanced structures (Inversion: "Seldom does...", Cleft sentences: "It is the... that...", Participle clauses: "Having analyzed...", Subjunctive/Hedging: "arguably", "fundamentally", "were leaders to...").
+   - Depth of Argumentation: Reward balanced, multi-dimensional argumentation over simple opinions.
+   - Lexical Precision: Reward domain-specific academic/business collocations (e.g. "epistemic hegemony", "fiduciary duty", "unintended externalities", "synergy realization", "due diligence").
+   - If level is C1/C2 but the speaker delivers elementary/vague reasoning (e.g., "AI is good and bad, I like it very much"), cap vocab_score at 65 and content_score at 60, with feedback instructing how to use academic hedging and analytical depth.
+2. TENSE & CONTEXT CONSISTENCY:
+   - Routine/Duty/Habit prompts MUST use Present Simple.
+   - Past experience prompts require Past tenses.
+   - Hypothetical policy/academic queries require Conditional/Subjunctive moods.
+3. STRUCTURAL CHECKS:
+   - Truncated/incomplete speech (ends abruptly) -> cap grammar and content at 60.
+   - Off-topic speech -> content_score 20-35 and is_off_topic: true.
+   - Flawless, highly articulate speech meeting CEFR ${cefrLevel} -> score 88-96.
 
 Return JSON ONLY:
 {
@@ -934,9 +952,9 @@ Return JSON ONLY:
   "content_score": number,
   "is_off_topic": boolean,
   "detected_errors": [
-    { "word": "error_word_or_phrase", "correction": "corrected_word_or_phrase", "reason": "Lý do bằng tiếng Việt giải thích rõ vì sao sai thì hoặc sai ngữ cảnh" }
+    { "word": "error_word_or_phrase", "correction": "corrected_word_or_phrase", "reason": "Lý do bằng tiếng Việt giải thích rõ ngữ pháp, thì hoặc cách nâng cấp lên văn phong C1/C2" }
   ],
-  "feedback_vi": "Nhận xét tiếng Việt cụ thể chỉ thẳng lỗi sai thì/ngữ cảnh và cách khắc phục"
+  "feedback_vi": "Nhận xét sư phạm tiếng Việt sắc bén 1-2 câu, đánh giá tính logic học thuật/chiến lược kinh doanh và gợi ý nâng cấp từ vựng học thuật cao cấp"
 }`
               },
               {
