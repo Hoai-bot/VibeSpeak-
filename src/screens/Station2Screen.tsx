@@ -94,15 +94,16 @@ export default function Station2Screen({ onBack }: Props) {
   const [loadingAssignments, setLoadingAssignments] = useState<boolean>(true);
   const [selectedChallenge, setSelectedChallenge] = useState<ChallengeItem | null>(null);
 
-  // 🔊 Quản lý Text-To-Speech: lưu ID của text đang phát để nút phản hồi chuẩn xác
+  // 🤖 Trạng thái gọi Groq AI sinh đề
+  const [isGeneratingAiTopic, setIsGeneratingAiTopic] = useState<boolean>(false);
+
+  // 🔊 Quản lý Text-To-Speech tự nhiên
   const [playingPromptText, setPlayingPromptText] = useState<string | null>(null);
   const synthRef = useRef<SpeechSynthesis | null>(null);
 
-  // Khởi tạo và nạp voice tự nhiên
   useEffect(() => {
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       synthRef.current = window.speechSynthesis;
-      // Kích hoạt nạp voice trên các trình duyệt Chrome/Edge
       window.speechSynthesis.onvoiceschanged = () => {
         window.speechSynthesis.getVoices();
       };
@@ -119,18 +120,15 @@ export default function Station2Screen({ onBack }: Props) {
     const voices = synthRef.current.getVoices();
     if (!voices || voices.length === 0) return null;
 
-    // Ưu tiên 1: Các giọng Natural / Online cao cấp tiếng Anh Mỹ
     const priorityKeywords = ['Google US English', 'Natural', 'Jenny', 'Guy', 'Aria', 'Samantha', 'en-US'];
     for (const kw of priorityKeywords) {
       const match = voices.find(v => v.lang.startsWith('en') && v.name.includes(kw));
       if (match) return match;
     }
 
-    // Ưu tiên 2: Bất kỳ voice en-US nào
     const enUsVoice = voices.find(v => v.lang === 'en-US');
     if (enUsVoice) return enUsVoice;
 
-    // Ưu tiên 3: Bất kỳ voice tiếng Anh nào
     return voices.find(v => v.lang.startsWith('en')) || null;
   };
 
@@ -142,14 +140,12 @@ export default function Station2Screen({ onBack }: Props) {
 
     const synth = window.speechSynthesis;
 
-    // Nếu đang phát chính câu này thì bấm lại để dừng (Toggle)
     if (playingPromptText === text) {
       synth.cancel();
       setPlayingPromptText(null);
       return;
     }
 
-    // Hủy các lệnh phát đang chờ để tránh kẹt audio queue
     synth.cancel();
 
     const cleanText = text.replace(/["']/g, '').trim();
@@ -160,7 +156,6 @@ export default function Station2Screen({ onBack }: Props) {
       utterance.voice = bestVoice;
     }
     utterance.lang = 'en-US';
-    // Tốc độ 0.90 và pitch 1.05 cho ngữ điệu tự nhiên, ấm áp, không bị rè méo tiếng
     utterance.rate = 0.90;
     utterance.pitch = 1.05;
 
@@ -274,52 +269,111 @@ export default function Station2Screen({ onBack }: Props) {
 
   const currentDisplayList = getDisplayChallenges();
 
-  // 🔄 ĐỔI SANG CHỦ ĐỀ KHÁC ĐẢM BẢO THAY ĐỔI
-  const handleSwitchToNextTopic = () => {
-    stopSampleAudio();
-    const list = getDisplayChallenges();
-    if (list.length === 0) {
-      Alert.alert("Thông báo", "Không có chủ đề nào trong danh mục này.");
-      return;
-    }
+  // 🤖 HÀM GỌI GROQ AI SINH CHỦ ĐỀ MỚI THEO THỜI GIAN THỰC
+  const generateNewAiChallenge = async (): Promise<ChallengeItem | null> => {
+    try {
+      const apiKey = process.env.EXPO_PUBLIC_GROQ_API_KEY;
+      if (!apiKey) return null;
 
-    if (list.length === 1) {
-      Alert.alert("Thông báo", `Chỉ có 1 chủ đề cho bậc ${selectedLevel} của ${selectedTier}. Bạn hãy chuyển bậc CEFR hoặc dán đề mới!`);
-      return;
-    }
+      const promptInstruction = `You are an expert English language examiner. Create 1 realistic speaking prompt for CEFR level ${selectedLevel} in tier ${selectedTier}.
+- Tier SOLO: 1 complex sentence focusing on phonetics, linking sounds, stress and rhythm.
+- Tier RELAY: Context has 1 dialogue turn, student responds reflexively and naturally.
+- Tier ROLEPLAY: Realistic situation conflict to resolve according to social role.
+Respond ONLY with a JSON object in this exact format (no markdown, no extra text):
+{
+  "title": "Short title in Vietnamese",
+  "contextDesc": "Context description in Vietnamese",
+  "prompt": "The exact English sentence or question for the student"
+}`;
 
-    const currentIndex = list.findIndex(item => item.id === selectedChallenge?.id);
-    const nextIndex = (currentIndex + 1) % list.length;
-    const nextChallenge = list[nextIndex];
+      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: 'llama-3.3-70b-versatile',
+          messages: [{ role: 'user', content: promptInstruction }],
+          temperature: 0.95,
+          response_format: { type: 'json_object' },
+        }),
+      });
 
-    setSelectedChallenge(nextChallenge);
-    setRecordedAudioUrl(null);
-    setNormalTimer(0);
-    setIsRecordingNormal(false);
+      const data = await res.json();
+      const content = JSON.parse(data.choices[0].message.content);
 
-    if (normalAnimFrameRef.current) cancelAnimationFrame(normalAnimFrameRef.current);
-    if (normalMediaRecorderRef.current && normalMediaRecorderRef.current.state === 'recording') {
-      try { normalMediaRecorderRef.current.stop(); } catch (e) {}
+      return {
+        id: `ai_${Date.now()}`,
+        tier: selectedTier,
+        level: selectedLevel,
+        title: `🤖 [AI] ${content.title}`,
+        contextDesc: content.contextDesc,
+        prompt: content.prompt,
+        isTeacherAssigned: false,
+      };
+    } catch (err) {
+      console.warn("Lỗi sinh đề từ AI:", err);
+      return null;
     }
   };
 
-  // 🎲 BỐC 1 CHỦ ĐỀ KHÁC VỚI ĐỀ HIỆN TẠI VÀ BẬT PHÒNG THU
-  const handlePickRandomTopic = () => {
+  // 🔄 ĐỔI SANG CHỦ ĐỀ KHÁC TRONG PHÒNG THU
+  const handleSwitchToNextTopic = async () => {
     stopSampleAudio();
+    setIsGeneratingAiTopic(true);
+
+    const newAiTopic = await generateNewAiChallenge();
+    if (newAiTopic) {
+      setAllChallenges(prev => [newAiTopic, ...prev]);
+      setSelectedChallenge(newAiTopic);
+      setRecordedAudioUrl(null);
+      setNormalTimer(0);
+      setIsRecordingNormal(false);
+      setIsGeneratingAiTopic(false);
+      return;
+    }
+
     const list = getDisplayChallenges();
-    if (list.length === 0) {
-      Alert.alert("Thông báo", "Không có chủ đề để chọn.");
+    if (list.length > 0) {
+      const otherList = list.filter(item => item.id !== selectedChallenge?.id);
+      const pool = otherList.length > 0 ? otherList : list;
+      const nextChallenge = pool[Math.floor(Math.random() * pool.length)];
+
+      setSelectedChallenge(nextChallenge);
+      setRecordedAudioUrl(null);
+      setNormalTimer(0);
+      setIsRecordingNormal(false);
+
+      if (normalAnimFrameRef.current) cancelAnimationFrame(normalAnimFrameRef.current);
+      if (normalMediaRecorderRef.current && normalMediaRecorderRef.current.state === 'recording') {
+        try { normalMediaRecorderRef.current.stop(); } catch (e) {}
+      }
+    }
+    setIsGeneratingAiTopic(false);
+  };
+
+  // 🎲 BỐC HOẶC TẠO CHỦ ĐỀ MỚI BẰNG AI VÀ MỞ PHÒNG THU
+  const handlePickRandomTopic = async () => {
+    stopSampleAudio();
+    setIsGeneratingAiTopic(true);
+
+    const newAiTopic = await generateNewAiChallenge();
+    if (newAiTopic) {
+      setAllChallenges(prev => [newAiTopic, ...prev]);
+      handleSelectChallenge(newAiTopic);
+      setIsGeneratingAiTopic(false);
       return;
     }
 
-    if (list.length === 1) {
-      handleSelectChallenge(list[0]);
-      return;
+    const list = getDisplayChallenges();
+    if (list.length > 0) {
+      const otherList = list.filter(item => item.id !== selectedChallenge?.id);
+      const pool = otherList.length > 0 ? otherList : list;
+      const randomIndex = Math.floor(Math.random() * pool.length);
+      handleSelectChallenge(pool[randomIndex]);
     }
-
-    const otherList = list.filter(item => item.id !== selectedChallenge?.id);
-    const randomIndex = Math.floor(Math.random() * otherList.length);
-    handleSelectChallenge(otherList[randomIndex]);
+    setIsGeneratingAiTopic(false);
   };
 
   const handleStartCustomTopic = () => {
@@ -637,17 +691,25 @@ export default function Station2Screen({ onBack }: Props) {
               })}
             </View>
 
-            {/* 🔄 NÚT CHUYỂN CHỦ ĐỀ MỚI - LUÔN HIỂN THỊ NỔI BẬT */}
+            {/* 🔄 NÚT CHUYỂN CHỦ ĐỀ MỚI - TỰ ĐỘNG SINH BẰNG AI HOẶC XOAY VÒNG */}
             {topicOrigin !== 'STUDENT_CUSTOM' && (
               <View style={{ width: '100%', marginVertical: 8 }}>
                 <TouchableOpacity 
-                  style={styles.prominentSwitchBtn} 
+                  style={[styles.prominentSwitchBtn, isGeneratingAiTopic && { opacity: 0.6 }]} 
                   activeOpacity={0.7}
+                  disabled={isGeneratingAiTopic}
                   onPress={handlePickRandomTopic}
                 >
-                  <Text style={styles.prominentSwitchBtnText}>
-                    🎲 ĐỔI SANG CHỦ ĐỀ / TÌNH HUỐNG MỚI NGAY
-                  </Text>
+                  {isGeneratingAiTopic ? (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <ActivityIndicator size="small" color="#00FFFF" />
+                      <Text style={styles.prominentSwitchBtnText}>⚡ AI ĐANG SOẠN ĐỀ MỚI...</Text>
+                    </View>
+                  ) : (
+                    <Text style={styles.prominentSwitchBtnText}>
+                      🎲 AI ĐỔI SANG CHỦ ĐỀ / TÌNH HUỐNG MỚI NGAY
+                    </Text>
+                  )}
                 </TouchableOpacity>
               </View>
             )}
@@ -796,8 +858,17 @@ export default function Station2Screen({ onBack }: Props) {
               
               <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
                 {topicOrigin !== 'STUDENT_CUSTOM' && (
-                  <TouchableOpacity style={styles.switchTopicInRoomBtn} activeOpacity={0.7} onPress={handleSwitchToNextTopic}>
-                    <Text style={styles.switchTopicInRoomText}>🔄 ĐỔI ĐỀ KHÁC</Text>
+                  <TouchableOpacity 
+                    style={[styles.switchTopicInRoomBtn, isGeneratingAiTopic && { opacity: 0.6 }]} 
+                    activeOpacity={0.7} 
+                    disabled={isGeneratingAiTopic}
+                    onPress={handleSwitchToNextTopic}
+                  >
+                    {isGeneratingAiTopic ? (
+                      <ActivityIndicator size="small" color="#00FFFF" />
+                    ) : (
+                      <Text style={styles.switchTopicInRoomText}>🔄 ĐỔI ĐỀ KHÁC</Text>
+                    )}
                   </TouchableOpacity>
                 )}
                 <TouchableOpacity onPress={() => setIsNormalPracticing(false)}>
