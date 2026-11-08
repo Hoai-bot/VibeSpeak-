@@ -173,9 +173,10 @@ export default function Station2Screen({ onBack }: Props) {
   const [switchCount, setSwitchCount] = useState<number>(0);
   const [isGeneratingAiTopic, setIsGeneratingAiTopic] = useState<boolean>(false);
 
-  // Quản lý Text-To-Speech
+  // Quản lý Text-To-Speech (Cloud Audio + Fallback Web Speech)
   const [isPlayingSample, setIsPlayingSample] = useState<boolean>(false);
   const synthRef = useRef<SpeechSynthesis | null>(null);
+  const cloudAudioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
@@ -185,7 +186,7 @@ export default function Station2Screen({ onBack }: Props) {
       };
     }
     return () => {
-      if (synthRef.current) synthRef.current.cancel();
+      stopSampleAudio();
     };
   }, []);
 
@@ -215,17 +216,26 @@ export default function Station2Screen({ onBack }: Props) {
     return voices.find(v => v.lang === 'en-US') || voices.find(v => v.lang.startsWith('en')) || null;
   };
 
-  const playSampleAudio = (text: string) => {
-    if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
-      Alert.alert("Lỗi", "Trình duyệt không hỗ trợ Text-to-Speech");
-      return;
+  const stopSampleAudio = () => {
+    if (cloudAudioRef.current) {
+      try {
+        cloudAudioRef.current.pause();
+        cloudAudioRef.current.currentTime = 0;
+      } catch (e) {}
+      cloudAudioRef.current = null;
     }
-    const synth = window.speechSynthesis;
-    if (isPlayingSample) {
-      synth.cancel();
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+    setIsPlayingSample(false);
+  };
+
+  const playSystemTTSFallback = (text: string) => {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
       setIsPlayingSample(false);
       return;
     }
+    const synth = window.speechSynthesis;
     synth.cancel();
     const utterance = new SpeechSynthesisUtterance(text.replace(/["']/g, '').trim());
     
@@ -242,11 +252,40 @@ export default function Station2Screen({ onBack }: Props) {
     synth.speak(utterance);
   };
 
-  const stopSampleAudio = () => {
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
+  // 🎧 Phát âm Cloud Audio chuẩn người bản xứ (Google Neural Stream) tương thích 100% Android, iOS, Windows, Mac
+  const playCloudTTS = async (text: string) => {
+    try {
+      if (typeof window === 'undefined') return;
+      if (isPlayingSample) {
+        stopSampleAudio();
+        return;
+      }
+      stopSampleAudio();
+      setIsPlayingSample(true);
+
+      const encodedText = encodeURIComponent(text.replace(/["']/g, '').trim());
+      const audioUrl = `https://translate.google.com/translate_tts?ie=UTF-8&tl=en-US&client=tw-ob&q=${encodedText}`;
+
+      const audio = new Audio(audioUrl);
+      audio.playbackRate = 0.95;
+      cloudAudioRef.current = audio;
+
+      audio.onended = () => {
+        setIsPlayingSample(false);
+        cloudAudioRef.current = null;
+      };
+      audio.onerror = () => {
+        cloudAudioRef.current = null;
+        // Fallback về Web Speech API hệ thống nếu lỗi kết nối mạng
+        playSystemTTSFallback(text);
+      };
+
+      await audio.play();
+    } catch (e) {
+      cloudAudioRef.current = null;
+      // Fallback về Web Speech API hệ thống nếu bị chặn autoplay
+      playSystemTTSFallback(text);
     }
-    setIsPlayingSample(false);
   };
 
   const [topicOrigin, setTopicOrigin] = useState<TopicOrigin>('SYSTEM');
@@ -817,7 +856,7 @@ Output ONLY a raw JSON object (no markdown, no backticks):
                         <TouchableOpacity 
                           style={[styles.ttsMiniBtn, isPlayingSample && styles.ttsMiniBtnActive]} 
                           activeOpacity={0.7}
-                          onPress={() => playSampleAudio(currentChallenge.prompt)}
+                          onPress={() => playCloudTTS(currentChallenge.prompt)}
                         >
                           <Text style={styles.ttsMiniBtnText}>
                             {isPlayingSample ? '⏹ DỪNG' : '🔊 NGHE MẪU'}
@@ -884,7 +923,7 @@ Output ONLY a raw JSON object (no markdown, no backticks):
                   <TouchableOpacity 
                     style={[styles.ttsPlayBtn, isPlayingSample && styles.ttsPlayBtnActive]} 
                     activeOpacity={0.7}
-                    onPress={() => playSampleAudio(currentChallenge.prompt)}
+                    onPress={() => playCloudTTS(currentChallenge.prompt)}
                   >
                     <Text style={styles.ttsPlayBtnText}>
                       {isPlayingSample ? '⏹ DỪNG ĐỌC' : '🔊 NGHE GIỌNG MẪU'}
