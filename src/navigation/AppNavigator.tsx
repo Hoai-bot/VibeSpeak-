@@ -21,7 +21,7 @@ export default function AppNavigator() {
 
   // Mở màn hình hồ sơ sinh viên
   if (showProfile) {
-    return <ProfileScreen onBack={handleBackToMap} />;
+    return <ProfileScreen onBackToMap={handleBackToMap} />;
   }
 
   // Điều hướng theo trạm hoặc cổng giảng viên

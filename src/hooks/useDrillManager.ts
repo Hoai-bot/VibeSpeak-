@@ -1,3 +1,4 @@
+// src/hooks/useDrillManager.ts
 import { useState, useCallback, useRef } from 'react';
 import { generateDynamicTopic, GeneratedDrill } from '../services/groqClient';
 
@@ -5,12 +6,16 @@ const STORAGE_KEY = 'VIBESPEAK_PERMANENT_HISTORY';
 
 export function useDrillManager() {
   const [currentDrill, setCurrentDrill] = useState<GeneratedDrill>({
-    text: "Seat Sheet",
-    meaning: "Seat (Chỗ ngồi) vs Sheet (Tờ giấy / Ga giường)",
-    phonetics: "/siːt ʃiːt/",
-    tip: "Âm /s/ kéo dài khóe môi cười (Seat), âm /ʃ/ chu tròn môi đẩy hơi (Sheet)",
+    id: 'default_drill_1',
+    targetWord: 'Seat Sheet',
+    ipa: '/siːt ʃiːt/',
+    sentence: 'Take a seat and take the sheet.',
+    text: 'Seat Sheet',
+    meaning: 'Seat (Chỗ ngồi) vs Sheet (Tờ giấy / Ga giường)',
+    phonetics: '/siːt ʃiːt/',
+    tip: 'Âm /s/ kéo dài khóe môi cười (Seat), âm /ʃ/ chu tròn môi đẩy hơi (Sheet)',
     bpm: 90,
-    focus: "Minimal Pair Contrast"
+    focus: 'Minimal Pair Contrast'
   });
 
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -55,7 +60,7 @@ export function useDrillManager() {
 
       // 3. Cập nhật State và Lưu lịch sử ngay lập tức
       setCurrentDrill(drill);
-      saveHistory(drill.text);
+      saveHistory(drill.text || drill.targetWord || drill.sentence || '');
 
     } catch (error) {
       console.error("Lỗi tạo bài tập mới:", error);

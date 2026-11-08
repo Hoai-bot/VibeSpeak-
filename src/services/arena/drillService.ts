@@ -16,7 +16,8 @@ export interface Tier2Linking {
   phrase: string;
   ipa: string;
   meaning: string;
-  linkingTip: string;
+  linkingTip?: string;
+  tip?: string;
   ttsAudioText: string;
 }
 

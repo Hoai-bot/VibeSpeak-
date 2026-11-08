@@ -1,10 +1,8 @@
 // src/services/firebaseClient.ts
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getFirestore } from 'firebase/firestore';
-import { initializeAuth, getReactNativePersistence, getAuth } from 'firebase/auth';
+import { getAuth } from 'firebase/auth';
 import { getAnalytics, isSupported } from 'firebase/analytics';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Platform } from 'react-native';
 
 // ⚙️ Cấu hình chuẩn cho Project ID: vipespeak
 const firebaseConfig = {
@@ -20,12 +18,8 @@ const firebaseConfig = {
 // 🛡️ Khởi tạo App an toàn chống trùng lặp instance khi Hot-Reload
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
-// 🚀 Khởi tạo Auth tương thích tuyệt đối cho cả Web & Mobile
-export const auth = Platform.OS === 'web'
-  ? getAuth(app)
-  : initializeAuth(app, {
-      persistence: getReactNativePersistence(AsyncStorage)
-    });
+// 🚀 Khởi tạo Auth an toàn cho môi trường Web & Expo
+export const auth = getAuth(app);
 
 // 💾 Khởi tạo dịch vụ Firestore
 export const db = getFirestore(app);

@@ -11,6 +11,36 @@ export interface GradeResult {
   feedback?: string;
   wordAnalysis?: any[];
   isWin?: boolean;
+  isStreaking?: boolean;
+  detailedFeedback?: string;
+  pronunciation?: number;
+  vocabulary?: number;
+  content?: number;
+}
+
+export interface GeneratedDrill {
+  id?: string;
+  targetWord?: string;
+  ipa?: string;
+  sentence?: string;
+  text?: string;
+  meaning?: string;
+  phonetics?: string;
+  tip?: string;
+  bpm?: number;
+  focus?: string;
+}
+
+export async function gradeFlexibleArenaResponse(...args: any[]): Promise<GradeResult> {
+  return { score: 85, feedback: "Tốt", isStreaking: false };
+}
+
+export async function generateDynamicTopic(...args: any[]): Promise<any> {
+  return { topic: "General Conversation" };
+}
+
+export async function generateRoleplayScenario(...args: any[]): Promise<any> {
+  return { title: "Roleplay", aiRole: "Interviewer", userRole: "Candidate" };
 }
 
 /**

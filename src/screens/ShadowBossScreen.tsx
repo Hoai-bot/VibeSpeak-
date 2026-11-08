@@ -211,11 +211,9 @@ export default function ShadowBossScreen({ onBack }: Props) {
 
   // 🏆 ĐIỀU KIỆN RENDER MÀN HÌNH BẢNG XẾP HẠNG
   if (showLeaderboard) {
-    const userDamage = bossData ? ((bossData.maxHp || 100) - currentHp) * 50 : 3500;
     return (
       <LeaderboardScreen 
         onBack={() => setShowLeaderboard(false)} 
-        userXp={userDamage > 0 ? userDamage : 3500} 
       />
     );
   }

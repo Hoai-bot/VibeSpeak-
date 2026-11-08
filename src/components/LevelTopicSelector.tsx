@@ -81,7 +81,7 @@ const styles = StyleSheet.create({
   },
   levelRow: {
     flexDirection: 'row',
-    justify: 'space-between',
+    justifyContent: 'space-between',
     width: '100%',
   },
   levelBtn: {
