@@ -164,7 +164,6 @@ export default function Station2Screen({ onBack }: Props) {
       return;
     }
 
-    // Nếu chỉ có 1 bài
     if (list.length === 1) {
       Alert.alert("Thông báo", "Chỉ có 1 chủ đề trong danh mục này.");
       return;
@@ -510,6 +509,20 @@ export default function Station2Screen({ onBack }: Props) {
               })}
             </View>
 
+            {/* 🔄 NÚT CHUYỂN CHỦ ĐỀ MỚI - LUÔN HIỂN THỊ NỔI BẬT */}
+            {topicOrigin !== 'STUDENT_CUSTOM' && (
+              <View style={{ width: '100%', marginVertical: 8 }}>
+                <TouchableOpacity 
+                  style={styles.prominentSwitchBtn} 
+                  onPress={handlePickRandomTopic}
+                >
+                  <Text style={styles.prominentSwitchBtnText}>
+                    🎲 ĐỔI SANG CHỦ ĐỀ / TÌNH HUỐNG MỚI NGAY
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
             {/* 🎧 THANH NGHE LẠI BẢN THU ÂM */}
             {recordedAudioUrl && (
               <View style={styles.audioReviewBox}>
@@ -577,7 +590,6 @@ export default function Station2Screen({ onBack }: Props) {
                       : `🔥 ĐỀ MẪU HỆ THỐNG [${selectedTier} - ${selectedLevel}]:`}
                   </Text>
                   
-                  {/* 🔄 NÚT CHỌN NGẪU NHIÊN 1 ĐỀ */}
                   {currentDisplayList.length > 1 && (
                     <TouchableOpacity style={styles.randomTopicBtn} onPress={handlePickRandomTopic}>
                       <Text style={styles.randomTopicBtnText}>🎲 ĐỔI 1 ĐỀ BẤT KỲ</Text>
@@ -646,7 +658,6 @@ export default function Station2Screen({ onBack }: Props) {
               </Text>
               
               <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
-                {/* 🔄 NÚT CHUYỂN CHỦ ĐỀ MỚI TRỰC TIẾP TRONG PHÒNG THU */}
                 {topicOrigin !== 'STUDENT_CUSTOM' && (
                   <TouchableOpacity style={styles.switchTopicInRoomBtn} onPress={handleSwitchToNextTopic}>
                     <Text style={styles.switchTopicInRoomText}>🔄 ĐỔI ĐỀ KHÁC</Text>
@@ -775,6 +786,25 @@ const styles = StyleSheet.create({
   levelTabActive: { backgroundColor: '#FF007F', borderColor: '#FF007F' },
   levelTabText: { color: '#8888AA', fontSize: 10, fontWeight: 'bold' },
   levelTabTextActive: { color: '#FFF', fontWeight: '900' },
+
+  prominentSwitchBtn: {
+    backgroundColor: '#1E0B36',
+    paddingVertical: 12,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: '#00FFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#00FFFF',
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+  },
+  prominentSwitchBtnText: {
+    color: '#00FFFF',
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
 
   customBoxWrapper: { backgroundColor: '#0D0620', padding: 14, borderRadius: 12, borderWidth: 2, borderColor: '#FF007F', marginVertical: 8 },
   customBoxTitle: { color: '#FF007F', fontSize: 11, fontWeight: '900', marginBottom: 8 },
