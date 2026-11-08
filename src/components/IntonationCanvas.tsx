@@ -1,7 +1,6 @@
 // src/components/IntonationCanvas.tsx
 import React from 'react';
 import { View, Text, StyleSheet, Dimensions } from 'react-native';
-import Svg, { Path, Line } from 'react-native-svg';
 
 interface Props {
   targetContour: number[];
@@ -18,7 +17,6 @@ export default function IntonationCanvas({ targetContour, studentContour, height
     const midY = height / 2;
 
     return contour.reduce((acc, val, i) => {
-      // Scale semitone offset (-8 đến +8) vào khung hiển thị
       const y = Math.max(12, Math.min(height - 12, midY - val * 3.5));
       return i === 0 ? `M 0,${y}` : `${acc} L ${i * step},${y}`;
     }, '');
@@ -36,30 +34,46 @@ export default function IntonationCanvas({ targetContour, studentContour, height
         </View>
       </View>
 
-      <View style={{ width, height, justifyContent: 'center', alignItems: 'center' }}>
-        <Svg width={width} height={height}>
-          {/* Trục cao độ trung tâm */}
-          <Line x1="0" y1={height / 2} x2={width} y2={height / 2} stroke="#221133" strokeDasharray="4 4" />
-          
-          {/* Đường câu mẫu (Vàng Gold) */}
-          <Path 
-            d={buildPath(targetContour)} 
-            stroke="#FFD700" 
-            strokeWidth="2.5" 
-            fill="none" 
-            opacity={0.85} 
-          />
-
-          {/* Đường ngữ điệu người học (Xanh Cyan) */}
-          {hasData && (
-            <Path 
-              d={buildPath(studentContour)} 
-              stroke="#00FFFF" 
-              strokeWidth="3" 
-              fill="none" 
-            />
-          )}
-        </Svg>
+      <View 
+        style={{ width, height, justifyContent: 'center', alignItems: 'center' }}
+        // @ts-ignore
+        onStartShouldSetResponder={() => false}
+        onMoveShouldSetResponder={() => false}
+      >
+        {React.createElement(
+          'svg',
+          {
+            width,
+            height,
+            style: { overflow: 'visible', width: '100%', height: '100%' }
+          },
+          // Trục cao độ trung tâm
+          React.createElement('line', {
+            x1: 0,
+            y1: height / 2,
+            x2: width,
+            y2: height / 2,
+            stroke: '#221133',
+            strokeDasharray: '4 4'
+          }),
+          // Đường câu mẫu (Vàng Gold)
+          React.createElement('path', {
+            d: buildPath(targetContour),
+            stroke: '#FFD700',
+            strokeWidth: 2.5,
+            fill: 'none',
+            opacity: 0.85
+          }),
+          // Đường ngữ điệu người học (Xanh Cyan)
+          hasData
+            ? React.createElement('path', {
+                d: buildPath(studentContour),
+                stroke: '#00FFFF',
+                strokeWidth: 3,
+                fill: 'none'
+              })
+            : null
+        )}
       </View>
     </View>
   );
