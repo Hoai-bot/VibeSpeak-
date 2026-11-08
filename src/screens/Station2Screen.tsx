@@ -111,14 +111,12 @@ const getSupportedAudioMimeType = (): { mimeType: string; extension: string } =>
   const MediaRecorderClass = (window as any).MediaRecorder;
 
   if (typeof MediaRecorderClass.isTypeSupported === 'function') {
-    // 1. Ưu tiên WebM/Opus chuẩn (Chrome, Edge, Firefox, Android)
     if (MediaRecorderClass.isTypeSupported('audio/webm;codecs=opus')) {
       return { mimeType: 'audio/webm;codecs=opus', extension: 'webm' };
     }
     if (MediaRecorderClass.isTypeSupported('audio/webm')) {
       return { mimeType: 'audio/webm', extension: 'webm' };
     }
-    // 2. Fallback sang MP4/AAC (Safari trên iOS, iPadOS, macOS)
     if (MediaRecorderClass.isTypeSupported('audio/mp4')) {
       return { mimeType: 'audio/mp4', extension: 'mp4' };
     }
@@ -166,7 +164,7 @@ export default function Station2Screen({ onBack }: Props) {
   const [teacherAssignments, setTeacherAssignments] = useState<ChallengeItem[]>([]);
   const [loadingAssignments, setLoadingAssignments] = useState<boolean>(true);
 
-  // 🎯 QUẢN LÝ ĐỀ BÀI HIỆN TẠI (ĐẢM BẢO BẤM LÀ ĐỔI ĐỀ MỚI NGAY)
+  // 🎯 QUẢN LÝ ĐỀ BÀI HIỆN TẠI
   const [currentChallenge, setCurrentChallenge] = useState<ChallengeItem>(() => {
     return createProceduralFallback('ROLEPLAY', 'B1', 0);
   });
@@ -195,7 +193,6 @@ export default function Station2Screen({ onBack }: Props) {
     const voices = synthRef.current.getVoices();
     if (!voices || voices.length === 0) return null;
 
-    // 1. Ưu tiên trên Android: Bộ giọng Google US chất lượng cao
     const androidGoogleVoices = voices.filter(v => 
       v.lang.startsWith('en') && 
       (v.name.includes('Google') || v.name.includes('Network') || v.voiceURI.includes('google'))
@@ -205,14 +202,12 @@ export default function Station2Screen({ onBack }: Props) {
       if (usGoogle) return usGoogle;
     }
 
-    // 2. Ưu tiên trên iOS: Siri / Samantha Enhanced
     const iosPreferred = ['Siri', 'Samantha (Enhanced)', 'Samantha', 'Nicky', 'Aaron'];
     for (const name of iosPreferred) {
       const match = voices.find(v => v.lang.startsWith('en') && v.name.includes(name));
       if (match) return match;
     }
 
-    // 3. Dự phòng bất kỳ voice en-US nào
     return voices.find(v => v.lang === 'en-US') || voices.find(v => v.lang.startsWith('en')) || null;
   };
 
@@ -252,7 +247,6 @@ export default function Station2Screen({ onBack }: Props) {
     synth.speak(utterance);
   };
 
-  // 🎧 Phát âm Cloud Audio chuẩn người bản xứ (Google Neural Stream) tương thích 100% Android, iOS, Windows, Mac
   const playCloudTTS = async (text: string) => {
     try {
       if (typeof window === 'undefined') return;
@@ -276,14 +270,12 @@ export default function Station2Screen({ onBack }: Props) {
       };
       audio.onerror = () => {
         cloudAudioRef.current = null;
-        // Fallback về Web Speech API hệ thống nếu lỗi kết nối mạng
         playSystemTTSFallback(text);
       };
 
       await audio.play();
     } catch (e) {
       cloudAudioRef.current = null;
-      // Fallback về Web Speech API hệ thống nếu bị chặn autoplay
       playSystemTTSFallback(text);
     }
   };
@@ -426,7 +418,7 @@ Output ONLY a raw JSON object (no markdown, no backticks):
     }
   };
 
-  // 🎲 NÚT ĐỔI CHỦ ĐỀ: ĐẢM BẢO 100% LUÔN SINH RA ĐỀ MỚI KHÔNG BAO GIỜ BỊ LẶP
+  // 🎲 NÚT ĐỔI CHỦ ĐỀ
   const handleNextTopic = async () => {
     stopSampleAudio();
     setIsGeneratingAiTopic(true);
@@ -434,7 +426,6 @@ Output ONLY a raw JSON object (no markdown, no backticks):
     const nextCounter = switchCount + 1;
     setSwitchCount(nextCounter);
 
-    // 1. Thử gọi AI sinh đề mới
     const newAiTopic = await generateNewAiChallenge();
     if (newAiTopic) {
       setCurrentChallenge(newAiTopic);
@@ -442,7 +433,6 @@ Output ONLY a raw JSON object (no markdown, no backticks):
       return;
     }
 
-    // 2. Nếu AI không có sẵn hoặc mất mạng -> Dùng Procedural Fallback với hàng chục biến thể
     const dynamicTopic = createProceduralFallback(selectedTier, selectedLevel, nextCounter);
     setCurrentChallenge(dynamicTopic);
     setIsGeneratingAiTopic(false);
@@ -466,7 +456,6 @@ Output ONLY a raw JSON object (no markdown, no backticks):
     };
 
     setCurrentChallenge(customItem);
-    setRecordedAudioUrl(null);
     setIsNormalPracticing(true);
     setIsTeacherExamining(false);
     setNormalTimer(0);
@@ -476,7 +465,6 @@ Output ONLY a raw JSON object (no markdown, no backticks):
   const handleEnterRoom = (item: ChallengeItem) => {
     stopSampleAudio();
     setCurrentChallenge(item);
-    setRecordedAudioUrl(null);
     if (item.isTeacherAssigned) {
       setIsTeacherExamining(true);
       setIsNormalPracticing(false);
@@ -488,18 +476,16 @@ Output ONLY a raw JSON object (no markdown, no backticks):
     }
   };
 
-  // 🎙️ Thu âm đa nền tảng (hỗ trợ cả Android, iOS Safari và Desktop)
+  // 🎙️ Thu âm đa nền tảng
   const startNormalRecording = async () => {
     stopSampleAudio();
     try {
       normalAudioChunksRef.current = [];
       normalPitchHistoryRef.current = [];
       setNormalTimer(0);
-      setRecordedAudioUrl(null);
 
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       
-      // Tự động nhận diện định dạng MIME phù hợp cho thiết bị (tránh crash trên iOS)
       const detectedFormat = getSupportedAudioMimeType();
       activeMimeTypeRef.current = detectedFormat;
 
@@ -517,7 +503,6 @@ Output ONLY a raw JSON object (no markdown, no backticks):
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
       const audioCtx = new AudioCtx();
       
-      // Bắt buộc resume AudioContext trên Safari/Chrome mobile để tránh bị câm
       if (audioCtx.state === 'suspended') {
         await audioCtx.resume();
       }
@@ -588,7 +573,6 @@ Output ONLY a raw JSON object (no markdown, no backticks):
       normalMediaRecorderRef.current.stop();
       normalMediaRecorderRef.current.onstop = () => {
         const { mimeType } = activeMimeTypeRef.current;
-        // Đóng gói blob theo đúng định dạng được OS ghi âm
         const audioBlob = new Blob(normalAudioChunksRef.current, mimeType ? { type: mimeType } : undefined);
         const localUrl = URL.createObjectURL(audioBlob);
         setRecordedAudioUrl(localUrl);
@@ -606,6 +590,7 @@ Output ONLY a raw JSON object (no markdown, no backticks):
     return () => { if (timer) clearInterval(timer); };
   }, [isRecordingNormal]);
 
+  // ⭐️ ĐÃ SỬA: Giữ nguyên phòng thu (`isNormalPracticing`) để người dùng nghe lại và xem lại kết quả
   const finishSubmissionAndEvaluate = async (audioBlob: Blob, pitchHistory: number[], localAudioUrl?: string) => {
     if (localAudioUrl) {
       setRecordedAudioUrl(localAudioUrl);
@@ -660,7 +645,7 @@ Output ONLY a raw JSON object (no markdown, no backticks):
 
     setFeedbackResult(evaluated);
     setIsTeacherExamining(false);
-    setIsNormalPracticing(false);
+    // ⭐️ KHÔNG gọi setIsNormalPracticing(false) để phòng thu luôn mở kèm thanh nghe lại
     setDetailedModalVisible(true);
   };
 
@@ -775,6 +760,28 @@ Output ONLY a raw JSON object (no markdown, no backticks):
                 );
               })}
             </View>
+
+            {/* 🎧 THANH NGHE LẠI BẢN THU (HIỂN THỊ CẢ Ở MÀN HÌNH CHÍNH NẾU ĐÃ THU ÂM XONG) */}
+            {recordedAudioUrl && !isRecordingNormal && (
+              <View style={styles.audioReviewBox}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Text style={styles.audioReviewTitle}>🎧 BẢN THU ÂM CỦA BẠN (NGHE LẠI):</Text>
+                  {feedbackResult && (
+                    <TouchableOpacity 
+                      style={styles.viewScoreBtn}
+                      onPress={() => setDetailedModalVisible(true)}
+                    >
+                      <Text style={styles.viewScoreBtnText}>📊 XEM LẠI BẢNG ĐIỂM</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+                {React.createElement('audio', {
+                  controls: true,
+                  src: recordedAudioUrl,
+                  style: { width: '100%', height: '38px', marginTop: '8px' }
+                })}
+              </View>
+            )}
 
             {/* 5. GIAO DIỆN TÌNH HUỐNG & NÚT ĐỔI ĐỀ TRỰC QUAN */}
             {topicOrigin === 'STUDENT_CUSTOM' ? (
@@ -955,9 +962,20 @@ Output ONLY a raw JSON object (no markdown, no backticks):
               />
             </View>
 
+            {/* 🎧 THANH NGHE LẠI BẢN THU TRONG PHÒNG THU */}
             {recordedAudioUrl && !isRecordingNormal && (
               <View style={styles.audioReviewBox}>
-                <Text style={styles.audioReviewTitle}>🎧 NGHE LẠI BẢN THU ÂM CỦA BẠN:</Text>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                  <Text style={styles.audioReviewTitle}>🎧 NGHE LẠI BẢN THU ÂM CỦA BẠN:</Text>
+                  {feedbackResult && (
+                    <TouchableOpacity 
+                      style={styles.viewScoreBtn}
+                      onPress={() => setDetailedModalVisible(true)}
+                    >
+                      <Text style={styles.viewScoreBtnText}>📊 BẢNG ĐIỂM CHI TIẾT</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
                 {React.createElement('audio', {
                   controls: true,
                   src: recordedAudioUrl,
@@ -967,9 +985,27 @@ Output ONLY a raw JSON object (no markdown, no backticks):
             )}
 
             {!isRecordingNormal ? (
-              <TouchableOpacity style={styles.startRecordBtn} activeOpacity={0.8} onPress={startNormalRecording}>
-                <Text style={styles.startRecordBtnText}>🔴 BẮT ĐẦU THU ÂM</Text>
-              </TouchableOpacity>
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                <TouchableOpacity 
+                  style={[styles.startRecordBtn, recordedAudioUrl ? { flex: 1 } : { width: '100%' }]} 
+                  activeOpacity={0.8} 
+                  onPress={startNormalRecording}
+                >
+                  <Text style={styles.startRecordBtnText}>
+                    {recordedAudioUrl ? '🔄 THU ÂM LẠI' : '🔴 BẮT ĐẦU THU ÂM'}
+                  </Text>
+                </TouchableOpacity>
+
+                {recordedAudioUrl && feedbackResult && (
+                  <TouchableOpacity 
+                    style={styles.reopenModalBtn} 
+                    activeOpacity={0.8} 
+                    onPress={() => setDetailedModalVisible(true)}
+                  >
+                    <Text style={styles.reopenModalBtnText}>📊 XEM BẢNG ĐIỂM</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
             ) : (
               <TouchableOpacity style={styles.stopRecordBtn} activeOpacity={0.8} onPress={stopNormalRecording}>
                 <Text style={styles.stopRecordBtnText}>⏹ DỪNG & CHẤM ĐIỂM CHI TIẾT</Text>
@@ -1089,8 +1125,10 @@ const styles = StyleSheet.create({
   startCustomBtn: { backgroundColor: '#39FF14', paddingVertical: 12, borderRadius: 8, alignItems: 'center', marginTop: 12 },
   startCustomBtnText: { color: '#000', fontSize: 11, fontWeight: '900' },
 
-  audioReviewBox: { backgroundColor: '#130628', padding: 10, borderRadius: 8, borderWidth: 1.5, borderColor: '#39FF14', marginBottom: 12 },
-  audioReviewTitle: { color: '#39FF14', fontSize: 9.5, fontWeight: '900' },
+  audioReviewBox: { backgroundColor: '#130628', padding: 12, borderRadius: 10, borderWidth: 1.5, borderColor: '#39FF14', marginVertical: 10 },
+  audioReviewTitle: { color: '#39FF14', fontSize: 10, fontWeight: '900' },
+  viewScoreBtn: { backgroundColor: '#0A2518', paddingVertical: 4, paddingHorizontal: 8, borderRadius: 6, borderWidth: 1, borderColor: '#39FF14' },
+  viewScoreBtnText: { color: '#39FF14', fontSize: 9, fontWeight: 'bold' },
 
   normalPracticeCard: { backgroundColor: '#0A0318', padding: 16, borderRadius: 14, borderWidth: 1.5, borderColor: '#00FFFF', marginVertical: 10 },
   normalPracticeHeader: { color: '#00FFFF', fontSize: 10, fontWeight: '900' },
@@ -1106,6 +1144,8 @@ const styles = StyleSheet.create({
   liveWaveformLabel: { color: '#39FF14', fontSize: 9.5, fontWeight: 'bold', marginBottom: 6 },
   startRecordBtn: { backgroundColor: '#FF0055', paddingVertical: 12, borderRadius: 10, alignItems: 'center' },
   startRecordBtnText: { color: '#FFF', fontSize: 11.5, fontWeight: '900' },
+  reopenModalBtn: { flex: 1, backgroundColor: '#0D0620', borderWidth: 1.5, borderColor: '#00FFFF', paddingVertical: 12, borderRadius: 10, alignItems: 'center' },
+  reopenModalBtnText: { color: '#00FFFF', fontSize: 11, fontWeight: '900' },
   stopRecordBtn: { backgroundColor: '#39FF14', paddingVertical: 12, borderRadius: 10, alignItems: 'center' },
   stopRecordBtnText: { color: '#000', fontSize: 11.5, fontWeight: '900' }
 });
