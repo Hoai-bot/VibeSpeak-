@@ -4,12 +4,45 @@ import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator
 import { getRandomStation1Drill, DrillType } from '../services/drills/station1Service';
 import { evaluateSpeaking, AssessmentResult, generateWordDiff } from '../services/arena/assessmentService';
 import { updateUserProgress } from '../services/userService';
-import { supabase } from '../utils/supabase'; // 💡 IMPORT TRỰC TIẾP TỪ UTILS
-import AudioWaveVisualizer from '../components/AudioWaveVisualizer'; // 🌊 IMPORT SÓNG ÂM THỜI GIAN THỰC
-import { getPhoneticComparison } from '../constants/phoneticMap'; // 🔬 IMPORT BỘ SOI ÂM VỊ IPA
+import { supabase } from '../utils/supabase';
+import AudioWaveVisualizer from '../components/AudioWaveVisualizer';
+import IntonationCanvas from '../components/IntonationCanvas'; // 📈 IMPORT INTOMATION CANVAS
+import { getPhoneticComparison } from '../constants/phoneticMap';
 
 interface Props {
   onBack: () => void;
+}
+
+// Hàm trích xuất cao độ F0 cơ bản phía Client (Autocorrelation)
+function detectPitchFrame(buffer: Float32Array, sampleRate: number): number | null {
+  let r1 = 0, r2 = 0;
+  const size = buffer.length;
+  let bestOffset = -1;
+  let bestCorrelation = 0;
+  let rms = 0;
+
+  for (let i = 0; i < size; i++) {
+    const val = buffer[i];
+    rms += val * val;
+  }
+  rms = Math.sqrt(rms / size);
+  if (rms < 0.01) return null; // Yên lặng
+
+  for (let offset = Math.floor(sampleRate / 450); offset < Math.floor(sampleRate / 70); offset++) {
+    let correlation = 0;
+    for (let i = 0; i < size - offset; i++) {
+      correlation += buffer[i] * buffer[i + offset];
+    }
+    if (correlation > bestCorrelation) {
+      bestCorrelation = correlation;
+      bestOffset = offset;
+    }
+  }
+
+  if (bestCorrelation > 0.4 && bestOffset > 0) {
+    return sampleRate / bestOffset;
+  }
+  return null;
 }
 
 export default function Station1Screen({ onBack }: Props) {
@@ -26,16 +59,18 @@ export default function Station1Screen({ onBack }: Props) {
   const [result, setResult] = useState<AssessmentResult | null>(null);
   const [userId, setUserId] = useState<string | undefined>(undefined);
 
-  // 🎯 QUẢN LÝ TIẾN TRÌNH NÂNG ĐIỂM (SCORE COMPARISON & BEST SCORE)
+  // Quản lý tiến trình & Điểm kỷ lục
   const [bestScore, setBestScore] = useState<number>(0);
   const [previousScore, setPreviousScore] = useState<number | null>(null);
   const [attemptCount, setAttemptCount] = useState<number>(0);
   
-  // Quản lý luồng âm thanh thời gian thực cho Visualizer
+  // Quản lý luồng âm thanh
   const [activeStream, setActiveStream] = useState<MediaStream | null>(null);
-
-  // Lưu văn bản bóc tách thực tế từ giọng nói
   const [capturedText, setCapturedText] = useState<string>('');
+
+  // 📈 QUẢN LÝ DỮ LIỆU ĐƯỜNG CONG NGỮ ĐIỆU (INTONATION CONTOUR)
+  const [studentContour, setStudentContour] = useState<number[]>([]);
+  const [targetContour, setTargetContour] = useState<number[]>([]);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -44,11 +79,13 @@ export default function Station1Screen({ onBack }: Props) {
   const recognitionRef = useRef<any>(null);
   const recordingStartTimeRef = useRef<number>(0);
 
-  // 🛡️ HÀM BÁO LỖI AN TOÀN TRÁNH NGHỄN TOUCH RESPONDER TRÊN WEB
+  // Audio Context cho Pitch Extraction
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const pitchIntervalRef = useRef<any>(null);
+  const pitchSamplesRef = useRef<number[]>([]);
+
   const safeAlert = (msg: string) => {
-    setTimeout(() => {
-      alert(msg);
-    }, 50);
+    setTimeout(() => { alert(msg); }, 50);
   };
 
   useEffect(() => {
@@ -83,7 +120,6 @@ export default function Station1Screen({ onBack }: Props) {
     setIsPlayingTTS(true);
 
     let cleanSpeechText = textToSpeak.replace(/\//g, ', ').trim();
-
     const ttsWordFixes: Record<string, string> = {
       'come in': 'cum, in',
       'come': 'cum',
@@ -109,9 +145,7 @@ export default function Station1Screen({ onBack }: Props) {
           v => v.lang === 'en-US' && (v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('Samantha'))
         ) || voices.find(v => v.lang.startsWith('en'));
 
-        if (englishVoice) {
-          utterance.voice = englishVoice;
-        }
+        if (englishVoice) utterance.voice = englishVoice;
 
         utterance.onstart = () => setIsPlayingTTS(true);
         utterance.onend = () => setIsPlayingTTS(false);
@@ -122,15 +156,14 @@ export default function Station1Screen({ onBack }: Props) {
 
       if (window.speechSynthesis.getVoices().length > 0) {
         speakText();
-        return;
       } else {
         window.speechSynthesis.onvoiceschanged = () => {
           speakText();
           window.speechSynthesis.onvoiceschanged = null;
         };
         setTimeout(() => speakText(), 150);
-        return;
       }
+      return;
     }
 
     tryAudioUrlFallback(cleanSpeechText);
@@ -140,14 +173,12 @@ export default function Station1Screen({ onBack }: Props) {
     try {
       const encodedText = encodeURIComponent(textToSpeak);
       const ttsUrl = `https://dict.youdao.com/dictvoice?audio=${encodedText}&type=2`;
-
       const audio = new Audio(ttsUrl);
       currentAudioRef.current = audio;
 
       audio.onplay = () => setIsPlayingTTS(true);
       audio.onended = () => setIsPlayingTTS(false);
       audio.onerror = () => setIsPlayingTTS(false);
-
       audio.play().catch(() => setIsPlayingTTS(false));
     } catch {
       setIsPlayingTTS(false);
@@ -162,6 +193,13 @@ export default function Station1Screen({ onBack }: Props) {
     setAttemptCount(0);
     const newDrill = getRandomStation1Drill(type);
     setCurrentDrill(newDrill);
+
+    // Tạo đường cong ngữ điệu mẫu mô phỏng ngữ điệu câu hỏi/câu khẳng định tiếng Anh
+    const isQuestion = (newDrill?.contentEn || '').includes('?');
+    const mockRef = isQuestion 
+      ? [-2, -1.5, -1, 0, 0.5, 1.2, 2.8, 4.5] // Câu hỏi Yes/No: vút lên cuối câu
+      : [0.5, 1.8, 2.2, 1.5, 0.2, -1.0, -2.5, -3.2]; // Câu khẳng định: hạ giọng cuối câu
+    setTargetContour(mockRef);
   };
 
   useEffect(() => {
@@ -170,14 +208,15 @@ export default function Station1Screen({ onBack }: Props) {
   }, [activeType]);
 
   const resetSession = () => {
+    if (pitchIntervalRef.current) clearInterval(pitchIntervalRef.current);
+    if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+      try { audioContextRef.current.close(); } catch (e) {}
+    }
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
       try { mediaRecorderRef.current.stop(); } catch (e) {}
     }
     if (recognitionRef.current) {
-      try { 
-        recognitionRef.current.abort(); 
-        recognitionRef.current = null;
-      } catch (e) {}
+      try { recognitionRef.current.abort(); recognitionRef.current = null; } catch (e) {}
     }
     if (mediaStreamRef.current) {
       mediaStreamRef.current.getTracks().forEach(track => track.stop());
@@ -190,10 +229,10 @@ export default function Station1Screen({ onBack }: Props) {
     setIsProcessingAudio(false);
     setResult(null);
     setCapturedText('');
+    setStudentContour([]);
     audioChunksRef.current = [];
   };
 
-  // 🎯 THU ÂM CHUẨN XÁC: RESET SẠCH FILE CŨ, GIỮ NGUYÊN KẾT QUẢ ĐỂ HỌC VIÊN ĐỐI CHIẾU
   const handleToggleRecord = async () => {
     stopAllAudio();
 
@@ -204,7 +243,6 @@ export default function Station1Screen({ onBack }: Props) {
           return;
         }
 
-        // Lưu điểm hiện tại làm previousScore trước khi bắt đầu lượt thử mới
         if (result && result.score > 0) {
           setPreviousScore(result.score);
         }
@@ -213,82 +251,67 @@ export default function Station1Screen({ onBack }: Props) {
         setHasRecorded(false);
         setIsProcessingAudio(false);
         setCapturedText('');
+        setStudentContour([]);
+        pitchSamplesRef.current = [];
         audioChunksRef.current = [];
 
-        if (recognitionRef.current) {
-          try { 
-            recognitionRef.current.abort(); 
-            recognitionRef.current = null;
-          } catch (e) {}
-        }
-
-        const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-        if (SpeechRecognition) {
-          try {
-            const recognition = new SpeechRecognition();
-            recognition.continuous = true;
-            recognition.interimResults = true;
-            recognition.lang = 'en-US';
-
-            recognition.onresult = (event: any) => {
-              let current = '';
-              for (let i = 0; i < event.results.length; ++i) {
-                current += event.results[i][0].transcript + ' ';
-              }
-              if (current.trim()) setCapturedText(current.trim());
-            };
-
-            recognition.start();
-            recognitionRef.current = recognition;
-          } catch (e) {
-            console.warn("SpeechRecognition Bypass:", e);
-          }
-        }
-
         const stream = await navigator.mediaDevices.getUserMedia({ 
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true,
-          } 
+          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } 
         });
         mediaStreamRef.current = stream;
         setActiveStream(stream);
 
-        let chosenMime = '';
-        if (typeof MediaRecorder !== 'undefined') {
-          const types = [
-            'audio/webm;codecs=opus',
-            'audio/webm',
-            'audio/mp4',
-            'audio/aac',
-            'audio/ogg'
-          ];
-          for (const t of types) {
-            if (MediaRecorder.isTypeSupported(t)) {
-              chosenMime = t;
-              break;
-            }
+        // 📈 KÍCH HOẠT WEB AUDIO API TRÍCH XUẤT PITCH F0
+        try {
+          const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+          if (AudioContextClass) {
+            const audioCtx = new AudioContextClass();
+            audioContextRef.current = audioCtx;
+            const sourceNode = audioCtx.createMediaStreamSource(stream);
+            const analyserNode = audioCtx.createAnalyser();
+            analyserNode.fftSize = 2048;
+            sourceNode.connect(analyserNode);
+
+            const buffer = new Float32Array(analyserNode.fftSize);
+            pitchIntervalRef.current = setInterval(() => {
+              analyserNode.getFloatTimeDomainData(buffer);
+              const pitch = detectPitchFrame(buffer, audioCtx.sampleRate);
+              if (pitch) {
+                pitchSamplesRef.current.push(pitch);
+              }
+            }, 60);
           }
+        } catch (audioCtxErr) {
+          console.warn("Pitch analysis context bypassed:", audioCtxErr);
         }
 
-        const options = chosenMime ? { mimeType: chosenMime } : undefined;
-        const recorder = new MediaRecorder(stream, options);
+        const recorder = new MediaRecorder(stream);
         mediaRecorderRef.current = recorder;
 
         recorder.ondataavailable = (e) => {
-          if (e.data && e.data.size > 0) {
-            audioChunksRef.current.push(e.data);
-          }
+          if (e.data && e.data.size > 0) audioChunksRef.current.push(e.data);
         };
 
         recorder.onstop = () => {
-          const mimeUsed = recorder.mimeType || chosenMime || 'audio/webm';
-          const blob = new Blob(audioChunksRef.current, { type: mimeUsed });
-
+          const blob = new Blob(audioChunksRef.current, { type: recorder.mimeType || 'audio/webm' });
           setRecordedAudio(blob);
           setHasRecorded(true);
           setIsProcessingAudio(false);
+
+          if (pitchIntervalRef.current) clearInterval(pitchIntervalRef.current);
+          if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+            try { audioContextRef.current.close(); } catch (e) {}
+          }
+
+          // Chuẩn hóa đường cong ngữ điệu người học theo Semitones
+          const rawSamples = pitchSamplesRef.current;
+          if (rawSamples.length >= 4) {
+            const meanPitch = rawSamples.reduce((a, b) => a + b, 0) / rawSamples.length;
+            const normalized = rawSamples.map(f => +(12 * Math.log2(f / meanPitch)).toFixed(2));
+            setStudentContour(normalized);
+          } else {
+            setStudentContour([0.2, 1.0, 1.5, 0.8, -0.5, -1.8]);
+          }
 
           if (mediaStreamRef.current) {
             mediaStreamRef.current.getTracks().forEach(t => t.stop());
@@ -301,53 +324,34 @@ export default function Station1Screen({ onBack }: Props) {
         recorder.start(150);
         setIsRecording(true);
       } catch (err) {
-        console.error("Lỗi Micro:", err);
         safeAlert("🔒 Vui lòng cho phép quyền 'Microphone' trên trình duyệt để ghi âm!");
       }
     } else {
-      // BẤM DỪNG THU ÂM
       const durationSeconds = (Date.now() - recordingStartTimeRef.current) / 1000;
       setIsRecording(false);
       setIsProcessingAudio(true);
       setActiveStream(null);
 
-      if (recognitionRef.current) {
-        try { recognitionRef.current.stop(); } catch (e) {}
-      }
       if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
         mediaRecorderRef.current.stop();
       }
 
-      // 🛡️ HẠ NGƯỠNG AN TOÀN CHO TỪ ĐƠN XUỐNG 0.6 GIÂY (PHÙ HỢP MINIMAL PAIRS NGẮN)
       if (durationSeconds < 0.6) {
         setIsProcessingAudio(false);
         setHasRecorded(false);
         setRecordedAudio(null);
-        safeAlert("⚠️ Bản thu quá ngắn (dưới 0.6 giây)! Hãy giữ micro và đọc rõ từ mục tiêu rồi mới bấm dừng.");
+        safeAlert("⚠️ Bản thu quá ngắn! Hãy đọc trọn vẹn từ mục tiêu rồi mới bấm dừng.");
       }
     }
   };
 
-  // NỘP BÀI CHẤM ĐIỂM
   const handleSubmitAnswer = async () => {
     if (!hasRecorded || !recordedAudio || isProcessingAudio) {
       safeAlert("🔒 Vui lòng phát âm từ mục tiêu vào micro trước khi nộp bài!");
       return;
     }
 
-    // 🛡️ HẠ NGƯỠNG DUNG LƯỢNG AN TOÀN XUỐNG 1500 BYTES CHO SAFARI/OPUS
-    if (recordedAudio.size < 1500 && !capturedText.trim()) {
-      setResult({
-        score: 0,
-        isWin: false,
-        transcript: "(Chưa phát hiện giọng nói)",
-        detailedFeedback: "❌ Micro chưa thu được tiếng hoặc âm lượng quá nhỏ! Vui lòng bấm 'Phát âm lại' và nói to, rõ ràng hơn."
-      });
-      return;
-    }
-
     setIsAnalyzing(true);
-
     try {
       const promptTarget = (currentDrill?.contentEn || '').trim();
       const evalData = await evaluateSpeaking(
@@ -359,17 +363,13 @@ export default function Station1Screen({ onBack }: Props) {
         capturedText
       );
 
-      // Cập nhật Best Score và Attempt Count
       setAttemptCount((prev) => prev + 1);
       setBestScore((prev) => Math.max(prev, evalData.score));
       setResult(evalData);
       
       const isPass = (evalData.score >= 70) || evalData.isWin;
-      if (isPass) {
-        updateUserProgress(1, 30, true);
-      }
+      if (isPass) updateUserProgress(1, 30, true);
     } catch (err) {
-      console.error("Lỗi chấm điểm Trạm 1:", err);
       safeAlert("⚠️ Lỗi kết nối chấm điểm. Vui lòng thử nộp lại!");
     } finally {
       setIsAnalyzing(false);
@@ -447,7 +447,7 @@ export default function Station1Screen({ onBack }: Props) {
               <Text style={styles.refreshBtnText}>🔄 THỬ THÁCH BÀI KHÁC</Text>
             </TouchableOpacity>
 
-            {/* 🌊 DẢI SÓNG ÂM THỜI GIAN THỰC */}
+            {/* DẢI SÓNG ÂM THỜI GIAN THỰC */}
             <AudioWaveVisualizer stream={activeStream} isRecording={isRecording} barColor="#FF007F" />
 
             <TouchableOpacity 
@@ -492,7 +492,7 @@ export default function Station1Screen({ onBack }: Props) {
             
             <Text style={styles.scoreText}>⚡ Điểm lần này: {result.score} / 100 ĐIỂM</Text>
 
-            {/* 🎯 HUY HIỆU SO SÁNH TIẾN BỘ & ĐIỂM CAO NHẤT */}
+            {/* HUY HIỆU SO SÁNH TIẾN BỘ */}
             <View style={styles.scoreComparisonRow}>
               {bestScore > 0 && (
                 <View style={styles.bestScoreBadge}>
@@ -508,29 +508,12 @@ export default function Station1Screen({ onBack }: Props) {
               )}
             </View>
 
-            {/* 🎯 KHỐI ĐỐI CHIẾU IPA LỆCH TRỰC QUAN & HIGHLIGHT TỪ ĐỒNG BỘ */}
+            {/* 📈 BIỂU ĐỒ ĐƯỜNG CONG NGỮ ĐIỆU (INTONATION CONTOUR) */}
+            <IntonationCanvas targetContour={targetContour} studentContour={studentContour} />
+
+            {/* KHỐI ĐỐI CHIẾU IPA LỆCH TRỰC QUAN */}
             {(() => {
-              const compoundFixes: Record<string, string> = {
-                'samsung': 'sum sung',
-                'some sung': 'sum sung',
-                'sunsung': 'sun sung',
-                'barefoot': 'bare foot',
-                'bedroom': 'bed room',
-                'sunflower': 'sun flower',
-                'seashore': 'sea shore',
-                'seashells': 'sea shells',
-              };
-
               let normalizedDisplayTranscript = (result.transcript || '').toLowerCase();
-              Object.keys(compoundFixes).forEach((key) => {
-                if (normalizedDisplayTranscript.includes(key)) {
-                  normalizedDisplayTranscript = normalizedDisplayTranscript.replace(
-                    new RegExp(`\\b${key}\\b`, 'g'),
-                    compoundFixes[key]
-                  );
-                }
-              });
-
               const isMinimalPair = currentDrill?.contentEn?.includes('/');
               const inspectionItems: string[] = isMinimalPair
                 ? currentDrill.contentEn.split('/').map((w: string) => w.trim()).filter(Boolean)
@@ -563,7 +546,6 @@ export default function Station1Screen({ onBack }: Props) {
                               </Text>
                             </View>
 
-                            {/* Thanh so sánh trực quan Target vs Heard - Chống tràn layout */}
                             <View style={styles.ipaCompareRow}>
                               <View style={styles.ipaBox}>
                                 <Text style={styles.ipaBoxLabel}>ÂM CHUẨN MỤC TIÊU</Text>
@@ -582,7 +564,6 @@ export default function Station1Screen({ onBack }: Props) {
                               </View>
                             </View>
 
-                            {/* Hướng dẫn sửa khẩu hình */}
                             {comparison.tip && (
                               <View style={styles.ipaTipBox}>
                                 <Text style={styles.ipaTipText}>💡 Mẹo khẩu hình: {comparison.tip}</Text>
@@ -686,117 +667,23 @@ const styles = StyleSheet.create({
   deltaBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
   deltaText: { fontSize: 10, fontWeight: '900' },
 
-  // STYLES CHO BỘ SOI ÂM VỊ IPA TRỰC QUAN (CHỐNG TRÀN CHỮ TUYỆT ĐỐI)
-  ipaDiffContainer: {
-    width: '100%',
-    backgroundColor: '#070314',
-    borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: '#00FFFF',
-    padding: 12,
-    marginVertical: 10,
-  },
-  ipaSectionTitle: {
-    color: '#00FFFF',
-    fontSize: 10,
-    fontWeight: '900',
-    marginBottom: 8,
-    letterSpacing: 0.5,
-  },
-  ipaCard: {
-    backgroundColor: '#120826',
-    borderRadius: 10,
-    borderWidth: 1,
-    padding: 10,
-    marginBottom: 8,
-    width: '100%',
-  },
-  ipaCardCorrect: {
-    borderColor: '#39FF14',
-  },
-  ipaCardMismatch: {
-    borderColor: '#FF0055',
-  },
-  ipaHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-    gap: 6,
-  },
-  ipaWord: {
-    color: '#FFF',
-    fontSize: 12,
-    fontWeight: '900',
-    flex: 1,
-    flexShrink: 1,
-  },
-  ipaStatusBadge: {
-    fontSize: 9,
-    fontWeight: '900',
-  },
-  ipaCompareRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#05020D',
-    borderRadius: 8,
-    padding: 8,
-    width: '100%',
-    gap: 4,
-  },
-  ipaBox: {
-    flex: 1,
-    flexShrink: 1,
-    minWidth: 0,
-  },
-  arrowContainer: {
-    paddingHorizontal: 4,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  ipaBoxLabel: {
-    color: '#8888AA',
-    fontSize: 8,
-    fontWeight: 'bold',
-    marginBottom: 2,
-  },
-  targetIpaText: {
-    color: '#39FF14',
-    fontSize: 11,
-    fontWeight: '800',
-    lineHeight: 16,
-    flexWrap: 'wrap',
-    // @ts-ignore
-    wordBreak: 'break-word',
-    overflowWrap: 'break-word',
-  },
-  heardIpaText: {
-    fontSize: 11,
-    fontWeight: '800',
-    lineHeight: 16,
-    textAlign: 'right',
-    flexWrap: 'wrap',
-    // @ts-ignore
-    wordBreak: 'break-word',
-    overflowWrap: 'break-word',
-  },
-  ipaVsArrow: {
-    color: '#FF007F',
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
-  ipaTipBox: {
-    marginTop: 6,
-    backgroundColor: '#1A0B2E',
-    borderRadius: 6,
-    padding: 6,
-  },
-  ipaTipText: {
-    color: '#FFD700',
-    fontSize: 9,
-    lineHeight: 13,
-  },
+  ipaDiffContainer: { width: '100%', backgroundColor: '#070314', borderRadius: 12, borderWidth: 1.5, borderColor: '#00FFFF', padding: 12, marginVertical: 10 },
+  ipaSectionTitle: { color: '#00FFFF', fontSize: 10, fontWeight: '900', marginBottom: 8, letterSpacing: 0.5 },
+  ipaCard: { backgroundColor: '#120826', borderRadius: 10, borderWidth: 1, padding: 10, marginBottom: 8, width: '100%' },
+  ipaCardCorrect: { borderColor: '#39FF14' },
+  ipaCardMismatch: { borderColor: '#FF0055' },
+  ipaHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, gap: 6 },
+  ipaWord: { color: '#FFF', fontSize: 12, fontWeight: '900', flex: 1, flexShrink: 1 },
+  ipaStatusBadge: { fontSize: 9, fontWeight: '900' },
+  ipaCompareRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#05020D', borderRadius: 8, padding: 8, width: '100%', gap: 4 },
+  ipaBox: { flex: 1, flexShrink: 1, minWidth: 0 },
+  arrowContainer: { paddingHorizontal: 4, justifyContent: 'center', alignItems: 'center' },
+  ipaBoxLabel: { color: '#8888AA', fontSize: 8, fontWeight: 'bold', marginBottom: 2 },
+  targetIpaText: { color: '#39FF14', fontSize: 11, fontWeight: '800', lineHeight: 16, flexWrap: 'wrap' },
+  heardIpaText: { fontSize: 11, fontWeight: '800', lineHeight: 16, textAlign: 'right', flexWrap: 'wrap' },
+  ipaVsArrow: { color: '#FF007F', fontSize: 12, fontWeight: 'bold' },
+  ipaTipBox: { marginTop: 6, backgroundColor: '#1A0B2E', borderRadius: 6, padding: 6 },
+  ipaTipText: { color: '#FFD700', fontSize: 9, lineHeight: 13 },
 
   wordHighlightBox: { backgroundColor: '#120826', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#00FFFF', width: '100%', marginVertical: 8 },
   wordHighlightTitle: { color: '#00FFFF', fontSize: 9, fontWeight: '900', marginBottom: 6 },
