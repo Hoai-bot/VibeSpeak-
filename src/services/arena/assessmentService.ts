@@ -1,4 +1,5 @@
 // src/services/arena/assessmentService.ts
+import { saveOfflineSubmission } from '../../utils/offlineStorage';
 
 export interface ErrorWordItem {
   word: string;
@@ -22,6 +23,7 @@ export interface AssessmentResult {
   isWin?: boolean;
   errorWords?: ErrorWordItem[];
   criteria?: CriteriaBreakdown | null;
+  isOfflineSaved?: boolean; // 📦 Đánh dấu bài đã được lưu vào IndexedDB an toàn
 }
 
 export type StationType = 'STATION_1' | 'STATION_2' | 'STATION_3' | 'STATION_4' | string;
@@ -196,6 +198,32 @@ export const evaluateSpeaking = async (
 
     // 2. Gửi file ghi âm lên API Groq Whisper & LLM (/api/grade-audio)
     if (audioBlob && audioBlob.size >= 1000) {
+      // 🛡️ Kiểm tra kết nối mạng trước khi gửi
+      const isOnline = typeof navigator === 'undefined' || navigator.onLine !== false;
+
+      if (!isOnline) {
+        try {
+          const offlineId = await saveOfflineSubmission({
+            audioBlob,
+            prompt: targetPrompt || '',
+            stationType: currentStation,
+            cefrLevel: cefrLevel || 'B1',
+          });
+
+          return {
+            score: 0,
+            isWin: false,
+            isOfflineSaved: true,
+            transcript: "(Đã lưu an toàn trên máy)",
+            detailedFeedback: `📦 Mất kết nối mạng! Bản thu âm của bạn đã được lưu tạm vào máy (Mã: ${offlineId.slice(-6)}). Hệ thống sẽ tự động đồng bộ và chấm điểm ngay khi có mạng trở lại.`,
+            errorWords: [],
+            criteria: null
+          };
+        } catch (saveErr) {
+          console.warn("Lỗi lưu offline trước khi gửi API:", saveErr);
+        }
+      }
+
       try {
         const formData = new FormData();
         const fileExt = audioBlob.type.includes('mp4') ? 'audio.mp4' : 'audio.webm';
@@ -225,9 +253,21 @@ export const evaluateSpeaking = async (
               criteria: data.criteria || null
             };
           }
+        } else {
+          throw new Error(`Server returned ${response.status}`);
         }
       } catch (apiErr) {
-        console.warn("Lỗi kết nối /api/grade-audio, sử dụng kết quả dự phòng trực tiếp:", apiErr);
+        console.warn("Lỗi kết nối /api/grade-audio, kích hoạt Fallback lưu IndexedDB:", apiErr);
+        try {
+          await saveOfflineSubmission({
+            audioBlob,
+            prompt: targetPrompt || '',
+            stationType: currentStation,
+            cefrLevel: cefrLevel || 'B1',
+          });
+        } catch (dbErr) {
+          console.error("IndexedDB fallback error:", dbErr);
+        }
       }
     }
 
