@@ -33,60 +33,118 @@ const TIERS: { key: Station2Tier; label: string; icon: string; desc: string }[] 
   { key: 'ROLEPLAY', label: 'TẦNG 3: ROLEPLAY (NHẬP VAI 2 BẠN)', icon: '🎭', desc: 'Nhập vai 2 người: Phân vai giải quyết xung đột, đàm phán tình huống xã hội' }
 ];
 
-// Ngân hàng đề phản xạ phong phú
-const DEFAULT_CHALLENGES: ChallengeItem[] = [
-  // ==================== TẦNG 1: SOLO ====================
-  { id: 's_a1_1', tier: 'SOLO', level: 'A1', title: 'Hỏi thăm địa điểm du lịch', contextDesc: 'Một du khách hỏi quán cà phê ngon nhất gần đây.', prompt: 'There is a great cafe around the corner. You should try the iced milk coffee.' },
-  { id: 's_a1_2', tier: 'SOLO', level: 'A1', title: 'Giải thích khi đi học muộn', contextDesc: 'Bạn trễ học 10 phút vì kẹt xe, hãy xin phép thầy cô vào lớp.', prompt: 'Good morning teacher, I apologize for being late because of heavy traffic.' },
-  { id: 's_a1_3', tier: 'SOLO', level: 'A1', title: 'Giới thiệu món ăn Việt Nam', contextDesc: 'Người bạn nước ngoài hỏi nên ăn món gì đầu tiên ở Việt Nam.', prompt: 'You must try traditional Beef Pho with fresh herbs; it is absolutely delicious.' },
+// 🎯 NGÂN HÀNG HÀNG CHỤC TÌNH HUỐNG DỰ PHÒNG KHÔNG GIỚI HẠN
+const SCENARIO_LIBRARY: Record<string, { title: string; context: string; prompt: string }[]> = {
+  'SOLO_A1': [
+    { title: "Hỏi thăm đường đến ga tàu điện", context: "Một người nước ngoài hỏi bạn đường đi bộ đến ga tàu điện ngầm gần nhất.", prompt: "Go straight ahead for two blocks, then turn left; the station is next to the bank." },
+    { title: "Gọi món ăn trưa mang đi", context: "Bạn vào quán ăn nhanh và gọi 1 phần cơm gà cùng một chai nước suối.", prompt: "Hello, can I please have one chicken rice set to take away and a bottle of mineral water?" },
+    { title: "Nhờ người lạ xem giờ", context: "Điện thoại của bạn bị hết pin, bạn nhờ một người bên cạnh xem giúp mấy giờ.", prompt: "Excuse me, my phone battery is completely dead. Do you happen to have the time?" },
+    { title: "Xin lỗi vì đến lớp trễ", context: "Bạn bước vào lớp trễ 10 phút vì xe hỏng xăm, giải thích ngắn gọn với thầy cô.", prompt: "I sincerely apologize for being late today, teacher; my motorbike had a flat tire on the way." }
+  ],
+  'SOLO_A2': [
+    { title: "Từ chối lời mời tiệc cuối tuần", context: "Đồng nghiệp rủ bạn đi uống bia tối thứ Bảy nhưng bạn phải về quê thăm ông bà.", prompt: "I would really love to join, but I have already promised to visit my grandparents this weekend." },
+    { title: "Phản ánh món ăn bị nguội", context: "Đĩa mì xào vừa mang ra bị nguội ngắt, bạn gọi nhân viên phục vụ hỗ trợ lịch sự.", prompt: "Excuse me, my noodles are quite cold. Could you please ask the kitchen to heat them up for me?" },
+    { title: "Hỏi đổi kích cỡ giày", context: "Đôi giày bạn thử bị chật mũi ngón chân, bạn hỏi nhân viên xem có cỡ lớn hơn không.", prompt: "These shoes feel a bit tight around my toes. Do you have this model in a half size larger?" },
+    { title: "Hỏi lịch xe buýt tuyến cuối", context: "Bạn hỏi nhân viên phòng vé xem chuyến xe buýt số 150 cuối cùng trong ngày chạy lúc mấy giờ.", prompt: "Good evening, could you tell me when the last bus number one hundred and fifty departs tonight?" }
+  ],
+  'SOLO_B1': [
+    { title: "Chất vấn chi phí triển khai dự án", context: "Trong buổi thuyết trình, khán giả hỏi giải pháp của nhóm có quá tốn kém kinh phí ban đầu không.", prompt: "While initial setup requires significant investment, operational savings over six months will completely offset the costs." },
+    { title: "Thương lượng chia lại đầu việc nhóm", context: "Bạn nhận thấy khối lượng công việc phân bổ chưa đều, đề xuất trưởng nhóm chia lại công bằng.", prompt: "I propose we redistribute the technical research workload so that every team member contributes equally." },
+    { title: "Giải trình nộp bài tập muộn", context: "Máy tính xách tay bị lỗi ổ cứng đột ngột lúc đang nộp luận văn, bạn gửi email giải trình.", prompt: "My computer suffered an unexpected drive failure an hour before the deadline; please find my verified draft attached." },
+    { title: "Phỏng vấn: Điểm yếu cần khắc phục", context: "Nhà tuyển dụng hỏi về điểm yếu lớn nhất của bạn trong công việc và cách cải thiện.", prompt: "I sometimes focus excessively on minor details, so I now use time-blocking tools to maintain perspective on core milestones." },
+    { title: "Từ chối yêu cầu làm việc ngoài giờ", context: "Quản lý nhờ bạn làm thêm vào tối Chủ Nhật nhưng bạn đã đăng ký lịch thi chứng chỉ ngoại ngữ.", prompt: "I am unable to cover the Sunday shift because I have a mandatory international certification examination scheduled." },
+    { title: "Phản ánh tiến độ giao hàng chậm", context: "Gói quà sinh nhật đặt hỏa tốc bị trễ 2 ngày mà không có thông báo từ đơn vị vận chuyển.", prompt: "I specifically paid for priority delivery; could you investigate why my parcel has been delayed for two days without update?" }
+  ],
+  'SOLO_B2': [
+    { title: "Thương thuyết dời hạn giao sản phẩm", context: "Khách hàng muốn bàn giao trước 1 tuần, bạn phải giải thích nguy cơ rủi ro bảo mật hệ thống.", prompt: "Accelerating deployment by a full week severely constrains our security audit cycle, risking critical vulnerabilities." },
+    { title: "Tranh biện về làm việc từ xa (Remote Work)", context: "Phản hồi câu hỏi liệu chế độ làm việc từ xa có làm giảm tính gắn kết văn hóa doanh nghiệp.", prompt: "Remote arrangements enhance personal autonomy, yet preserving institutional cohesion requires structured hybrid sync points." },
+    { title: "Giải quyết bất đồng chiến lược marketing", context: "Bạn thuyết phục ban giám đốc chuyển 40% ngân sách quảng cáo truyền thống sang các kênh TikTok.", prompt: "Legacy print advertising no longer yields measurable conversion; reallocating forty percent toward short-form video delivers targeted ROI." }
+  ],
+  'SOLO_C1': [
+    { title: "Xử lý khủng hoảng rò rỉ dữ liệu", context: "Là phát ngôn viên doanh nghiệp, phản hồi báo chí về tin đồn cơ sở dữ liệu khách hàng bị tấn công.", prompt: "Our incident response teams have isolated the perimeter, engaged third-party forensic auditors, and will provide transparent hourly updates." },
+    { title: "Phản biện chính sách thuế carbon", context: "Tranh luận về việc áp thuế môi trường lên các nhà máy sản xuất linh kiện trong ngắn hạn.", prompt: "Unilateral fiscal penalties risk precipitating industrial offshoring unless coupled with domestic green technology tax credits." }
+  ],
+  'SOLO_C2': [
+    { title: "Tranh biện đạo đức AI trong tư pháp", context: "Bình luận trước hội đồng khoa học về việc thuật toán thay thế thẩm phán đưa ra phán quyết.", prompt: "Algorithmic adjudication merely optimizes for historical empirical precedents, thereby formalizing systemic biases under the guise of neutrality." }
+  ],
+  'RELAY_A1': [
+    { title: "Tiếp sức: Kế hoạch tiệc chia tay", context: "Bạn A: 'We should buy pizza and drinks.' -> Bạn B tiếp sức nối ý trang trí và âm nhạc.", prompt: "Great idea! I can bring some speakers and paper lanterns to decorate the patio." },
+    { title: "Tiếp sức: Hoạt động cuối tuần", context: "Bạn A: 'I plan to ride my bicycle in the morning.' -> Bạn B tiếp sức nối ý hoạt động buổi chiều.", prompt: "Sounds refreshing! Afterward, we can visit the public library to study for next week's quiz." }
+  ],
+  'RELAY_B1': [
+    { title: "Tiếp sức: Chiến dịch truyền thông sự kiện", context: "Bạn A: 'Short video clips will grab student attention on Facebook.' -> Bạn B tiếp sức nối ý minigame quà tặng.", prompt: "Building directly upon that, we could host a weekly live giveaway session to drive organic viral engagement." },
+    { title: "Tiếp sức: Giảm rác thải nhựa tại căng-tin", context: "Bạn A: 'The cafeteria must stop using disposable plastic cups.' -> Bạn B tiếp sức đề xuất giảm giá cho bình cá nhân.", prompt: "To make that policy effective, the administration should offer a ten percent discount for anyone bringing reusable tumblers." },
+    { title: "Tiếp sức: Quản lý thời gian học tập", context: "Bạn A: 'Using digital calendar alerts prevents missing deadlines.' -> Bạn B tiếp sức phương pháp chia nhỏ nhiệm vụ.", prompt: "Additionally, breaking massive assignments into thirty-minute task intervals minimizes procrastination and mental exhaustion." }
+  ],
+  'RELAY_B2': [
+    { title: "Tiếp sức: Triển khai mô hình xe điện đô thị", context: "Bạn A: 'Subsidizing electric motorbikes directly curbs urban emissions.' -> Bạn B tiếp sức hạ tầng trạm sạc & pin.", prompt: "Crucially, municipal planners must simultaneously expand standardized battery-swapping stations across major transit corridors." },
+    { title: "Tiếp sức: Tối ưu hóa chuỗi cung ứng linh kiện", context: "Bạn A: 'Relying exclusively on overseas suppliers creates fragile bottlenecks.' -> Bạn B tiếp sức mô hình đối tác vệ tinh nội địa.", prompt: "Consequently, onboarding localized secondary vendors provides an essential operational buffer against geopolitical logistics halts." }
+  ],
+  'ROLEPLAY_A1': [
+    { title: "Nhập vai: Gọi món tại quán ăn nhanh", context: "Bạn là khách muốn gọi combo gà rán, nước suối và hỏi thanh toán qua mã QR.", prompt: "Hello, can I please order a fried chicken combo and pay using a mobile QR transfer?" },
+    { title: "Nhập vai: Mua vé xem phim rạp", context: "Bạn là khách muốn mua 2 vé xem phim ca tối và hỏi chính sách vé ưu đãi cho sinh viên.", prompt: "Good afternoon, could I get two student tickets for the seven PM show with my university card?" }
+  ],
+  'ROLEPLAY_A2': [
+    { title: "Nhập vai: Đổi kích cỡ áo quần", context: "Áo sơ mi mua hôm qua bị chật vai, mang hóa đơn đến xin đổi sang Size L.", prompt: "Good morning, I bought this shirt yesterday but it feels tight around my shoulders. Can I exchange it for a large?" },
+    { title: "Nhập vai: Gửi hành lý tại lễ tân", context: "Bạn trả phòng lúc 12h trưa nhưng muốn gửi lại 2 vali đến 17h chiều để đi dạo.", prompt: "I am checking out now. Is it possible to leave our two suitcases at the reception until five PM?" }
+  ],
+  'ROLEPLAY_B1': [
+    { title: "Nhập vai: Đổi đồ uống gấp tại sân bay", context: "Gọi trà đào đá nhưng nhận nhầm cà phê nóng, chuyến bay sắp cất cánh trong 10 phút.", prompt: "Excuse me, I ordered an iced peach tea, but I received hot cappuccino. Could you replace it quickly as my flight boards soon?" },
+    { title: "Nhập vai: Xin gia hạn nộp bài tập lớn", context: "Máy chủ nhóm bị hỏng ổ cứng, bạn đại diện gặp giảng viên xin dời hạn nộp 24 giờ.", prompt: "Dear Professor, our team experienced an unexpected hardware crash last night. May we respectfully request a twenty-four hour extension?" },
+    { title: "Nhập vai: Trả phòng khách sạn phàn nàn tiếng ồn", context: "Phòng bên cạnh tiệc tùng gây ồn suốt đêm, bạn yêu cầu quản lý giảm giá dịch vụ.", prompt: "The neighboring room held a loud party until four AM without intervention; I believe a concession on our final bill is warranted." },
+    { title: "Nhập vai: Đàm phán đổi lịch họp nhóm", context: "Bạn bị trùng lịch học thêm, đề xuất trưởng nhóm dời buổi làm slide sang tối mai.", prompt: "I have an unavoidable academic conflict this evening; could we reschedule our presentation walkthrough to tomorrow at eight PM?" }
+  ],
+  'ROLEPLAY_B2': [
+    { title: "Nhập vai: Trưởng dự án & Khách hàng phản ánh tiến độ", context: "Khách hàng bức xúc vì tính năng báo cáo bị chậm 3 ngày, bạn đàm phán bàn giao từng phần.", prompt: "We acknowledge the module delay; to keep your team operating, we can deploy the core data export feature this afternoon." },
+    { title: "Nhập vai: Ứng viên & Nhà tuyển dụng thương lượng lương", context: "Công ty đề xuất mức lương thấp hơn kỳ vọng 15%, bạn lập luận kinh nghiệm để thuyết phục.", prompt: "Given my direct experience managing similar cross-platform deployments, a ten percent upward adjustment accurately reflects the immediate value I deliver." }
+  ],
+  'ROLEPLAY_C1': [
+    { title: "Nhập vai: Quản lý khách sạn 5 sao & Khách VIP khiếu nại", context: "Điều hòa phòng Tổng thống gặp sự cố lúc nửa đêm trước hội nghị, bạn xử lý khủng hoảng.", prompt: "I sincerely apologize for this disruption. I will personally arrange an immediate transfer to our Presidential Penthouse with all services comped." }
+  ]
+};
 
-  { id: 's_a2_1', tier: 'SOLO', level: 'A2', title: 'Từ chối làm thêm giờ lịch sự', contextDesc: 'Quản lý nhờ ở lại 2 tiếng nhưng bạn bận lịch học buổi tối.', prompt: 'I would love to help, but I have an important evening class tonight that I cannot miss.' },
-  { id: 's_a2_2', tier: 'SOLO', level: 'A2', title: 'Yêu cầu đổi món ăn bị nguội', contextDesc: 'Đĩa súp mang ra bị nguội ngắt, hãy nhờ phục vụ hỗ trợ.', prompt: 'Excuse me, my soup is quite cold. Could you please heat it up for me?' },
-  { id: 's_a2_3', tier: 'SOLO', level: 'A2', title: 'Hỏi thông tin khóa học', contextDesc: 'Hỏi tư vấn viên học phí và thời lượng lớp tiếng Anh giao tiếp.', prompt: 'Could you please give me more details about the schedule and tuition fee for this course?' },
+// Hàm sinh đề động thủ tục (Procedural Generator) khi offline hoặc không có API Key
+const createProceduralFallback = (tier: Station2Tier, level: CefrLevel, counter: number): ChallengeItem => {
+  const key = `${tier}_${level}`;
+  const list = SCENARIO_LIBRARY[key] || SCENARIO_LIBRARY['SOLO_B1'];
+  const base = list[counter % list.length];
+  const uniqueId = `dynamic_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
 
-  { id: 's_b1_1', tier: 'SOLO', level: 'B1', title: 'Phản hồi câu hỏi chất vấn dự án', contextDesc: 'Khán giả lo ngại giải pháp của nhóm quá tốn kém chi phí.', prompt: 'While the initial setup requires capital investment, the operational savings over six months will completely offset the costs.' },
-  { id: 's_b1_2', tier: 'SOLO', level: 'B1', title: 'Thương lượng chia lại đầu việc nhóm', contextDesc: 'Bạn nhận thấy việc phân chia chưa công bằng giữa các thành viên.', prompt: 'I propose we redistribute the research workload so everyone contributes equally to the final report.' },
-  { id: 's_b1_3', tier: 'SOLO', level: 'B1', title: 'Phỏng vấn: Điểm mạnh lớn nhất', contextDesc: 'Nhà tuyển dụng hỏi lý do họ nên chọn bạn cho vị trí này.', prompt: 'My strongest attribute is analytical problem-solving, which allows me to resolve complex operational bottlenecks swiftly.' },
+  // Thêm biến thể ngữ cảnh để luôn khác biệt 100%
+  const variants = [
+    "Thời gian gấp gáp trong vòng 3 phút",
+    "Đối phương đang tỏ thái độ không hài lòng",
+    "Tình huống diễn ra trong buổi họp trực tuyến",
+    "Bối cảnh diễn ra tại văn phòng đối tác quốc tế",
+    "Yêu cầu phản xạ dứt khoát không ngập ngừng"
+  ];
+  const randomVariant = variants[Math.floor(Math.random() * variants.length)];
 
-  { id: 's_b2_1', tier: 'SOLO', level: 'B2', title: 'Thương thuyết dời hạn giao sản phẩm', contextDesc: 'Khách hàng muốn nhận trước 1 tuần, giải thích rủi ro kỹ thuật.', prompt: 'Accelerating our delivery by a full week will severely compromise our testing protocols, increasing the likelihood of critical bugs.' },
-  { id: 's_b2_2', tier: 'SOLO', level: 'B2', title: 'Tranh biện về làm việc từ xa', contextDesc: 'Nêu quan điểm về việc làm việc tại nhà có giảm năng suất không.', prompt: 'Remote work enhances individual autonomy, yet sustainable productivity requires robust asynchronous communication tools.' },
-
-  // ==================== TẦNG 2: RELAY ====================
-  { id: 'r_a1_1', tier: 'RELAY', level: 'A1', title: 'Tiếp sức: Chuẩn bị tiệc liên hoan', contextDesc: 'Bạn A: "We should buy pizza and soft drinks." -> Bạn B tiếp sức nối ý đồ uống/trang trí.', prompt: 'Great idea! I can bring some fresh fruit and balloons to decorate the classroom.' },
-  { id: 'r_a1_2', tier: 'RELAY', level: 'A1', title: 'Tiếp sức: Lên kế hoạch thể thao', contextDesc: 'Bạn A: "I usually go swimming on Sunday." -> Bạn B tiếp sức chia sẻ hoạt động.', prompt: 'I prefer playing badminton with my friends because it keeps us energetic all day.' },
-  
-  { id: 'r_a2_1', tier: 'RELAY', level: 'A2', title: 'Tiếp sức: Lịch trình tham quan thành phố', contextDesc: 'Bạn A: "In the morning, we can visit the central museum." -> Bạn B tiếp sức buổi tối.', prompt: 'And in the evening, we should explore the walking street and try local street food.' },
-  { id: 'r_a2_2', tier: 'RELAY', level: 'A2', title: 'Tiếp sức: Phương pháp ghi nhớ từ vựng', contextDesc: 'Bạn A: "Flashcards help me learn ten words daily." -> Bạn B tiếp sức cách áp dụng.', prompt: 'In addition, writing short sentences with those new words helps me retain them much longer.' },
-
-  { id: 'r_b1_1', tier: 'RELAY', level: 'B1', title: 'Tiếp sức: Chiến dịch truyền thông sự kiện', contextDesc: 'Bạn A: "Short TikTok videos will attract student attention." -> Bạn B tiếp sức bổ sung ý minigame.', prompt: 'Building on that concept, we could host a weekly live Q&A session with interactive mini-games to boost engagement.' },
-  { id: 'r_b1_2', tier: 'RELAY', level: 'B1', title: 'Tiếp sức: Giảm thiểu rác thải nhựa học đường', contextDesc: 'Bạn A: "Canteens should eliminate disposable cups." -> Bạn B tiếp sức chính sách khuyến khích.', prompt: 'To encourage that transition, the campus should offer a ten percent discount for students bringing reusable bottles.' },
-
-  // ==================== TẦNG 3: ROLEPLAY ====================
-  { id: 'rp_a1_1', tier: 'ROLEPLAY', level: 'A1', title: 'Nhập vai: Gọi món tại quán ăn nhanh', contextDesc: 'Bạn là khách muốn gọi gà rán, nước suối và xin mật khẩu Wifi.', prompt: 'Hello, can I please have one fried chicken combo and the password for the Wi-Fi?' },
-  { id: 'rp_a1_2', tier: 'ROLEPLAY', level: 'A1', title: 'Nhập vai: Mua vé rạp chiếu phim', contextDesc: 'Bạn là khách muốn mua 2 vé xem phim xuất chiếu tối và hỏi giảm giá sinh viên.', prompt: 'Hi, I would like two tickets for the eight PM screening. Do you offer student discounts?' },
-
-  { id: 'rp_a2_1', tier: 'ROLEPLAY', level: 'A2', title: 'Nhập vai: Đổi kích cỡ áo quần', contextDesc: 'Áo mua hôm qua bị chật vai, mang hóa đơn đến xin đổi sang Size L.', prompt: 'Good morning, I bought this shirt yesterday but it feels tight. Can I exchange it for a large?' },
-  { id: 'rp_a2_2', tier: 'ROLEPLAY', level: 'A2', title: 'Nhập vai: Gửi hành lý tại lễ tân', contextDesc: 'Bạn trả phòng lúc 12h nhưng muốn gửi lại 2 vali đến 17h chiều.', prompt: 'I am checking out now. Is it possible to store our two suitcases here until five PM today?' },
-
-  { id: 'rp_b1_1', tier: 'ROLEPLAY', level: 'B1', title: 'Nhập vai: Đổi đồ uống gấp tại sân bay', contextDesc: 'Gọi trà đào đá nhưng nhận nhầm cà phê nóng, chuyến bay sắp cất cánh trong 10 phút.', prompt: 'Excuse me, I ordered an iced peach tea, but I received hot coffee. Could you replace it quickly as my flight boards soon?' },
-  { id: 'rp_b1_2', tier: 'ROLEPLAY', level: 'B1', title: 'Nhập vai: Xin gia hạn nộp bài tập lớn', contextDesc: 'Máy chủ nhóm bị hỏng ổ cứng, bạn đại diện gặp giảng viên xin dời hạn 1 ngày.', prompt: 'Dear Professor, our team suffered an unexpected server crash last night. May we respectfully request a twenty-four hour extension?' }
-];
+  return {
+    id: uniqueId,
+    tier,
+    level,
+    title: `${base.title} (Biến thể #${counter + 1})`,
+    contextDesc: `${base.context} [Lưu ý: ${randomVariant}].`,
+    prompt: base.prompt,
+    isTeacherAssigned: false
+  };
+};
 
 export default function Station2Screen({ onBack }: Props) {
   const [selectedTier, setSelectedTier] = useState<Station2Tier>('ROLEPLAY');
   const [selectedLevel, setSelectedLevel] = useState<CefrLevel>('B1');
-  const [allChallenges, setAllChallenges] = useState<ChallengeItem[]>(DEFAULT_CHALLENGES);
   const [teacherAssignments, setTeacherAssignments] = useState<ChallengeItem[]>([]);
   const [loadingAssignments, setLoadingAssignments] = useState<boolean>(true);
 
-  // 🎯 CHỦ ĐỀ ĐANG ĐƯỢC CHỌN HIỂN THỊ
-  const [activeTopicIndex, setActiveTopicIndex] = useState<number>(0);
-  const [selectedChallenge, setSelectedChallenge] = useState<ChallengeItem | null>(null);
-
-  // Trạng thái AI tạo đề
+  // 🎯 QUẢN LÝ ĐỀ BÀI HIỆN TẠI (ĐẢM BẢO BẤM LÀ ĐỔI ĐỀ MỚI NGAY)
+  const [currentChallenge, setCurrentChallenge] = useState<ChallengeItem>(() => {
+    return createProceduralFallback('ROLEPLAY', 'B1', 0);
+  });
+  const [switchCount, setSwitchCount] = useState<number>(0);
   const [isGeneratingAiTopic, setIsGeneratingAiTopic] = useState<boolean>(false);
 
-  // Quản lý TTS
+  // Quản lý Text-To-Speech
   const [isPlayingSample, setIsPlayingSample] = useState<boolean>(false);
   const synthRef = useRef<SpeechSynthesis | null>(null);
 
@@ -203,43 +261,46 @@ export default function Station2Screen({ onBack }: Props) {
     return () => stopSampleAudio();
   }, []);
 
-  // Lọc danh sách theo tầng và level
-  const getFilteredPool = () => {
-    if (topicOrigin === 'TEACHER_DASHBOARD') {
-      return teacherAssignments.filter(item => item.tier === selectedTier && item.level === selectedLevel);
-    }
-    return allChallenges.filter(item => item.tier === selectedTier && item.level === selectedLevel);
-  };
-
-  const pool = getFilteredPool();
-
-  // Reset index khi đổi Tầng hoặc Cấp độ
+  // Tự động cập nhật đề khi thay đổi Tầng hoặc Cấp độ
   useEffect(() => {
-    setActiveTopicIndex(0);
+    if (topicOrigin === 'TEACHER_DASHBOARD') {
+      const filtered = teacherAssignments.filter(t => t.tier === selectedTier && t.level === selectedLevel);
+      if (filtered.length > 0) {
+        setCurrentChallenge(filtered[0]);
+        return;
+      }
+    }
+    const fresh = createProceduralFallback(selectedTier, selectedLevel, 0);
+    setCurrentChallenge(fresh);
+    setSwitchCount(0);
   }, [selectedTier, selectedLevel, topicOrigin]);
 
-  // Lấy ra đúng 1 chủ đề hiện tại để hiển thị
-  const currentTopic: ChallengeItem | undefined = pool[activeTopicIndex % (pool.length || 1)];
-
-  // 🤖 Hàm sinh đề mới bằng AI
+  // 🤖 HÀM GỌI GROQ AI SINH ĐỀ VỚI SEED THỜI GIAN THẬT
   const generateNewAiChallenge = async (): Promise<ChallengeItem | null> => {
     try {
       const apiKey = process.env.EXPO_PUBLIC_GROQ_API_KEY;
       if (!apiKey) return null;
 
-      const promptInstruction = `Create 1 realistic speaking situational reflex challenge for Station 2 at CEFR level ${selectedLevel} in tier ${selectedTier}.
-- SOLO: Individual situational reflex.
-- RELAY: Partner A speaks, Partner B extends.
-- ROLEPLAY: Two people resolve a negotiation/conflict.
-Respond ONLY with JSON format:
+      const randomSeed = Date.now();
+      const promptInstruction = `Create 1 UNIQUE speaking situational challenge for Station 2 at CEFR level ${selectedLevel} in tier ${selectedTier}. Timestamp: ${randomSeed}.
+Rules:
+- SOLO: Individual situational reflex. An unexpected realistic situation where the student responds promptly.
+- RELAY: Two-person relay on same topic. Partner A speaks, Partner B extends.
+- ROLEPLAY: Realistic situation conflict to resolve between 2 people.
+Output ONLY a raw JSON object (no markdown, no backticks):
 {
   "title": "Short title in Vietnamese",
   "contextDesc": "Context description in Vietnamese",
   "prompt": "Natural spoken English sentence or model response"
 }`;
 
+      // Giới hạn timeout 4 giây để nếu mạng chậm sẽ lập tức chuyển fallback, không bao giờ bị đơ
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 4000);
+
       const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
+        signal: controller.signal,
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${apiKey}`,
@@ -247,55 +308,50 @@ Respond ONLY with JSON format:
         body: JSON.stringify({
           model: 'llama-3.3-70b-versatile',
           messages: [{ role: 'user', content: promptInstruction }],
-          temperature: 0.95,
+          temperature: 1.0,
           response_format: { type: 'json_object' },
         }),
       });
 
-      const data = await res.json();
-      const content = JSON.parse(data.choices[0].message.content);
-
-      return {
-        id: `ai_${Date.now()}`,
-        tier: selectedTier,
-        level: selectedLevel,
-        title: `🤖 [AI MỚI] ${content.title}`,
-        contextDesc: content.contextDesc,
-        prompt: content.prompt,
-        isTeacherAssigned: false,
-      };
+      clearTimeout(timeoutId);
+      if (res.ok) {
+        const data = await res.json();
+        const content = JSON.parse(data.choices[0].message.content);
+        return {
+          id: `ai_${Date.now()}`,
+          tier: selectedTier,
+          level: selectedLevel,
+          title: `🤖 [AI MỚI] ${content.title}`,
+          contextDesc: content.contextDesc,
+          prompt: content.prompt,
+          isTeacherAssigned: false,
+        };
+      }
+      return null;
     } catch (err) {
       return null;
     }
   };
 
-  // 🎲 NÚT ĐỔI CHỦ ĐỀ MỚI: TĂNG INDEX HOẶC TẠO TỪ AI
+  // 🎲 NÚT ĐỔI CHỦ ĐỀ: ĐẢM BẢO 100% LUÔN SINH RA ĐỀ MỚI KHÔNG BAO GIỜ BỊ LẶP
   const handleNextTopic = async () => {
     stopSampleAudio();
     setIsGeneratingAiTopic(true);
 
-    // Thử gọi AI tạo đề mới
+    const nextCounter = switchCount + 1;
+    setSwitchCount(nextCounter);
+
+    // 1. Thử gọi AI sinh đề mới
     const newAiTopic = await generateNewAiChallenge();
     if (newAiTopic) {
-      setAllChallenges(prev => [newAiTopic, ...prev]);
-      setActiveTopicIndex(0); // Đưa về đề AI mới nhất
-      if (isNormalPracticing) {
-        setSelectedChallenge(newAiTopic);
-      }
+      setCurrentChallenge(newAiTopic);
       setIsGeneratingAiTopic(false);
       return;
     }
 
-    // Nếu không có API Key hoặc mất mạng -> Xoay vòng mượt mà sang đề tiếp theo trong danh sách
-    if (pool.length > 1) {
-      const nextIdx = (activeTopicIndex + 1) % pool.length;
-      setActiveTopicIndex(nextIdx);
-      if (isNormalPracticing) {
-        setSelectedChallenge(pool[nextIdx]);
-      }
-    } else {
-      Alert.alert("Thông báo", "Đang ở đề duy nhất của cấp độ này. Bạn có thể đổi sang Cấp độ khác hoặc dán đề mới!");
-    }
+    // 2. Nếu AI không có sẵn hoặc mất mạng -> Dùng Procedural Fallback với hàng chục biến thể
+    const dynamicTopic = createProceduralFallback(selectedTier, selectedLevel, nextCounter);
+    setCurrentChallenge(dynamicTopic);
     setIsGeneratingAiTopic(false);
   };
 
@@ -316,8 +372,7 @@ Respond ONLY with JSON format:
       isTeacherAssigned: false
     };
 
-    setAllChallenges(prev => [customItem, ...prev]);
-    setSelectedChallenge(customItem);
+    setCurrentChallenge(customItem);
     setRecordedAudioUrl(null);
     setIsNormalPracticing(true);
     setIsTeacherExamining(false);
@@ -325,9 +380,9 @@ Respond ONLY with JSON format:
     setIsRecordingNormal(false);
   };
 
-  const handleSelectChallenge = (item: ChallengeItem) => {
+  const handleEnterRoom = (item: ChallengeItem) => {
     stopSampleAudio();
-    setSelectedChallenge(item);
+    setCurrentChallenge(item);
     setRecordedAudioUrl(null);
     if (item.isTeacherAssigned) {
       setIsTeacherExamining(true);
@@ -452,11 +507,11 @@ Respond ONLY with JSON format:
     }
 
     const evaluated = evaluateSpeechSubmission({
-      transcript: selectedChallenge?.prompt || '',
-      targetPrompt: selectedChallenge?.prompt || '',
+      transcript: currentChallenge?.prompt || '',
+      targetPrompt: currentChallenge?.prompt || '',
       pitchHistory,
       durationSeconds: Math.max(normalTimer, 6),
-      cefrLevel: selectedChallenge?.level || selectedLevel
+      cefrLevel: currentChallenge?.level || selectedLevel
     });
 
     let audioUrl = '';
@@ -478,14 +533,14 @@ Respond ONLY with JSON format:
           student_code: authUser?.user?.email?.split('@')[0] || 'STU_S2',
           class_name: `Trạm 2: ${selectedTier} (${selectedLevel}) [${practiceMode === 'READ_SAMPLE' ? 'Đọc mẫu' : 'Tự nói'}]`,
           mode: `STATION_2_${selectedTier}`,
-          cefr_level: selectedChallenge?.level || selectedLevel,
+          cefr_level: currentChallenge?.level || selectedLevel,
           score: evaluated.totalScore,
           manual_score: null,
           spontaneity_score: evaluated.spontaneityScore,
           pitch_variance: evaluated.rubrics.intonation.score,
           is_script_suspected: evaluated.isScriptSuspected,
           audio_url: audioUrl,
-          transcript: selectedChallenge?.prompt || '',
+          transcript: currentChallenge?.prompt || '',
           feedback: `[Phát âm: ${evaluated.rubrics.pronunciation.score} | Ngữ điệu: ${evaluated.rubrics.intonation.score} | Trôi chảy: ${evaluated.rubrics.fluency.score}]`
         }]);
       }
@@ -611,7 +666,7 @@ Respond ONLY with JSON format:
               })}
             </View>
 
-            {/* 5. KHUNG HIỂN THỊ ĐỀ THI VÀ NÚT ĐỔI ĐỀ TRỰC QUAN */}
+            {/* 5. GIAO DIỆN TÌNH HUỐNG & NÚT ĐỔI ĐỀ TRỰC QUAN */}
             {topicOrigin === 'STUDENT_CUSTOM' ? (
               <View style={styles.customBoxWrapper}>
                 <Text style={styles.customBoxTitle}>📋 DÁN ĐỀ BÀI CỦA GIẢNG VIÊN VÀO ĐÂY:</Text>
@@ -652,7 +707,7 @@ Respond ONLY with JSON format:
               </View>
             ) : (
               <View style={styles.topicContainer}>
-                {/* 🔄 NÚT ĐỔI CHỦ ĐỀ MỚI - HOẠT ĐỘNG NGAY LẬP TỨC */}
+                {/* 🔄 NÚT ĐỔI CHỦ ĐỀ MỚI - ĐẢM BẢO LUÔN ĐỔI SANG TÌNH HUỐNG MỚI */}
                 <TouchableOpacity 
                   style={[styles.prominentSwitchBtn, isGeneratingAiTopic && { opacity: 0.6 }]} 
                   activeOpacity={0.7}
@@ -662,77 +717,69 @@ Respond ONLY with JSON format:
                   {isGeneratingAiTopic ? (
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                       <ActivityIndicator size="small" color="#00FFFF" />
-                      <Text style={styles.prominentSwitchBtnText}>⚡ ĐANG TẠO TÌNH HUỐNG MỚI...</Text>
+                      <Text style={styles.prominentSwitchBtnText}>⚡ ĐANG SOẠN TÌNH HUỐNG MỚI...</Text>
                     </View>
                   ) : (
                     <Text style={styles.prominentSwitchBtnText}>
-                      🎲 BẤM ĐỂ ĐỔI SANG TÌNH HUỐNG KHÁC (NGẪU NHIÊN / AI)
+                      🎲 BẤM ĐỂ ĐỔI SANG TÌNH HUỐNG MỚI KHÁC (AI / DYNAMIC)
                     </Text>
                   )}
                 </TouchableOpacity>
 
-                {/* THẺ TÌNH HUỐNG HIỆN TẠI */}
-                {!currentTopic ? (
-                  <View style={styles.emptyCard}>
-                    <Text style={styles.emptyText}>
-                      Chưa có chủ đề nào trong mục này. Bấm nút đổi tình huống ở trên để tạo mới!
+                {/* THẺ TÌNH HUỐNG HIỆN TẠI DUY NHẤT */}
+                <View style={[styles.card, currentChallenge.isTeacherAssigned && styles.teacherCard]}>
+                  <View style={styles.cardHeader}>
+                    <Text style={[styles.roleText, currentChallenge.isTeacherAssigned && { color: '#00FFFF' }]}>
+                      {currentChallenge.title}
+                    </Text>
+                    <Text style={styles.levelBadge}>
+                      {currentChallenge.level}
                     </Text>
                   </View>
-                ) : (
-                  <View style={[styles.card, currentTopic.isTeacherAssigned && styles.teacherCard]}>
-                    <View style={styles.cardHeader}>
-                      <Text style={[styles.roleText, currentTopic.isTeacherAssigned && { color: '#00FFFF' }]}>
-                        {currentTopic.title}
-                      </Text>
-                      <Text style={styles.levelBadge}>
-                        {currentTopic.level}
+                  
+                  <Text style={styles.contextText}>📌 {currentChallenge.contextDesc}</Text>
+
+                  {practiceMode === 'READ_SAMPLE' ? (
+                    <View style={styles.previewPromptBox}>
+                      <View style={styles.sampleHeaderRow}>
+                        <Text style={styles.previewPromptLabel}>📖 Câu phản xạ mẫu:</Text>
+                        <TouchableOpacity 
+                          style={[styles.ttsMiniBtn, isPlayingSample && styles.ttsMiniBtnActive]} 
+                          activeOpacity={0.7}
+                          onPress={() => playSampleAudio(currentChallenge.prompt)}
+                        >
+                          <Text style={styles.ttsMiniBtnText}>
+                            {isPlayingSample ? '⏹ DỪNG' : '🔊 NGHE MẪU'}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                      <Text style={styles.previewPromptText}>"{currentChallenge.prompt}"</Text>
+                    </View>
+                  ) : (
+                    <View style={styles.freeSpeechHintBox}>
+                      <Text style={styles.freeSpeechHintLabel}>⚡ PHẢN XẠ ĐỘC LẬP (KHÔNG CÂU MẪU):</Text>
+                      <Text style={styles.freeSpeechHintText}>
+                        Hãy đọc kỹ bối cảnh phía trên và tự do nói ra câu phản xạ tiếng Anh của bạn!
                       </Text>
                     </View>
-                    
-                    <Text style={styles.contextText}>📌 {currentTopic.contextDesc}</Text>
+                  )}
 
-                    {practiceMode === 'READ_SAMPLE' ? (
-                      <View style={styles.previewPromptBox}>
-                        <View style={styles.sampleHeaderRow}>
-                          <Text style={styles.previewPromptLabel}>📖 Câu phản xạ mẫu:</Text>
-                          <TouchableOpacity 
-                            style={[styles.ttsMiniBtn, isPlayingSample && styles.ttsMiniBtnActive]} 
-                            activeOpacity={0.7}
-                            onPress={() => playSampleAudio(currentTopic.prompt)}
-                          >
-                            <Text style={styles.ttsMiniBtnText}>
-                              {isPlayingSample ? '⏹ DỪNG' : '🔊 NGHE MẪU'}
-                            </Text>
-                          </TouchableOpacity>
-                        </View>
-                        <Text style={styles.previewPromptText}>"{currentTopic.prompt}"</Text>
-                      </View>
-                    ) : (
-                      <View style={styles.freeSpeechHintBox}>
-                        <Text style={styles.freeSpeechHintLabel}>⚡ PHẢN XẠ ĐỘC LẬP (KHÔNG CÂU MẪU):</Text>
-                        <Text style={styles.freeSpeechHintText}>
-                          Hãy đọc kỹ bối cảnh phía trên và tự do nói ra câu phản xạ tiếng Anh của bạn!
-                        </Text>
-                      </View>
-                    )}
-
-                    <TouchableOpacity
-                      style={[styles.startBtn, currentTopic.isTeacherAssigned && { backgroundColor: '#00FFFF' }]}
-                      onPress={() => handleSelectChallenge(currentTopic)}
-                    >
-                      <Text style={[styles.startBtnText, currentTopic.isTeacherAssigned && { color: '#000' }]}>
-                        🎙️ BƯỚC VÀO PHÒNG THU LUYỆN TẬP
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
+                  <TouchableOpacity
+                    style={[styles.startBtn, currentChallenge.isTeacherAssigned && { backgroundColor: '#00FFFF' }]}
+                    onPress={() => handleEnterRoom(currentChallenge)}
+                  >
+                    <Text style={[styles.startBtnText, currentChallenge.isTeacherAssigned && { color: '#000' }]}>
+                      🎙️ BƯỚC VÀO PHÒNG THU LUYỆN TẬP
+                    </Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             )}
           </>
         )}
 
         {/* PHÒNG THU LUYỆN TẬP */}
-        {isNormalPracticing && selectedChallenge && (
+        {isNormalPracticing && currentChallenge && (
           <View style={styles.normalPracticeCard}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
               <Text style={styles.normalPracticeHeader}>
@@ -747,7 +794,7 @@ Respond ONLY with JSON format:
                     disabled={isGeneratingAiTopic}
                     onPress={handleNextTopic}
                   >
-                    <Text style={styles.switchTopicInRoomText}>🔄 ĐỔI ĐỀ KHÁC</Text>
+                    <Text style={styles.switchTopicInRoomText}>🔄 ĐỔI TÌNH HUỐNG KHÁC</Text>
                   </TouchableOpacity>
                 )}
                 <TouchableOpacity onPress={() => setIsNormalPracticing(false)}>
@@ -756,8 +803,8 @@ Respond ONLY with JSON format:
               </View>
             </View>
 
-            <Text style={styles.normalPromptTitle}>{selectedChallenge.title} ({selectedChallenge.level})</Text>
-            <Text style={styles.normalPromptDesc}>{selectedChallenge.contextDesc}</Text>
+            <Text style={styles.normalPromptTitle}>{currentChallenge.title} ({currentChallenge.level})</Text>
+            <Text style={styles.normalPromptDesc}>{currentChallenge.contextDesc}</Text>
 
             {practiceMode === 'READ_SAMPLE' ? (
               <View style={styles.promptDisplayBox}>
@@ -766,14 +813,14 @@ Respond ONLY with JSON format:
                   <TouchableOpacity 
                     style={[styles.ttsPlayBtn, isPlayingSample && styles.ttsPlayBtnActive]} 
                     activeOpacity={0.7}
-                    onPress={() => playSampleAudio(selectedChallenge.prompt)}
+                    onPress={() => playSampleAudio(currentChallenge.prompt)}
                   >
                     <Text style={styles.ttsPlayBtnText}>
                       {isPlayingSample ? '⏹ DỪNG ĐỌC' : '🔊 NGHE GIỌNG MẪU'}
                     </Text>
                   </TouchableOpacity>
                 </View>
-                <Text style={styles.promptDisplayText}>{selectedChallenge.prompt}</Text>
+                <Text style={styles.promptDisplayText}>{currentChallenge.prompt}</Text>
               </View>
             ) : (
               <View style={[styles.promptDisplayBox, { borderColor: '#39FF14', backgroundColor: '#07180D' }]}>
@@ -822,10 +869,10 @@ Respond ONLY with JSON format:
         )}
 
         {/* PHÒNG THI CHỐNG ĐỌC */}
-        {isTeacherExamining && selectedChallenge && (
+        {isTeacherExamining && currentChallenge && (
           <AntiCheatSpeakingSession
-            promptText={practiceMode === 'READ_SAMPLE' ? selectedChallenge.prompt : ''}
-            situationPrompt={selectedChallenge.contextDesc}
+            promptText={practiceMode === 'READ_SAMPLE' ? currentChallenge.prompt : ''}
+            situationPrompt={currentChallenge.contextDesc}
             prepTimeSeconds={5}
             autoHidePrompt={true}
             onRecordingComplete={(blob, pitches) => finishSubmissionAndEvaluate(blob, pitches)}
@@ -934,9 +981,6 @@ const styles = StyleSheet.create({
 
   audioReviewBox: { backgroundColor: '#130628', padding: 10, borderRadius: 8, borderWidth: 1.5, borderColor: '#39FF14', marginBottom: 12 },
   audioReviewTitle: { color: '#39FF14', fontSize: 9.5, fontWeight: '900' },
-
-  emptyCard: { backgroundColor: '#120826', padding: 16, borderRadius: 10, borderWidth: 1, borderColor: '#332255', marginVertical: 8 },
-  emptyText: { color: '#AAAABB', fontStyle: 'italic', textAlign: 'center', fontSize: 10.5, lineHeight: 16 },
 
   normalPracticeCard: { backgroundColor: '#0A0318', padding: 16, borderRadius: 14, borderWidth: 1.5, borderColor: '#00FFFF', marginVertical: 10 },
   normalPracticeHeader: { color: '#00FFFF', fontSize: 10, fontWeight: '900' },
