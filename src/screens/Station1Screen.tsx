@@ -6,7 +6,7 @@ import { evaluateSpeaking, AssessmentResult, generateWordDiff } from '../service
 import { updateUserProgress } from '../services/userService';
 import { supabase } from '../utils/supabase';
 import AudioWaveVisualizer from '../components/AudioWaveVisualizer';
-import IntonationCanvas from '../components/IntonationCanvas'; // 📈 IMPORT INTOMATION CANVAS
+import IntonationCanvas from '../components/IntonationCanvas'; // 📈 IMPORT INTONATION CANVAS
 import { getPhoneticComparison } from '../constants/phoneticMap';
 
 interface Props {
@@ -15,7 +15,6 @@ interface Props {
 
 // Hàm trích xuất cao độ F0 cơ bản phía Client (Autocorrelation)
 function detectPitchFrame(buffer: Float32Array, sampleRate: number): number | null {
-  let r1 = 0, r2 = 0;
   const size = buffer.length;
   let bestOffset = -1;
   let bestCorrelation = 0;
@@ -194,11 +193,10 @@ export default function Station1Screen({ onBack }: Props) {
     const newDrill = getRandomStation1Drill(type);
     setCurrentDrill(newDrill);
 
-    // Tạo đường cong ngữ điệu mẫu mô phỏng ngữ điệu câu hỏi/câu khẳng định tiếng Anh
     const isQuestion = (newDrill?.contentEn || '').includes('?');
     const mockRef = isQuestion 
-      ? [-2, -1.5, -1, 0, 0.5, 1.2, 2.8, 4.5] // Câu hỏi Yes/No: vút lên cuối câu
-      : [0.5, 1.8, 2.2, 1.5, 0.2, -1.0, -2.5, -3.2]; // Câu khẳng định: hạ giọng cuối câu
+      ? [-2, -1.5, -1, 0, 0.5, 1.2, 2.8, 4.5]
+      : [0.5, 1.8, 2.2, 1.5, 0.2, -1.0, -2.5, -3.2];
     setTargetContour(mockRef);
   };
 
@@ -261,7 +259,6 @@ export default function Station1Screen({ onBack }: Props) {
         mediaStreamRef.current = stream;
         setActiveStream(stream);
 
-        // 📈 KÍCH HOẠT WEB AUDIO API TRÍCH XUẤT PITCH F0
         try {
           const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
           if (AudioContextClass) {
@@ -303,7 +300,6 @@ export default function Station1Screen({ onBack }: Props) {
             try { audioContextRef.current.close(); } catch (e) {}
           }
 
-          // Chuẩn hóa đường cong ngữ điệu người học theo Semitones
           const rawSamples = pitchSamplesRef.current;
           if (rawSamples.length >= 4) {
             const meanPitch = rawSamples.reduce((a, b) => a + b, 0) / rawSamples.length;
@@ -599,22 +595,27 @@ export default function Station1Screen({ onBack }: Props) {
               );
             })()}
 
+            {/* 🎧 KHỐI PHÁT AUDIO AN TOÀN TRÁNH XUNG ĐỘT TOUCH BANK CỦA REACT NATIVE WEB */}
             {result.audioUrl ? (
               <View style={styles.audioPlayerBox}>
                 <Text style={styles.audioLabel}>🎧 Nghe lại bài phát âm của bạn:</Text>
-                <View 
-                  style={{ width: '100%', marginTop: 6 }} 
-                  // @ts-ignore
-                  onStartShouldSetResponder={() => false}
-                  onMoveShouldSetResponder={() => false}
-                >
-                  {React.createElement('audio', {
+                {React.createElement(
+                  'div',
+                  {
+                    style: { width: '100%', marginTop: 6 },
+                    onMouseDown: (e: any) => e.stopPropagation(),
+                    onTouchStart: (e: any) => e.stopPropagation(),
+                    onMouseUp: (e: any) => e.stopPropagation(),
+                    onTouchEnd: (e: any) => e.stopPropagation()
+                  },
+                  React.createElement('audio', {
+                    key: result.audioUrl,
                     controls: true,
                     playsInline: true,
                     src: result.audioUrl,
-                    style: { width: '100%', height: 36, touchAction: 'manipulation' }
-                  })}
-                </View>
+                    style: { width: '100%', height: 36 }
+                  })
+                )}
               </View>
             ) : null}
 
