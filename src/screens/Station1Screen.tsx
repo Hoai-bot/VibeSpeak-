@@ -1,7 +1,9 @@
 // src/screens/Station1Screen.tsx
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
-import { getRandomStation1Drill, DrillType } from '../services/drills/station1Service';
+import { LINKING_SOUNDS_DATA, LinkingSoundItem } from '../data/station1/linkingSounds';
+import { MINIMAL_PAIRS_DATA, MinimalPairItem } from '../data/station1/minimalPairs';
+import { TONGUE_TWISTERS_DATA, TongueTwisterItem } from '../data/station1/tongueTwisters';
 import { evaluateSpeaking, AssessmentResult, generateWordDiff } from '../services/arena/assessmentService';
 import { updateUserProgress } from '../services/userService';
 import { supabase } from '../utils/supabase';
@@ -11,6 +13,18 @@ import { getPhoneticComparison } from '../constants/phoneticMap';
 
 interface Props {
   onBack: () => void;
+}
+
+export type DrillType = 'minimal_pairs' | 'linking_sounds' | 'tongue_twisters';
+
+export interface Station1DrillItem {
+  id: string;
+  title: string;
+  contentEn: string;
+  contentVi?: string;
+  targetFocus: string;
+  phoneticSpelling?: string;
+  sessionKey?: string;
 }
 
 // Hàm trích xuất cao độ F0 cơ bản phía Client (Autocorrelation)
@@ -114,8 +128,21 @@ function calculateIntonationMatch(student: number[], target: number[]): { score:
 
 export default function Station1Screen({ onBack }: Props) {
   const [activeType, setActiveType] = useState<DrillType>('minimal_pairs');
-  const [currentDrill, setCurrentDrill] = useState<any>(null);
+  const [currentDrill, setCurrentDrill] = useState<Station1DrillItem | null>(null);
   const [isPlayingTTS, setIsPlayingTTS] = useState<boolean>(false);
+
+  // 🎯 QUẢN LÝ CHỈ SỐ KHO ĐỀ 50 BÀI & HÀNG ĐỢI NẠP BÙ AI NGẦM
+  const [categoryIndices, setCategoryIndices] = useState<Record<DrillType, number>>({
+    minimal_pairs: 0,
+    linking_sounds: 0,
+    tongue_twisters: 0,
+  });
+  const [aiQueue, setAiQueue] = useState<Record<DrillType, Station1DrillItem[]>>({
+    minimal_pairs: [],
+    linking_sounds: [],
+    tongue_twisters: [],
+  });
+  const isFetchingAiRef = useRef<boolean>(false);
 
   // Quản lý ghi âm & trạng thái chấm điểm
   const [isRecording, setIsRecording] = useState<boolean>(false);
@@ -169,10 +196,40 @@ export default function Station1Screen({ onBack }: Props) {
     fetchUser();
   }, []);
 
+  // 🔊 BỘ PHÁT ÂM TỰ NHIÊN ĐA NỀN TẢNG (IOS, ANDROID, WINDOWS, MACOS)
+  const getBestNaturalVoice = (): SpeechSynthesisVoice | null => {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return null;
+    const voices = window.speechSynthesis.getVoices();
+    if (!voices || voices.length === 0) return null;
+
+    // 1. Android: Ưu tiên gói giọng mạng cao cấp của Google
+    const androidVoice = voices.find(v => 
+      v.lang.startsWith('en') && (v.name.includes('Google US English') || v.name.includes('Network') || v.voiceURI.includes('en-us-x'))
+    );
+    if (androidVoice) return androidVoice;
+
+    // 2. iOS (iPhone/iPad/Safari): Ưu tiên giọng Siri / Samantha Enhanced
+    const iosVoice = voices.find(v => 
+      v.lang.startsWith('en') && (v.name.includes('Siri') || v.name.includes('Samantha') || v.name.includes('Nicky') || v.name.includes('Aaron'))
+    );
+    if (iosVoice) return iosVoice;
+
+    // 3. Desktop (Windows/Edge/Chrome/macOS): Ưu tiên giọng Neural tự nhiên
+    const desktopVoice = voices.find(v => 
+      v.lang.startsWith('en') && (v.name.includes('Natural') || v.name.includes('Jenny') || v.name.includes('Guy') || v.name.includes('Aria'))
+    );
+    if (desktopVoice) return desktopVoice;
+
+    // 4. Mặc định: Chọn bất kỳ giọng en-US nào
+    return voices.find(v => v.lang === 'en-US') || voices.find(v => v.lang.startsWith('en')) || null;
+  };
+
   const stopAllAudio = () => {
     if (currentAudioRef.current) {
-      currentAudioRef.current.pause();
-      currentAudioRef.current.currentTime = 0;
+      try {
+        currentAudioRef.current.pause();
+        currentAudioRef.current.currentTime = 0;
+      } catch (e) {}
       currentAudioRef.current = null;
     }
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
@@ -204,19 +261,15 @@ export default function Station1Screen({ onBack }: Props) {
       const speakText = () => {
         const utterance = new SpeechSynthesisUtterance(cleanSpeechText);
         utterance.lang = 'en-US';
-        utterance.rate = 0.7;
+        utterance.rate = 0.85; // Tốc độ rõ ràng, chuẩn ngữ điệu sư phạm
         utterance.pitch = 1.0;
 
-        const voices = window.speechSynthesis.getVoices();
-        const englishVoice = voices.find(
-          v => v.lang === 'en-US' && (v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('Samantha'))
-        ) || voices.find(v => v.lang.startsWith('en'));
-
-        if (englishVoice) utterance.voice = englishVoice;
+        const bestVoice = getBestNaturalVoice();
+        if (bestVoice) utterance.voice = bestVoice;
 
         utterance.onstart = () => setIsPlayingTTS(true);
         utterance.onend = () => setIsPlayingTTS(false);
-        utterance.onerror = () => tryAudioUrlFallback(cleanSpeechText);
+        utterance.onerror = () => setIsPlayingTTS(false);
 
         window.speechSynthesis.speak(utterance);
       };
@@ -233,39 +286,131 @@ export default function Station1Screen({ onBack }: Props) {
       return;
     }
 
-    tryAudioUrlFallback(cleanSpeechText);
+    setIsPlayingTTS(false);
   };
 
-  const tryAudioUrlFallback = (textToSpeak: string) => {
-    try {
-      const encodedText = encodeURIComponent(textToSpeak);
-      const ttsUrl = `https://dict.youdao.com/dictvoice?audio=${encodedText}&type=2`;
-      const audio = new Audio(ttsUrl);
-      currentAudioRef.current = audio;
+  // 🤖 TIẾN TRÌNH NẠP BÙ AI NGẦM CHO TRẠM 1 (CHẠY HẬU CẢNH - KHÔNG LÀM ĐƠ MÀN HÌNH)
+  const triggerBackgroundAiRefill = async (type: DrillType) => {
+    const apiKey = process.env.EXPO_PUBLIC_GROQ_API_KEY;
+    if (!apiKey || isFetchingAiRef.current) return;
 
-      audio.onplay = () => setIsPlayingTTS(true);
-      audio.onended = () => setIsPlayingTTS(false);
-      audio.onerror = () => setIsPlayingTTS(false);
-      audio.play().catch(() => setIsPlayingTTS(false));
-    } catch {
-      setIsPlayingTTS(false);
+    try {
+      isFetchingAiRef.current = true;
+      let promptFocus = "";
+      if (type === 'minimal_pairs') {
+        promptFocus = "Create 1 UNIQUE Minimal Pair phoneme distinction drill (e.g. 'sheep / ship', 'seat / sit', 'rice / lice'). Format contentEn as 'word1 / word2'.";
+      } else if (type === 'linking_sounds') {
+        promptFocus = "Create 1 UNIQUE Linking Sound drill phrase (e.g. Consonant + Vowel linking like 'Check it out', 'Pick up the phone', or Flap T).";
+      } else {
+        promptFocus = "Create 1 UNIQUE Tongue Twister sentence challenging English pronunciation phonemes (consonant clusters, sibilants, etc.).";
+      }
+
+      const promptInstruction = `You are an expert English phonetics examiner for Station 1 Pronunciation Lab.
+${promptFocus}
+Output ONLY raw JSON (no markdown):
+{
+  "title": "Short title in Vietnamese",
+  "contentEn": "The English target phrase or pair",
+  "contentVi": "Short Vietnamese translation",
+  "targetFocus": "Phonetic target focus in Vietnamese",
+  "phoneticSpelling": "IPA phonetic notation"
+}`;
+
+      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: 'llama-3.3-70b-versatile',
+          messages: [{ role: 'user', content: promptInstruction }],
+          temperature: 1.0,
+          response_format: { type: 'json_object' },
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const content = JSON.parse(data.choices[0].message.content);
+        const newAiDrill: Station1DrillItem = {
+          id: `ai_${type}_${Date.now()}_${Math.random()}`,
+          title: `🤖 [AI MỚI] ${content.title}`,
+          contentEn: content.contentEn,
+          contentVi: content.contentVi || '',
+          targetFocus: content.targetFocus || 'Luyện chuẩn âm vị',
+          phoneticSpelling: content.phoneticSpelling || '',
+          sessionKey: `ai_${Date.now()}`
+        };
+        setAiQueue(prev => ({
+          ...prev,
+          [type]: [...prev[type], newAiDrill]
+        }));
+      }
+    } catch (e) {
+      console.warn("AI ngầm Trạm 1 tạm dừng:", e);
+    } finally {
+      isFetchingAiRef.current = false;
     }
   };
 
+  // ⚡ CƠ CHẾ ĐỔI ĐỀ TỨC THÌ 0MS + NẠP BÙ AI HẬU CẢNH
   const handleLoadNewDrill = (type: DrillType) => {
     stopAllAudio();
     resetSession();
     setBestScore(0);
     setPreviousScore(null);
     setAttemptCount(0);
-    const newDrill = getRandomStation1Drill(type);
+
+    // 1. Nếu có bài sẵn trong hàng đợi AI ngầm -> Dùng ngay trong 0ms!
+    if (aiQueue[type] && aiQueue[type].length > 0) {
+      const [nextAiDrill, ...restQueue] = aiQueue[type];
+      setAiQueue(prev => ({ ...prev, [type]: restQueue }));
+      setCurrentDrill({
+        ...nextAiDrill,
+        sessionKey: `ai_${Date.now()}`
+      });
+
+      const isQuestion = (nextAiDrill.contentEn || '').includes('?');
+      const mockRef = isQuestion 
+        ? [-2, -1.5, -1, 0, 0.5, 1.2, 2.8, 4.5]
+        : [0.5, 1.8, 2.2, 1.5, 0.2, -1.0, -2.5, -3.2];
+      setTargetContour(mockRef);
+
+      // Kích hoạt nạp bù tiếp 1 đề mới vào hàng đợi hậu cảnh
+      triggerBackgroundAiRefill(type);
+      return;
+    }
+
+    // 2. Lấy ngay từ kho 50 bài chuẩn có sẵn (0ms latency)
+    let bank: (LinkingSoundItem | MinimalPairItem | TongueTwisterItem)[] = [];
+    if (type === 'minimal_pairs') bank = MINIMAL_PAIRS_DATA;
+    else if (type === 'linking_sounds') bank = LINKING_SOUNDS_DATA;
+    else bank = TONGUE_TWISTERS_DATA;
+
+    const currentIdx = categoryIndices[type];
+    const nextIdx = currentIdx + 1;
+    setCategoryIndices(prev => ({ ...prev, [type]: nextIdx }));
+
+    const rawDrill = bank[nextIdx % bank.length];
+    const loopNum = Math.floor(nextIdx / bank.length) + 1;
+
+    const newDrill: Station1DrillItem = {
+      ...rawDrill,
+      title: loopNum > 1 ? `${rawDrill.title} (#${loopNum})` : rawDrill.title,
+      sessionKey: `preset_${type}_${nextIdx}_${Date.now()}`
+    };
+
     setCurrentDrill(newDrill);
 
-    const isQuestion = (newDrill?.contentEn || '').includes('?');
+    const isQuestion = (newDrill.contentEn || '').includes('?');
     const mockRef = isQuestion 
       ? [-2, -1.5, -1, 0, 0.5, 1.2, 2.8, 4.5]
       : [0.5, 1.8, 2.2, 1.5, 0.2, -1.0, -2.5, -3.2];
     setTargetContour(mockRef);
+
+    // 3. Cơ chế bù đề: Ngay khi đề này được đưa ra, tự động kích hoạt nạp bù AI ở hậu cảnh
+    triggerBackgroundAiRefill(type);
   };
 
   useEffect(() => {
@@ -350,7 +495,17 @@ export default function Station1Screen({ onBack }: Props) {
           console.warn("Pitch analysis context bypassed:", audioCtxErr);
         }
 
-        const recorder = new MediaRecorder(stream);
+        // Tự động nhận diện định dạng MediaRecorder phù hợp theo thiết bị
+        let options = {};
+        if (typeof MediaRecorder !== 'undefined' && typeof MediaRecorder.isTypeSupported === 'function') {
+          if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+            options = { mimeType: 'audio/webm;codecs=opus' };
+          } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+            options = { mimeType: 'audio/mp4' };
+          }
+        }
+
+        const recorder = new MediaRecorder(stream, options);
         mediaRecorderRef.current = recorder;
 
         recorder.ondataavailable = (e) => {
@@ -372,8 +527,7 @@ export default function Station1Screen({ onBack }: Props) {
           const validSamples = pitchSamplesRef.current.filter(p => p >= 75 && p <= 420);
           if (validSamples.length >= 4) {
             const meanPitch = validSamples.reduce((a, b) => a + b, 0) / validSamples.length;
-            const normalized = rawSamples => rawSamples.map(f => +(12 * Math.log2(f / meanPitch)).toFixed(2));
-            // 🌟 Làm mịn đường cong ngữ điệu qua bộ lọc 2 lớp
+            const normalized = (rawSamples: number[]) => rawSamples.map(f => +(12 * Math.log2(f / meanPitch)).toFixed(2));
             const smoothed = smoothContour(normalized(validSamples));
             setStudentContour(smoothed);
           } else {
@@ -433,14 +587,12 @@ export default function Station1Screen({ onBack }: Props) {
       // 🌟 TÍCH HỢP ĐIỂM NGỮ ĐIỆU (INTONATION MATCH) VÀO ĐIỂM TỔNG
       const intonation = calculateIntonationMatch(studentContour, targetContour);
       
-      // Trọng số thực tế: 70% Âm vị / Độ chuẩn từ (Whisper ASR) + 30% Độ khớp ngữ điệu (Pitch Contour)
       const rawPronunciationScore = evalData.score;
       const combinedScore = Math.max(
         30,
         Math.min(99, Math.round(rawPronunciationScore * 0.7 + intonation.score * 0.3))
       );
 
-      // Nhận xét phản hồi minh bạch: nêu rõ điểm phát âm từ và điểm ngữ điệu
       let finalFeedback = evalData.detailedFeedback;
       if (intonation.score < 70 && rawPronunciationScore >= 80) {
         finalFeedback = `👍 Bạn phát âm đúng từ (${rawPronunciationScore}đ), nhưng đường ngữ điệu (xanh) còn dao động mạnh (${intonation.score}đ). ${intonation.feedback}`;
@@ -537,11 +689,13 @@ export default function Station1Screen({ onBack }: Props) {
               </Text>
             </TouchableOpacity>
 
+            {/* NÚT ĐỔI BÀI TẬP TỨC THÌ 0MS KÈM AI BÙ ĐỀ */}
             <TouchableOpacity 
               style={styles.refreshBtn} 
               onPress={() => handleLoadNewDrill(activeType)}
+              activeOpacity={0.7}
             >
-              <Text style={styles.refreshBtnText}>🔄 THỬ THÁCH BÀI KHÁC</Text>
+              <Text style={styles.refreshBtnText}>🔄 THỬ THÁCH BÀI KHÁC (0MS + AI BÙ ĐỀ)</Text>
             </TouchableOpacity>
 
             {/* DẢI SÓNG ÂM THỜI GIAN THỰC */}
@@ -753,8 +907,8 @@ const styles = StyleSheet.create({
   ttsBtn: { backgroundColor: '#1A0B2E', paddingVertical: 10, paddingHorizontal: 16, borderRadius: 8, borderWidth: 1, borderColor: '#00FFFF', width: '100%', alignItems: 'center', marginBottom: 10 },
   ttsBtnActive: { backgroundColor: '#00FFFF' },
   ttsBtnText: { color: '#00FFFF', fontSize: 10, fontWeight: '900' },
-  refreshBtn: { backgroundColor: '#1A0B2E', padding: 8, borderRadius: 8, borderWidth: 1, borderColor: '#00FFFF', width: '100%', alignItems: 'center', marginBottom: 10 },
-  refreshBtnText: { color: '#00FFFF', fontSize: 10, fontWeight: 'bold' },
+  refreshBtn: { backgroundColor: '#1A0B2E', padding: 10, borderRadius: 8, borderWidth: 1.5, borderColor: '#00FFFF', width: '100%', alignItems: 'center', marginBottom: 10 },
+  refreshBtnText: { color: '#00FFFF', fontSize: 10.5, fontWeight: 'bold' },
   recordBtn: { backgroundColor: '#1A0B2E', padding: 12, borderRadius: 10, borderWidth: 2, borderColor: '#FF007F', width: '100%', alignItems: 'center', marginBottom: 10 },
   recordBtnActive: { backgroundColor: '#FF0055' },
   recordBtnText: { color: '#FFF', fontSize: 10, fontWeight: '900' },
