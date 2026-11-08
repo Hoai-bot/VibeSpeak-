@@ -1,12 +1,7 @@
 // src/screens/ShadowBossScreen.tsx
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
-import { 
-  generateShadowBoss, 
-  getInstantShadowBoss, 
-  clearStation3History 
-} from '../services/drills/station3Service';
-import { BossScenarioItem } from '../data/station3/bossScenarios';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, Alert } from 'react-native';
+import { BOSS_SCENARIOS_DATA, BossScenarioItem } from '../data/station3/bossScenarios';
 import { updateUserProgress } from '../services/userService';
 import { playBossVoice } from '../services/bossTtsService';
 import { evaluateSpeaking } from '../services/arena/assessmentService';
@@ -16,13 +11,61 @@ interface Props {
   onBack: () => void;
 }
 
+// 🎯 HÀM DÒ TÌM MIME TYPE THU ÂM CHUẨN XÁC THEO TỪNG HỆ ĐIỀU HÀNH
+const getSupportedAudioMimeType = (): { mimeType: string; extension: string } => {
+  if (typeof window === 'undefined' || !(window as any).MediaRecorder) {
+    return { mimeType: '', extension: 'webm' };
+  }
+  const MediaRecorderClass = (window as any).MediaRecorder;
+
+  if (typeof MediaRecorderClass.isTypeSupported === 'function') {
+    if (MediaRecorderClass.isTypeSupported('audio/webm;codecs=opus')) {
+      return { mimeType: 'audio/webm;codecs=opus', extension: 'webm' };
+    }
+    if (MediaRecorderClass.isTypeSupported('audio/webm')) {
+      return { mimeType: 'audio/webm', extension: 'webm' };
+    }
+    if (MediaRecorderClass.isTypeSupported('audio/mp4')) {
+      return { mimeType: 'audio/mp4', extension: 'mp4' };
+    }
+    if (MediaRecorderClass.isTypeSupported('audio/aac')) {
+      return { mimeType: 'audio/aac', extension: 'aac' };
+    }
+  }
+
+  return { mimeType: '', extension: 'webm' };
+};
+
 export default function ShadowBossScreen({ onBack }: Props) {
   const [cefrLevel, setCefrLevel] = useState<string>('B2');
-  const [bossData, setBossData] = useState<BossScenarioItem | null>(null);
-  const [currentHp, setCurrentHp] = useState<number>(100);
-  const [loading, setLoading] = useState<boolean>(false);
+  const [currentHp, setCurrentHp] = useState<number>(180);
   const [isPlayingAudio, setIsPlayingAudio] = useState<boolean>(false);
   const [showLeaderboard, setShowLeaderboard] = useState<boolean>(false);
+
+  // 🎯 QUẢN LÝ ĐỀ BÀI VÀ HÀNG ĐỢI NẠP BÙ AI NGẦM (0MS LATENCY)
+  const [bossIndex, setBossIndex] = useState<number>(0);
+  const [aiQueue, setAiQueue] = useState<BossScenarioItem[]>([]);
+  const isFetchingAiRef = useRef<boolean>(false);
+
+  const getInitialBossForLevel = (lvl: string): BossScenarioItem => {
+    const list = BOSS_SCENARIOS_DATA.filter(item => item.level === lvl);
+    if (list.length > 0) return list[0];
+    return {
+      id: `fallback_boss_${lvl}_0`,
+      level: lvl as any,
+      bossName: 'Shadow Sovereign',
+      bossTitle: 'Chúa Tể Bóng Đêm',
+      bossAvatar: '👹',
+      maxHp: 150,
+      timeLimitSeconds: 40,
+      bossChallengeEn: "You dare enter my dominion? Demonstrate your fluency to survive!",
+      bossChallengeVi: "Ngươi dám bước vào lãnh địa của ta sao? Hãy chứng minh độ lưu loát để sống sót!",
+      expectedResponsePromptEn: "Shadow the boss's sentence clearly.",
+      keyTargetPhrases: ["dominion", "fluency", "survive"]
+    };
+  };
+
+  const [bossData, setBossData] = useState<BossScenarioItem>(() => getInitialBossForLevel('B2'));
 
   // QUẢN LÝ MICRO & CỜ BẢO VỆ GHI ÂM TẠI TRẬN HIỆN TẠI
   const [isRecording, setIsRecording] = useState<boolean>(false);
@@ -34,6 +77,7 @@ export default function ShadowBossScreen({ onBack }: Props) {
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+  const activeMimeTypeRef = useRef<{ mimeType: string; extension: string }>({ mimeType: '', extension: 'webm' });
 
   const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
 
@@ -57,57 +101,178 @@ export default function ShadowBossScreen({ onBack }: Props) {
     audioChunksRef.current = [];
   };
 
-  const loadBoss = async (level: string) => {
-    resetBossSession();
+  // 🔊 BỘ PHÁT ÂM TỰ NHIÊN ĐA NỀN TẢNG (GIỌNG TRẦM UY LỰC CHO SHADOW BOSS)
+  const getBestBossVoice = (): SpeechSynthesisVoice | null => {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return null;
+    const voices = window.speechSynthesis.getVoices();
+    if (!voices || voices.length === 0) return null;
 
-    // 1. Nạp ngay Flash Data Local để giao diện có ngay dữ liệu (0ms delay)
-    const instantBoss = getInstantShadowBoss(level);
-    setBossData(instantBoss);
-    setCurrentHp(instantBoss.maxHp || 100);
-
-    // 2. Gọi AI tạo ngầm Boss mới
-    setLoading(true);
-    try {
-      const aiBoss = await generateShadowBoss(level);
-      if (aiBoss && aiBoss.bossChallengeEn) {
-        setBossData(aiBoss);
-        setCurrentHp(aiBoss.maxHp || 100);
-      }
-    } catch (err) {
-      console.warn("Dùng Flash Boss cho Trạm 3:", err);
-    } finally {
-      setLoading(false);
+    const deepVoices = ['Guy', 'Aaron', 'Daniel', 'Google US English', 'Natural'];
+    for (const name of deepVoices) {
+      const match = voices.find(v => v.lang.startsWith('en') && v.name.includes(name));
+      if (match) return match;
     }
+    return voices.find(v => v.lang === 'en-US') || voices.find(v => v.lang.startsWith('en')) || null;
+  };
+
+  const playNaturalBossTTS = (text: string) => {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+      setIsPlayingAudio(false);
+      return;
+    }
+    const synth = window.speechSynthesis;
+    synth.cancel();
+
+    const utterance = new SpeechSynthesisUtterance(text.replace(/["']/g, '').trim());
+    const voice = getBestBossVoice();
+    if (voice) utterance.voice = voice;
+    utterance.lang = 'en-US';
+    utterance.rate = 0.88;
+    utterance.pitch = 0.85;
+
+    utterance.onstart = () => setIsPlayingAudio(true);
+    utterance.onend = () => setIsPlayingAudio(false);
+    utterance.onerror = () => setIsPlayingAudio(false);
+
+    synth.speak(utterance);
+  };
+
+  // 🤖 TIẾN TRÌNH NẠP BÙ AI NGẦM CHO TRẠM 3 (CHẠY HẬU CẢNH - KHÔNG ĐƠ GIAO DIỆN)
+  const triggerBackgroundAiRefill = async (level: string) => {
+    const apiKey = process.env.EXPO_PUBLIC_GROQ_API_KEY;
+    if (!apiKey || isFetchingAiRef.current) return;
+
+    try {
+      isFetchingAiRef.current = true;
+      const promptInstruction = `Create 1 UNIQUE epic gaming boss battle challenge for English speaking Station 3 Shadow Boss Raid at CEFR level ${level}.
+Output ONLY raw JSON (no markdown):
+{
+  "bossName": "Epic Boss Name",
+  "bossTitle": "Title in Vietnamese (e.g. Chúa Tể Hư Không)",
+  "bossAvatar": "1 single evil monster/boss emoji (e.g. 🐉, 👹, 💀, 🧙‍♂, 🤖)",
+  "maxHp": 150,
+  "bossChallengeEn": "An intimidating, dramatic 1-2 sentence English combat challenge to shadow",
+  "bossChallengeVi": "Vietnamese translation of the challenge",
+  "expectedResponsePromptEn": "What the player needs to shadow",
+  "keyTargetPhrases": ["phrase 1", "phrase 2", "phrase 3"]
+}`;
+
+      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: 'llama-3.3-70b-versatile',
+          messages: [{ role: 'user', content: promptInstruction }],
+          temperature: 1.0,
+          response_format: { type: 'json_object' },
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const content = JSON.parse(data.choices[0].message.content);
+        const newAiBoss: BossScenarioItem = {
+          id: `ai_boss_${Date.now()}_${Math.random()}`,
+          level: level as any,
+          bossName: `🤖 ${content.bossName}`,
+          bossTitle: content.bossTitle || 'Thủ Lĩnh AI',
+          bossAvatar: content.bossAvatar || '👾',
+          maxHp: content.maxHp || 150,
+          timeLimitSeconds: 40,
+          bossChallengeEn: content.bossChallengeEn,
+          bossChallengeVi: content.bossChallengeVi || '',
+          expectedResponsePromptEn: content.expectedResponsePromptEn || 'Shadow the boss challenge phrase.',
+          keyTargetPhrases: content.keyTargetPhrases || [],
+        };
+        setAiQueue(prev => [...prev, newAiBoss]);
+      }
+    } catch (e) {
+      console.warn("AI ngầm Trạm 3 tạm dừng:", e);
+    } finally {
+      isFetchingAiRef.current = false;
+    }
+  };
+
+  // ⚡ ĐỔI BOSS TỨC THÌ 0MS + TỰ ĐỘNG NẠP BÙ AI NGẦM
+  const handleNextBoss = () => {
+    resetBossSession();
+    const nextIdx = bossIndex + 1;
+    setBossIndex(nextIdx);
+
+    // 1. Nếu có Boss trong hàng đợi AI ngầm -> Đưa ra khiêu chiến ngay trong 0ms!
+    if (aiQueue.length > 0) {
+      const [nextAiBoss, ...restQueue] = aiQueue;
+      setAiQueue(restQueue);
+      setBossData(nextAiBoss);
+      setCurrentHp(nextAiBoss.maxHp || 150);
+      triggerBackgroundAiRefill(cefrLevel);
+      return;
+    }
+
+    // 2. Lấy ngay từ kho dữ liệu BOSS_SCENARIOS_DATA trong 0ms
+    const list = BOSS_SCENARIOS_DATA.filter(item => item.level === cefrLevel);
+    if (list.length > 0) {
+      const picked = list[nextIdx % list.length];
+      const loopNum = Math.floor(nextIdx / list.length) + 1;
+      const formattedBoss: BossScenarioItem = {
+        ...picked,
+        bossName: loopNum > 1 ? `${picked.bossName} (#${loopNum})` : picked.bossName,
+      };
+      setBossData(formattedBoss);
+      setCurrentHp(picked.maxHp || 120);
+    }
+
+    // 3. Tự động kích hoạt nạp bù Boss AI ở hậu cảnh
+    triggerBackgroundAiRefill(cefrLevel);
   };
 
   const handleLevelChange = (newLevel: string) => {
     if (newLevel === cefrLevel) return;
-    clearStation3History();
+    resetBossSession();
     setCefrLevel(newLevel);
+    setBossIndex(0);
+    setAiQueue([]);
+
+    const initial = getInitialBossForLevel(newLevel);
+    setBossData(initial);
+    setCurrentHp(initial.maxHp || 120);
+
+    triggerBackgroundAiRefill(newLevel);
   };
 
   useEffect(() => {
-    loadBoss(cefrLevel);
+    const initial = getInitialBossForLevel(cefrLevel);
+    setBossData(initial);
+    setCurrentHp(initial.maxHp || 120);
+    triggerBackgroundAiRefill(cefrLevel);
     return () => resetBossSession();
-  }, [cefrLevel]);
+  }, []);
 
-  // 📢 PHÁT GIỌNG NÓI MẪU AI
+  // 📢 PHÁT GIỌNG NÓI MẪU AI CỦA SHADOW BOSS
   const handlePlaySample = async () => {
     if (!bossData || !bossData.bossChallengeEn) return;
     setIsPlayingAudio(true);
     try {
       await playBossVoice(bossData.bossChallengeEn, 'onyx');
-    } catch (error) {
-      console.error("Lỗi phát audio Boss:", error);
+    } catch {
+      playNaturalBossTTS(bossData.bossChallengeEn);
     } finally {
       setIsPlayingAudio(false);
     }
   };
 
   const handleBossAttack = (bossDialogueText: string) => {
-    playBossVoice(bossDialogueText, 'onyx');
+    try {
+      playBossVoice(bossDialogueText, 'onyx');
+    } catch {
+      playNaturalBossTTS(bossDialogueText);
+    }
   };
 
+  // 🎙️ Thu âm đa nền tảng
   const handleToggleRecord = async () => {
     stopAllAudio();
 
@@ -116,15 +281,10 @@ export default function ShadowBossScreen({ onBack }: Props) {
         if (typeof navigator !== 'undefined' && navigator.mediaDevices) {
           const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
           
-          let options = {};
-          if (typeof MediaRecorder !== 'undefined') {
-            if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
-              options = { mimeType: 'audio/webm;codecs=opus' };
-            } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
-              options = { mimeType: 'audio/mp4' };
-            }
-          }
+          const detectedFormat = getSupportedAudioMimeType();
+          activeMimeTypeRef.current = detectedFormat;
 
+          const options: any = detectedFormat.mimeType ? { mimeType: detectedFormat.mimeType } : undefined;
           const mediaRecorder = new MediaRecorder(stream, options);
           mediaRecorderRef.current = mediaRecorder;
           audioChunksRef.current = [];
@@ -134,8 +294,8 @@ export default function ShadowBossScreen({ onBack }: Props) {
           };
 
           mediaRecorder.onstop = () => {
-            const mimeType = mediaRecorder.mimeType || 'audio/webm';
-            const blob = new Blob(audioChunksRef.current, { type: mimeType });
+            const { mimeType } = activeMimeTypeRef.current;
+            const blob = new Blob(audioChunksRef.current, mimeType ? { type: mimeType } : undefined);
             
             if (blob.size > 800) {
               setAudioBlob(blob);
@@ -143,7 +303,7 @@ export default function ShadowBossScreen({ onBack }: Props) {
             } else {
               setAudioBlob(null);
               setHasRecordedCurrentSession(false);
-              alert("⚠️ Bạn chưa nói hoặc bản thu quá ngắn! Vui lòng bấm giữ nút và Shadowing rõ ràng.");
+              Alert.alert("Thông báo", "⚠️ Bạn chưa nói hoặc bản thu quá ngắn! Vui lòng bấm giữ nút và Shadowing rõ ràng.");
             }
             stream.getTracks().forEach(t => t.stop());
           };
@@ -154,7 +314,7 @@ export default function ShadowBossScreen({ onBack }: Props) {
           setHasRecordedCurrentSession(false);
         }
       } catch {
-        alert("🔒 Lỗi Micro: Hãy cấp quyền Microphone trên trình duyệt để Shadowing!");
+        Alert.alert("Lỗi Micro", "🔒 Vui lòng cấp quyền Microphone trên trình duyệt để Shadowing!");
       }
     } else {
       setIsRecording(false);
@@ -166,7 +326,7 @@ export default function ShadowBossScreen({ onBack }: Props) {
 
   const handleAttackBoss = async () => {
     if (!hasRecordedCurrentSession || !audioBlob || audioBlob.size <= 800) {
-      alert("🔒 BẢO VỆ TẤN CÔNG: Bạn chưa thu âm giọng nói Shadowing! Hãy bấm nút Micro để nói đuổi theo câu thoại trước.");
+      Alert.alert("Bảo vệ tấn công", "🔒 Bạn chưa thu âm giọng nói Shadowing! Hãy bấm nút Micro để nói đuổi theo câu thoại trước.");
       return;
     }
 
@@ -180,7 +340,7 @@ export default function ShadowBossScreen({ onBack }: Props) {
       if (!evalResult.transcript || evalResult.score === 0) {
         setLastDamage(0);
         setLastFeedback("❌ AI không nghe rõ câu Shadowing. Vui lòng đọc to và rõ ràng hơn!");
-        alert("🛡 TẤN CÔNG THẤT BẠI: Bạn chưa đọc rõ câu thoại Shadowing! Vui lòng bấm micro và đọc lại.");
+        Alert.alert("Tấn công thất bại", "🛡 Bạn chưa đọc rõ câu thoại Shadowing! Vui lòng bấm micro và đọc lại.");
       } else {
         const damage = evalResult.score;
 
@@ -201,7 +361,7 @@ export default function ShadowBossScreen({ onBack }: Props) {
       }
     } catch (err) {
       console.error("Lỗi chấm điểm Shadowing Trạm 3:", err);
-      alert("⚠️ Lỗi kết nối mạng khi chấm điểm Shadowing. Vui lòng thử lại!");
+      Alert.alert("Lỗi kết nối", "⚠️ Không thể phân tích bài nói lúc này. Vui lòng thử lại!");
     } finally {
       setIsAnalyzing(false);
       setAudioBlob(null);
@@ -209,7 +369,7 @@ export default function ShadowBossScreen({ onBack }: Props) {
     }
   };
 
-  // 🏆 ĐIỀU KIỆN RENDER MÀN HÌNH BẢNG XẾP HẠNG
+  // 🏆 BẢNG XẾP HẠNG
   if (showLeaderboard) {
     return (
       <LeaderboardScreen 
@@ -249,9 +409,15 @@ export default function ShadowBossScreen({ onBack }: Props) {
 
         {bossData ? (
           <>
-            {/* THANH MÁU BOSS */}
+            {/* THANH MÁU BOSS & NÚT ĐỔI BOSS 0MS */}
             <View style={styles.bossCard}>
-              <Text style={styles.bossName}>{bossData.bossAvatar} {bossData.bossName} ({bossData.bossTitle}) [{cefrLevel}]</Text>
+              <View style={styles.bossHeaderRow}>
+                <Text style={styles.bossName}>{bossData.bossAvatar} {bossData.bossName} ({bossData.bossTitle}) [{cefrLevel}]</Text>
+                <TouchableOpacity style={styles.switchBossBtn} onPress={handleNextBoss} activeOpacity={0.7}>
+                  <Text style={styles.switchBossBtnText}>🔄 ĐỔI BOSS (0MS)</Text>
+                </TouchableOpacity>
+              </View>
+
               <View style={styles.hpBarBg}>
                 <View style={[styles.hpBarFill, { width: `${(currentHp / (bossData.maxHp || 100)) * 100}%` }]} />
               </View>
@@ -324,8 +490,8 @@ export default function ShadowBossScreen({ onBack }: Props) {
                 )}
               </View>
             ) : (
-              <TouchableOpacity style={styles.refreshBtn} onPress={() => loadBoss(cefrLevel)}>
-                <Text style={styles.refreshText}>🔄 THÁCH ĐẤU BOSS MỚI ({cefrLevel})</Text>
+              <TouchableOpacity style={styles.refreshBtn} onPress={handleNextBoss}>
+                <Text style={styles.refreshText}>🔄 THÁCH ĐẤU BOSS TIẾP THEO ({cefrLevel})</Text>
               </TouchableOpacity>
             )}
           </>
@@ -352,7 +518,10 @@ const styles = StyleSheet.create({
   cefrText: { color: '#8888AA', fontSize: 10, fontWeight: 'bold' },
   cefrTextActive: { color: '#000' },
   bossCard: { backgroundColor: '#1A0B2E', padding: 16, borderRadius: 16, borderWidth: 2, borderColor: '#FF007F', width: '100%', alignItems: 'center', marginBottom: 15 },
-  bossName: { color: '#FFD700', fontSize: 14, fontWeight: '900', marginBottom: 8 },
+  bossHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', width: '100%', marginBottom: 8 },
+  bossName: { color: '#FFD700', fontSize: 13, fontWeight: '900', flex: 1, marginRight: 6 },
+  switchBossBtn: { backgroundColor: '#0D0620', paddingVertical: 4, paddingHorizontal: 8, borderRadius: 6, borderWidth: 1, borderColor: '#00FFFF' },
+  switchBossBtnText: { color: '#00FFFF', fontSize: 8.5, fontWeight: 'bold' },
   hpBarBg: { width: '100%', height: 12, backgroundColor: '#331122', borderRadius: 6, overflow: 'hidden', marginBottom: 6 },
   hpBarFill: { height: '100%', backgroundColor: '#FF0055' },
   hpText: { color: '#FFF', fontSize: 11, fontWeight: 'bold' },
