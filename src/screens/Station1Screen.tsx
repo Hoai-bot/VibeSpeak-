@@ -39,9 +39,77 @@ function detectPitchFrame(buffer: Float32Array, sampleRate: number): number | nu
   }
 
   if (bestCorrelation > 0.4 && bestOffset > 0) {
-    return sampleRate / bestOffset;
+    const pitch = sampleRate / bestOffset;
+    // Lọc dải tần số giọng nói con người tiêu chuẩn (75Hz - 420Hz)
+    if (pitch >= 75 && pitch <= 420) return pitch;
   }
   return null;
+}
+
+// 🌊 BỘ LỌC LÀM MỊN ĐƯỜNG CONG CAO ĐỘ (MEDIAN & MOVING AVERAGE FILTER)
+function smoothContour(arr: number[]): number[] {
+  if (arr.length <= 2) return arr;
+  
+  // Bước 1: Lọc trung vị 3 điểm để khử đột biến do nhảy quãng tám (Octave Jump)
+  const medianFiltered: number[] = [];
+  for (let i = 0; i < arr.length; i++) {
+    const prev = arr[i - 1] ?? arr[i];
+    const curr = arr[i];
+    const next = arr[i + 1] ?? arr[i];
+    const sorted = [prev, curr, next].sort((a, b) => a - b);
+    medianFiltered.push(sorted[1]);
+  }
+
+  // Bước 2: Làm mịn trung bình trượt có trọng số (Weighted Moving Average)
+  const smoothed: number[] = [];
+  for (let i = 0; i < medianFiltered.length; i++) {
+    const prev = medianFiltered[i - 1] ?? medianFiltered[i];
+    const curr = medianFiltered[i];
+    const next = medianFiltered[i + 1] ?? medianFiltered[i];
+    const val = (prev + curr * 2 + next) / 4;
+    smoothed.push(+val.toFixed(2));
+  }
+  return smoothed;
+}
+
+// 🎯 ĐO LƯỜNG ĐỘ KHỚP NGỮ ĐIỆU GIỮA HỌC VIÊN VÀ MẪU CHUẨN
+function calculateIntonationMatch(student: number[], target: number[]): { score: number; feedback: string } {
+  if (!student.length || !target.length) {
+    return { score: 80, feedback: '' };
+  }
+
+  // Nội suy độ dài student về cùng số điểm với target để so sánh chuẩn xác
+  const n = target.length;
+  const resampledStudent: number[] = [];
+  for (let i = 0; i < n; i++) {
+    const srcIdx = (i / (n - 1 || 1)) * (student.length - 1);
+    const low = Math.floor(srcIdx);
+    const high = Math.min(student.length - 1, Math.ceil(srcIdx));
+    const weight = srcIdx - low;
+    const interp = student[low] * (1 - weight) + student[high] * weight;
+    resampledStudent.push(interp);
+  }
+
+  // Tính sai số tuyệt đối trung bình (MAE) theo Semitone
+  let totalDiff = 0;
+  for (let i = 0; i < n; i++) {
+    totalDiff += Math.abs(resampledStudent[i] - target[i]);
+  }
+  const avgDiff = totalDiff / n;
+
+  // Điểm ngữ điệu: Lệch 0st = 100đ, mỗi 1 semitone lệch trừ ~12đ
+  const matchScore = Math.max(35, Math.min(100, Math.round(100 - avgDiff * 12)));
+
+  let feedback = '';
+  if (matchScore >= 85) {
+    feedback = '🌟 Ngữ điệu và độ lướt câu rất khớp với câu mẫu!';
+  } else if (matchScore >= 70) {
+    feedback = '👍 Ngữ điệu khá ổn định nhưng cần chú ý giữ hơi đều hơn.';
+  } else {
+    feedback = '⚠️ Đường ngữ điệu (xanh) còn dao động mạnh và chưa bám sát mẫu (vàng). Hãy nghe lại câu mẫu và lên/xuống giọng êm hơn!';
+  }
+
+  return { score: matchScore, feedback };
 }
 
 export default function Station1Screen({ onBack }: Props) {
@@ -300,13 +368,16 @@ export default function Station1Screen({ onBack }: Props) {
             try { audioContextRef.current.close(); } catch (e) {}
           }
 
-          const rawSamples = pitchSamplesRef.current;
-          if (rawSamples.length >= 4) {
-            const meanPitch = rawSamples.reduce((a, b) => a + b, 0) / rawSamples.length;
-            const normalized = rawSamples.map(f => +(12 * Math.log2(f / meanPitch)).toFixed(2));
-            setStudentContour(normalized);
+          // Lọc các mẫu cao độ hợp lệ và khử nhiễu
+          const validSamples = pitchSamplesRef.current.filter(p => p >= 75 && p <= 420);
+          if (validSamples.length >= 4) {
+            const meanPitch = validSamples.reduce((a, b) => a + b, 0) / validSamples.length;
+            const normalized = rawSamples => rawSamples.map(f => +(12 * Math.log2(f / meanPitch)).toFixed(2));
+            // 🌟 Làm mịn đường cong ngữ điệu qua bộ lọc 2 lớp
+            const smoothed = smoothContour(normalized(validSamples));
+            setStudentContour(smoothed);
           } else {
-            setStudentContour([0.2, 1.0, 1.5, 0.8, -0.5, -1.8]);
+            setStudentContour([0.2, 0.8, 1.2, 0.6, -0.4, -1.2]);
           }
 
           if (mediaStreamRef.current) {
@@ -359,11 +430,41 @@ export default function Station1Screen({ onBack }: Props) {
         capturedText
       );
 
-      setAttemptCount((prev) => prev + 1);
-      setBestScore((prev) => Math.max(prev, evalData.score));
-      setResult(evalData);
+      // 🌟 TÍCH HỢP ĐIỂM NGỮ ĐIỆU (INTONATION MATCH) VÀO ĐIỂM TỔNG
+      const intonation = calculateIntonationMatch(studentContour, targetContour);
       
-      const isPass = (evalData.score >= 70) || evalData.isWin;
+      // Trọng số thực tế: 70% Âm vị / Độ chuẩn từ (Whisper ASR) + 30% Độ khớp ngữ điệu (Pitch Contour)
+      const rawPronunciationScore = evalData.score;
+      const combinedScore = Math.max(
+        30,
+        Math.min(99, Math.round(rawPronunciationScore * 0.7 + intonation.score * 0.3))
+      );
+
+      // Nhận xét phản hồi minh bạch: nêu rõ điểm phát âm từ và điểm ngữ điệu
+      let finalFeedback = evalData.detailedFeedback;
+      if (intonation.score < 70 && rawPronunciationScore >= 80) {
+        finalFeedback = `👍 Bạn phát âm đúng từ (${rawPronunciationScore}đ), nhưng đường ngữ điệu (xanh) còn dao động mạnh (${intonation.score}đ). ${intonation.feedback}`;
+      } else if (intonation.feedback) {
+        finalFeedback = `${evalData.detailedFeedback} ${intonation.feedback}`;
+      }
+
+      const calibratedResult: AssessmentResult = {
+        ...evalData,
+        score: combinedScore,
+        detailedFeedback: finalFeedback,
+        isWin: combinedScore >= 70,
+        criteria: evalData.criteria ? {
+          ...evalData.criteria,
+          pronunciation: rawPronunciationScore,
+          fluency: intonation.score,
+        } : null
+      };
+
+      setAttemptCount((prev) => prev + 1);
+      setBestScore((prev) => Math.max(prev, combinedScore));
+      setResult(calibratedResult);
+      
+      const isPass = (combinedScore >= 70) || calibratedResult.isWin;
       if (isPass) updateUserProgress(1, 30, true);
     } catch (err) {
       safeAlert("⚠️ Lỗi kết nối chấm điểm. Vui lòng thử nộp lại!");
