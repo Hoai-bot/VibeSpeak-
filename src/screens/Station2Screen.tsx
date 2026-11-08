@@ -110,7 +110,6 @@ const createProceduralFallback = (tier: Station2Tier, level: CefrLevel, counter:
   const base = list[counter % list.length];
   const uniqueId = `dynamic_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
 
-  // Thêm biến thể ngữ cảnh để luôn khác biệt 100%
   const variants = [
     "Thời gian gấp gáp trong vòng 3 phút",
     "Đối phương đang tỏ thái độ không hài lòng",
@@ -160,6 +159,32 @@ export default function Station2Screen({ onBack }: Props) {
     };
   }, []);
 
+  const getBestNaturalVoice = (): SpeechSynthesisVoice | null => {
+    if (!synthRef.current) return null;
+    const voices = synthRef.current.getVoices();
+    if (!voices || voices.length === 0) return null;
+
+    // 1. Ưu tiên trên Android: Bộ giọng Google US chất lượng cao
+    const androidGoogleVoices = voices.filter(v => 
+      v.lang.startsWith('en') && 
+      (v.name.includes('Google') || v.name.includes('Network') || v.voiceURI.includes('google'))
+    );
+    if (androidGoogleVoices.length > 0) {
+      const usGoogle = androidGoogleVoices.find(v => v.lang === 'en-US');
+      if (usGoogle) return usGoogle;
+    }
+
+    // 2. Ưu tiên trên iOS: Siri / Samantha Enhanced
+    const iosPreferred = ['Siri', 'Samantha (Enhanced)', 'Samantha', 'Nicky', 'Aaron'];
+    for (const name of iosPreferred) {
+      const match = voices.find(v => v.lang.startsWith('en') && v.name.includes(name));
+      if (match) return match;
+    }
+
+    // 3. Dự phòng bất kỳ voice en-US nào
+    return voices.find(v => v.lang === 'en-US') || voices.find(v => v.lang.startsWith('en')) || null;
+  };
+
   const playSampleAudio = (text: string) => {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
       Alert.alert("Lỗi", "Trình duyệt không hỗ trợ Text-to-Speech");
@@ -174,12 +199,11 @@ export default function Station2Screen({ onBack }: Props) {
     synth.cancel();
     const utterance = new SpeechSynthesisUtterance(text.replace(/["']/g, '').trim());
     
-    const voices = synth.getVoices();
-    const naturalVoice = voices.find(v => v.lang.startsWith('en') && (v.name.includes('Google') || v.name.includes('Natural') || v.name.includes('Samantha')));
-    if (naturalVoice) utterance.voice = naturalVoice;
+    const bestVoice = getBestNaturalVoice();
+    if (bestVoice) utterance.voice = bestVoice;
     utterance.lang = 'en-US';
-    utterance.rate = 0.90;
-    utterance.pitch = 1.05;
+    utterance.rate = 0.88;
+    utterance.pitch = 1.0;
 
     utterance.onstart = () => setIsPlayingSample(true);
     utterance.onend = () => setIsPlayingSample(false);
@@ -294,7 +318,6 @@ Output ONLY a raw JSON object (no markdown, no backticks):
   "prompt": "Natural spoken English sentence or model response"
 }`;
 
-      // Giới hạn timeout 4 giây để nếu mạng chậm sẽ lập tức chuyển fallback, không bao giờ bị đơ
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 4000);
 
@@ -981,6 +1004,9 @@ const styles = StyleSheet.create({
 
   audioReviewBox: { backgroundColor: '#130628', padding: 10, borderRadius: 8, borderWidth: 1.5, borderColor: '#39FF14', marginBottom: 12 },
   audioReviewTitle: { color: '#39FF14', fontSize: 9.5, fontWeight: '900' },
+
+  emptyCard: { backgroundColor: '#120826', padding: 16, borderRadius: 10, borderWidth: 1, borderColor: '#332255', marginVertical: 8 },
+  emptyText: { color: '#AAAABB', fontStyle: 'italic', textAlign: 'center', fontSize: 10.5, lineHeight: 16 },
 
   normalPracticeCard: { backgroundColor: '#0A0318', padding: 16, borderRadius: 14, borderWidth: 1.5, borderColor: '#00FFFF', marginVertical: 10 },
   normalPracticeHeader: { color: '#00FFFF', fontSize: 10, fontWeight: '900' },
