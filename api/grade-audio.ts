@@ -169,6 +169,49 @@ function checkRateLimit(clientIp: string): { allowed: boolean; remaining: number
   return { allowed: true, remaining: MAX_REQUESTS_PER_WINDOW - bucket.count };
 }
 
+// =========================================================================
+// 📈 THUẬT TOÁN ĐO NGỮ ĐIỆU (DTW & PITCH/INTONATION CONTOUR TRACKING)
+// =========================================================================
+export function computeDTWDistance(seq1: number[], seq2: number[]): number {
+  const n = seq1.length;
+  const m = seq2.length;
+  if (n === 0 || m === 0) return 100;
+
+  const dtw: number[][] = Array.from({ length: n + 1 }, () => Array(m + 1).fill(Infinity));
+  dtw[0][0] = 0;
+
+  for (let i = 1; i <= n; i++) {
+    for (let j = 1; j <= m; j++) {
+      const cost = Math.abs(seq1[i - 1] - seq2[j - 1]);
+      dtw[i][j] = cost + Math.min(dtw[i - 1][j], dtw[i][j - 1], dtw[i - 1][j - 1]);
+    }
+  }
+
+  // Chuẩn hóa khoảng cách theo độ dài đường nối
+  return dtw[n][m] / (n + m);
+}
+
+export function evaluateProsodyScore(studentPitch: number[], referencePitch: number[]): { score: number; feedback: string } {
+  if (studentPitch.length < 5 || referencePitch.length < 5) {
+    return { score: 75, feedback: 'Ngữ điệu ở mức chấp nhận được.' };
+  }
+
+  const distance = computeDTWDistance(studentPitch, referencePitch);
+  // Distance thông thường dao động từ 0.5 đến 5.0
+  const prosodyScore = Math.max(30, Math.min(100, Math.round(100 - distance * 14)));
+
+  let feedback = '';
+  if (prosodyScore >= 85) {
+    feedback = '🌟 Ngữ điệu và trọng âm rất tự nhiên, bám sát ngữ điệu người bản xứ!';
+  } else if (prosodyScore >= 70) {
+    feedback = '👍 Ngữ điệu khá tốt. Cần chú ý nhấn giọng ở các từ khóa (Content Words) và lên/xuống giọng ở cuối câu.';
+  } else {
+    feedback = '⚠️ Giọng nói còn hơi đều đều (monotone). Hãy quan sát đường cong màu vàng và bắt chước độ lên xuống giọng của câu mẫu nhé!';
+  }
+
+  return { score: prosodyScore, feedback };
+}
+
 export default async function handler(req: Request) {
   if (req.method !== 'POST') {
     return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405 });
@@ -211,6 +254,18 @@ export default async function handler(req: Request) {
     const targetPrompt = formData.get('prompt') || formData.get('targetSentence') || '';
     const stationType = (formData.get('stationType') || 'STATION_1').toUpperCase();
     const cefrLevel = (formData.get('level') || 'B2').toUpperCase();
+
+    // 📈 Trích xuất mảng Pitch (F0 Contour) gửi lên từ client (nếu có)
+    let studentPitchData: number[] = [];
+    let referencePitchData: number[] = [];
+    try {
+      const spRaw = formData.get('studentPitch');
+      const rpRaw = formData.get('referencePitch');
+      if (spRaw && typeof spRaw === 'string') studentPitchData = JSON.parse(spRaw);
+      if (rpRaw && typeof rpRaw === 'string') referencePitchData = JSON.parse(rpRaw);
+    } catch (pitchErr) {
+      console.warn("Pitch parsing bypassed:", pitchErr);
+    }
 
     if (!audioFile) {
       return new Response(
@@ -449,7 +504,7 @@ export default async function handler(req: Request) {
       );
 
     // =========================================================================
-    // 👻 NHÁNH 2: TRẠM 3 - GHOST STATION (SHADOWING ECHO CHUYÊN SÂU)
+    // 👻 NHÁNH 2: TRẠM 3 - GHOST STATION (SHADOWING ECHO CHUYÊN SÂU & ĐO NGỮ ĐIỆU)
     // =========================================================================
     } else if (stationType === 'STATION_3') {
       const targetWords = cleanPrompt.replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(Boolean);
@@ -460,19 +515,30 @@ export default async function handler(req: Request) {
 
       const accuracyRatio = targetWords.length > 0 ? (matchedCount / targetWords.length) : 0;
 
+      let prosodyResult: { score: number; feedback: string } | null = null;
+      if (studentPitchData.length >= 5 && referencePitchData.length >= 5) {
+        prosodyResult = evaluateProsodyScore(studentPitchData, referencePitchData);
+      }
+
       if (accuracyRatio === 0) {
         calculatedScore = Math.max(15, acousticQualityBonus);
         feedback = `❌ Chưa đuổi kịp ngữ điệu của Bóng Ma. AI nghe được: "${transcript}".`;
       } else if (accuracyRatio >= 0.85) {
         calculatedScore = Math.min(100, 88 + Math.round(acousticQualityBonus * 0.8));
-        feedback = `🌟 Xuất sắc! Bạn đã bắt kịp nhịp điệu của Bóng Ma (${matchedCount}/${targetWords.length} từ).`;
+        feedback = prosodyResult 
+          ? `🌟 Xuất sắc! Bạn đã bắt kịp nhịp điệu (${matchedCount}/${targetWords.length} từ). ${prosodyResult.feedback}`
+          : `🌟 Xuất sắc! Bạn đã bắt kịp nhịp điệu của Bóng Ma (${matchedCount}/${targetWords.length} từ).`;
       } else if (accuracyRatio >= 0.6) {
         calculatedScore = Math.min(87, Math.round(accuracyRatio * 75 + acousticQualityBonus));
-        feedback = `👍 Khá tốt! Đã theo kịp đa số từ (${matchedCount}/${targetWords.length}). Cần mượt mà hơn ở các cụm nối âm.`;
+        feedback = prosodyResult
+          ? `👍 Khá tốt! Đã theo kịp đa số từ (${matchedCount}/${targetWords.length}). ${prosodyResult.feedback}`
+          : `👍 Khá tốt! Đã theo kịp đa số từ (${matchedCount}/${targetWords.length}). Cần mượt mà hơn ở các cụm nối âm.`;
       } else {
         calculatedScore = Math.max(30, Math.round(accuracyRatio * 60 + acousticQualityBonus));
         feedback = `⚠️ Rớt nhịp khá nhiều (${matchedCount}/${targetWords.length} từ). Hãy dùng tính năng Cứu hộ Oasis để tập nối âm chậm nhé!`;
       }
+
+      const prosodyBoost = prosodyResult ? prosodyResult.score : 80;
 
       return new Response(
         JSON.stringify({
@@ -485,7 +551,7 @@ export default async function handler(req: Request) {
             pronunciation: Math.min(100, Math.round(accuracyRatio * 90 + acousticQualityBonus)),
             vocabulary: 80,
             grammar: 85,
-            fluency: Math.min(100, Math.round(accuracyRatio * 95)),
+            fluency: Math.min(100, Math.round((accuracyRatio * 0.6 + (prosodyBoost / 100) * 0.4) * 100)),
             content: 90
           }
         }),
@@ -721,8 +787,6 @@ Return JSON ONLY:
       }
 
       // 2. 🛡️ BỘ QUÉT TƯƠNG THÍCH THÌ VÀ NGỮ CẢNH ĐỀ BÀI (CONTEXT-TENSE ALIGNMENT ENGINE)
-      // A. Ngữ cảnh Thói quen / Trách nhiệm thường xuyên (Habitual / Routine / Regular duty):
-      // Ví dụ: "Talk about how you help your parents with housework", "daily routine", "free time"
       const isHabitualPrompt = 
         lowerPrompt.includes('how you help') || 
         lowerPrompt.includes('housework') || 
@@ -735,7 +799,6 @@ Return JSON ONLY:
         (lowerPrompt.includes('what do you do') && !lowerPrompt.includes('did'));
 
       if (isHabitualPrompt) {
-        // Nếu bài nói dùng thì quá khứ đơn ("cooked", "made", "cleaned", "yesterday") cho câu hỏi thói quen/trách nhiệm:
         const pastVerbsMap: Record<string, string> = {
           'cooked': 'cook / usually cook',
           'made': 'make / prepare',
@@ -761,7 +824,7 @@ Return JSON ONLY:
         });
       }
 
-      // B. Bắt lỗi câu bị ngắt cụt / bỏ dở giữa chừng (Incomplete Sentence Detector)
+      // Bắt lỗi câu bị ngắt cụt / bỏ dở giữa chừng (Incomplete Sentence Detector)
       const lastWord = spokenWords[spokenWords.length - 1]?.toLowerCase() || '';
       const incompleteEndings = [
         'my', 'your', 'his', 'her', 'their', 'our', 'the', 'a', 'an',
@@ -778,7 +841,7 @@ Return JSON ONLY:
         });
       }
 
-      // C. Bắt lỗi nuốt âm số nhiều sau số đếm (Vietnamese phonetic trap)
+      // Bắt lỗi nuốt âm số nhiều sau số đếm
       const countNumbers = ['two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'many', 'several'];
       for (let i = 0; i < spokenWords.length - 1; i++) {
         const curr = spokenWords[i];
@@ -817,19 +880,16 @@ Return JSON ONLY:
         baseVocab = 60;
         baseFluency = 60;
       } else if (isIncompleteSentence || wordCount < 12) {
-        // Bài nói dưới 12 từ hoặc bị cụt câu / sai thì cơ bản: Khống chế tối đa 50 - 62 điểm
         baseContent = Math.min(60, Math.max(40, wordCount * 5));
         baseGrammar = Math.max(45, 60 - errorWordsList.length * 8);
         baseVocab = Math.min(65, Math.max(45, wordCount * 5));
         baseFluency = Math.min(62, Math.max(40, wordCount * 5));
       } else if (wordCount < 20) {
-        // Bài nói ngắn vừa phải (12 - 19 từ)
         baseContent = hasNoErrors ? 78 : 68;
         baseGrammar = hasNoErrors ? 82 : Math.max(55, 75 - errorWordsList.length * 8);
         baseVocab = hasNoErrors ? 80 : 70;
         baseFluency = hasNoErrors ? 78 : 68;
       } else {
-        // Bài nói đầy đủ ý (>= 20 từ) và hoàn chỉnh câu
         const hasConnectors = ['and', 'so', 'because', 'but', 'also', 'although', 'however', 'when', 'while'].some(c => lowerTranscript.includes(c));
         baseContent = hasNoErrors ? Math.min(95, 88 + (wordCount >= 28 ? 6 : 2)) : 76;
         baseGrammar = hasNoErrors ? Math.min(96, 90 + (wordCount >= 28 ? 5 : 2)) : Math.max(50, 75 - errorWordsList.length * 8);
@@ -843,7 +903,7 @@ Return JSON ONLY:
       let fluencyScore = baseFluency;
       let pronunciationScore = Math.min(100, Math.max(65, 75 + acousticQualityBonus * 1.8));
 
-      // 4. 🤖 GỌI GROQ LLM CHUYÊN SÂU (KIỂM TRA TƯƠNG THÍCH THÌ, NGỮ CẢNH & NGỮ PHÁP)
+      // 4. 🤖 GỌI GROQ LLM CHUYÊN SÂU
       try {
         const groqLlmResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
           method: 'POST',
@@ -909,7 +969,6 @@ Return JSON ONLY:
                 : parsed.vocab_score;
             }
             
-            // Hợp nhất lỗi ngữ pháp phát hiện từ LLM vào danh sách lỗi
             if (Array.isArray(parsed.detected_errors) && parsed.detected_errors.length > 0) {
               parsed.detected_errors.forEach((err: any) => {
                 if (err.word && !errorWordsList.some(e => e.word.toLowerCase() === err.word.toLowerCase())) {
