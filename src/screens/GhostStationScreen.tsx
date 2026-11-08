@@ -6,8 +6,8 @@ import { saveSubmissionToCloud } from '../services/userService';
 import { harvestWeakWords } from '../services/weakPointsService';
 import { getOptimizedRecorderConfig, executeWithRetry } from '../utils/networkAudioHelper';
 import { supabase } from '../utils/supabase';
-import AudioWaveVisualizer from '../components/AudioWaveVisualizer'; // 🌊 IMPORT VISUALIZER
-import IntonationCanvas from '../components/IntonationCanvas'; // 📈 IMPORT ĐƯỜNG CONG NGỮ ĐIỆU
+import AudioWaveVisualizer from '../components/AudioWaveVisualizer';
+import IntonationCanvas from '../components/IntonationCanvas';
 
 interface Props {
   onBack: () => void;
@@ -35,7 +35,7 @@ function detectPitchFrame(buffer: Float32Array, sampleRate: number): number | nu
     rms += val * val;
   }
   rms = Math.sqrt(rms / size);
-  if (rms < 0.01) return null; // Khoảng lặng
+  if (rms < 0.01) return null;
 
   for (let offset = Math.floor(sampleRate / 450); offset < Math.floor(sampleRate / 70); offset++) {
     let correlation = 0;
@@ -49,22 +49,47 @@ function detectPitchFrame(buffer: Float32Array, sampleRate: number): number | nu
   }
 
   if (bestCorrelation > 0.4 && bestOffset > 0) {
-    return sampleRate / bestOffset;
+    const pitch = sampleRate / bestOffset;
+    if (pitch >= 75 && pitch <= 420) return pitch;
   }
   return null;
+}
+
+// 🌊 BỘ LỌC LÀM MỊN ĐƯỜNG CONG CAO ĐỘ (MEDIAN & MOVING AVERAGE FILTER)
+function smoothContour(arr: number[]): number[] {
+  if (arr.length <= 2) return arr;
+  
+  const medianFiltered: number[] = [];
+  for (let i = 0; i < arr.length; i++) {
+    const prev = arr[i - 1] ?? arr[i];
+    const curr = arr[i];
+    const next = arr[i + 1] ?? arr[i];
+    const sorted = [prev, curr, next].sort((a, b) => a - b);
+    medianFiltered.push(sorted[1]);
+  }
+
+  const smoothed: number[] = [];
+  for (let i = 0; i < medianFiltered.length; i++) {
+    const prev = medianFiltered[i - 1] ?? medianFiltered[i];
+    const curr = medianFiltered[i];
+    const next = medianFiltered[i + 1] ?? medianFiltered[i];
+    const val = (prev + curr * 2 + next) / 4;
+    smoothed.push(+val.toFixed(2));
+  }
+  return smoothed;
 }
 
 function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
   const [ghostSentence, setGhostSentence] = useState<string>(GHOST_SENTENCES[0]);
   const [isRecording, setIsRecording] = useState<boolean>(false);
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
-  const [analyzingStatus, setAnalyzingStatus] = useState<string>('🤖 AI ĐANG PHÂN TÍCH GIỌNG NÓI...');
+  const [analyzingStatus, setAnalyzingStatus] = useState<string>('🤖 AI ĐANG PHÂN TÍCH GIỌNG NÓI & NGỮ ĐIỆU...');
   const [score, setScore] = useState<number | null>(null);
   const [spokenTranscript, setSpokenTranscript] = useState<string>('');
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [isPlayingTTS, setIsPlayingTTS] = useState<boolean>(false);
 
-  // 📈 QUẢN LÝ DỮ LIỆU ĐƯỜNG CONG NGỮ ĐIỆU (INTONATION CONTOURS)
+  // 📈 DỮ LIỆU ĐƯỜNG CONG NGỮ ĐIỆU
   const [studentContour, setStudentContour] = useState<number[]>([]);
   const [targetContour, setTargetContour] = useState<number[]>([]);
 
@@ -80,7 +105,6 @@ function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const recordingStartTimeRef = useRef<number>(0);
 
-  // Audio Context cho Pitch Extraction
   const audioContextRef = useRef<AudioContext | null>(null);
   const pitchIntervalRef = useRef<any>(null);
   const pitchSamplesRef = useRef<number[]>([]);
@@ -93,7 +117,6 @@ function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
 
   const generateTargetContourForSentence = (sentence: string) => {
     const isQuestion = sentence.includes('?');
-    // Ngữ điệu mẫu mô phỏng chuẩn: Câu hỏi Yes/No vút lên, câu khẳng định xuống giọng
     const baseContour = isQuestion 
       ? [-2.0, -1.5, -0.8, 0.2, 0.8, 1.8, 3.2, 4.8]
       : [0.8, 2.0, 2.5, 1.8, 0.4, -0.8, -2.2, -3.5];
@@ -182,7 +205,7 @@ function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
       mediaStreamRef.current = stream;
       setMediaStream(stream);
 
-      // 📈 KHỞI CHẠY BỘ ĐO CAO ĐỘ PITCH F0 THỜI GIAN THỰC
+      // Kích hoạt Web Audio API đo pitch
       try {
         const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
         if (AudioContextClass) {
@@ -203,7 +226,7 @@ function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
           }, 60);
         }
       } catch (audioCtxErr) {
-        console.warn("Lỗi khởi tạo Pitch Context:", audioCtxErr);
+        console.warn("Lỗi pitch context:", audioCtxErr);
       }
 
       const { options } = getOptimizedRecorderConfig();
@@ -262,14 +285,17 @@ function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
         mediaStreamRef.current = null;
       }
 
-      // Chuẩn hóa cao độ giọng học viên theo Semitones so với Mean F0
-      const rawSamples = pitchSamplesRef.current;
-      if (rawSamples.length >= 4) {
-        const meanPitch = rawSamples.reduce((a, b) => a + b, 0) / rawSamples.length;
-        const normalized = rawSamples.map(f => +(12 * Math.log2(f / meanPitch)).toFixed(2));
-        setStudentContour(normalized);
+      // Lọc mẫu cao độ và làm mịn qua bộ lọc
+      const validSamples = pitchSamplesRef.current.filter(p => p >= 75 && p <= 420);
+      let normalizedStudentContour: number[] = [];
+      if (validSamples.length >= 4) {
+        const meanPitch = validSamples.reduce((a, b) => a + b, 0) / validSamples.length;
+        const normalized = validSamples.map(f => +(12 * Math.log2(f / meanPitch)).toFixed(2));
+        normalizedStudentContour = smoothContour(normalized);
+        setStudentContour(normalizedStudentContour);
       } else {
-        setStudentContour([0.3, 1.2, 1.6, 0.9, -0.4, -1.9]);
+        normalizedStudentContour = [0.3, 1.2, 1.6, 0.9, -0.4, -1.9];
+        setStudentContour(normalizedStudentContour);
       }
 
       const audioBlob = await processAudio;
@@ -285,7 +311,6 @@ function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
       const localAudio = URL.createObjectURL(audioBlob);
       setAudioUrl(localAudio);
 
-      // 🎯 SỬ DỤNG evaluateSpeaking ĐỒNG BỘ VỚI PIPELINE /api/grade-audio
       const res = await executeWithRetry(
         async () => {
           return await evaluateSpeaking(
@@ -408,7 +433,7 @@ function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
             </TouchableOpacity>
           </View>
 
-          {/* 🌊 SÓNG ÂM THỜI GIAN THỰC */}
+          {/* SÓNG ÂM THỜI GIAN THỰC */}
           <AudioWaveVisualizer stream={mediaStream} isRecording={isRecording} barColor="#00FFCC" />
 
           <TouchableOpacity 
@@ -433,7 +458,7 @@ function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
                 SCORE: {score} / 100 ĐIỂM
               </Text>
 
-              {/* 📈 ĐƯỜNG CONG NGỮ ĐIỆU ĐỐI CHIẾU PITCH TRỰC QUAN */}
+              {/* ĐƯỜNG CONG NGỮ ĐIỆU ĐỐI CHIẾU PITCH ĐÃ LÀM MỊN */}
               <IntonationCanvas targetContour={targetContour} studentContour={studentContour} />
 
               <View style={styles.wordHighlightBox}>
@@ -456,20 +481,26 @@ function GhostStationScreen({ onBack, onNavigateToOasis }: Props) {
               </View>
 
               {audioUrl && (
-                <View 
-                  style={styles.audioPlayerBox}
-                  // @ts-ignore
-                  onStartShouldSetResponder={() => false}
-                  onMoveShouldSetResponder={() => false}
-                >
+                <View style={styles.audioPlayerBox}>
                   <Text style={styles.audioPlayerLabel}>🎧 Nghe lại bài đọc đuổi của bạn:</Text>
-                  {React.createElement('audio', {
-                    key: audioUrl,
-                    controls: true,
-                    playsInline: true,
-                    src: audioUrl,
-                    style: { width: '100%', height: 35, touchAction: 'manipulation' }
-                  })}
+                  {/* Bọc div với stopPropagation ngăn xung đột Touch Bank của React Native Web */}
+                  {React.createElement(
+                    'div',
+                    {
+                      style: { width: '100%', marginTop: 6 },
+                      onMouseDown: (e: any) => e.stopPropagation(),
+                      onTouchStart: (e: any) => e.stopPropagation(),
+                      onMouseUp: (e: any) => e.stopPropagation(),
+                      onTouchEnd: (e: any) => e.stopPropagation()
+                    },
+                    React.createElement('audio', {
+                      key: audioUrl,
+                      controls: true,
+                      playsInline: true,
+                      src: audioUrl,
+                      style: { width: '100%', height: 35 }
+                    })
+                  )}
                 </View>
               )}
 
