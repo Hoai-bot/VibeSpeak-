@@ -103,6 +103,36 @@ const SCENARIO_LIBRARY: Record<string, { title: string; context: string; prompt:
   ]
 };
 
+// 🎯 HÀM DÒ TÌM MIME TYPE THU ÂM CHUẨN XÁC THEO TỪNG HỆ ĐIỀU HÀNH (ANDROID, IOS, WINDOWS, MACOS)
+const getSupportedAudioMimeType = (): { mimeType: string; extension: string } => {
+  if (typeof window === 'undefined' || !(window as any).MediaRecorder) {
+    return { mimeType: '', extension: 'webm' };
+  }
+  const MediaRecorderClass = (window as any).MediaRecorder;
+
+  if (typeof MediaRecorderClass.isTypeSupported === 'function') {
+    // 1. Ưu tiên WebM/Opus chuẩn (Chrome, Edge, Firefox, Android)
+    if (MediaRecorderClass.isTypeSupported('audio/webm;codecs=opus')) {
+      return { mimeType: 'audio/webm;codecs=opus', extension: 'webm' };
+    }
+    if (MediaRecorderClass.isTypeSupported('audio/webm')) {
+      return { mimeType: 'audio/webm', extension: 'webm' };
+    }
+    // 2. Fallback sang MP4/AAC (Safari trên iOS, iPadOS, macOS)
+    if (MediaRecorderClass.isTypeSupported('audio/mp4')) {
+      return { mimeType: 'audio/mp4', extension: 'mp4' };
+    }
+    if (MediaRecorderClass.isTypeSupported('audio/aac')) {
+      return { mimeType: 'audio/aac', extension: 'aac' };
+    }
+    if (MediaRecorderClass.isTypeSupported('audio/ogg')) {
+      return { mimeType: 'audio/ogg', extension: 'ogg' };
+    }
+  }
+
+  return { mimeType: '', extension: 'webm' };
+};
+
 // Hàm sinh đề động thủ tục (Procedural Generator) khi offline hoặc không có API Key
 const createProceduralFallback = (tier: Station2Tier, level: CefrLevel, counter: number): ChallengeItem => {
   const key = `${tier}_${level}`;
@@ -227,7 +257,7 @@ export default function Station2Screen({ onBack }: Props) {
   const [customContext, setCustomContext] = useState<string>('');
   const [customPrompt, setCustomPrompt] = useState<string>('');
 
-  // Thu âm & phòng thu
+  // Thu âm & phòng thu đa nền tảng
   const [isNormalPracticing, setIsNormalPracticing] = useState<boolean>(false);
   const [isRecordingNormal, setIsRecordingNormal] = useState<boolean>(false);
   const [normalTimer, setNormalTimer] = useState<number>(0);
@@ -236,6 +266,7 @@ export default function Station2Screen({ onBack }: Props) {
   const normalPitchHistoryRef = useRef<number[]>([]);
   const normalAnimFrameRef = useRef<any>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const activeMimeTypeRef = useRef<{ mimeType: string; extension: string }>({ mimeType: '', extension: 'webm' });
 
   const [recordedAudioUrl, setRecordedAudioUrl] = useState<string | null>(null);
   const [isTeacherExamining, setIsTeacherExamining] = useState<boolean>(false);
@@ -418,7 +449,7 @@ Output ONLY a raw JSON object (no markdown, no backticks):
     }
   };
 
-  // Thu âm và Canvas trực quan
+  // 🎙️ Thu âm đa nền tảng (hỗ trợ cả Android, iOS Safari và Desktop)
   const startNormalRecording = async () => {
     stopSampleAudio();
     try {
@@ -428,7 +459,13 @@ Output ONLY a raw JSON object (no markdown, no backticks):
       setRecordedAudioUrl(null);
 
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new (window as any).MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
+      
+      // Tự động nhận diện định dạng MIME phù hợp cho thiết bị (tránh crash trên iOS)
+      const detectedFormat = getSupportedAudioMimeType();
+      activeMimeTypeRef.current = detectedFormat;
+
+      const options: any = detectedFormat.mimeType ? { mimeType: detectedFormat.mimeType } : undefined;
+      const mediaRecorder = new (window as any).MediaRecorder(stream, options);
       normalMediaRecorderRef.current = mediaRecorder;
 
       mediaRecorder.ondataavailable = (e: any) => {
@@ -440,6 +477,12 @@ Output ONLY a raw JSON object (no markdown, no backticks):
 
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
       const audioCtx = new AudioCtx();
+      
+      // Bắt buộc resume AudioContext trên Safari/Chrome mobile để tránh bị câm
+      if (audioCtx.state === 'suspended') {
+        await audioCtx.resume();
+      }
+
       const source = audioCtx.createMediaStreamSource(stream);
       const analyser = audioCtx.createAnalyser();
       analyser.fftSize = 2048;
@@ -474,7 +517,7 @@ Output ONLY a raw JSON object (no markdown, no backticks):
       };
       track();
     } catch (err) {
-      Alert.alert("Lỗi Micro", "Không thể truy cập microphone. Vui lòng cấp quyền.");
+      Alert.alert("Lỗi Micro", "Không thể truy cập microphone. Vui lòng cấp quyền micro trong trình duyệt.");
     }
   };
 
@@ -505,7 +548,9 @@ Output ONLY a raw JSON object (no markdown, no backticks):
     if (normalMediaRecorderRef.current && normalMediaRecorderRef.current.state !== 'inactive') {
       normalMediaRecorderRef.current.stop();
       normalMediaRecorderRef.current.onstop = () => {
-        const audioBlob = new Blob(normalAudioChunksRef.current, { type: 'audio/webm' });
+        const { mimeType } = activeMimeTypeRef.current;
+        // Đóng gói blob theo đúng định dạng được OS ghi âm
+        const audioBlob = new Blob(normalAudioChunksRef.current, mimeType ? { type: mimeType } : undefined);
         const localUrl = URL.createObjectURL(audioBlob);
         setRecordedAudioUrl(localUrl);
         finishSubmissionAndEvaluate(audioBlob, normalPitchHistoryRef.current, localUrl);
@@ -540,10 +585,13 @@ Output ONLY a raw JSON object (no markdown, no backticks):
     let audioUrl = '';
     try {
       if (supabase) {
-        const fileName = `station2_${selectedTier.toLowerCase()}_${selectedLevel.toLowerCase()}_${Date.now()}.webm`;
+        const ext = activeMimeTypeRef.current.extension || 'webm';
+        const contentType = activeMimeTypeRef.current.mimeType || (ext === 'mp4' ? 'audio/mp4' : 'audio/webm');
+        const fileName = `station2_${selectedTier.toLowerCase()}_${selectedLevel.toLowerCase()}_${Date.now()}.${ext}`;
+
         const { data: uploadData, error: uploadErr } = await supabase.storage
           .from('submissions')
-          .upload(fileName, audioBlob, { contentType: 'audio/webm' });
+          .upload(fileName, audioBlob, { contentType });
 
         if (!uploadErr && uploadData) {
           const { data: urlData } = supabase.storage.from('submissions').getPublicUrl(fileName);
@@ -1004,9 +1052,6 @@ const styles = StyleSheet.create({
 
   audioReviewBox: { backgroundColor: '#130628', padding: 10, borderRadius: 8, borderWidth: 1.5, borderColor: '#39FF14', marginBottom: 12 },
   audioReviewTitle: { color: '#39FF14', fontSize: 9.5, fontWeight: '900' },
-
-  emptyCard: { backgroundColor: '#120826', padding: 16, borderRadius: 10, borderWidth: 1, borderColor: '#332255', marginVertical: 8 },
-  emptyText: { color: '#AAAABB', fontStyle: 'italic', textAlign: 'center', fontSize: 10.5, lineHeight: 16 },
 
   normalPracticeCard: { backgroundColor: '#0A0318', padding: 16, borderRadius: 14, borderWidth: 1.5, borderColor: '#00FFFF', marginVertical: 10 },
   normalPracticeHeader: { color: '#00FFFF', fontSize: 10, fontWeight: '900' },
