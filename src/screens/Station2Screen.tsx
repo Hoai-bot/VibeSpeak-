@@ -35,28 +35,55 @@ const TIERS: { key: Station2Tier; label: string; icon: string; desc: string }[] 
 
 const DEFAULT_CHALLENGES: ChallengeItem[] = [
   // ==================== TẦNG 1: SOLO ====================
-  { id: 's_a1', tier: 'SOLO', level: 'A1', title: 'Phát âm nối âm cơ bản', contextDesc: 'Thử thách phát âm rõ phụ âm cuối và nối âm mượt mà:', prompt: 'There is an apple on the table next to an orange.' },
-  { id: 's_a2', tier: 'SOLO', level: 'A2', title: 'Trọng âm từ và nhịp điệu quá khứ', contextDesc: 'Nhấn chính xác đuôi -ed và trọng âm từ đa âm tiết:', prompt: 'Yesterday we decided to visit the historical museum and enjoyed every minute.' },
-  { id: 's_b1', tier: 'SOLO', level: 'B1', title: 'Ngắt nhịp cụm tư duy (Thought Groups)', contextDesc: 'Ngắt hơi tự nhiên giữa mệnh đề chính và mệnh đề phụ:', prompt: 'Although the weather was terrible, we managed to arrive at the conference right on schedule.' },
-  { id: 's_b2', tier: 'SOLO', level: 'B2', title: 'Ngữ điệu câu phức học thuật', contextDesc: 'Điều chỉnh cao độ nâng lên ở mệnh đề điều kiện và hạ giọng ở kết luận:', prompt: 'If financial markets continue to exhibit volatility, institutional investors will inevitably reallocate their capital into low-risk government bonds.' },
-  { id: 's_c1', tier: 'SOLO', level: 'C1', title: 'Phát âm học thuật cao cấp & Cụm danh từ ghép', contextDesc: 'Thử thách độ nuột của các âm xát, phụ âm ghép và trọng âm từ trừu tượng:', prompt: 'The institutionalization of renewable methodologies requires comprehensive interdisciplinary collaboration across disparate economic sectors.' },
-  { id: 's_c2', tier: 'SOLO', level: 'C2', title: 'Biến thiên ngữ điệu tinh vi (Sophisticated Nuance)', contextDesc: 'Thể hiện ngữ điệu mỉa mai nhẹ nhàng hoặc châm biếm học thuật qua cao độ F0:', prompt: 'To assume that technological ubiquity inherently equates to pedagogical efficacy is, at best, a profound philosophical oversight.' },
+  { id: 's_a1_1', tier: 'SOLO', level: 'A1', title: 'Phát âm nối âm cơ bản', contextDesc: 'Thử thách phát âm rõ phụ âm cuối và nối âm mượt mà:', prompt: 'There is an apple on the table next to an orange.' },
+  { id: 's_a1_2', tier: 'SOLO', level: 'A1', title: 'Giới thiệu bản thân ngắn gọn', contextDesc: 'Nói rõ ràng tên, tuổi và chuyên ngành học:', prompt: 'My name is Alex, and I am currently studying computer science.' },
+  
+  { id: 's_a2_1', tier: 'SOLO', level: 'A2', title: 'Trọng âm từ và nhịp điệu quá khứ', contextDesc: 'Nhấn chính xác đuôi -ed và trọng âm từ đa âm tiết:', prompt: 'Yesterday we decided to visit the historical museum and enjoyed every minute.' },
+  { id: 's_a2_2', tier: 'SOLO', level: 'A2', title: 'Mô tả kế hoạch cuối tuần', contextDesc: 'Sử dụng cấu trúc tương lai gần trôi chảy:', prompt: 'We are going to travel to the countryside this weekend to visit our relatives.' },
+
+  { id: 's_b1_1', tier: 'SOLO', level: 'B1', title: 'Ngắt nhịp cụm tư duy (Thought Groups)', contextDesc: 'Ngắt hơi tự nhiên giữa mệnh đề chính và mệnh đề phụ:', prompt: 'Although the weather was terrible, we managed to arrive at the conference right on schedule.' },
+  { id: 's_b1_2', tier: 'SOLO', level: 'B1', title: 'Trình bày quan điểm cá nhân', contextDesc: 'Thể hiện ý kiến đồng ý kèm lập luận rõ ràng:', prompt: 'In my perspective, working in a diverse team improves creative problem-solving significantly.' },
+
+  { id: 's_b2_1', tier: 'SOLO', level: 'B2', title: 'Ngữ điệu câu phức học thuật', contextDesc: 'Điều chỉnh cao độ nâng lên ở mệnh đề điều kiện và hạ giọng ở kết luận:', prompt: 'If financial markets continue to exhibit volatility, institutional investors will inevitably reallocate their capital into low-risk government bonds.' },
+  { id: 's_b2_2', tier: 'SOLO', level: 'B2', title: 'Phân tích xu hướng công nghệ', contextDesc: 'Nhấn mạnh các thuật ngữ chuyên ngành:', prompt: 'The rapid emergence of generative artificial intelligence requires professionals to adapt their skill sets proactively.' },
+
+  { id: 's_c1_1', tier: 'SOLO', level: 'C1', title: 'Phát âm học thuật cao cấp & Cụm danh từ ghép', contextDesc: 'Thử thách độ nuột của các âm xát, phụ âm ghép và trọng âm từ trừu tượng:', prompt: 'The institutionalization of renewable methodologies requires comprehensive interdisciplinary collaboration across disparate economic sectors.' },
+  { id: 's_c1_2', tier: 'SOLO', level: 'C1', title: 'Lập luận chính sách công', contextDesc: 'Kiểm soát nhịp độ khi phát biểu câu dài đa tầng nghĩa:', prompt: 'Fiscal austerity measures frequently undermine infrastructure development, precipitating long-term economic deceleration.' },
+
+  { id: 's_c2_1', tier: 'SOLO', level: 'C2', title: 'Biến thiên ngữ điệu tinh vi (Sophisticated Nuance)', contextDesc: 'Thể hiện ngữ điệu mỉa mai nhẹ nhàng hoặc châm biếm học thuật qua cao độ F0:', prompt: 'To assume that technological ubiquity inherently equates to pedagogical efficacy is, at best, a profound philosophical oversight.' },
 
   // ==================== TẦNG 2: RELAY ====================
-  { id: 'r_a1', tier: 'RELAY', level: 'A1', title: 'Phản hồi sở thích bạn học', contextDesc: 'Bạn học nói: "I really love drinking iced milk tea in the summer. How about you?"', prompt: 'I prefer cold fruit juice because it is much healthier and refreshing.' },
-  { id: 'r_a2', tier: 'RELAY', level: 'A2', title: 'Phản hồi rủ rê cuối tuần', contextDesc: 'Đồng nghiệp nói: "We are planning a barbecue party this Saturday evening. Can you join us?"', prompt: 'I would love to, but I have already promised to visit my grandparents this weekend.' },
-  { id: 'r_b1', tier: 'RELAY', level: 'B1', title: 'Nối tiếp ý kiến thảo luận nhóm', contextDesc: 'Trưởng nhóm nói: "Our current marketing campaign is not reaching university students effectively."', prompt: 'I completely agree. Perhaps we should collaborate with student influencers on TikTok to boost our organic reach.' },
-  { id: 'r_b2', tier: 'RELAY', level: 'B2', title: 'Phản biện lịch trình dự án', contextDesc: 'Khách hàng nói: "We need the beta version deployed two weeks earlier than the agreed roadmap."', prompt: 'Accelerating the deployment timeline will severely constrain our quality assurance cycle, risking critical security vulnerabilities.' },
-  { id: 'r_c1', tier: 'RELAY', level: 'C1', title: 'Đối thoại chất vấn chiến lược', contextDesc: 'Thành viên hội đồng nói: "Expanding into emerging markets right now carries unacceptable currency fluctuation risks."', prompt: 'While macroeconomic volatility is palpable, our diversified hedging mechanisms and localized supply chains substantially buffer potential foreign exchange losses.' },
-  { id: 'r_c2', tier: 'RELAY', level: 'C2', title: 'Tranh biện học thuật phản xạ', contextDesc: 'Đối thủ tranh biện nói: "Algorithmic decision-making will inevitably surpass human judicial impartiality in the coming decade."', prompt: 'That premise conflates statistical optimization with normative jurisprudence; an algorithm optimizes for historical precedents, thereby codifying systemic biases rather than dispensing justice.' },
+  { id: 'r_a1_1', tier: 'RELAY', level: 'A1', title: 'Phản hồi sở thích bạn học', contextDesc: 'Bạn học nói: "I really love drinking iced milk tea in the summer. How about you?"', prompt: 'I prefer cold fruit juice because it is much healthier and refreshing.' },
+  { id: 'r_a1_2', tier: 'RELAY', level: 'A1', title: 'Hỏi đường trong trường', contextDesc: 'Sinh viên mới hỏi: "Excuse me, where is the university central library?"', prompt: 'Go straight ahead and turn left at the second building; it is right there.' },
+
+  { id: 'r_a2_1', tier: 'RELAY', level: 'A2', title: 'Phản hồi rủ rê cuối tuần', contextDesc: 'Đồng nghiệp nói: "We are planning a barbecue party this Saturday evening. Can you join us?"', prompt: 'I would love to, but I have already promised to visit my grandparents this weekend.' },
+  { id: 'r_a2_2', tier: 'RELAY', level: 'A2', title: 'Góp ý chọn món', contextDesc: 'Bạn cùng bàn hỏi: "What should we order for dinner tonight?"', prompt: 'How about trying that new Italian pizza place near the campus gate?' },
+
+  { id: 'r_b1_1', tier: 'RELAY', level: 'B1', title: 'Nối tiếp ý kiến thảo luận nhóm', contextDesc: 'Trưởng nhóm nói: "Our current marketing campaign is not reaching university students effectively."', prompt: 'I completely agree. Perhaps we should collaborate with student influencers on TikTok to boost our organic reach.' },
+  { id: 'r_b1_2', tier: 'RELAY', level: 'B1', title: 'Đề xuất giải pháp dự án', contextDesc: 'Thành viên nói: "We are falling behind schedule on the design phase."', prompt: 'Let us divide the remaining tasks and organize a daily ten-minute standup meeting.' },
+
+  { id: 'r_b2_1', tier: 'RELAY', level: 'B2', title: 'Phản biện lịch trình dự án', contextDesc: 'Khách hàng nói: "We need the beta version deployed two weeks earlier than the agreed roadmap."', prompt: 'Accelerating the deployment timeline will severely constrain our quality assurance cycle, risking critical security vulnerabilities.' },
+  { id: 'r_b2_2', tier: 'RELAY', level: 'B2', title: 'Thương lượng ngân sách marketing', contextDesc: 'Giám đốc hỏi: "Why should we allocate thirty percent more budget to digital advertising?"', prompt: 'Targeted digital campaigns provide measurable conversion metrics that significantly outperform conventional billboard advertisements.' },
+
+  { id: 'r_c1_1', tier: 'RELAY', level: 'C1', title: 'Đối thoại chất vấn chiến lược', contextDesc: 'Thành viên hội đồng nói: "Expanding into emerging markets right now carries unacceptable currency fluctuation risks."', prompt: 'While macroeconomic volatility is palpable, our diversified hedging mechanisms and localized supply chains substantially buffer potential foreign exchange losses.' },
+  { id: 'r_c2_1', tier: 'RELAY', level: 'C2', title: 'Tranh biện học thuật phản xạ', contextDesc: 'Đối thủ tranh biện nói: "Algorithmic decision-making will inevitably surpass human judicial impartiality in the coming decade."', prompt: 'That premise conflates statistical optimization with normative jurisprudence; an algorithm optimizes for historical precedents, thereby codifying systemic biases rather than dispensing justice.' },
 
   // ==================== TẦNG 3: ROLEPLAY ====================
-  { id: 'rp_a1', tier: 'ROLEPLAY', level: 'A1', title: 'Khách gọi món tại quán ăn nhanh', contextDesc: 'Bối cảnh: Bạn muốn gọi 1 burger gà và 1 chai nước suối nhỏ.', prompt: 'Hello, can I please have one chicken burger and a small bottle of water?' },
-  { id: 'rp_a2', tier: 'ROLEPLAY', level: 'A2', title: 'Hỏi đổi kích cỡ quần áo tại shop', contextDesc: 'Bối cảnh: Áo sơ mi bạn vừa thử bị chật vai, cần hỏi cỡ lớn hơn (L).', prompt: 'This shirt feels a bit tight around my shoulders. Do you happen to have this in a size large?' },
-  { id: 'rp_b1', tier: 'ROLEPLAY', level: 'B1', title: 'Đổi trả cà phê tại sân bay', contextDesc: 'Bối cảnh: Bạn gọi cà phê đá không đường nhưng nhân viên đưa nhầm cà phê nóng, chuyến bay sắp cất cánh trong 15 phút.', prompt: 'Excuse me, I ordered an iced latte without sugar, but this seems to be hot cappuccino. Could you please replace it quickly as my boarding starts soon?' },
-  { id: 'rp_b2', tier: 'ROLEPLAY', level: 'B2', title: 'Đàm phán dời lịch họp với đối tác', contextDesc: 'Bối cảnh: Đối tác muốn dời lịch họp sang thứ 6 nhưng bạn bị trùng lịch công tác tại Đà Nẵng.', prompt: 'I am afraid Friday afternoon will not work for me due to an urgent business trip. Could we possibly reschedule our strategic discussion to next Monday morning instead?' },
-  { id: 'rp_c1', tier: 'ROLEPLAY', level: 'C1', title: 'Quản lý xử lý khiếu nại khách VIP', contextDesc: 'Bối cảnh: Điều hòa phòng Suite gặp trục trặc lúc nửa đêm, khách VIP đe dọa hủy hợp đồng hội nghị.', prompt: 'I sincerely apologize for the disruption caused by the malfunctioning HVAC system. Let me immediately arrange a room upgrade on the executive penthouse floor, along with complimentary dining services.' },
-  { id: 'rp_c2', tier: 'ROLEPLAY', level: 'C2', title: 'Phát ngôn viên xử lý khủng hoảng truyền thông', contextDesc: 'Bối cảnh: Hệ thống thanh toán bị tê liệt 2 giờ trước thềm phiên giao dịch chứng khoán.', prompt: 'We unequivocally acknowledge the unprecedented infrastructure downtime today. Our engineering contingency protocols have stabilized the core clusters, and comprehensive security audits are underway to ensure zero financial discrepancies.' }
+  { id: 'rp_a1_1', tier: 'ROLEPLAY', level: 'A1', title: 'Khách gọi món tại quán ăn nhanh', contextDesc: 'Bối cảnh: Bạn muốn gọi 1 burger gà và 1 chai nước suối nhỏ.', prompt: 'Hello, can I please have one chicken burger and a small bottle of water?' },
+  { id: 'rp_a1_2', tier: 'ROLEPLAY', level: 'A1', title: 'Mua vé xem phim rạp', contextDesc: 'Bối cảnh: Hỏi mua 2 vé xem phim xuất chiếu lúc 7 giờ tối.', prompt: 'Good afternoon, could I get two student tickets for the seven PM show?' },
+
+  { id: 'rp_a2_1', tier: 'ROLEPLAY', level: 'A2', title: 'Hỏi đổi kích cỡ quần áo tại shop', contextDesc: 'Bối cảnh: Áo sơ mi bạn vừa thử bị chật vai, cần hỏi cỡ lớn hơn (L).', prompt: 'This shirt feels a bit tight around my shoulders. Do you happen to have this in a size large?' },
+  { id: 'rp_a2_2', tier: 'ROLEPLAY', level: 'A2', title: 'Hỏi thủ tục trả phòng khách sạn', contextDesc: 'Bối cảnh: Bạn muốn trả phòng và gửi hành lý tại quầy lễ tân.', prompt: 'I would like to check out now. Is it possible to leave my luggage here until four PM?' },
+
+  { id: 'rp_b1_1', tier: 'ROLEPLAY', level: 'B1', title: 'Đổi trả cà phê tại sân bay', contextDesc: 'Bối cảnh: Bạn gọi cà phê đá không đường nhưng nhân viên đưa nhầm cà phê nóng, chuyến bay sắp cất cánh trong 15 phút.', prompt: 'Excuse me, I ordered an iced latte without sugar, but this seems to be hot cappuccino. Could you please replace it quickly as my boarding starts soon?' },
+  { id: 'rp_b1_2', tier: 'ROLEPLAY', level: 'B1', title: 'Đặt phòng họp khẩn cấp cho đối tác', contextDesc: 'Bối cảnh: Đối tác đến sớm hơn dự kiến 1 tiếng, cần phòng họp có máy chiếu.', prompt: 'Excuse me, our clients have arrived ahead of schedule. Is there any small conference room with a projector available right now?' },
+  { id: 'rp_b1_3', tier: 'ROLEPLAY', level: 'B1', title: 'Hỏi xin gia hạn nộp bài tập lớn', contextDesc: 'Bối cảnh: Dự án nhóm bị lỗi hệ thống máy chủ, bạn đại diện nhóm gặp giảng viên.', prompt: 'Dear Professor, our team encountered a database outage last night. Could we respectfully request a twenty-four hour extension on the submission?' },
+
+  { id: 'rp_b2_1', tier: 'ROLEPLAY', level: 'B2', title: 'Đàm phán dời lịch họp với đối tác', contextDesc: 'Bối cảnh: Đối tác muốn dời lịch họp sang thứ 6 nhưng bạn bị trùng lịch công tác tại Đà Nẵng.', prompt: 'I am afraid Friday afternoon will not work for me due to an urgent business trip. Could we possibly reschedule our strategic discussion to next Monday morning instead?' },
+  { id: 'rp_b2_2', tier: 'ROLEPLAY', level: 'B2', title: 'Xử lý phản ánh giao hàng chậm', contextDesc: 'Bối cảnh: Đơn hàng linh kiện sản xuất trễ 3 ngày khiến dây chuyền phải tạm dừng.', prompt: 'We understand supply chain bottlenecks occur, but this three-day delay is idling our assembly line. We need an expedited air shipment today.' },
+
+  { id: 'rp_c1_1', tier: 'ROLEPLAY', level: 'C1', title: 'Quản lý xử lý khiếu nại khách VIP', contextDesc: 'Bối cảnh: Điều hòa phòng Suite gặp trục trặc lúc nửa đêm, khách VIP đe dọa hủy hợp đồng hội nghị.', prompt: 'I sincerely apologize for the disruption caused by the malfunctioning HVAC system. Let me immediately arrange a room upgrade on the executive penthouse floor, along with complimentary dining services.' },
+  { id: 'rp_c2_1', tier: 'ROLEPLAY', level: 'C2', title: 'Phát ngôn viên xử lý khủng hoảng truyền thông', contextDesc: 'Bối cảnh: Hệ thống thanh toán bị tê liệt 2 giờ trước thềm phiên giao dịch chứng khoán.', prompt: 'We unequivocally acknowledge the unprecedented infrastructure downtime today. Our engineering contingency protocols have stabilized the core clusters, and comprehensive security audits are underway to ensure zero financial discrepancies.' }
 ];
 
 export default function Station2Screen({ onBack }: Props) {
@@ -67,13 +94,44 @@ export default function Station2Screen({ onBack }: Props) {
   const [loadingAssignments, setLoadingAssignments] = useState<boolean>(true);
   const [selectedChallenge, setSelectedChallenge] = useState<ChallengeItem | null>(null);
 
-  // 🎯 NGUỒN CHỦ ĐỀ: HỆ THỐNG / TỪ DASHBOARD GIÁO VIÊN / SINH VIÊN TỰ DÁN
+  // 🔊 Trạng thái phát âm mẫu (Text-To-Speech)
+  const [isPlayingSample, setIsPlayingSample] = useState<boolean>(false);
+
+  const playSampleAudio = (text: string) => {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+      if (isPlayingSample) {
+        setIsPlayingSample(false);
+        return;
+      }
+      const cleanText = text.replace(/["']/g, '').trim();
+      const utterance = new SpeechSynthesisUtterance(cleanText);
+      utterance.lang = 'en-US';
+      utterance.rate = 0.88;
+      utterance.pitch = 1.0;
+      utterance.onstart = () => setIsPlayingSample(true);
+      utterance.onend = () => setIsPlayingSample(false);
+      utterance.onerror = () => setIsPlayingSample(false);
+      window.speechSynthesis.speak(utterance);
+    } else {
+      Alert.alert("Trình duyệt không hỗ trợ", "Trình duyệt của bạn không hỗ trợ tính năng phát âm tự động.");
+    }
+  };
+
+  const stopSampleAudio = () => {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+    setIsPlayingSample(false);
+  };
+
+  // 🎯 NGUỒN CHỦ ĐỀ
   const [topicOrigin, setTopicOrigin] = useState<TopicOrigin>('TEACHER_DASHBOARD');
 
   // 🎯 2 CHẾ ĐỘ: ĐỌC CÂU MẪU vs TỰ NÓI PHẢN XẠ
   const [practiceMode, setPracticeMode] = useState<PracticeMode>('READ_SAMPLE');
 
-  // 🎯 DỮ LIỆU FORM DÁN TẠI CHỖ TỪ SINH VIÊN
+  // 🎯 DỮ LIỆU FORM DÁN TẠI CHỖ
   const [customTitle, setCustomTitle] = useState<string>('');
   const [customContext, setCustomContext] = useState<string>('');
   const [customPrompt, setCustomPrompt] = useState<string>('');
@@ -88,17 +146,16 @@ export default function Station2Screen({ onBack }: Props) {
   const normalAnimFrameRef = useRef<any>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  // 🎧 Thanh phát lại ghi âm cho sinh viên nghe lại
+  // 🎧 Thanh phát lại ghi âm
   const [recordedAudioUrl, setRecordedAudioUrl] = useState<string | null>(null);
 
-  // Anti-Cheat khi làm bài chính thức của giáo viên
+  // Anti-Cheat khi làm bài giáo viên
   const [isTeacherExamining, setIsTeacherExamining] = useState<boolean>(false);
 
   // Modal chi tiết
   const [detailedModalVisible, setDetailedModalVisible] = useState<boolean>(false);
   const [feedbackResult, setFeedbackResult] = useState<DetailedFeedbackData | null>(null);
 
-  // 1. Tải đề từ Bảng điều khiển của Giảng viên (Supabase)
   const fetchTeacherAssignments = async () => {
     setLoadingAssignments(true);
     try {
@@ -140,9 +197,9 @@ export default function Station2Screen({ onBack }: Props) {
 
   useEffect(() => {
     fetchTeacherAssignments();
+    return () => stopSampleAudio();
   }, []);
 
-  // Lọc danh sách bài hiển thị theo nguồn được chọn
   const getDisplayChallenges = () => {
     if (topicOrigin === 'TEACHER_DASHBOARD') {
       return teacherAssignments.filter(
@@ -156,16 +213,17 @@ export default function Station2Screen({ onBack }: Props) {
 
   const currentDisplayList = getDisplayChallenges();
 
-  // 🔄 HÀM CHUYỂN CHỦ ĐỀ TIẾP THEO (ĐỔI CHỦ ĐỀ MỚI)
+  // 🔄 ĐỔI SANG CHỦ ĐỀ KHÁC ĐẢM BẢO THAY ĐỔI
   const handleSwitchToNextTopic = () => {
+    stopSampleAudio();
     const list = getDisplayChallenges();
     if (list.length === 0) {
-      Alert.alert("Thông báo", "Không có chủ đề nào khác trong mục này.");
+      Alert.alert("Thông báo", "Không có chủ đề nào trong danh mục này.");
       return;
     }
 
     if (list.length === 1) {
-      Alert.alert("Thông báo", "Chỉ có 1 chủ đề trong danh mục này.");
+      Alert.alert("Thông báo", `Chỉ có 1 chủ đề cho bậc ${selectedLevel} của ${selectedTier}. Bạn hãy chuyển bậc CEFR hoặc dán đề mới!`);
       return;
     }
 
@@ -184,19 +242,27 @@ export default function Station2Screen({ onBack }: Props) {
     }
   };
 
-  // 🎲 HÀM CHỌN NGẪU NHIÊN 1 CHỦ ĐỀ TỪ DANH SÁCH
+  // 🎲 BỐC 1 CHỦ ĐỀ KHÁC VỚI ĐỀ HIỆN TẠI VÀ BẬT PHÒNG THU
   const handlePickRandomTopic = () => {
+    stopSampleAudio();
     const list = getDisplayChallenges();
     if (list.length === 0) {
       Alert.alert("Thông báo", "Không có chủ đề để chọn.");
       return;
     }
-    const randomIndex = Math.floor(Math.random() * list.length);
-    handleSelectChallenge(list[randomIndex]);
+
+    if (list.length === 1) {
+      handleSelectChallenge(list[0]);
+      return;
+    }
+
+    const otherList = list.filter(item => item.id !== selectedChallenge?.id);
+    const randomIndex = Math.floor(Math.random() * otherList.length);
+    handleSelectChallenge(otherList[randomIndex]);
   };
 
-  // Bắt đầu luyện tập bằng đề tự dán
   const handleStartCustomTopic = () => {
+    stopSampleAudio();
     if (!customTitle.trim() || !customPrompt.trim()) {
       Alert.alert("Chưa đủ thông tin", "Vui lòng nhập ít nhất Tiêu đề và Câu hỏi/Nhiệm vụ bằng tiếng Anh!");
       return;
@@ -221,6 +287,7 @@ export default function Station2Screen({ onBack }: Props) {
   };
 
   const handleSelectChallenge = (item: ChallengeItem) => {
+    stopSampleAudio();
     setSelectedChallenge(item);
     setRecordedAudioUrl(null);
     if (item.isTeacherAssigned) {
@@ -234,8 +301,8 @@ export default function Station2Screen({ onBack }: Props) {
     }
   };
 
-  // Thu âm thường với sóng âm Canvas
   const startNormalRecording = async () => {
+    stopSampleAudio();
     try {
       normalAudioChunksRef.current = [];
       normalPitchHistoryRef.current = [];
@@ -440,7 +507,7 @@ export default function Station2Screen({ onBack }: Props) {
               </TouchableOpacity>
             </View>
 
-            {/* 2. CHỌN 2 NÚT CHẾ ĐỘ: ĐỌC CÂU MẪU VS TỰ NÓI */}
+            {/* 2. CHỌN 2 NÚT CHẾ ĐỘ */}
             <Text style={styles.sectionHeaderLabel}>2. CHẾ ĐỘ NÓI:</Text>
             <View style={styles.modeTabsRow}>
               <TouchableOpacity
@@ -463,7 +530,7 @@ export default function Station2Screen({ onBack }: Props) {
             </View>
             <Text style={styles.modeDescText}>
               {practiceMode === 'READ_SAMPLE'
-                ? '👉 Nhìn toàn văn câu mẫu để luyện phát âm, nối âm và cao độ ngữ điệu.'
+                ? '👉 Nhìn toàn văn câu mẫu và bấm nghe giọng đọc mẫu để luyện phát âm, nối âm và cao độ ngữ điệu.'
                 : '👉 Tự do phát biểu theo tình huống và bối cảnh được giao; không hiển thị văn bản mẫu để hỗ trợ.'}
             </Text>
 
@@ -589,12 +656,6 @@ export default function Station2Screen({ onBack }: Props) {
                       ? `🏫 BÀI TẬP GIẢNG VIÊN GIAO [${selectedTier} - ${selectedLevel}]:`
                       : `🔥 ĐỀ MẪU HỆ THỐNG [${selectedTier} - ${selectedLevel}]:`}
                   </Text>
-                  
-                  {currentDisplayList.length > 1 && (
-                    <TouchableOpacity style={styles.randomTopicBtn} onPress={handlePickRandomTopic}>
-                      <Text style={styles.randomTopicBtnText}>🎲 ĐỔI 1 ĐỀ BẤT KỲ</Text>
-                    </TouchableOpacity>
-                  )}
                   {loadingAssignments && <ActivityIndicator size="small" color="#00FFFF" />}
                 </View>
 
@@ -602,7 +663,7 @@ export default function Station2Screen({ onBack }: Props) {
                   <View style={styles.emptyCard}>
                     <Text style={styles.emptyText}>
                       {topicOrigin === 'TEACHER_DASHBOARD'
-                        ? 'Chưa có bài tập nào được giao từ Dashboard Giảng viên cho Tầng và Cấp độ này.\n👉 Bạn có thể chuyển sang tab "TỰ DÁN ĐỀ TẠI CHỖ" ở trên để nhập bài ngay!'
+                        ? 'Chưa có bài tập nào được giao từ Dashboard Giảng viên cho Tầng và Cấp độ này.\n👉 Bạn có thể chuyển sang tab "TỰ DÁN ĐỀ TẠI CHỖ" hoặc "ĐỀ MẪU HỆ THỐNG" để luyện tập ngay!'
                         : 'Không có bài mẫu cho bộ lọc này.'}
                     </Text>
                   </View>
@@ -621,7 +682,15 @@ export default function Station2Screen({ onBack }: Props) {
 
                       {practiceMode === 'READ_SAMPLE' ? (
                         <View style={styles.previewPromptBox}>
-                          <Text style={styles.previewPromptLabel}>📖 Câu văn mẫu cần luyện:</Text>
+                          <View style={styles.sampleHeaderRow}>
+                            <Text style={styles.previewPromptLabel}>📖 Câu văn mẫu cần luyện:</Text>
+                            <TouchableOpacity 
+                              style={styles.ttsMiniBtn} 
+                              onPress={() => playSampleAudio(item.prompt)}
+                            >
+                              <Text style={styles.ttsMiniBtnText}>🔊 NGHE MẪU</Text>
+                            </TouchableOpacity>
+                          </View>
                           <Text style={styles.previewPromptText}>"{item.prompt}"</Text>
                         </View>
                       ) : (
@@ -674,8 +743,21 @@ export default function Station2Screen({ onBack }: Props) {
 
             {practiceMode === 'READ_SAMPLE' ? (
               <View style={styles.promptDisplayBox}>
-                <Text style={styles.promptModeNotice}>📖 CÂU VĂN MẪU CẦN ĐỌC CHUẨN:</Text>
+                <View style={styles.sampleHeaderRow}>
+                  <Text style={styles.promptModeNotice}>📖 CÂU VĂN MẪU CẦN ĐỌC CHUẨN:</Text>
+                  <TouchableOpacity 
+                    style={[styles.ttsPlayBtn, isPlayingSample && styles.ttsPlayBtnActive]} 
+                    onPress={() => playSampleAudio(selectedChallenge.prompt)}
+                  >
+                    <Text style={styles.ttsPlayBtnText}>
+                      {isPlayingSample ? '⏹ DỪNG GIỌNG ĐỌC' : '🔊 NGHE GIỌNG ĐỌC MẪU'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
                 <Text style={styles.promptDisplayText}>{selectedChallenge.prompt}</Text>
+                <Text style={styles.ttsGuideHint}>
+                  💡 Hãy nghe mẫu 1-2 lần để bắt chước ngữ điệu, trọng âm và ngắt nhịp trước khi bấm thu âm!
+                </Text>
               </View>
             ) : (
               <View style={[styles.promptDisplayBox, { borderColor: '#39FF14', backgroundColor: '#07180D' }]}>
@@ -806,6 +888,54 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
 
+  sampleHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  ttsPlayBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1E0B36',
+    borderWidth: 1.5,
+    borderColor: '#00FFFF',
+    paddingVertical: 5,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+  },
+  ttsPlayBtnActive: {
+    backgroundColor: '#350A18',
+    borderColor: '#FF0055',
+  },
+  ttsPlayBtnText: {
+    color: '#00FFFF',
+    fontSize: 9.5,
+    fontWeight: '900',
+  },
+  ttsMiniBtn: {
+    backgroundColor: '#1E0B36',
+    borderWidth: 1,
+    borderColor: '#00FFFF',
+    paddingVertical: 2,
+    paddingHorizontal: 8,
+    borderRadius: 5,
+  },
+  ttsMiniBtnText: {
+    color: '#00FFFF',
+    fontSize: 8.5,
+    fontWeight: 'bold',
+  },
+  ttsGuideHint: {
+    color: '#FFD700',
+    fontSize: 9,
+    fontStyle: 'italic',
+    marginTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#221144',
+    paddingTop: 6,
+  },
+
   customBoxWrapper: { backgroundColor: '#0D0620', padding: 14, borderRadius: 12, borderWidth: 2, borderColor: '#FF007F', marginVertical: 8 },
   customBoxTitle: { color: '#FF007F', fontSize: 11, fontWeight: '900', marginBottom: 8 },
   fieldLabel: { color: '#00FFFF', fontSize: 9, fontWeight: 'bold', marginTop: 6, marginBottom: 3 },
@@ -820,8 +950,6 @@ const styles = StyleSheet.create({
   audioReviewSub: { color: '#8888AA', fontSize: 8.5 },
 
   sectionHeader: { color: '#00FFFF', fontSize: 10.5, fontWeight: '900' },
-  randomTopicBtn: { backgroundColor: '#1A0B2E', paddingVertical: 4, paddingHorizontal: 8, borderRadius: 6, borderWidth: 1, borderColor: '#00FFFF' },
-  randomTopicBtnText: { color: '#00FFFF', fontSize: 9, fontWeight: 'bold' },
 
   card: { backgroundColor: '#130628', padding: 14, borderRadius: 12, borderWidth: 1.5, borderColor: '#332255', marginBottom: 12 },
   teacherCard: { borderColor: '#00FFFF', backgroundColor: '#0B192C' },
