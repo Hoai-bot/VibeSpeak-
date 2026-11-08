@@ -10,58 +10,58 @@ interface Props {
 
 export type CEFRLevel = 'A1' | 'A2' | 'B1' | 'B2' | 'C1' | 'C2';
 
-// 🎯 KHO ĐỀ MẪU TỰ ĐỘNG THEO CEFR CHO TRẠM 4
-const STATION_4_TOPICS: Record<string, { title: string; promptEn: string; promptVi: string; minWpm: number; targetDuration: number }[]> = {
+// 🎯 KHO ĐỀ MỞ DÀNH RIÊNG CHO TRẠM 4 EXPRESS (CHỈ CÓ CÂU HỎI KÍCH HOẠT, KHÔNG CÓ BÀI MẪU)
+const STATION_4_PROMPTS: Record<string, { title: string; challengeQuestion: string; guideVi: string; minWpm: number; targetDuration: number }[]> = {
   A1: [
     {
-      title: "My Daily Routine",
-      promptEn: "Describe what you usually do from morning until night. Talk about your wake-up time, study habits, and favorite evening activities.",
-      promptVi: "Mô tả một ngày bình thường của bạn từ sáng đến tối (giờ thức dậy, học tập, thói quen thư giãn buổi tối).",
+      title: "My Daily Life & Routine",
+      challengeQuestion: "Describe what you usually do on a typical day from morning to evening. What is your favorite time of the day and why?",
+      guideVi: "Kể về một ngày bình thường của bạn. Thời điểm yêu thích nhất trong ngày và lý do.",
       minWpm: 70,
       targetDuration: 45
     }
   ],
   A2: [
     {
-      title: "A Memorable Trip",
-      promptEn: "Tell a short story about a vacation or trip you took with your friends or family. Where did you go and what made it special?",
-      promptVi: "Kể về một chuyến du lịch đáng nhớ cùng bạn bè hoặc gia đình (địa điểm, kỷ niệm đặc biệt).",
+      title: "A Favorite Place You Often Visit",
+      challengeQuestion: "Talk about a coffee shop, park, or place in your city that you enjoy visiting. What do you do there and why do you like it?",
+      guideVi: "Trình bày về một địa điểm bạn yêu thích trong thành phố và lý do thường xuyên ghé thăm.",
       minWpm: 85,
       targetDuration: 60
     }
   ],
   B1: [
     {
-      title: "The Pros & Cons of Remote Learning",
-      promptEn: "Share your perspectives on studying online versus offline in a traditional classroom. Which method suits you better and why?",
-      promptVi: "Trình bày ưu và nhược điểm của học trực tuyến so với học truyền thống trên giảng đường.",
+      title: "Remote Learning vs. Traditional Classes",
+      challengeQuestion: "Should universities replace traditional lectures with online learning? Present your personal standpoint and provide convincing reasons.",
+      guideVi: "Đại học có nên thay thế giảng đường bằng học online không? Nêu quan điểm và lý do cá nhân.",
       minWpm: 100,
       targetDuration: 75
     }
   ],
   B2: [
     {
-      title: "Impact of Artificial Intelligence on Future Careers",
-      promptEn: "Analyze how generative AI and automation might transform high-demand professions in the next decade. How should university students prepare?",
-      promptVi: "Phân tích tác động của trí tuệ nhân tạo đối với các ngành nghề tương lai và sinh viên cần chuẩn bị kỹ năng gì.",
+      title: "Generative AI in Higher Education",
+      challengeQuestion: "How should students responsibly use tools like ChatGPT or Copilot without losing critical thinking and problem-solving skills?",
+      guideVi: "Sinh viên nên sử dụng các công cụ AI thế nào để nâng cao hiệu quả mà không phụ thuộc mất tư duy phản biện?",
       minWpm: 115,
       targetDuration: 90
     }
   ],
   C1: [
     {
-      title: "Sustainable Urban Development & Green Architecture",
-      promptEn: "Evaluate the socio-economic challenges of transitioning modern megacities into carbon-neutral ecosystems. Propose concrete policy actions.",
-      promptVi: "Đánh giá các thách thức kinh tế - xã hội khi chuyển đổi các đại đô thị thành hệ sinh thái trung hòa carbon.",
+      title: "Sustainable Urban Transitions",
+      challengeQuestion: "Analyze the major obstacles preventing megacities from achieving carbon neutrality. Which policy intervention should be prioritized?",
+      guideVi: "Phân tích rào cản lớn nhất của các siêu đô thị khi chuyển đổi xanh và đề xuất chính sách ưu tiên.",
       minWpm: 130,
       targetDuration: 120
     }
   ],
   C2: [
     {
-      title: "Philosophical Implications of Human-Machine Symbiosis",
-      promptEn: "Debate whether the convergence of cognitive brain-computer interfaces fundamentally alters the ontological definition of human consciousness.",
-      promptVi: "Tranh biện về việc giao diện não - máy tính có làm thay đổi định nghĩa bản thể luận về ý thức con người hay không.",
+      title: "Human Consciousness & Cognitive Interfaces",
+      challengeQuestion: "Debate whether direct brain-computer integration enhances human potential or fundamentally compromises authentic personal autonomy.",
+      guideVi: "Tranh biện về việc công nghệ giao diện não - máy tính nâng tầm con người hay làm xói mòn quyền tự quyết cá nhân.",
       minWpm: 140,
       targetDuration: 120
     }
@@ -87,13 +87,13 @@ export default function Station4Screen({ onBack }: Props) {
 
   // Đề tự dán từ Giảng viên
   const [customTitle, setCustomTitle] = useState<string>('');
-  const [customPromptEn, setCustomPromptEn] = useState<string>('');
-  const [customPromptVi, setCustomPromptVi] = useState<string>('');
+  const [customQuestion, setCustomQuestion] = useState<string>('');
+  const [customContextVi, setCustomContextVi] = useState<string>('');
 
   // Đề AI
   const [currentAiTopicIndex, setCurrentAiTopicIndex] = useState<number>(0);
 
-  // Thu âm & Đồng hồ
+  // Thu âm & Đếm thời lượng
   const [isRecording, setIsRecording] = useState<boolean>(false);
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
   const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
@@ -101,16 +101,16 @@ export default function Station4Screen({ onBack }: Props) {
   const [recordedDuration, setRecordedDuration] = useState<number>(0);
   const [hasRecorded, setHasRecorded] = useState<boolean>(false);
 
-  // Đếm ngược
+  // Đếm ngược thời gian giới hạn
   const [timeLeft, setTimeLeft] = useState<number>(90);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const durationTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Kết quả
+  // Kết quả đánh giá
   const [result, setResult] = useState<AssessmentResult | null>(null);
   const [calculatedWpm, setCalculatedWpm] = useState<number>(0);
 
-  // Pop-up định danh
+  // Modal nộp bài
   const [showIdentityModal, setShowIdentityModal] = useState<boolean>(false);
   const [studentNameInput, setStudentNameInput] = useState<string>('');
 
@@ -122,14 +122,14 @@ export default function Station4Screen({ onBack }: Props) {
   const getActiveTopic = () => {
     if (topicSource === 'custom') {
       return {
-        title: customTitle.trim() || 'Chủ đề Thuyết trình từ Giảng viên',
-        promptEn: customPromptEn.trim() || 'Tự do trình bày theo đề bài giảng viên giao trên lớp.',
-        promptVi: customPromptVi.trim(),
+        title: customTitle.trim() || 'Chủ đề Express do Giảng viên giao',
+        challengeQuestion: customQuestion.trim() || 'Tự do trình bày theo câu hỏi/chủ đề được giao trên lớp.',
+        guideVi: customContextVi.trim(),
         minWpm: 100,
         targetDuration: 90
       };
     }
-    const topicList = STATION_4_TOPICS[cefrLevel] || STATION_4_TOPICS['B1'];
+    const topicList = STATION_4_PROMPTS[cefrLevel] || STATION_4_PROMPTS['B1'];
     return topicList[currentAiTopicIndex % topicList.length];
   };
 
@@ -158,14 +158,14 @@ export default function Station4Screen({ onBack }: Props) {
   };
 
   const handleNextAiTopic = () => {
-    const topicList = STATION_4_TOPICS[cefrLevel] || STATION_4_TOPICS['B1'];
+    const topicList = STATION_4_PROMPTS[cefrLevel] || STATION_4_PROMPTS['B1'];
     setCurrentAiTopicIndex((prev) => (prev + 1) % topicList.length);
   };
 
   const handleToggleRecord = async () => {
     if (!isRecording) {
-      if (topicSource === 'custom' && !customPromptEn.trim()) {
-        alert("Vui lòng dán đề bài hoặc câu hỏi tiếng Anh của Giảng viên trước khi thu âm!");
+      if (topicSource === 'custom' && !customQuestion.trim()) {
+        alert("Vui lòng nhập câu hỏi / chủ đề tiếng Anh từ Giảng viên trước khi thu âm!");
         return;
       }
 
@@ -207,12 +207,10 @@ export default function Station4Screen({ onBack }: Props) {
           setIsRecording(true);
           setRecordedDuration(0);
 
-          // Bắt đầu đếm thời gian thực đã nói
           durationTimerRef.current = setInterval(() => {
             setRecordedDuration((prev) => prev + 1);
           }, 1000);
 
-          // Đếm ngược thời gian giới hạn
           setTimeLeft(activeTopic.targetDuration || 90);
           timerRef.current = setInterval(() => {
             setTimeLeft((prev) => {
@@ -233,7 +231,6 @@ export default function Station4Screen({ onBack }: Props) {
         alert("🔒 Trình duyệt chưa được cấp quyền Microphone! Vui lòng cho phép truy cập micro.");
       }
     } else {
-      // Dừng thu âm
       if (timerRef.current) clearInterval(timerRef.current);
       if (durationTimerRef.current) clearInterval(durationTimerRef.current);
       setIsRecording(false);
@@ -252,10 +249,9 @@ export default function Station4Screen({ onBack }: Props) {
 
     setIsAnalyzing(true);
     try {
-      const targetPrompt = `Presentation Prompt: ${activeTopic.promptEn} - Level: ${cefrLevel}`;
+      const targetPrompt = `Express Prompt: ${activeTopic.challengeQuestion} - Level: ${cefrLevel}`;
       const evalData = await evaluateSpeaking(recordedBlob, cefrLevel, '4', targetPrompt);
       
-      // Tính toán WPM (Words Per Minute) thực tế
       const wordsCount = (evalData.transcript || '').trim().split(/\s+/).filter(Boolean).length;
       const actualMinutes = Math.max(0.2, recordedDuration / 60);
       const wpm = Math.round(wordsCount / actualMinutes);
@@ -266,8 +262,8 @@ export default function Station4Screen({ onBack }: Props) {
 
       setShowIdentityModal(true);
     } catch (err) {
-      console.error("Lỗi chấm điểm bài thuyết trình:", err);
-      alert("⚠️ Lỗi kết nối AI khi phân tích bài thuyết trình. Vui lòng bấm nộp lại!");
+      console.error("Lỗi chấm điểm Express:", err);
+      alert("⚠️ Lỗi kết nối AI khi phân tích bài nói. Vui lòng bấm nộp lại!");
     } finally {
       setIsAnalyzing(false);
     }
@@ -288,18 +284,18 @@ export default function Station4Screen({ onBack }: Props) {
 
     await saveSubmissionToCloud({
       studentName: studentNameInput.trim(),
-      className: 'LỚP CHUYÊN ĐỀ',
+      className: 'LỚP CHUYÊN ĐỀ EXPRESS',
       mode: 'EXPRESS',
       cefrLevel: cefrLevel,
       score: result.score || 85,
       transcript: result.transcript || '',
       audioUrl: base64Audio || audioUrl || undefined,
-      feedback: `WPM: ${calculatedWpm} từ/phút | ${result.detailedFeedback || 'Bài nói đạt chuẩn.'}`,
+      feedback: `WPM: ${calculatedWpm} từ/phút | ${result.detailedFeedback || 'Đạt yêu cầu phản xạ lưu loát.'}`,
       timestamp: new Date().toISOString()
     });
 
     setShowIdentityModal(false);
-    alert("✅ Đã ghi nhận bài thuyết trình lên Bảng điểm Giáo viên!");
+    alert("✅ Đã ghi nhận điểm Express lên Bảng điểm Giáo viên!");
   };
 
   return (
@@ -308,19 +304,19 @@ export default function Station4Screen({ onBack }: Props) {
         <TouchableOpacity onPress={onBack} style={styles.backBtn}>
           <Text style={styles.backText}>🔙 QUAY LẠI MAP</Text>
         </TouchableOpacity>
-        <Text style={styles.title}>🎙️ TRẠM 4: FLUENCY & MONOLOGUE ARENA</Text>
+        <Text style={styles.title}>🎙️ TRẠM 4: EXPRESS (FLUENCY & MONOLOGUE ARENA)</Text>
       </View>
 
       <ScrollView contentContainerStyle={{ alignItems: 'center', width: '100%', paddingBottom: 35 }}>
         {/* 1. CHỌN NGUỒN ĐỀ BÀI */}
-        <Text style={styles.sectionLabel}>1. NGUỒN ĐỀ THUYẾT TRÌNH:</Text>
+        <Text style={styles.sectionLabel}>1. NGUỒN CHỦ ĐỀ EXPRESS:</Text>
         <View style={styles.sourceRow}>
           <TouchableOpacity 
             style={[styles.sourceBtn, topicSource === 'ai' && styles.sourceBtnActive]} 
             onPress={() => setTopicSource('ai')}
           >
             <Text style={[styles.sourceText, topicSource === 'ai' && styles.sourceTextActive]}>
-              🤖 ĐỀ CHUYÊN ĐỀ TỪ AI
+              🤖 ĐỀ PHẢN XẠ TỪ AI
             </Text>
           </TouchableOpacity>
           <TouchableOpacity 
@@ -347,70 +343,70 @@ export default function Station4Screen({ onBack }: Props) {
           ))}
         </View>
 
-        {/* KHUNG HIỂN THỊ / NHẬP ĐỀ BÀI */}
+        {/* KHUNG THỬ THÁCH NÓI TỰ DO (KHÔNG CÓ BÀI MẪU) */}
         <View style={styles.card}>
           <View style={styles.natureBadge}>
             <Text style={styles.natureBadgeText}>
-              {topicSource === 'custom' ? '📝 ĐỀ BÀI TỰ DÁN CỦA GIẢNG VIÊN' : `⚡ CHỦ ĐỀ THUYẾT TRÌNH [${cefrLevel}]`}
+              ⚡ THỬ THÁCH NÓI TỰ DO (KHÔNG ĐỌC THEO VĂN MẪU)
             </Text>
           </View>
 
           {topicSource === 'custom' ? (
             <View style={styles.customInputContainer}>
-              <Text style={styles.inputLabel}>📌 Tên chủ đề thuyết trình:</Text>
+              <Text style={styles.inputLabel}>📌 Tên chủ đề / Tình huống:</Text>
               <TextInput
                 style={styles.textInput}
-                placeholder="Ví dụ: Digital Transformation in Education"
+                placeholder="Ví dụ: Impact of Social Media on Mental Health"
                 placeholderTextColor="#666688"
                 value={customTitle}
                 onChangeText={setCustomTitle}
               />
 
-              <Text style={styles.inputLabel}>📋 Đề bài / Câu hỏi tiếng Anh từ Giảng viên (*):</Text>
+              <Text style={styles.inputLabel}>❓ Câu hỏi gợi mở tiếng Anh từ Giảng viên (*):</Text>
               <TextInput
                 style={[styles.textInput, styles.textArea]}
-                placeholder="Ví dụ: Present your views on how smartphones affect students' concentration during lectures..."
+                placeholder="Ví dụ: How does excessive social media usage impact students' academic performance and wellbeing?"
                 placeholderTextColor="#666688"
                 multiline
-                value={customPromptEn}
-                onChangeText={setCustomPromptEn}
+                value={customQuestion}
+                onChangeText={setCustomQuestion}
               />
 
-              <Text style={styles.inputLabel}>💡 Dịch nghĩa / Gợi ý dàn ý (tuỳ chọn):</Text>
+              <Text style={styles.inputLabel}>💡 Bối cảnh / Gợi ý tiếng Việt (tuỳ chọn):</Text>
               <TextInput
                 style={styles.textInput}
-                placeholder="Ghi chú thêm từ khóa hoặc dàn bài tiếng Việt..."
+                placeholder="Ví dụ: Nêu quan điểm cá nhân và dẫn chứng thực tế..."
                 placeholderTextColor="#666688"
-                value={customPromptVi}
-                onChangeText={setCustomPromptVi}
+                value={customContextVi}
+                onChangeText={setCustomContextVi}
               />
             </View>
           ) : (
             <>
               <Text style={styles.topicTitle}>{activeTopic.title}</Text>
               <View style={styles.promptBox}>
-                <Text style={styles.promptQuestionLabel}>🎯 Đề bài yêu cầu:</Text>
-                <Text style={styles.promptEn}>"{activeTopic.promptEn}"</Text>
-                {activeTopic.promptVi && <Text style={styles.promptVi}>👉 Dịch: "{activeTopic.promptVi}"</Text>}
+                <Text style={styles.promptQuestionLabel}>❓ Câu hỏi kích hoạt tư duy:</Text>
+                <Text style={styles.promptEn}>"{activeTopic.challengeQuestion}"</Text>
+                {activeTopic.guideVi && <Text style={styles.promptVi}>💡 Gợi ý định hướng: "{activeTopic.guideVi}"</Text>}
               </View>
 
               <View style={styles.targetRow}>
                 <Text style={styles.targetBadge}>🎯 Mục tiêu WPM tối thiểu: {activeTopic.minWpm} từ/phút</Text>
-                <Text style={styles.targetBadge}>⏱️ Thời lượng tối đa: {activeTopic.targetDuration}s</Text>
+                <Text style={styles.targetBadge}>⏱️ Thời lượng đề xuất: {activeTopic.targetDuration}s</Text>
               </View>
 
               <TouchableOpacity style={styles.refreshBtn} onPress={handleNextAiTopic}>
-                <Text style={styles.refreshBtnText}>🔄 ĐỔI CHỦ ĐỀ KHÁC</Text>
+                <Text style={styles.refreshBtnText}>🔄 ĐỔI CÂU HỎI KHÁC</Text>
               </TouchableOpacity>
             </>
           )}
 
           <Text style={styles.monologueGuide}>
-            🗣️ Hướng dẫn: Bạn hãy trình bày quan điểm cá nhân một cách mạch lạc, tự nhiên. Tránh ngắt quãng quá lâu để đạt điểm trôi chảy cao nhất!
+            👉 Không có câu mẫu! Bạn hãy tự do suy nghĩ và phát biểu quan điểm bằng tiếng Anh. Giữ nhịp nói liên tục và hạn chế khoảng lặng kéo dài để đạt điểm lưu loát cao nhất!
           </Text>
         </View>
 
-        {/* KHU VỰC THU ÂM & ĐẾM GIỜ */}
+        {/* KHU VỰC THU ÂM & ĐỒNG HỒ */}
         <View style={styles.actionCard}>
           <View style={styles.timerHeader}>
             <Text style={styles.timerTitle}>
@@ -424,19 +420,19 @@ export default function Station4Screen({ onBack }: Props) {
           >
             <Text style={styles.recordBtnText}>
               {isRecording 
-                ? '🛑 DỪNG BÀI NÓI (HOÀN THÀNH)' 
+                ? '🛑 DỪNG BÀI NÓI (HOÀN TẤT)' 
                 : hasRecorded 
-                  ? '🔄 BẤM ĐỂ THU ÂM LẠI TOÀN BỘ' 
-                  : '🎙️ BẮT ĐẦU THUYẾT TRÌNH'}
+                  ? '🔄 THU ÂM LẠI BÀI NÓI MỚI' 
+                  : '🎙️ BẮT ĐẦU NÓI PHẢN XẠ'}
             </Text>
           </TouchableOpacity>
 
-          {/* 🎧 THANH NGHE LẠI BẢN THU ÂM CỦA NGƯỜI NÓI */}
+          {/* 🎧 THANH NGHE LẠI BẢN THU ÂM CỦA CHÍNH SINH VIÊN */}
           {audioUrl && !isRecording && (
             <View style={styles.audioPreviewContainer}>
               <View style={styles.audioPreviewHeader}>
-                <Text style={styles.audioPreviewTitle}>🎧 BẢN THU ÂM CỦA BẠN ({recordedDuration}s):</Text>
-                <Text style={styles.audioPreviewSub}>Bấm nút phát bên dưới để nghe lại độ to, rõ ràng trước khi nộp</Text>
+                <Text style={styles.audioPreviewTitle}>🎧 NGHE LẠI BẢN THU ÂM CỦA BẠN ({recordedDuration}s):</Text>
+                <Text style={styles.audioPreviewSub}>Bấm phát để kiểm tra độ to, rõ ràng và nhịp điệu của bạn trước khi nộp</Text>
               </View>
               {React.createElement('audio', {
                 controls: true,
@@ -446,12 +442,11 @@ export default function Station4Screen({ onBack }: Props) {
             </View>
           )}
 
-          {/* NÚT CHẤM ĐIỂM */}
           {isAnalyzing ? (
             <View style={{ alignItems: 'center', marginVertical: 10 }}>
               <ActivityIndicator size="large" color="#39FF14" />
               <Text style={{ color: '#39FF14', fontSize: 11, fontWeight: 'bold', marginTop: 6 }}>
-                ⚡ GROQ AI ĐANG PHÂN TÍCH TỐC ĐỘ (WPM) & ĐỘ TRÔI CHẢY...
+                ⚡ GROQ AI ĐANG TÍNH TỐC ĐỘ WPM & ĐỘ LƯU LOÁT...
               </Text>
             </View>
           ) : (
@@ -460,16 +455,16 @@ export default function Station4Screen({ onBack }: Props) {
               onPress={handleSubmitSpeech}
               disabled={!hasRecorded || isRecording}
             >
-              <Text style={styles.submitBtnText}>⚡ NỘP BÀI THUYẾT TRÌNH & CHẤM ĐIỂM</Text>
+              <Text style={styles.submitBtnText}>⚡ NỘP BÀI EXPRESS & AI CHẤM ĐIỂM</Text>
             </TouchableOpacity>
           )}
         </View>
 
-        {/* KẾT QUẢ ĐÁNH GIÁ CHI TIẾT */}
+        {/* KẾT QUẢ ĐÁNH GIÁ PHẢN XẠ */}
         {result && (
           <View style={styles.resultCard}>
             <Text style={[styles.resultTitle, { color: result.isWin ? '#39FF14' : '#FF0055' }]}>
-              {result.isWin ? '🎉 BÀI THUYẾT TRÌNH ĐẠT YÊU CẦU XUẤT SẮC!' : '💡 CẦN NÂNG CAO TỐC ĐỘ NÓI & SỰ TỰ NHIÊN'}
+              {result.isWin ? '🎉 BÀI NÓI PHẢN XẠ LƯU LOÁT XUẤT SẮC!' : '💡 CẦN NÂNG CAO TỐC ĐỘ NÓI & SỰ TỰ NHIÊN'}
             </Text>
 
             <View style={styles.wpmBanner}>
@@ -477,11 +472,10 @@ export default function Station4Screen({ onBack }: Props) {
               <Text style={styles.wpmSub}>
                 {calculatedWpm >= activeTopic.minWpm 
                   ? '✅ Tốc độ nói đạt chuẩn lưu loát của cấp độ!' 
-                  : `⚠️ Dưới ngưỡng khuyến nghị (${activeTopic.minWpm} từ/phút). Cần hạn chế khoảng ngừng quá lâu.`}
+                  : `⚠️ Tốc độ nói thấp hơn khuyến nghị (${activeTopic.minWpm} WPM). Cần giảm thời gian ngập ngừng để nói trôi chảy hơn.`}
               </Text>
             </View>
 
-            {/* THANH NGHE LẠI SAU KHI CÓ KẾT QUẢ */}
             {audioUrl && (
               <View style={styles.audioPreviewContainer}>
                 <Text style={styles.audioPreviewTitle}>🎧 NGHE LẠI BẢN THU HOÀN CHỈNH:</Text>
@@ -494,7 +488,7 @@ export default function Station4Screen({ onBack }: Props) {
             )}
 
             <View style={styles.transcriptBox}>
-              <Text style={styles.transcriptHeader}>🎙️ VĂN BẢN AI NHẬN DIỆN TỪ GIỌNG BẠN:</Text>
+              <Text style={styles.transcriptHeader}>🎙️ VĂN BẢN TỰ NHIÊN AI GHI NHẬN TỪ GIỌNG BẠN:</Text>
               <Text style={styles.transcriptBody}>"{result.transcript}"</Text>
             </View>
 
@@ -518,11 +512,11 @@ export default function Station4Screen({ onBack }: Props) {
         )}
       </ScrollView>
 
-      {/* MODAL LƯU ĐIỂM GIẢNG VIÊN */}
+      {/* MODAL GỬI BÀI CHO GIẢNG VIÊN */}
       <Modal visible={showIdentityModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>🎖️ GHI NHẬN ĐIỂM THUYẾT TRÌNH</Text>
+            <Text style={styles.modalTitle}>🎖️ GHI NHẬN ĐIỂM TRẠM EXPRESS</Text>
             <Text style={styles.modalSub}>Nhập Mã sinh viên hoặc Họ và tên để lưu vào bảng điểm Giảng viên:</Text>
             <TextInput
               style={styles.modalInput}
@@ -577,7 +571,7 @@ const styles = StyleSheet.create({
   refreshBtn: { backgroundColor: '#1A0B2E', padding: 8, borderRadius: 8, borderWidth: 1, borderColor: '#00FFFF', width: '100%', alignItems: 'center', marginBottom: 8 },
   refreshBtnText: { color: '#00FFFF', fontSize: 10, fontWeight: 'bold' },
 
-  monologueGuide: { color: '#39FF14', fontSize: 9.5, fontStyle: 'italic', textAlign: 'center', lineHeight: 14, marginTop: 4 },
+  monologueGuide: { color: '#39FF14', fontSize: 9.5, fontStyle: 'italic', textAlign: 'center', lineHeight: 15, marginTop: 4 },
 
   customInputContainer: { width: '100%' },
   inputLabel: { color: '#FFD700', fontSize: 10, fontWeight: 'bold', marginTop: 6, marginBottom: 4 },

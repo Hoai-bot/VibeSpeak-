@@ -156,6 +156,46 @@ export default function Station2Screen({ onBack }: Props) {
 
   const currentDisplayList = getDisplayChallenges();
 
+  // 🔄 HÀM CHUYỂN CHỦ ĐỀ TIẾP THEO (ĐỔI CHỦ ĐỀ MỚI)
+  const handleSwitchToNextTopic = () => {
+    const list = getDisplayChallenges();
+    if (list.length === 0) {
+      Alert.alert("Thông báo", "Không có chủ đề nào khác trong mục này.");
+      return;
+    }
+
+    // Nếu chỉ có 1 bài
+    if (list.length === 1) {
+      Alert.alert("Thông báo", "Chỉ có 1 chủ đề trong danh mục này.");
+      return;
+    }
+
+    const currentIndex = list.findIndex(item => item.id === selectedChallenge?.id);
+    const nextIndex = (currentIndex + 1) % list.length;
+    const nextChallenge = list[nextIndex];
+
+    setSelectedChallenge(nextChallenge);
+    setRecordedAudioUrl(null);
+    setNormalTimer(0);
+    setIsRecordingNormal(false);
+
+    if (normalAnimFrameRef.current) cancelAnimationFrame(normalAnimFrameRef.current);
+    if (normalMediaRecorderRef.current && normalMediaRecorderRef.current.state === 'recording') {
+      try { normalMediaRecorderRef.current.stop(); } catch (e) {}
+    }
+  };
+
+  // 🎲 HÀM CHỌN NGẪU NHIÊN 1 CHỦ ĐỀ TỪ DANH SÁCH
+  const handlePickRandomTopic = () => {
+    const list = getDisplayChallenges();
+    if (list.length === 0) {
+      Alert.alert("Thông báo", "Không có chủ đề để chọn.");
+      return;
+    }
+    const randomIndex = Math.floor(Math.random() * list.length);
+    handleSelectChallenge(list[randomIndex]);
+  };
+
   // Bắt đầu luyện tập bằng đề tự dán
   const handleStartCustomTopic = () => {
     if (!customTitle.trim() || !customPrompt.trim()) {
@@ -367,7 +407,7 @@ export default function Station2Screen({ onBack }: Props) {
       <ScrollView contentContainerStyle={{ paddingBottom: 35 }}>
         {!isTeacherExamining && !isNormalPracticing && (
           <>
-            {/* 1. CHỌN NGUỒN CHỦ ĐỀ RÕ RÀNG */}
+            {/* 1. CHỌN NGUỒN CHỦ ĐỀ */}
             <Text style={styles.sectionHeaderLabel}>1. CHỌN HÌNH THỨC NHẬN ĐỀ BÀI:</Text>
             <View style={styles.originTabsRow}>
               <TouchableOpacity
@@ -425,7 +465,7 @@ export default function Station2Screen({ onBack }: Props) {
             <Text style={styles.modeDescText}>
               {practiceMode === 'READ_SAMPLE'
                 ? '👉 Nhìn toàn văn câu mẫu để luyện phát âm, nối âm và cao độ ngữ điệu.'
-                : '👉 Chỉ hiển thị bối cảnh & câu hỏi; sinh viên tự do diễn đạt ý kiến bằng tiếng Anh.'}
+                : '👉 Tự do phát biểu theo tình huống và bối cảnh được giao; không hiển thị văn bản mẫu để hỗ trợ.'}
             </Text>
 
             {/* 3. BỘ CHỌN 3 TẦNG ĐẤU */}
@@ -470,7 +510,7 @@ export default function Station2Screen({ onBack }: Props) {
               })}
             </View>
 
-            {/* 🎧 THANH NGHE LẠI BẢN THU ÂM CỦA SINH VIÊN (NẾU CÓ) */}
+            {/* 🎧 THANH NGHE LẠI BẢN THU ÂM */}
             {recordedAudioUrl && (
               <View style={styles.audioReviewBox}>
                 <View style={styles.audioReviewHeader}>
@@ -487,7 +527,6 @@ export default function Station2Screen({ onBack }: Props) {
 
             {/* 5. GIAO DIỆN NỘI DUNG THEO NGUỒN CHỌN */}
             {topicOrigin === 'STUDENT_CUSTOM' ? (
-              /* KHUNG NHẬP TRỰC TIẾP TẠI CHỖ CHO SINH VIÊN */
               <View style={styles.customBoxWrapper}>
                 <Text style={styles.customBoxTitle}>📋 DÁN ĐỀ BÀI CỦA GIẢNG VIÊN VÀO ĐÂY:</Text>
                 
@@ -510,14 +549,14 @@ export default function Station2Screen({ onBack }: Props) {
                 />
 
                 <Text style={styles.fieldLabel}>
-                  {practiceMode === 'READ_SAMPLE' ? 'Câu văn mẫu tiếng Anh cần luyện đọc (*):' : 'Câu hỏi phản xạ tiếng Anh (*):'}
+                  {practiceMode === 'READ_SAMPLE' ? 'Câu văn mẫu tiếng Anh cần luyện đọc (*):' : 'Câu hỏi / Chủ đề gợi mở tiếng Anh (*):'}
                 </Text>
                 <TextInput
                   style={[styles.textInput, styles.textArea]}
                   placeholder={
                     practiceMode === 'READ_SAMPLE'
-                      ? 'Dán câu tiếng Anh chuẩn để luyện phát âm từng từ...'
-                      : 'Dán câu hỏi gợi mở để bạn tự do trả lời theo ý riêng...'
+                      ? 'Dán câu tiếng Anh mẫu chuẩn để luyện phát âm từng từ...'
+                      : 'Dán câu hỏi hoặc chủ đề để bạn tự do phát biểu suy nghĩ...'
                   }
                   placeholderTextColor="#666688"
                   multiline
@@ -530,7 +569,6 @@ export default function Station2Screen({ onBack }: Props) {
                 </TouchableOpacity>
               </View>
             ) : (
-              /* DANH SÁCH BÀI TỪ DASHBOARD GIÁO VIÊN HOẶC HỆ THỐNG */
               <>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginVertical: 8 }}>
                   <Text style={styles.sectionHeader}>
@@ -538,6 +576,13 @@ export default function Station2Screen({ onBack }: Props) {
                       ? `🏫 BÀI TẬP GIẢNG VIÊN GIAO [${selectedTier} - ${selectedLevel}]:`
                       : `🔥 ĐỀ MẪU HỆ THỐNG [${selectedTier} - ${selectedLevel}]:`}
                   </Text>
+                  
+                  {/* 🔄 NÚT CHỌN NGẪU NHIÊN 1 ĐỀ */}
+                  {currentDisplayList.length > 1 && (
+                    <TouchableOpacity style={styles.randomTopicBtn} onPress={handlePickRandomTopic}>
+                      <Text style={styles.randomTopicBtnText}>🎲 ĐỔI 1 ĐỀ BẤT KỲ</Text>
+                    </TouchableOpacity>
+                  )}
                   {loadingAssignments && <ActivityIndicator size="small" color="#00FFFF" />}
                 </View>
 
@@ -569,9 +614,9 @@ export default function Station2Screen({ onBack }: Props) {
                         </View>
                       ) : (
                         <View style={styles.freeSpeechHintBox}>
-                          <Text style={styles.freeSpeechHintLabel}>⚡ Thử thách Tự nói phản xạ:</Text>
+                          <Text style={styles.freeSpeechHintLabel}>⚡ THỬ THÁCH TỰ NÓI PHẢN XẠ 100%:</Text>
                           <Text style={styles.freeSpeechHintText}>
-                            Tự do trình bày câu trả lời của bạn cho bối cảnh này mà không cần đọc theo văn mẫu!
+                            Không có câu mẫu trợ giúp! Hãy đọc kỹ bối cảnh trên và tự do suy nghĩ để trình bày câu trả lời của bạn.
                           </Text>
                         </View>
                       )}
@@ -592,16 +637,25 @@ export default function Station2Screen({ onBack }: Props) {
           </>
         )}
 
-        {/* PHÒNG THU LUYỆN TẬP TỰ DO VỚI SÓNG ÂM TRỰC QUAN */}
+        {/* PHÒNG THU LUYỆN TẬP */}
         {isNormalPracticing && selectedChallenge && (
           <View style={styles.normalPracticeCard}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
               <Text style={styles.normalPracticeHeader}>
-                {practiceMode === 'READ_SAMPLE' ? '🎙️ PHÒNG THU: ĐỌC THEO CÂU MẪU' : '⚡ PHÒNG THU: TỰ NÓI PHẢN XẠ'}
+                {practiceMode === 'READ_SAMPLE' ? '🎙️ PHÒNG THU: ĐỌC THEO CÂU MẪU' : '⚡ PHÒNG THU: TỰ NÓI PHẢN XẠ TỰ DO'}
               </Text>
-              <TouchableOpacity onPress={() => setIsNormalPracticing(false)}>
-                <Text style={{ color: '#FF0055', fontWeight: 'bold' }}>✕ THOÁT</Text>
-              </TouchableOpacity>
+              
+              <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+                {/* 🔄 NÚT CHUYỂN CHỦ ĐỀ MỚI TRỰC TIẾP TRONG PHÒNG THU */}
+                {topicOrigin !== 'STUDENT_CUSTOM' && (
+                  <TouchableOpacity style={styles.switchTopicInRoomBtn} onPress={handleSwitchToNextTopic}>
+                    <Text style={styles.switchTopicInRoomText}>🔄 ĐỔI ĐỀ KHÁC</Text>
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity onPress={() => setIsNormalPracticing(false)}>
+                  <Text style={{ color: '#FF0055', fontWeight: 'bold' }}>✕ THOÁT</Text>
+                </TouchableOpacity>
+              </View>
             </View>
 
             <Text style={styles.normalPromptTitle}>{selectedChallenge.title} ({selectedChallenge.level})</Text>
@@ -613,12 +667,13 @@ export default function Station2Screen({ onBack }: Props) {
                 <Text style={styles.promptDisplayText}>{selectedChallenge.prompt}</Text>
               </View>
             ) : (
-              <View style={[styles.promptDisplayBox, { borderColor: '#39FF14' }]}>
-                <Text style={[styles.promptModeNotice, { color: '#39FF14' }]}>⚡ CHẾ ĐỘ TỰ NÓI PHẢN XẠ:</Text>
-                <Text style={styles.promptDisplayText}>
-                  Hãy bấm thu âm và tự do trả lời câu hỏi/bối cảnh theo phong cách riêng của bạn!
+              <View style={[styles.promptDisplayBox, { borderColor: '#39FF14', backgroundColor: '#07180D' }]}>
+                <Text style={[styles.promptModeNotice, { color: '#39FF14' }]}>
+                  ⚡ BẠN ĐANG THI PHẢN XẠ ĐỘC LẬP (KHÔNG CÓ GỢI Ý CÂU CHỮ):
                 </Text>
-                <Text style={styles.promptHintSub}>💡 Gợi ý tham khảo: "{selectedChallenge.prompt}"</Text>
+                <Text style={[styles.promptDisplayText, { fontSize: 13, color: '#88FFBB', fontWeight: 'bold' }]}>
+                  Hãy tập trung toàn bộ vào bối cảnh nhiệm vụ phía trên. Bấm nút bắt đầu và tự nói câu trả lời bằng tiếng Anh theo suy nghĩ của bạn!
+                </Text>
               </View>
             )}
 
@@ -661,7 +716,7 @@ export default function Station2Screen({ onBack }: Props) {
         {/* PHÒNG THI CHỐNG ĐỌC CỦA GIÁO VIÊN */}
         {isTeacherExamining && selectedChallenge && (
           <AntiCheatSpeakingSession
-            promptText={selectedChallenge.prompt}
+            promptText={practiceMode === 'READ_SAMPLE' ? selectedChallenge.prompt : ''}
             situationPrompt={selectedChallenge.contextDesc}
             prepTimeSeconds={5}
             autoHidePrompt={true}
@@ -689,7 +744,6 @@ const styles = StyleSheet.create({
 
   sectionHeaderLabel: { color: '#FFD700', fontSize: 9.5, fontWeight: '900', marginTop: 8, marginBottom: 6 },
 
-  // Nguồn đề
   originTabsRow: { flexDirection: 'row', gap: 6, marginBottom: 8 },
   originTab: { flex: 1, paddingVertical: 10, backgroundColor: '#0D0620', borderRadius: 10, borderWidth: 1.5, borderColor: '#332255', alignItems: 'center' },
   originTabActiveTeacher: { backgroundColor: '#0B192C', borderColor: '#00FFFF' },
@@ -699,7 +753,6 @@ const styles = StyleSheet.create({
   originTabText: { color: '#8888AA', fontSize: 8.5, fontWeight: 'bold', textAlign: 'center' },
   originTabTextActive: { color: '#FFF', fontWeight: '900' },
 
-  // 2 chế độ
   modeTabsRow: { flexDirection: 'row', gap: 8 },
   modeTabBtn: { flex: 1, paddingVertical: 10, backgroundColor: '#130628', borderRadius: 8, borderWidth: 1.5, borderColor: '#332255', alignItems: 'center' },
   modeTabBtnActiveSample: { backgroundColor: '#1E0B36', borderColor: '#00FFFF' },
@@ -708,7 +761,6 @@ const styles = StyleSheet.create({
   modeTabBtnTextActive: { color: '#FFF', fontWeight: '900' },
   modeDescText: { color: '#AAAABB', fontSize: 9, fontStyle: 'italic', marginTop: 4, marginBottom: 8 },
 
-  // Tầng
   tierSelector: { flexDirection: 'row', gap: 6, marginBottom: 6 },
   tierTab: { flex: 1, paddingVertical: 9, backgroundColor: '#0D0620', borderRadius: 10, borderWidth: 1.5, borderColor: '#332255', alignItems: 'center' },
   tierTabActive: { backgroundColor: '#1E0B36', borderColor: '#39FF14' },
@@ -718,14 +770,12 @@ const styles = StyleSheet.create({
   tierInfoBox: { backgroundColor: '#0F0624', padding: 8, borderRadius: 8, borderWidth: 1, borderColor: '#221144', marginBottom: 8 },
   tierInfoText: { color: '#FFD700', fontSize: 9, lineHeight: 14, fontStyle: 'italic' },
 
-  // Level
   levelTabs: { flexDirection: 'row', gap: 6, marginBottom: 12 },
   levelTab: { flex: 1, paddingVertical: 7, borderRadius: 8, backgroundColor: '#0D0620', borderWidth: 1.5, borderColor: '#332255', alignItems: 'center' },
   levelTabActive: { backgroundColor: '#FF007F', borderColor: '#FF007F' },
   levelTabText: { color: '#8888AA', fontSize: 10, fontWeight: 'bold' },
   levelTabTextActive: { color: '#FFF', fontWeight: '900' },
 
-  // Khung nhập dán đề
   customBoxWrapper: { backgroundColor: '#0D0620', padding: 14, borderRadius: 12, borderWidth: 2, borderColor: '#FF007F', marginVertical: 8 },
   customBoxTitle: { color: '#FF007F', fontSize: 11, fontWeight: '900', marginBottom: 8 },
   fieldLabel: { color: '#00FFFF', fontSize: 9, fontWeight: 'bold', marginTop: 6, marginBottom: 3 },
@@ -734,14 +784,15 @@ const styles = StyleSheet.create({
   startCustomBtn: { backgroundColor: '#39FF14', paddingVertical: 12, borderRadius: 8, alignItems: 'center', marginTop: 12 },
   startCustomBtnText: { color: '#000', fontSize: 11, fontWeight: '900' },
 
-  // Audio Review
   audioReviewBox: { backgroundColor: '#130628', padding: 10, borderRadius: 8, borderWidth: 1.5, borderColor: '#39FF14', marginBottom: 12 },
   audioReviewHeader: { marginBottom: 2 },
   audioReviewTitle: { color: '#39FF14', fontSize: 9.5, fontWeight: '900' },
   audioReviewSub: { color: '#8888AA', fontSize: 8.5 },
 
-  // Card bài tập
   sectionHeader: { color: '#00FFFF', fontSize: 10.5, fontWeight: '900' },
+  randomTopicBtn: { backgroundColor: '#1A0B2E', paddingVertical: 4, paddingHorizontal: 8, borderRadius: 6, borderWidth: 1, borderColor: '#00FFFF' },
+  randomTopicBtnText: { color: '#00FFFF', fontSize: 9, fontWeight: 'bold' },
+
   card: { backgroundColor: '#130628', padding: 14, borderRadius: 12, borderWidth: 1.5, borderColor: '#332255', marginBottom: 12 },
   teacherCard: { borderColor: '#00FFFF', backgroundColor: '#0B192C' },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
@@ -759,15 +810,16 @@ const styles = StyleSheet.create({
   emptyCard: { backgroundColor: '#120826', padding: 16, borderRadius: 10, borderWidth: 1, borderColor: '#332255', marginVertical: 8 },
   emptyText: { color: '#AAAABB', fontStyle: 'italic', textAlign: 'center', fontSize: 10.5, lineHeight: 16 },
 
-  // Phòng thu tự do
   normalPracticeCard: { backgroundColor: '#0A0318', padding: 16, borderRadius: 14, borderWidth: 1.5, borderColor: '#00FFFF', marginVertical: 10 },
   normalPracticeHeader: { color: '#00FFFF', fontSize: 10, fontWeight: '900' },
+  switchTopicInRoomBtn: { backgroundColor: '#1E0B36', paddingVertical: 4, paddingHorizontal: 8, borderRadius: 6, borderWidth: 1, borderColor: '#00FFFF' },
+  switchTopicInRoomText: { color: '#00FFFF', fontSize: 9, fontWeight: 'bold' },
+
   normalPromptTitle: { color: '#FFD700', fontSize: 13, fontWeight: '900', marginTop: 8 },
   normalPromptDesc: { color: '#8888AA', fontSize: 10.5, marginBottom: 10 },
   promptDisplayBox: { backgroundColor: '#130628', padding: 14, borderRadius: 10, borderWidth: 1, borderColor: '#332255', marginBottom: 12 },
   promptModeNotice: { color: '#00FFFF', fontSize: 9.5, fontWeight: 'bold', marginBottom: 6 },
   promptDisplayText: { color: '#FFFFFF', fontSize: 13.5, lineHeight: 22, fontWeight: 'bold' },
-  promptHintSub: { color: '#AAAABB', fontSize: 10, fontStyle: 'italic', marginTop: 8 },
   liveWaveformBox: { marginBottom: 14 },
   liveWaveformLabel: { color: '#39FF14', fontSize: 9.5, fontWeight: 'bold', marginBottom: 6 },
   startRecordBtn: { backgroundColor: '#FF0055', paddingVertical: 12, borderRadius: 10, alignItems: 'center' },
