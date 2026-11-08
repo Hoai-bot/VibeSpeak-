@@ -1,86 +1,61 @@
 // src/navigation/AppNavigator.tsx
 import React, { useState } from 'react';
 import { View, StyleSheet } from 'react-native';
-
-import AuthScreen, { UserProfile } from '../screens/AuthScreen';
 import MainMapScreen from '../screens/MainMapScreen';
-import UserProfileScreen from '../screens/UserProfileScreen';
-
 import Station1Screen from '../screens/Station1Screen';
 import Station2Screen from '../screens/Station2Screen';
-import ShadowBossScreen from '../screens/ShadowBossScreen';
+import GhostStationScreen from '../screens/GhostStationScreen'; // Trạm 3
 import Station4Screen from '../screens/Station4Screen';
-import GhostStationScreen from '../screens/GhostStationScreen'; // 🎯 Bổ sung import Default
-import TeacherDashboardScreen from '../screens/TeacherDashboardScreen';
+import TeacherDashboardScreen from '../screens/TeacherDashboardScreen'; // 🏫 Import Cổng Giảng viên
+import ProfileScreen from '../screens/ProfileScreen';
 
 export default function AppNavigator() {
-  const [currentScreen, setCurrentScreen] = useState<string>('map');
-  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [currentStation, setCurrentStation] = useState<string | number>('map');
+  const [showProfile, setShowProfile] = useState<boolean>(false);
 
-  const handleSelectStation = (stationId: number | string) => {
-    const idStr = String(stationId).toLowerCase();
-    if (idStr === '1' || idStr.includes('station1')) {
-      setCurrentScreen('station1');
-    } else if (idStr === '2' || idStr.includes('station2') || idStr.includes('arena')) {
-      setCurrentScreen('station2');
-    } else if (idStr === '3' || idStr.includes('station3') || idStr.includes('boss')) {
-      setCurrentScreen('station3');
-    } else if (idStr === '4' || idStr.includes('station4')) {
-      setCurrentScreen('station4');
-    } else if (idStr === 'ghost' || idStr.includes('ghost')) {
-      setCurrentScreen('ghost'); // 🎯 Điều hướng Trạm Bóng Ma
-    } else if (idStr === 'teacher' || idStr.includes('teacher') || idStr.includes('admin')) {
-      setCurrentScreen('teacher');
-    }
+  // Xử lý quay lại bản đồ chính
+  const handleBackToMap = () => {
+    setCurrentStation('map');
+    setShowProfile(false);
   };
 
+  // Mở màn hình hồ sơ sinh viên
+  if (showProfile) {
+    return <ProfileScreen onBack={handleBackToMap} />;
+  }
+
+  // Điều hướng theo trạm hoặc cổng giảng viên
+  if (currentStation === 'teacher') {
+    return <TeacherDashboardScreen onBack={handleBackToMap} />;
+  }
+
+  if (currentStation === 1) {
+    return <Station1Screen onBack={handleBackToMap} />;
+  }
+
+  if (currentStation === 2) {
+    return <Station2Screen onBack={handleBackToMap} />;
+  }
+
+  if (currentStation === 3) {
+    return <GhostStationScreen onBack={handleBackToMap} />;
+  }
+
+  if (currentStation === 4) {
+    return <Station4Screen onBack={handleBackToMap} />;
+  }
+
   return (
-    <View style={styles.container}>
-      {currentScreen === 'auth' && (
-        <AuthScreen onAuthSuccess={(profile) => {
-          setUserProfile(profile);
-          setCurrentScreen('map');
-        }} />
-      )}
-
-      {currentScreen === 'map' && (
-        <MainMapScreen
-          onSelectStation={handleSelectStation}
-          onOpenProfile={() => setCurrentScreen('profile')}
-        />
-      )}
-
-      {currentScreen === 'profile' && (
-        <UserProfileScreen onBack={() => setCurrentScreen('map')} />
-      )}
-
-      {currentScreen === 'station1' && (
-        <Station1Screen onBack={() => setCurrentScreen('map')} />
-      )}
-
-      {currentScreen === 'station2' && (
-        <Station2Screen onBack={() => setCurrentScreen('map')} />
-      )}
-
-      {currentScreen === 'station3' && (
-        <ShadowBossScreen onBack={() => setCurrentScreen('map')} />
-      )}
-
-      {currentScreen === 'station4' && (
-        <Station4Screen onBack={() => setCurrentScreen('map')} />
-      )}
-
-      {currentScreen === 'ghost' && (
-        <GhostStationScreen onBack={() => setCurrentScreen('map')} /> // 🎯 Bổ sung render
-      )}
-
-      {currentScreen === 'teacher' && (
-        <TeacherDashboardScreen onBack={() => setCurrentScreen('map')} />
-      )}
-    </View>
+    <MainMapScreen 
+      onSelectStation={(stationId) => setCurrentStation(stationId)}
+      onOpenProfile={() => setShowProfile(true)}
+    />
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0A051B' },
+  container: {
+    flex: 1,
+    backgroundColor: '#05020D',
+  },
 });
