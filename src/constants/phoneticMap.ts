@@ -6,7 +6,73 @@ export interface PhoneticDetail {
   trapMap?: Record<string, { heardIpa: string; tip: string }>;
 }
 
+export const HOMOPHONES_GROUPS: Record<string, string[]> = {
+  'to': ['two', 'too'],
+  'two': ['to', 'too'],
+  'too': ['to', 'two'],
+  'do': ['due', 'dew'],
+  'due': ['do', 'dew'],
+  'dew': ['do', 'due'],
+  'some': ['sum'],
+  'sum': ['some'],
+  'sun': ['son'],
+  'son': ['sun'],
+  'see': ['sea'],
+  'see': ['see'],
+  'bare': ['bear'],
+  'bear': ['bare'],
+  'meat': ['meet'],
+  'meet': ['meat'],
+  'wear': ['where'],
+  'where': ['wear'],
+  'pair': ['pear'],
+  'pear': ['pair'],
+  'right': ['write'],
+  'write': ['right'],
+  'buy': ['by', 'bye'],
+  'bye': ['buy', 'by'],
+  'by': ['buy', 'bye'],
+  'for': ['four'],
+  'four': ['for'],
+  'one': ['won'],
+  'won': ['one'],
+  'flour': ['flower'],
+  'flower': ['flour'],
+  'peace': ['piece'],
+  'peace': ['piece'],
+  'wait': ['weight'],
+  'weight': ['wait'],
+  'break': ['brake'],
+  'brake': ['break']
+};
+
 export const PHONETIC_DICTIONARY: Record<string, PhoneticDetail> = {
+  // Cặp từ chức năng & Đồng âm /uː/
+  'to': {
+    word: 'to',
+    targetIpa: '/tuː/',
+    trapMap: {
+      'do': { heardIpa: '/duː/', tip: 'Âm /t/ là phụ âm bật hơi vô thanh (không rung cổ họng), tránh phát âm thành /d/.' }
+    }
+  },
+  'two': {
+    word: 'two',
+    targetIpa: '/tuː/',
+    trapMap: {}
+  },
+  'too': {
+    word: 'too',
+    targetIpa: '/tuː/',
+    trapMap: {}
+  },
+  'do': {
+    word: 'do',
+    targetIpa: '/duː/',
+    trapMap: {
+      'to': { heardIpa: '/tuː/', tip: 'Rung dây thanh quản khi bật âm /d/, tránh phát âm thành âm vô thanh /t/.' }
+    }
+  },
+
   // Cặp /iː/ vs /ɪ/
   'leave': {
     word: 'leave',
@@ -128,7 +194,7 @@ export const PHONETIC_DICTIONARY: Record<string, PhoneticDetail> = {
     }
   },
 
-  // Cặp /m/ vs /ŋ/ (Âm mũi kết thúc & từ dính chùm Samsung)
+  // Cặp /m/ vs /ŋ/
   'sum': {
     word: 'sum',
     targetIpa: '/sʌm/',
@@ -147,7 +213,7 @@ export const PHONETIC_DICTIONARY: Record<string, PhoneticDetail> = {
     }
   },
 
-  // Cặp /l/ vs /r/ & /iː/ vs /e/, /ɪ/ (Lead / Read)
+  // Cặp /l/ vs /r/ & /iː/ vs /e/, /ɪ/
   'lead': {
     word: 'lead',
     targetIpa: '/liːd/',
@@ -185,7 +251,7 @@ const COMPOUND_EXPANSIONS: Record<string, string> = {
  * 🎯 Phân tích đối chiếu IPA thực tế giữa từ mục tiêu và từ AI nhận diện
  */
 export function getPhoneticComparison(targetWord: string, actualTranscript: string) {
-  const cleanTarget = targetWord.toLowerCase().replace(/[^a-z]/g, '');
+  const cleanTarget = targetWord.toLowerCase().replace(/[^a-z]/g, '').trim();
   let expandedTranscript = actualTranscript.toLowerCase();
 
   // Giải mã từ ghép dính chùm trước khi đối chiếu
@@ -195,23 +261,33 @@ export function getPhoneticComparison(targetWord: string, actualTranscript: stri
     }
   });
 
-  const transcriptWords = expandedTranscript.replace(/[^a-z\s]/g, '').split(/\s+/).filter(Boolean);
+  const transcriptWords = expandedTranscript
+    .replace(/[.,/#!$%^&*;:{}=\-_`~()?"']/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean);
   
   const dictEntry = PHONETIC_DICTIONARY[cleanTarget];
   const targetIpa = dictEntry ? dictEntry.targetIpa : `/${cleanTarget}/`;
+  const homophones = HOMOPHONES_GROUPS[cleanTarget] || [];
 
-  // 1. Nếu người học phát âm trúng từ mục tiêu
-  if (transcriptWords.includes(cleanTarget)) {
+  // 1. Kiểm tra khớp trực tiếp hoặc khớp từ đồng âm (Homophones như to / two / too)
+  const isDirectMatch = transcriptWords.includes(cleanTarget);
+  const matchedHomophone = homophones.find((h) => transcriptWords.includes(h));
+  const isHomophoneMatch = Boolean(matchedHomophone);
+
+  if (isDirectMatch || isHomophoneMatch) {
     return {
       targetWord: cleanTarget,
       targetIpa: targetIpa,
       heardIpa: targetIpa,
-      tip: 'Khẩu hình chuẩn xác!',
+      tip: isHomophoneMatch 
+        ? `Khẩu hình chuẩn xác! (AI ghi nhận dạng đồng âm "${matchedHomophone}" chuẩn phiên âm ${targetIpa})`
+        : 'Khẩu hình chuẩn xác!',
       isExactMatch: true
     };
   }
 
-  // 2. Tìm xem người học rơi vào bẫy âm nào
+  // 2. Tìm xem người học có rơi vào bẫy âm cụ thể nào không
   if (dictEntry && dictEntry.trapMap) {
     for (const trapKey of Object.keys(dictEntry.trapMap)) {
       if (transcriptWords.includes(trapKey)) {
@@ -226,11 +302,16 @@ export function getPhoneticComparison(targetWord: string, actualTranscript: stri
     }
   }
 
-  // 3. Trường hợp đọc lệch chưa xác định cụ thể
+  // 3. Trường hợp đọc lệch âm
+  const fallbackHeard = transcriptWords.find((w) => w !== cleanTarget) || transcriptWords[0];
+  const heardIpa = fallbackHeard && PHONETIC_DICTIONARY[fallbackHeard]
+    ? PHONETIC_DICTIONARY[fallbackHeard].targetIpa
+    : (fallbackHeard ? `/${fallbackHeard}/` : '/???/');
+
   return {
     targetWord: cleanTarget,
     targetIpa: targetIpa,
-    heardIpa: transcriptWords.length > 0 ? `/${transcriptWords.join(' ')}/` : '/???/',
+    heardIpa: heardIpa,
     tip: 'Âm phát ra chưa rõ nét hoặc lệch âm. Hãy nghe lại âm mẫu và chú ý khẩu hình môi/lưỡi.',
     isExactMatch: false
   };
