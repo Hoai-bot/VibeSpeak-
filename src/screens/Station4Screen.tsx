@@ -1,8 +1,9 @@
 // src/screens/Station4Screen.tsx
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, TextInput, Modal } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, TextInput, Modal, Alert } from 'react-native';
 import { evaluateSpeaking, AssessmentResult } from '../services/arena/assessmentService';
 import { updateUserProgress, saveSubmissionToCloud } from '../services/userService';
+import { SPEAKING_EXPRESS_DATA, ExpressExerciseItem } from '../data/station4/speakingExpress';
 
 interface Props {
   onBack: () => void;
@@ -10,62 +11,41 @@ interface Props {
 
 export type CEFRLevel = 'A1' | 'A2' | 'B1' | 'B2' | 'C1' | 'C2';
 
-// 🎯 KHO ĐỀ MỞ DÀNH RIÊNG CHO TRẠM 4 EXPRESS (CHỈ CÓ CÂU HỎI KÍCH HOẠT, KHÔNG CÓ BÀI MẪU)
-const STATION_4_PROMPTS: Record<string, { title: string; challengeQuestion: string; guideVi: string; minWpm: number; targetDuration: number }[]> = {
-  A1: [
-    {
-      title: "My Daily Life & Routine",
-      challengeQuestion: "Describe what you usually do on a typical day from morning to evening. What is your favorite time of the day and why?",
-      guideVi: "Kể về một ngày bình thường của bạn. Thời điểm yêu thích nhất trong ngày và lý do.",
-      minWpm: 70,
-      targetDuration: 45
-    }
-  ],
-  A2: [
-    {
-      title: "A Favorite Place You Often Visit",
-      challengeQuestion: "Talk about a coffee shop, park, or place in your city that you enjoy visiting. What do you do there and why do you like it?",
-      guideVi: "Trình bày về một địa điểm bạn yêu thích trong thành phố và lý do thường xuyên ghé thăm.",
-      minWpm: 85,
-      targetDuration: 60
-    }
-  ],
-  B1: [
-    {
-      title: "Remote Learning vs. Traditional Classes",
-      challengeQuestion: "Should universities replace traditional lectures with online learning? Present your personal standpoint and provide convincing reasons.",
-      guideVi: "Đại học có nên thay thế giảng đường bằng học online không? Nêu quan điểm và lý do cá nhân.",
-      minWpm: 100,
-      targetDuration: 75
-    }
-  ],
-  B2: [
-    {
-      title: "Generative AI in Higher Education",
-      challengeQuestion: "How should students responsibly use tools like ChatGPT or Copilot without losing critical thinking and problem-solving skills?",
-      guideVi: "Sinh viên nên sử dụng các công cụ AI thế nào để nâng cao hiệu quả mà không phụ thuộc mất tư duy phản biện?",
-      minWpm: 115,
-      targetDuration: 90
-    }
-  ],
-  C1: [
-    {
-      title: "Sustainable Urban Transitions",
-      challengeQuestion: "Analyze the major obstacles preventing megacities from achieving carbon neutrality. Which policy intervention should be prioritized?",
-      guideVi: "Phân tích rào cản lớn nhất của các siêu đô thị khi chuyển đổi xanh và đề xuất chính sách ưu tiên.",
-      minWpm: 130,
-      targetDuration: 120
-    }
-  ],
-  C2: [
-    {
-      title: "Human Consciousness & Cognitive Interfaces",
-      challengeQuestion: "Debate whether direct brain-computer integration enhances human potential or fundamentally compromises authentic personal autonomy.",
-      guideVi: "Tranh biện về việc công nghệ giao diện não - máy tính nâng tầm con người hay làm xói mòn quyền tự quyết cá nhân.",
-      minWpm: 140,
-      targetDuration: 120
-    }
-  ]
+export interface Station4TopicItem {
+  id: string;
+  title: string;
+  challengeQuestion: string;
+  guideVi?: string;
+  minWpm: number;
+  targetDuration: number;
+  suggestedKeywords?: string[];
+  expressType?: string;
+}
+
+// Chuẩn WPM và thời lượng theo khung CEFR
+const CEFR_CONFIG: Record<CEFRLevel, { minWpm: number; targetDuration: number }> = {
+  A1: { minWpm: 70, targetDuration: 45 },
+  A2: { minWpm: 85, targetDuration: 60 },
+  B1: { minWpm: 100, targetDuration: 75 },
+  B2: { minWpm: 115, targetDuration: 90 },
+  C1: { minWpm: 130, targetDuration: 120 },
+  C2: { minWpm: 140, targetDuration: 120 },
+};
+
+// Chuyển đổi từ dữ liệu kho ExpressExerciseItem sang định dạng Trạm 4
+const mapExpressToTopic = (item: ExpressExerciseItem, loopIndex?: number): Station4TopicItem => {
+  const config = CEFR_CONFIG[item.level] || CEFR_CONFIG['B1'];
+  const suffix = loopIndex && loopIndex > 15 ? ` (#${Math.floor(loopIndex / 15) + 1})` : '';
+  return {
+    id: item.id,
+    title: `${item.title}${suffix}`,
+    challengeQuestion: item.promptEn,
+    guideVi: item.promptVi || '',
+    minWpm: config.minWpm,
+    targetDuration: item.timeLimitSeconds > 30 ? item.timeLimitSeconds : config.targetDuration,
+    suggestedKeywords: item.suggestedKeywords || [],
+    expressType: item.expressType,
+  };
 };
 
 const safeBlobToBase64 = (blob: Blob): Promise<string> => {
@@ -90,8 +70,110 @@ export default function Station4Screen({ onBack }: Props) {
   const [customQuestion, setCustomQuestion] = useState<string>('');
   const [customContextVi, setCustomContextVi] = useState<string>('');
 
-  // Đề AI
-  const [currentAiTopicIndex, setCurrentAiTopicIndex] = useState<number>(0);
+  // 🎯 QUẢN LÝ ĐỀ BÀI VÀ HÀNG ĐỢI NẠP BÙ AI NGẦM (0MS LATENCY)
+  const [topicIndex, setTopicIndex] = useState<number>(0);
+  const [aiQueue, setAiQueue] = useState<Station4TopicItem[]>([]);
+  const isFetchingAiRef = useRef<boolean>(false);
+
+  const getInitialTopicForLevel = (lvl: CEFRLevel): Station4TopicItem => {
+    const list = SPEAKING_EXPRESS_DATA.filter(item => item.level === lvl);
+    if (list.length > 0) return mapExpressToTopic(list[0]);
+    const cfg = CEFR_CONFIG[lvl];
+    return {
+      id: `fallback_${lvl}_0`,
+      title: `Express Monologue [${lvl}]`,
+      challengeQuestion: "Present your personal viewpoint on modern technology and daily productivity.",
+      guideVi: "Trình bày quan điểm cá nhân về công nghệ và năng suất hàng ngày.",
+      minWpm: cfg.minWpm,
+      targetDuration: cfg.targetDuration,
+      suggestedKeywords: ["technology", "productivity", "efficiency"],
+      expressType: 'quick_response',
+    };
+  };
+
+  const [runtimeTopic, setRuntimeTopic] = useState<Station4TopicItem>(() => getInitialTopicForLevel('B1'));
+
+  // 🔊 BỘ PHÁT ÂM TỰ NHIÊN ĐA NỀN TẢNG (IOS, ANDROID, WINDOWS, MACOS)
+  const [isPlayingPromptAudio, setIsPlayingPromptAudio] = useState<boolean>(false);
+  const synthRef = useRef<SpeechSynthesis | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      synthRef.current = window.speechSynthesis;
+      window.speechSynthesis.onvoiceschanged = () => {
+        window.speechSynthesis.getVoices();
+      };
+    }
+    return () => {
+      stopPromptAudio();
+    };
+  }, []);
+
+  const getBestNaturalVoice = (): SpeechSynthesisVoice | null => {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return null;
+    const voices = window.speechSynthesis.getVoices();
+    if (!voices || voices.length === 0) return null;
+
+    // 1. Android: Ưu tiên gói giọng mạng cao cấp của Google
+    const androidVoice = voices.find(v => 
+      v.lang.startsWith('en') && (v.name.includes('Google US English') || v.name.includes('Network') || v.voiceURI.includes('en-us-x'))
+    );
+    if (androidVoice) return androidVoice;
+
+    // 2. iOS (iPhone/iPad/Safari): Ưu tiên giọng Siri / Samantha Enhanced
+    const iosVoice = voices.find(v => 
+      v.lang.startsWith('en') && (v.name.includes('Siri') || v.name.includes('Samantha') || v.name.includes('Nicky') || v.name.includes('Aaron'))
+    );
+    if (iosVoice) return iosVoice;
+
+    // 3. Desktop (Windows/Edge/Chrome/macOS): Ưu tiên giọng Neural tự nhiên
+    const desktopVoice = voices.find(v => 
+      v.lang.startsWith('en') && (v.name.includes('Natural') || v.name.includes('Jenny') || v.name.includes('Guy') || v.name.includes('Aria'))
+    );
+    if (desktopVoice) return desktopVoice;
+
+    return voices.find(v => v.lang === 'en-US') || voices.find(v => v.lang.startsWith('en')) || null;
+  };
+
+  const stopPromptAudio = () => {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+    setIsPlayingPromptAudio(false);
+  };
+
+  const playNaturalTTS = (text: string) => {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+      Alert.alert("Lỗi âm thanh", "Trình duyệt không hỗ trợ Text-to-Speech");
+      return;
+    }
+    const synth = window.speechSynthesis;
+
+    if (isPlayingPromptAudio) {
+      synth.cancel();
+      setIsPlayingPromptAudio(false);
+      return;
+    }
+
+    synth.cancel();
+
+    const cleanText = text.replace(/["']/g, '').trim();
+    const utterance = new SpeechSynthesisUtterance(cleanText);
+
+    const bestVoice = getBestNaturalVoice();
+    if (bestVoice) {
+      utterance.voice = bestVoice;
+    }
+    utterance.lang = 'en-US';
+    utterance.rate = 0.90;
+    utterance.pitch = 1.0;
+
+    utterance.onstart = () => setIsPlayingPromptAudio(true);
+    utterance.onend = () => setIsPlayingPromptAudio(false);
+    utterance.onerror = () => setIsPlayingPromptAudio(false);
+
+    synth.speak(utterance);
+  };
 
   // Thu âm & Đếm thời lượng
   const [isRecording, setIsRecording] = useState<boolean>(false);
@@ -119,26 +201,42 @@ export default function Station4Screen({ onBack }: Props) {
 
   const levels: CEFRLevel[] = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
 
-  const getActiveTopic = () => {
+  const getActiveTopic = (): Station4TopicItem => {
     if (topicSource === 'custom') {
+      const cfg = CEFR_CONFIG[cefrLevel] || CEFR_CONFIG['B1'];
       return {
+        id: 'custom_express',
         title: customTitle.trim() || 'Chủ đề Express do Giảng viên giao',
         challengeQuestion: customQuestion.trim() || 'Tự do trình bày theo câu hỏi/chủ đề được giao trên lớp.',
         guideVi: customContextVi.trim(),
-        minWpm: 100,
-        targetDuration: 90
+        minWpm: cfg.minWpm,
+        targetDuration: cfg.targetDuration,
+        suggestedKeywords: [],
+        expressType: 'custom',
       };
     }
-    const topicList = STATION_4_PROMPTS[cefrLevel] || STATION_4_PROMPTS['B1'];
-    return topicList[currentAiTopicIndex % topicList.length];
+    return runtimeTopic;
   };
 
   const activeTopic = getActiveTopic();
 
+  // Reset khi đổi Level hoặc Nguồn đề
+  useEffect(() => {
+    stopPromptAudio();
+    if (topicSource === 'ai') {
+      const initial = getInitialTopicForLevel(cefrLevel);
+      setRuntimeTopic(initial);
+      setTopicIndex(0);
+      setAiQueue([]);
+      // Kích hoạt nạp bù AI ngầm ngay khi đổi sang Level mới
+      triggerBackgroundAiRefill(cefrLevel);
+    }
+  }, [cefrLevel, topicSource]);
+
   useEffect(() => {
     setTimeLeft(activeTopic.targetDuration || 90);
     resetRecordingSession();
-  }, [cefrLevel, topicSource, currentAiTopicIndex]);
+  }, [activeTopic.id, cefrLevel, topicSource]);
 
   const resetRecordingSession = () => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
@@ -157,12 +255,91 @@ export default function Station4Screen({ onBack }: Props) {
     audioChunksRef.current = [];
   };
 
+  // 🤖 TIẾN TRÌNH NẠP BÙ AI NGẦM CHO TRẠM 4 (CHẠY HẬU CẢNH - KHÔNG LÀM ĐƠ MÀN HÌNH)
+  const triggerBackgroundAiRefill = async (level: CEFRLevel) => {
+    const apiKey = process.env.EXPO_PUBLIC_GROQ_API_KEY;
+    if (!apiKey || isFetchingAiRef.current) return;
+
+    try {
+      isFetchingAiRef.current = true;
+      const cfg = CEFR_CONFIG[level] || CEFR_CONFIG['B1'];
+      const promptInstruction = `Create 1 UNIQUE speaking express challenge question for Station 4 (Fluency & Monologue / Quick Response) at CEFR level ${level}.
+Output ONLY raw JSON (no markdown):
+{
+  "title": "Short title in English",
+  "challengeQuestion": "The English prompt or question triggering spontaneous monologue",
+  "guideVi": "Short Vietnamese direction / translation",
+  "suggestedKeywords": ["keyword1", "keyword2", "keyword3"],
+  "expressType": "quick_response"
+}`;
+
+      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: 'llama-3.3-70b-versatile',
+          messages: [{ role: 'user', content: promptInstruction }],
+          temperature: 1.0,
+          response_format: { type: 'json_object' },
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const content = JSON.parse(data.choices[0].message.content);
+        const newAiTopic: Station4TopicItem = {
+          id: `ai_${Date.now()}_${Math.random()}`,
+          title: `🤖 [AI MỚI] ${content.title}`,
+          challengeQuestion: content.challengeQuestion,
+          guideVi: content.guideVi || '',
+          minWpm: cfg.minWpm,
+          targetDuration: cfg.targetDuration,
+          suggestedKeywords: content.suggestedKeywords || [],
+          expressType: content.expressType || 'quick_response',
+        };
+        setAiQueue(prev => [...prev, newAiTopic]);
+      }
+    } catch (e) {
+      console.warn("AI ngầm Trạm 4 tạm dừng:", e);
+    } finally {
+      isFetchingAiRef.current = false;
+    }
+  };
+
+  // ⚡ ĐỔI ĐỀ TỨC THÌ 0MS + KÍCH HOẠT NẠP BÙ AI NGAY KHI ĐỀ ĐƯỢC ĐƯA RA
   const handleNextAiTopic = () => {
-    const topicList = STATION_4_PROMPTS[cefrLevel] || STATION_4_PROMPTS['B1'];
-    setCurrentAiTopicIndex((prev) => (prev + 1) % topicList.length);
+    stopPromptAudio();
+    resetRecordingSession();
+    const nextIdx = topicIndex + 1;
+    setTopicIndex(nextIdx);
+
+    // 1. Nếu có sẵn đề trong hàng đợi AI ngầm -> Đưa ra dùng ngay trong 0ms!
+    if (aiQueue.length > 0) {
+      const [nextAiTopic, ...restQueue] = aiQueue;
+      setAiQueue(restQueue);
+      setRuntimeTopic(nextAiTopic);
+      // Kích hoạt nạp bù tiếp 1 đề mới vào hàng đợi hậu cảnh
+      triggerBackgroundAiRefill(cefrLevel);
+      return;
+    }
+
+    // 2. Lấy ngay từ kho dữ liệu SPEAKING_EXPRESS_DATA trong 0ms (không bao giờ phải đợi)
+    const presetList = SPEAKING_EXPRESS_DATA.filter(item => item.level === cefrLevel);
+    if (presetList.length > 0) {
+      const rawItem = presetList[nextIdx % presetList.length];
+      const mapped = mapExpressToTopic(rawItem, nextIdx);
+      setRuntimeTopic(mapped);
+    }
+
+    // 3. Cơ chế bù đề: Ngay khi đề này được đưa ra, tự động kích hoạt nạp bù đề AI ở hậu cảnh
+    triggerBackgroundAiRefill(cefrLevel);
   };
 
   const handleToggleRecord = async () => {
+    stopPromptAudio();
     if (!isRecording) {
       if (topicSource === 'custom' && !customQuestion.trim()) {
         alert("Vui lòng nhập câu hỏi / chủ đề tiếng Anh từ Giảng viên trước khi thu âm!");
@@ -242,6 +419,7 @@ export default function Station4Screen({ onBack }: Props) {
   };
 
   const handleSubmitSpeech = async () => {
+    stopPromptAudio();
     if (!recordedBlob || recordedBlob.size <= 1000) {
       alert("Bạn chưa hoàn thành bài nói hoặc bản thu quá ngắn!");
       return;
@@ -316,7 +494,7 @@ export default function Station4Screen({ onBack }: Props) {
             onPress={() => setTopicSource('ai')}
           >
             <Text style={[styles.sourceText, topicSource === 'ai' && styles.sourceTextActive]}>
-              🤖 ĐỀ PHẢN XẠ TỪ AI
+              🤖 ĐỀ PHẢN XẠ TỪ KHO & AI
             </Text>
           </TouchableOpacity>
           <TouchableOpacity 
@@ -345,10 +523,17 @@ export default function Station4Screen({ onBack }: Props) {
 
         {/* KHUNG THỬ THÁCH NÓI TỰ DO (KHÔNG CÓ BÀI MẪU) */}
         <View style={styles.card}>
-          <View style={styles.natureBadge}>
-            <Text style={styles.natureBadgeText}>
-              ⚡ THỬ THÁCH NÓI TỰ DO (KHÔNG ĐỌC THEO VĂN MẪU)
-            </Text>
+          <View style={styles.natureBadgeRow}>
+            <View style={styles.natureBadge}>
+              <Text style={styles.natureBadgeText}>
+                ⚡ THỬ THÁCH NÓI TỰ DO (KHÔNG ĐỌC THEO VĂN MẪU)
+              </Text>
+            </View>
+            {activeTopic.expressType && (
+              <View style={styles.typeBadge}>
+                <Text style={styles.typeBadgeText}>🏷️ {activeTopic.expressType.toUpperCase()}</Text>
+              </View>
+            )}
           </View>
 
           {topicSource === 'custom' ? (
@@ -385,18 +570,45 @@ export default function Station4Screen({ onBack }: Props) {
             <>
               <Text style={styles.topicTitle}>{activeTopic.title}</Text>
               <View style={styles.promptBox}>
-                <Text style={styles.promptQuestionLabel}>❓ Câu hỏi kích hoạt tư duy:</Text>
+                <View style={styles.promptHeaderRow}>
+                  <Text style={styles.promptQuestionLabel}>❓ Câu hỏi kích hoạt tư duy:</Text>
+                  <TouchableOpacity 
+                    style={[styles.ttsMiniBtn, isPlayingPromptAudio && styles.ttsMiniBtnActive]}
+                    activeOpacity={0.7}
+                    onPress={() => playNaturalTTS(activeTopic.challengeQuestion)}
+                  >
+                    <Text style={styles.ttsMiniBtnText}>
+                      {isPlayingPromptAudio ? '⏹ DỪNG' : '🔊 NGHE CÂU HỎI'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
                 <Text style={styles.promptEn}>"{activeTopic.challengeQuestion}"</Text>
                 {activeTopic.guideVi && <Text style={styles.promptVi}>💡 Gợi ý định hướng: "{activeTopic.guideVi}"</Text>}
+
+                {/* Gợi ý từ khóa nếu có */}
+                {activeTopic.suggestedKeywords && activeTopic.suggestedKeywords.length > 0 && (
+                  <View style={styles.keywordContainer}>
+                    <Text style={styles.keywordLabel}>🔑 Gợi ý từ vựng:</Text>
+                    <View style={styles.keywordWrap}>
+                      {activeTopic.suggestedKeywords.map((kw, i) => (
+                        <View key={i} style={styles.keywordBadge}>
+                          <Text style={styles.keywordText}>#{kw}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  </View>
+                )}
               </View>
 
               <View style={styles.targetRow}>
-                <Text style={styles.targetBadge}>🎯 Mục tiêu WPM tối thiểu: {activeTopic.minWpm} từ/phút</Text>
-                <Text style={styles.targetBadge}>⏱️ Thời lượng đề xuất: {activeTopic.targetDuration}s</Text>
+                <Text style={styles.targetBadge}>🎯 Mục tiêu WPM: {activeTopic.minWpm} từ/phút</Text>
+                <Text style={styles.targetBadge}>⏱️ Thời lượng: {activeTopic.targetDuration}s</Text>
               </View>
 
-              <TouchableOpacity style={styles.refreshBtn} onPress={handleNextAiTopic}>
-                <Text style={styles.refreshBtnText}>🔄 ĐỔI CÂU HỎI KHÁC</Text>
+              {/* NÚT ĐỔI CÂU HỎI TỨC THÌ 0MS */}
+              <TouchableOpacity style={styles.refreshBtn} activeOpacity={0.7} onPress={handleNextAiTopic}>
+                <Text style={styles.refreshBtnText}>🔄 ĐỔI CÂU HỎI KHÁC (0MS + AI BÙ ĐỀ)</Text>
               </TouchableOpacity>
             </>
           )}
@@ -556,20 +768,35 @@ const styles = StyleSheet.create({
   cefrTextActive: { color: '#000' },
 
   card: { width: '100%', backgroundColor: '#0D0620', padding: 16, borderRadius: 14, borderWidth: 2, borderColor: '#00FFFF', marginBottom: 15, alignItems: 'center' },
-  natureBadge: { backgroundColor: '#092B1E', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, borderWidth: 1, borderColor: '#39FF14', marginBottom: 8 },
-  natureBadgeText: { color: '#39FF14', fontSize: 9.5, fontWeight: '900' },
-  topicTitle: { color: '#FFD700', fontSize: 14, fontWeight: '900', marginBottom: 8, textAlign: 'center' },
+  natureBadgeRow: { flexDirection: 'row', gap: 6, marginBottom: 8, flexWrap: 'wrap', justifyContent: 'center' },
+  natureBadge: { backgroundColor: '#092B1E', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, borderWidth: 1, borderColor: '#39FF14' },
+  natureBadgeText: { color: '#39FF14', fontSize: 9, fontWeight: '900' },
+  typeBadge: { backgroundColor: '#1F0B2E', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12, borderWidth: 1, borderColor: '#00FFFF' },
+  typeBadgeText: { color: '#00FFFF', fontSize: 8.5, fontWeight: 'bold' },
+
+  topicTitle: { color: '#FFD700', fontSize: 13.5, fontWeight: '900', marginBottom: 8, textAlign: 'center' },
   
   promptBox: { width: '100%', backgroundColor: '#130A2A', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#332255', marginBottom: 10 },
-  promptQuestionLabel: { color: '#00FFFF', fontSize: 10, fontWeight: 'bold', marginBottom: 4 },
+  promptHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
+  promptQuestionLabel: { color: '#00FFFF', fontSize: 10, fontWeight: 'bold' },
+  ttsMiniBtn: { backgroundColor: '#1E0B36', borderWidth: 1.2, borderColor: '#00FFFF', paddingVertical: 3, paddingHorizontal: 8, borderRadius: 6 },
+  ttsMiniBtnActive: { backgroundColor: '#FF0055', borderColor: '#FF0055' },
+  ttsMiniBtnText: { color: '#00FFFF', fontSize: 8.5, fontWeight: 'bold' },
+
   promptEn: { color: '#FFF', fontSize: 12, fontWeight: '800', lineHeight: 18, marginBottom: 6 },
-  promptVi: { color: '#AAAABB', fontSize: 10, fontStyle: 'italic' },
+  promptVi: { color: '#AAAABB', fontSize: 10, fontStyle: 'italic', marginBottom: 6 },
+
+  keywordContainer: { borderTopWidth: 1, borderTopColor: '#221144', paddingTop: 6, marginTop: 4 },
+  keywordLabel: { color: '#FFD700', fontSize: 9, fontWeight: 'bold', marginBottom: 4 },
+  keywordWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 5 },
+  keywordBadge: { backgroundColor: '#0A192F', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, borderWidth: 1, borderColor: '#00FFFF' },
+  keywordText: { color: '#00FFFF', fontSize: 8.5 },
 
   targetRow: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginBottom: 10 },
   targetBadge: { color: '#FFD700', fontSize: 9.5, fontWeight: 'bold' },
 
-  refreshBtn: { backgroundColor: '#1A0B2E', padding: 8, borderRadius: 8, borderWidth: 1, borderColor: '#00FFFF', width: '100%', alignItems: 'center', marginBottom: 8 },
-  refreshBtnText: { color: '#00FFFF', fontSize: 10, fontWeight: 'bold' },
+  refreshBtn: { backgroundColor: '#1A0B2E', padding: 10, borderRadius: 8, borderWidth: 1.5, borderColor: '#00FFFF', width: '100%', alignItems: 'center', marginBottom: 8 },
+  refreshBtnText: { color: '#00FFFF', fontSize: 10.5, fontWeight: 'bold' },
 
   monologueGuide: { color: '#39FF14', fontSize: 9.5, fontStyle: 'italic', textAlign: 'center', lineHeight: 15, marginTop: 4 },
 
