@@ -83,7 +83,10 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
         return;
       }
 
-      // 1. Lấy thông tin user hiện tại & tenant
+      // 1. Lấy thông tin user hiện tại & tenant_id
+      let activeTenantId = currentTenantId;
+      let activeRole = userRole;
+
       const { data: authData } = await supabase.auth.getUser();
       if (authData?.user) {
         setCurrentInstructorId(authData.user.id);
@@ -92,38 +95,50 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
           .select('role, tenant_id')
           .eq('id', authData.user.id)
           .single();
-        if (profile?.role) setUserRole(profile.role);
-        if (profile?.tenant_id) setCurrentTenantId(profile.tenant_id);
+
+        if (profile?.role) {
+          activeRole = profile.role;
+          setUserRole(profile.role);
+        }
+        if (profile?.tenant_id) {
+          activeTenantId = profile.tenant_id;
+          setCurrentTenantId(profile.tenant_id);
+        }
       }
 
-      // 2. Tải danh sách lớp học thực tế từ database
-      const { data: classesData } = await supabase
-        .from('classes')
-        .select('id, code, name, tenant_id')
-        .order('name', { ascending: true });
+      // 2. Chỉ tải danh sách lớp thuộc TRƯỜNG của giáo viên này
+      let classQuery = supabase.from('classes').select('id, code, name, tenant_id');
+      if (activeTenantId && activeRole !== 'SUPER_ADMIN') {
+        classQuery = classQuery.eq('tenant_id', activeTenantId);
+      }
+      const { data: classesData, error: classErr } = await classQuery.order('name', { ascending: true });
+
+      if (classErr) {
+        console.warn("Lỗi tải classes:", classErr.message);
+      }
 
       if (classesData && classesData.length > 0) {
         setClassList(classesData);
         setAssignClassId(classesData[0].id);
         setImportClassId(classesData[0].id);
       } else {
-        const defaultClass = [{ id: '22222222-2222-2222-2222-222222222222', code: 'ENG_K24_ADV', name: 'Anh văn Nâng cao K24 - Cơ sở 1', tenant_id: currentTenantId }];
+        const defaultClass = [{ id: '22222222-2222-2222-2222-222222222222', code: 'ENG_K24_ADV', name: 'Anh văn Nâng cao K24 - Cơ sở 1', tenant_id: activeTenantId }];
         setClassList(defaultClass);
         setAssignClassId(defaultClass[0].id);
         setImportClassId(defaultClass[0].id);
       }
 
-      // 3. Lấy danh sách bài nộp
-      const { data, error } = await supabase
-        .from('submissions')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(100);
+      // 3. Chỉ lấy submissions thuộc TRƯỜNG của giáo viên này
+      let subQuery = supabase.from('submissions').select('*').order('created_at', { ascending: false });
+      if (activeTenantId && activeRole !== 'SUPER_ADMIN') {
+        subQuery = subQuery.eq('tenant_id', activeTenantId);
+      }
+      const { data: subData, error: subErr } = await subQuery.limit(100);
 
-      if (error) {
-        console.warn("Lỗi tải submissions:", error.message);
-      } else if (data) {
-        setSubmissions(data as SubmissionRecord[]);
+      if (subErr) {
+        console.warn("Lỗi tải submissions:", subErr.message);
+      } else if (subData) {
+        setSubmissions(subData as SubmissionRecord[]);
       }
     } catch (err) {
       console.error("Lỗi khi kết nối lấy dữ liệu Dashboard:", err);
@@ -253,14 +268,13 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
 
     setIsImporting(true);
     try {
-      // Bóc tách dòng
       const lines = importCsvText.trim().split('\n');
       const studentsToInsert: any[] = [];
       const selectedClassObj = classList.find(c => c.id === importClassId);
 
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i].trim();
-        if (!line || (i === 0 && line.toLowerCase().includes('mssv'))) continue; // Bỏ qua tiêu đề header
+        if (!line || (i === 0 && line.toLowerCase().includes('mssv'))) continue;
 
         const parts = line.split(',').map(p => p.trim().replace(/^["']|["']$/g, ''));
         if (parts.length >= 2) {
@@ -511,7 +525,11 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
                           {currentPlayingAudio === item.audio_url ? '⏹ DỪNG' : '🎧 NGHE'}
                         </Text>
                       </TouchableOpacity>
-                    ) : null}
+                    ) : (
+                      <Text style={{ color: '#666688', fontSize: 8, fontStyle: 'italic' }}>
+                        📦 Đã lưu trữ (&gt;60 ngày)
+                      </Text>
+                    )}
                   </View>
                 </View>
               );
