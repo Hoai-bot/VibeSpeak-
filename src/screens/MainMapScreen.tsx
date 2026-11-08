@@ -52,7 +52,6 @@ export default function MainMapScreen({ onSelectStation, onOpenProfile }: Props)
       <View style={styles.header}>
         {currentUser ? (
           <TouchableOpacity style={styles.userBadge} onPress={onOpenProfile}>
-            {/* ✅ ĐÃ LOẠI BỎ .slice(0, 10) ĐỂ HIỂN THỊ ĐẦY ĐỦ TÊN HỌC VIÊN */}
             <Text numberOfLines={1} ellipsizeMode="tail" style={styles.userBadgeText}>
               👤 {displayName}
             </Text>
@@ -72,11 +71,12 @@ export default function MainMapScreen({ onSelectStation, onOpenProfile }: Props)
         {/* NÚT THÔNG BÁO NHẮC HỌC THÔNG MINH */}
         <NotificationToggle />
 
+        {/* CỔNG GIẢNG VIÊN (B2B PORTAL) */}
         <TouchableOpacity 
           style={styles.teacherBtn} 
           onPress={() => onSelectStation('teacher')}
         >
-          <Text style={styles.teacherBtnText}>📊 BẢNG ĐIỂM</Text>
+          <Text style={styles.teacherBtnText}>🏫 GIẢNG VIÊN</Text>
         </TouchableOpacity>
       </View>
 
