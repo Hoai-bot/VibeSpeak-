@@ -1,5 +1,37 @@
 // src/services/arena/assessmentService.ts
-import { saveOfflineSubmission } from '../../utils/offlineStorage';
+
+// 📦 Fallback an toàn cho Offline IndexedDB không lo lệch import path
+async function saveOfflineSubmissionSafe(submission: {
+  audioBlob: Blob;
+  prompt: string;
+  stationType: string;
+  cefrLevel: string;
+}): Promise<string> {
+  if (typeof window === 'undefined' || !window.indexedDB) {
+    return `local_${Date.now()}`;
+  }
+  return new Promise((resolve) => {
+    try {
+      const req = window.indexedDB.open('VibeSpeakOfflineDB', 1);
+      req.onupgradeneeded = (e: any) => {
+        const db = e.target.result;
+        if (!db.objectStoreNames.contains('pending_submissions')) {
+          db.createObjectStore('pending_submissions', { keyPath: 'id' });
+        }
+      };
+      req.onsuccess = () => {
+        const db = req.result;
+        const tx = db.transaction('pending_submissions', 'readwrite');
+        const id = `sub_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+        tx.objectStore('pending_submissions').put({ ...submission, id, timestamp: Date.now() });
+        resolve(id);
+      };
+      req.onerror = () => resolve(`fallback_${Date.now()}`);
+    } catch {
+      resolve(`err_${Date.now()}`);
+    }
+  });
+}
 
 export interface ErrorWordItem {
   word: string;
@@ -160,7 +192,6 @@ export function analyzeSpokenTranscript(transcript: string): SpokenWordAnalysis[
       isGrammarError = true;
     }
 
-    // Cho phép ký tự đơn: "I", "a", hoặc chữ số đơn 0-9
     const isDigit = /^[0-9]+$/.test(clean);
     const isValidWordLength = clean.length > 1 || clean === 'i' || clean === 'a' || isDigit;
 
@@ -203,7 +234,7 @@ export const evaluateSpeaking = async (
 
       if (!isOnline) {
         try {
-          const offlineId = await saveOfflineSubmission({
+          const offlineId = await saveOfflineSubmissionSafe({
             audioBlob,
             prompt: targetPrompt || '',
             stationType: currentStation,
@@ -259,7 +290,7 @@ export const evaluateSpeaking = async (
       } catch (apiErr) {
         console.warn("Lỗi kết nối /api/grade-audio, kích hoạt Fallback lưu IndexedDB:", apiErr);
         try {
-          await saveOfflineSubmission({
+          await saveOfflineSubmissionSafe({
             audioBlob,
             prompt: targetPrompt || '',
             stationType: currentStation,
