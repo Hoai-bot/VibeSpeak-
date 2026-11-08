@@ -34,8 +34,11 @@ export default function IntonationCanvas({ targetContour, studentContour, height
         </View>
       </View>
 
-      {/* Dùng pointerEvents: 'none' để SVG thuần không can thiệp vào Touch Responder của React Native */}
-      <View style={{ width, height, justifyContent: 'center', alignItems: 'center', pointerEvents: 'none' }}>
+      {/* pointerEvents được truyền như một prop của View, KHÔNG nằm trong style */}
+      <View 
+        pointerEvents="none" 
+        style={{ width, height, justifyContent: 'center', alignItems: 'center' }}
+      >
         {React.createElement(
           'svg',
           {
