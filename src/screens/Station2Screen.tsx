@@ -94,35 +94,96 @@ export default function Station2Screen({ onBack }: Props) {
   const [loadingAssignments, setLoadingAssignments] = useState<boolean>(true);
   const [selectedChallenge, setSelectedChallenge] = useState<ChallengeItem | null>(null);
 
-  // 🔊 Trạng thái phát âm mẫu (Text-To-Speech)
-  const [isPlayingSample, setIsPlayingSample] = useState<boolean>(false);
+  // 🔊 Quản lý Text-To-Speech: lưu ID của text đang phát để nút phản hồi chuẩn xác
+  const [playingPromptText, setPlayingPromptText] = useState<string | null>(null);
+  const synthRef = useRef<SpeechSynthesis | null>(null);
+
+  // Khởi tạo và nạp voice tự nhiên
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      synthRef.current = window.speechSynthesis;
+      // Kích hoạt nạp voice trên các trình duyệt Chrome/Edge
+      window.speechSynthesis.onvoiceschanged = () => {
+        window.speechSynthesis.getVoices();
+      };
+    }
+    return () => {
+      if (synthRef.current) {
+        synthRef.current.cancel();
+      }
+    };
+  }, []);
+
+  const getBestNaturalVoice = (): SpeechSynthesisVoice | null => {
+    if (!synthRef.current) return null;
+    const voices = synthRef.current.getVoices();
+    if (!voices || voices.length === 0) return null;
+
+    // Ưu tiên 1: Các giọng Natural / Online cao cấp tiếng Anh Mỹ
+    const priorityKeywords = ['Google US English', 'Natural', 'Jenny', 'Guy', 'Aria', 'Samantha', 'en-US'];
+    for (const kw of priorityKeywords) {
+      const match = voices.find(v => v.lang.startsWith('en') && v.name.includes(kw));
+      if (match) return match;
+    }
+
+    // Ưu tiên 2: Bất kỳ voice en-US nào
+    const enUsVoice = voices.find(v => v.lang === 'en-US');
+    if (enUsVoice) return enUsVoice;
+
+    // Ưu tiên 3: Bất kỳ voice tiếng Anh nào
+    return voices.find(v => v.lang.startsWith('en')) || null;
+  };
 
   const playSampleAudio = (text: string) => {
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-      if (isPlayingSample) {
-        setIsPlayingSample(false);
-        return;
-      }
-      const cleanText = text.replace(/["']/g, '').trim();
-      const utterance = new SpeechSynthesisUtterance(cleanText);
-      utterance.lang = 'en-US';
-      utterance.rate = 0.88;
-      utterance.pitch = 1.0;
-      utterance.onstart = () => setIsPlayingSample(true);
-      utterance.onend = () => setIsPlayingSample(false);
-      utterance.onerror = () => setIsPlayingSample(false);
-      window.speechSynthesis.speak(utterance);
-    } else {
-      Alert.alert("Trình duyệt không hỗ trợ", "Trình duyệt của bạn không hỗ trợ tính năng phát âm tự động.");
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+      Alert.alert("Trình duyệt không hỗ trợ", "Thiết bị của bạn không hỗ trợ tính năng phát âm.");
+      return;
     }
+
+    const synth = window.speechSynthesis;
+
+    // Nếu đang phát chính câu này thì bấm lại để dừng (Toggle)
+    if (playingPromptText === text) {
+      synth.cancel();
+      setPlayingPromptText(null);
+      return;
+    }
+
+    // Hủy các lệnh phát đang chờ để tránh kẹt audio queue
+    synth.cancel();
+
+    const cleanText = text.replace(/["']/g, '').trim();
+    const utterance = new SpeechSynthesisUtterance(cleanText);
+
+    const bestVoice = getBestNaturalVoice();
+    if (bestVoice) {
+      utterance.voice = bestVoice;
+    }
+    utterance.lang = 'en-US';
+    // Tốc độ 0.90 và pitch 1.05 cho ngữ điệu tự nhiên, ấm áp, không bị rè méo tiếng
+    utterance.rate = 0.90;
+    utterance.pitch = 1.05;
+
+    utterance.onstart = () => {
+      setPlayingPromptText(text);
+    };
+
+    utterance.onend = () => {
+      setPlayingPromptText(null);
+    };
+
+    utterance.onerror = () => {
+      setPlayingPromptText(null);
+    };
+
+    synth.speak(utterance);
   };
 
   const stopSampleAudio = () => {
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       window.speechSynthesis.cancel();
     }
-    setIsPlayingSample(false);
+    setPlayingPromptText(null);
   };
 
   // 🎯 NGUỒN CHỦ ĐỀ
@@ -581,6 +642,7 @@ export default function Station2Screen({ onBack }: Props) {
               <View style={{ width: '100%', marginVertical: 8 }}>
                 <TouchableOpacity 
                   style={styles.prominentSwitchBtn} 
+                  activeOpacity={0.7}
                   onPress={handlePickRandomTopic}
                 >
                   <Text style={styles.prominentSwitchBtnText}>
@@ -668,50 +730,56 @@ export default function Station2Screen({ onBack }: Props) {
                     </Text>
                   </View>
                 ) : (
-                  currentDisplayList.map((item) => (
-                    <View key={item.id} style={[styles.card, item.isTeacherAssigned && styles.teacherCard]}>
-                      <View style={styles.cardHeader}>
-                        <Text style={[styles.roleText, item.isTeacherAssigned && { color: '#00FFFF' }]}>
-                          {item.isTeacherAssigned ? '🏫 [BÀI GIẢNG VIÊN GIAO] ' : `${currentTierInfo?.icon} `}{item.title}
-                        </Text>
-                        <Text style={[styles.levelBadge, item.isTeacherAssigned && { backgroundColor: '#FF007F', color: '#FFF' }]}>
-                          {item.level}
-                        </Text>
-                      </View>
-                      <Text style={styles.contextText}>{item.contextDesc}</Text>
-
-                      {practiceMode === 'READ_SAMPLE' ? (
-                        <View style={styles.previewPromptBox}>
-                          <View style={styles.sampleHeaderRow}>
-                            <Text style={styles.previewPromptLabel}>📖 Câu văn mẫu cần luyện:</Text>
-                            <TouchableOpacity 
-                              style={styles.ttsMiniBtn} 
-                              onPress={() => playSampleAudio(item.prompt)}
-                            >
-                              <Text style={styles.ttsMiniBtnText}>🔊 NGHE MẪU</Text>
-                            </TouchableOpacity>
-                          </View>
-                          <Text style={styles.previewPromptText}>"{item.prompt}"</Text>
-                        </View>
-                      ) : (
-                        <View style={styles.freeSpeechHintBox}>
-                          <Text style={styles.freeSpeechHintLabel}>⚡ THỬ THÁCH TỰ NÓI PHẢN XẠ 100%:</Text>
-                          <Text style={styles.freeSpeechHintText}>
-                            Không có câu mẫu trợ giúp! Hãy đọc kỹ bối cảnh trên và tự do suy nghĩ để trình bày câu trả lời của bạn.
+                  currentDisplayList.map((item) => {
+                    const isItemPlaying = playingPromptText === item.prompt;
+                    return (
+                      <View key={item.id} style={[styles.card, item.isTeacherAssigned && styles.teacherCard]}>
+                        <View style={styles.cardHeader}>
+                          <Text style={[styles.roleText, item.isTeacherAssigned && { color: '#00FFFF' }]}>
+                            {item.isTeacherAssigned ? '🏫 [BÀI GIẢNG VIÊN GIAO] ' : `${currentTierInfo?.icon} `}{item.title}
+                          </Text>
+                          <Text style={[styles.levelBadge, item.isTeacherAssigned && { backgroundColor: '#FF007F', color: '#FFF' }]}>
+                            {item.level}
                           </Text>
                         </View>
-                      )}
+                        <Text style={styles.contextText}>{item.contextDesc}</Text>
 
-                      <TouchableOpacity
-                        style={[styles.startBtn, item.isTeacherAssigned && { backgroundColor: '#00FFFF' }]}
-                        onPress={() => handleSelectChallenge(item)}
-                      >
-                        <Text style={[styles.startBtnText, item.isTeacherAssigned && { color: '#000' }]}>
-                          {item.isTeacherAssigned ? '⚡ BƯỚC VÀO PHÒNG THI (ANTI-CHEAT)' : '🎙️ BẬT PHÒNG THU TỰ DO'}
-                        </Text>
-                      </TouchableOpacity>
-                    </View>
-                  ))
+                        {practiceMode === 'READ_SAMPLE' ? (
+                          <View style={styles.previewPromptBox}>
+                            <View style={styles.sampleHeaderRow}>
+                              <Text style={styles.previewPromptLabel}>📖 Câu văn mẫu cần luyện:</Text>
+                              <TouchableOpacity 
+                                style={[styles.ttsMiniBtn, isItemPlaying && styles.ttsMiniBtnActive]} 
+                                activeOpacity={0.7}
+                                onPress={() => playSampleAudio(item.prompt)}
+                              >
+                                <Text style={[styles.ttsMiniBtnText, isItemPlaying && { color: '#FFF' }]}>
+                                  {isItemPlaying ? '⏹ ĐANG ĐỌC...' : '🔊 NGHE MẪU'}
+                                </Text>
+                              </TouchableOpacity>
+                            </View>
+                            <Text style={styles.previewPromptText}>"{item.prompt}"</Text>
+                          </View>
+                        ) : (
+                          <View style={styles.freeSpeechHintBox}>
+                            <Text style={styles.freeSpeechHintLabel}>⚡ THỬ THÁCH TỰ NÓI PHẢN XẠ 100%:</Text>
+                            <Text style={styles.freeSpeechHintText}>
+                              Không có câu mẫu trợ giúp! Hãy đọc kỹ bối cảnh trên và tự do suy nghĩ để trình bày câu trả lời của bạn.
+                            </Text>
+                          </View>
+                        )}
+
+                        <TouchableOpacity
+                          style={[styles.startBtn, item.isTeacherAssigned && { backgroundColor: '#00FFFF' }]}
+                          onPress={() => handleSelectChallenge(item)}
+                        >
+                          <Text style={[styles.startBtnText, item.isTeacherAssigned && { color: '#000' }]}>
+                            {item.isTeacherAssigned ? '⚡ BƯỚC VÀO PHÒNG THI (ANTI-CHEAT)' : '🎙️ BẬT PHÒNG THU TỰ DO'}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    );
+                  })
                 )}
               </>
             )}
@@ -728,7 +796,7 @@ export default function Station2Screen({ onBack }: Props) {
               
               <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
                 {topicOrigin !== 'STUDENT_CUSTOM' && (
-                  <TouchableOpacity style={styles.switchTopicInRoomBtn} onPress={handleSwitchToNextTopic}>
+                  <TouchableOpacity style={styles.switchTopicInRoomBtn} activeOpacity={0.7} onPress={handleSwitchToNextTopic}>
                     <Text style={styles.switchTopicInRoomText}>🔄 ĐỔI ĐỀ KHÁC</Text>
                   </TouchableOpacity>
                 )}
@@ -746,17 +814,18 @@ export default function Station2Screen({ onBack }: Props) {
                 <View style={styles.sampleHeaderRow}>
                   <Text style={styles.promptModeNotice}>📖 CÂU VĂN MẪU CẦN ĐỌC CHUẨN:</Text>
                   <TouchableOpacity 
-                    style={[styles.ttsPlayBtn, isPlayingSample && styles.ttsPlayBtnActive]} 
+                    style={[styles.ttsPlayBtn, playingPromptText === selectedChallenge.prompt && styles.ttsPlayBtnActive]} 
+                    activeOpacity={0.7}
                     onPress={() => playSampleAudio(selectedChallenge.prompt)}
                   >
-                    <Text style={styles.ttsPlayBtnText}>
-                      {isPlayingSample ? '⏹ DỪNG GIỌNG ĐỌC' : '🔊 NGHE GIỌNG ĐỌC MẪU'}
+                    <Text style={[styles.ttsPlayBtnText, playingPromptText === selectedChallenge.prompt && { color: '#FFF' }]}>
+                      {playingPromptText === selectedChallenge.prompt ? '⏹ DỪNG GIỌNG ĐỌC' : '🔊 NGHE GIỌNG ĐỌC MẪU'}
                     </Text>
                   </TouchableOpacity>
                 </View>
                 <Text style={styles.promptDisplayText}>{selectedChallenge.prompt}</Text>
                 <Text style={styles.ttsGuideHint}>
-                  💡 Hãy nghe mẫu 1-2 lần để bắt chước ngữ điệu, trọng âm và ngắt nhịp trước khi bấm thu âm!
+                  💡 Bấm nút nghe mẫu bên trên để bắt chước ngữ điệu và nối âm tự nhiên trước khi thu âm!
                 </Text>
               </View>
             ) : (
@@ -795,11 +864,11 @@ export default function Station2Screen({ onBack }: Props) {
             )}
 
             {!isRecordingNormal ? (
-              <TouchableOpacity style={styles.startRecordBtn} onPress={startNormalRecording}>
+              <TouchableOpacity style={styles.startRecordBtn} activeOpacity={0.8} onPress={startNormalRecording}>
                 <Text style={styles.startRecordBtnText}>🔴 BẮT ĐẦU THU ÂM</Text>
               </TouchableOpacity>
             ) : (
-              <TouchableOpacity style={styles.stopRecordBtn} onPress={stopNormalRecording}>
+              <TouchableOpacity style={styles.stopRecordBtn} activeOpacity={0.8} onPress={stopNormalRecording}>
                 <Text style={styles.stopRecordBtnText}>⏹ DỪNG & CHẤM ĐIỂM CHI TIẾT</Text>
               </TouchableOpacity>
             )}
@@ -877,9 +946,6 @@ const styles = StyleSheet.create({
     borderColor: '#00FFFF',
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#00FFFF',
-    shadowOpacity: 0.3,
-    shadowRadius: 5,
   },
   prominentSwitchBtnText: {
     color: '#00FFFF',
@@ -900,31 +966,35 @@ const styles = StyleSheet.create({
     backgroundColor: '#1E0B36',
     borderWidth: 1.5,
     borderColor: '#00FFFF',
-    paddingVertical: 5,
+    paddingVertical: 6,
     paddingHorizontal: 12,
     borderRadius: 8,
   },
   ttsPlayBtnActive: {
-    backgroundColor: '#350A18',
+    backgroundColor: '#FF0055',
     borderColor: '#FF0055',
   },
   ttsPlayBtnText: {
     color: '#00FFFF',
-    fontSize: 9.5,
+    fontSize: 10,
     fontWeight: '900',
   },
   ttsMiniBtn: {
     backgroundColor: '#1E0B36',
-    borderWidth: 1,
+    borderWidth: 1.2,
     borderColor: '#00FFFF',
-    paddingVertical: 2,
-    paddingHorizontal: 8,
-    borderRadius: 5,
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 6,
+  },
+  ttsMiniBtnActive: {
+    backgroundColor: '#FF0055',
+    borderColor: '#FF0055',
   },
   ttsMiniBtnText: {
     color: '#00FFFF',
-    fontSize: 8.5,
-    fontWeight: 'bold',
+    fontSize: 9,
+    fontWeight: '900',
   },
   ttsGuideHint: {
     color: '#FFD700',
@@ -957,9 +1027,9 @@ const styles = StyleSheet.create({
   roleText: { color: '#FFD700', fontSize: 11.5, fontWeight: 'bold', flex: 1, marginRight: 8 },
   levelBadge: { color: '#000', backgroundColor: '#39FF14', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, fontSize: 8.5, fontWeight: '900' },
   contextText: { color: '#FFF', fontSize: 10.5, lineHeight: 16, marginBottom: 8 },
-  previewPromptBox: { backgroundColor: '#070212', padding: 8, borderRadius: 6, marginBottom: 10 },
-  previewPromptLabel: { color: '#00FFFF', fontSize: 8.5, fontWeight: 'bold', marginBottom: 2 },
-  previewPromptText: { color: '#FFFFFF', fontSize: 10.5, fontStyle: 'italic' },
+  previewPromptBox: { backgroundColor: '#070212', padding: 10, borderRadius: 8, marginBottom: 10, borderWidth: 1, borderColor: '#221144' },
+  previewPromptLabel: { color: '#00FFFF', fontSize: 8.5, fontWeight: 'bold' },
+  previewPromptText: { color: '#FFFFFF', fontSize: 11, fontStyle: 'italic', marginTop: 4 },
   freeSpeechHintBox: { backgroundColor: '#07180D', padding: 8, borderRadius: 6, marginBottom: 10, borderWidth: 1, borderColor: '#39FF14' },
   freeSpeechHintLabel: { color: '#39FF14', fontSize: 8.5, fontWeight: 'bold', marginBottom: 2 },
   freeSpeechHintText: { color: '#88FFBB', fontSize: 9.5, fontStyle: 'italic' },
@@ -970,13 +1040,13 @@ const styles = StyleSheet.create({
 
   normalPracticeCard: { backgroundColor: '#0A0318', padding: 16, borderRadius: 14, borderWidth: 1.5, borderColor: '#00FFFF', marginVertical: 10 },
   normalPracticeHeader: { color: '#00FFFF', fontSize: 10, fontWeight: '900' },
-  switchTopicInRoomBtn: { backgroundColor: '#1E0B36', paddingVertical: 4, paddingHorizontal: 8, borderRadius: 6, borderWidth: 1, borderColor: '#00FFFF' },
-  switchTopicInRoomText: { color: '#00FFFF', fontSize: 9, fontWeight: 'bold' },
+  switchTopicInRoomBtn: { backgroundColor: '#1E0B36', paddingVertical: 5, paddingHorizontal: 10, borderRadius: 6, borderWidth: 1, borderColor: '#00FFFF' },
+  switchTopicInRoomText: { color: '#00FFFF', fontSize: 9.5, fontWeight: 'bold' },
 
   normalPromptTitle: { color: '#FFD700', fontSize: 13, fontWeight: '900', marginTop: 8 },
   normalPromptDesc: { color: '#8888AA', fontSize: 10.5, marginBottom: 10 },
   promptDisplayBox: { backgroundColor: '#130628', padding: 14, borderRadius: 10, borderWidth: 1, borderColor: '#332255', marginBottom: 12 },
-  promptModeNotice: { color: '#00FFFF', fontSize: 9.5, fontWeight: 'bold', marginBottom: 6 },
+  promptModeNotice: { color: '#00FFFF', fontSize: 9.5, fontWeight: 'bold' },
   promptDisplayText: { color: '#FFFFFF', fontSize: 13.5, lineHeight: 22, fontWeight: 'bold' },
   liveWaveformBox: { marginBottom: 14 },
   liveWaveformLabel: { color: '#39FF14', fontSize: 9.5, fontWeight: 'bold', marginBottom: 6 },
