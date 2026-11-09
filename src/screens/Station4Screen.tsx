@@ -114,19 +114,16 @@ export default function Station4Screen({ onBack }: Props) {
     const voices = window.speechSynthesis.getVoices();
     if (!voices || voices.length === 0) return null;
 
-    // 1. Android: Ưu tiên gói giọng mạng cao cấp của Google
     const androidVoice = voices.find(v => 
       v.lang.startsWith('en') && (v.name.includes('Google US English') || v.name.includes('Network') || v.voiceURI.includes('en-us-x'))
     );
     if (androidVoice) return androidVoice;
 
-    // 2. iOS (iPhone/iPad/Safari): Ưu tiên giọng Siri / Samantha Enhanced
     const iosVoice = voices.find(v => 
       v.lang.startsWith('en') && (v.name.includes('Siri') || v.name.includes('Samantha') || v.name.includes('Nicky') || v.name.includes('Aaron'))
     );
     if (iosVoice) return iosVoice;
 
-    // 3. Desktop (Windows/Edge/Chrome/macOS): Ưu tiên giọng Neural tự nhiên
     const desktopVoice = voices.find(v => 
       v.lang.startsWith('en') && (v.name.includes('Natural') || v.name.includes('Jenny') || v.name.includes('Guy') || v.name.includes('Aria'))
     );
@@ -228,7 +225,6 @@ export default function Station4Screen({ onBack }: Props) {
       setRuntimeTopic(initial);
       setTopicIndex(0);
       setAiQueue([]);
-      // Kích hoạt nạp bù AI ngầm ngay khi đổi sang Level mới
       triggerBackgroundAiRefill(cefrLevel);
     }
   }, [cefrLevel, topicSource]);
@@ -316,17 +312,14 @@ Output ONLY raw JSON (no markdown):
     const nextIdx = topicIndex + 1;
     setTopicIndex(nextIdx);
 
-    // 1. Nếu có sẵn đề trong hàng đợi AI ngầm -> Đưa ra dùng ngay trong 0ms!
     if (aiQueue.length > 0) {
       const [nextAiTopic, ...restQueue] = aiQueue;
       setAiQueue(restQueue);
       setRuntimeTopic(nextAiTopic);
-      // Kích hoạt nạp bù tiếp 1 đề mới vào hàng đợi hậu cảnh
       triggerBackgroundAiRefill(cefrLevel);
       return;
     }
 
-    // 2. Lấy ngay từ kho dữ liệu SPEAKING_EXPRESS_DATA trong 0ms (không bao giờ phải đợi)
     const presetList = SPEAKING_EXPRESS_DATA.filter(item => item.level === cefrLevel);
     if (presetList.length > 0) {
       const rawItem = presetList[nextIdx % presetList.length];
@@ -334,7 +327,6 @@ Output ONLY raw JSON (no markdown):
       setRuntimeTopic(mapped);
     }
 
-    // 3. Cơ chế bù đề: Ngay khi đề này được đưa ra, tự động kích hoạt nạp bù đề AI ở hậu cảnh
     triggerBackgroundAiRefill(cefrLevel);
   };
 
@@ -435,8 +427,42 @@ Output ONLY raw JSON (no markdown):
       const wpm = Math.round(wordsCount / actualMinutes);
 
       setCalculatedWpm(wpm);
-      setResult(evalData);
-      updateUserProgress(4, evalData.score || 85, (evalData.score || 85) >= 60);
+
+      // ⚡ BẬT CƠ CHẾ ĐIỂM ĐỘNG THEO WPM (CHỐNG GHIM CỨNG 94 ĐIỂM)
+      const targetMinWpm = activeTopic.minWpm || 100;
+      const wpmRatio = wpm / targetMinWpm;
+      
+      // Tính điểm tốc độ WPM (Tối đa 100 điểm)
+      let wpmScore = 0;
+      if (wpmRatio >= 1.15) {
+        wpmScore = 100; // Siêu lưu loát vượt chuẩn
+      } else if (wpmRatio >= 1.0) {
+        wpmScore = Math.round(90 + (wpmRatio - 1.0) * 66); // 90 - 100 điểm
+      } else if (wpmRatio >= 0.75) {
+        wpmScore = Math.round(75 + (wpmRatio - 0.75) * 60); // 75 - 90 điểm
+      } else {
+        wpmScore = Math.max(30, Math.round(wpmRatio * 100)); // Dưới chuẩn bị trừ điểm mạnh
+      }
+
+      // Điểm tổng cuối cùng = 50% Điểm chất lượng bài nói (AI) + 50% Điểm tốc độ phản xạ (WPM)
+      const baseAiScore = evalData.score || 85;
+      const dynamicTotalScore = Math.round((baseAiScore * 0.5) + (wpmScore * 0.5));
+
+      // Hiệu chỉnh kết quả đánh giá để hiển thị đúng và đồng bộ
+      const calibratedEvalData: AssessmentResult = {
+        ...evalData,
+        score: dynamicTotalScore,
+        isWin: dynamicTotalScore >= 65,
+        criteria: {
+          pronunciation: (evalData as any).pronunciation || 85,
+          fluency: wpmScore, // Độ trôi chảy lấy trực tiếp từ điểm WPM
+          content: (evalData as any).content || baseAiScore
+        } as any,
+        detailedFeedback: `Tốc độ phản xạ: ${wpm} WPM (Chuẩn: ${targetMinWpm} WPM) | Điểm tốc độ: ${wpmScore}đ. ${evalData.detailedFeedback || ''}`
+      };
+
+      setResult(calibratedEvalData);
+      updateUserProgress(4, dynamicTotalScore, dynamicTotalScore >= 65);
 
       setShowIdentityModal(true);
     } catch (err) {
@@ -715,7 +741,7 @@ Output ONLY raw JSON (no markdown):
               </View>
               <View style={styles.breakdownItem}>
                 <Text style={styles.breakdownLabel}>Độ trôi chảy:</Text>
-                <Text style={styles.breakdownValue}>{(result as any).content || 80}/100</Text>
+                <Text style={styles.breakdownValue}>{(result as any).criteria?.fluency || (result as any).content || 80}/100</Text>
               </View>
             </View>
 
