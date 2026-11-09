@@ -4,7 +4,7 @@ import { View, StyleSheet } from 'react-native';
 import MainMapScreen from '../screens/MainMapScreen';
 import Station1Screen from '../screens/Station1Screen';
 import Station2Screen from '../screens/Station2Screen';
-import GhostStationScreen from '../screens/GhostStationScreen'; // Trạm 3
+import Station3Screen from '../screens/Station3Screen'; // 🎯 Đã cập nhật trỏ sang Station3Screen
 import Station4Screen from '../screens/Station4Screen';
 import TeacherDashboardScreen from '../screens/TeacherDashboardScreen'; // 🏫 Import Cổng Giảng viên
 import ProfileScreen from '../screens/ProfileScreen';
@@ -38,7 +38,7 @@ export default function AppNavigator() {
   }
 
   if (currentStation === 3) {
-    return <GhostStationScreen onBack={handleBackToMap} />;
+    return <Station3Screen onBack={handleBackToMap} />; // 🎯 Đã đổi thành Station3Screen
   }
 
   if (currentStation === 4) {
