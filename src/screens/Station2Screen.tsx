@@ -938,7 +938,7 @@ Output ONLY raw JSON:
                 />
 
                 <TouchableOpacity style={styles.startCustomBtn} onPress={handleStartCustomTopic}>
-                  <Text style={styles.startCustomBtnText}>🚀 BẮT ĐẦU LUYỆN TẬP VỚI ĐỀ NÀY</Text>
+                  <Text style={styles.startCustomBtnText}>🚀 BẮT ĐẦU LUYỆN TẬP / THI ĐẤU VỚI ĐỀ NÀY</Text>
                 </TouchableOpacity>
               </View>
             ) : (
