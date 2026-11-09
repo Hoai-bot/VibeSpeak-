@@ -23,6 +23,7 @@
     "expo-av": "^16.0.8",
     "firebase": "^12.19.0",
     "groq-sdk": "^1.6.0",
+    "msedge-tts": "^2.1.1",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-native-safe-area-context": "~5.7.0",

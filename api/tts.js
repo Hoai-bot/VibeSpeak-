@@ -1,9 +1,19 @@
 // api/tts.js
-// Bộ phát âm thanh AI Serverless: Hỗ trợ cả GET (nghe mẫu Trạm 2) và POST (Shadow Boss),
-// tự động chọn OpenAI TTS (nếu có key) hoặc Fallback TTS miễn phí chất lượng cao.
+// 🎙️ MICROSOFT EDGE-TTS SERVERLESS API
+// Hoàn toàn MIỄN PHÍ - KHÔNG CẦN API KEY - Giọng AI Neural đỉnh cao như người bản xứ
+import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts';
+
+// Bảng ánh xạ giọng sang Microsoft Neural Voices:
+const VOICE_MAP = {
+  nova: 'en-US-JennyNeural',        // Giọng nữ tự nhiên, biểu cảm chuẩn bản xứ (Trạm 2)
+  shimmer: 'en-US-AriaNeural',      // Giọng nữ trong trẻo, sinh động
+  onyx: 'en-US-ChristopherNeural',  // Giọng nam trầm hùng, uy quyền (Shadow Boss)
+  echo: 'en-US-GuyNeural',          // Giọng nam tự nhiên, phổ biến
+  alloy: 'en-US-EricNeural'         // Giọng nam thanh lịch
+};
 
 export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Credentials', true);
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,POST');
   res.setHeader(
@@ -15,17 +25,17 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
 
-  // 1. Nhận dữ liệu linh hoạt từ cả GET (query param) lẫn POST (request body)
+  // 1. Nhận dữ liệu linh hoạt từ GET (Trạm 2) hoặc POST (Shadow Boss)
   let text = '';
-  let voice = 'nova'; // Mặc định giọng tự nhiên cho luyện nói
+  let requestedVoice = 'nova';
 
   if (req.method === 'GET') {
     text = req.query.text || '';
-    if (req.query.voice) voice = req.query.voice;
+    if (req.query.voice) requestedVoice = req.query.voice;
   } else if (req.method === 'POST') {
     const body = req.body || {};
     text = body.text || '';
-    if (body.voice) voice = body.voice; // ví dụ: 'onyx' cho Shadow Boss
+    if (body.voice) requestedVoice = body.voice;
   } else {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
@@ -35,39 +45,41 @@ export default async function handler(req, res) {
   }
 
   const cleanText = text.replace(/["']/g, '').trim().slice(0, 500);
+  const edgeVoice = VOICE_MAP[requestedVoice.toLowerCase()] || requestedVoice || 'en-US-JennyNeural';
 
   try {
-    // 2. Ưu tiên 1: OpenAI TTS chính thống (nếu có cấu hình OPENAI_API_KEY)
-    const openaiKey = process.env.OPENAI_API_KEY;
-    if (openaiKey) {
-      try {
-        const openAiRes = await fetch('https://api.openai.com/v1/audio/speech', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${openaiKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: 'tts-1',
-            input: cleanText,
-            voice: voice, // 'nova' cho luyện nói thông thường, 'onyx' cho Shadow Boss
-            speed: 0.95,
-          }),
-        });
+    // 2. Khởi tạo Microsoft Edge TTS với giọng Neural chất lượng cao
+    const tts = new MsEdgeTTS();
+    await tts.setMetadata(edgeVoice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
+    const readable = tts.toStream(cleanText);
 
-        if (openAiRes.ok) {
-          const audioBuffer = await openAiRes.arrayBuffer();
-          res.setHeader('Content-Type', 'audio/mpeg');
-          res.setHeader('Cache-Control', 'public, max-age=86400, s-maxage=86400');
-          return res.send(Buffer.from(audioBuffer));
-        }
-      } catch (err) {
-        console.warn('OpenAI TTS error, falling back:', err.message);
-      }
-    }
+    const chunks = [];
+    readable.on('data', (chunk) => {
+      chunks.push(chunk);
+    });
 
-    // 3. Ưu tiên 2: Streaming TTS chất lượng cao miễn phí (chạy được ngay 100% không cần key)
-    const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(cleanText)}&tl=en-US&client=tw-ob`;
+    readable.on('end', () => {
+      const audioBuffer = Buffer.concat(chunks);
+      res.setHeader('Content-Type', 'audio/mpeg');
+      // Cache 24h trên Vercel CDN để các lần nghe tiếp theo phản hồi tức thì (0ms)
+      res.setHeader('Cache-Control', 'public, max-age=86400, s-maxage=86400');
+      return res.send(audioBuffer);
+    });
+
+    readable.on('error', async (err) => {
+      console.warn('Edge TTS streaming error, falling back:', err);
+      return fallbackGoogleTTS(cleanText, res);
+    });
+  } catch (error) {
+    console.error('Edge TTS Init Error, using fallback:', error);
+    return fallbackGoogleTTS(cleanText, res);
+  }
+}
+
+// Hàm dự phòng (nếu kết nối tới máy chủ Microsoft gặp sự cố)
+async function fallbackGoogleTTS(text, res) {
+  try {
+    const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(text)}&tl=en-US&client=tw-ob`;
     const fallbackRes = await fetch(ttsUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
@@ -80,10 +92,8 @@ export default async function handler(req, res) {
       res.setHeader('Cache-Control', 'public, max-age=86400, s-maxage=86400');
       return res.send(Buffer.from(audioBuffer));
     }
-
-    return res.status(502).json({ error: 'TTS Synthesis failed on all providers' });
-  } catch (error) {
-    console.error('TTS Server Error:', error);
-    return res.status(500).json({ error: 'Internal Server Error', details: error.message });
+    return res.status(502).json({ error: 'All TTS engines failed' });
+  } catch (e) {
+    return res.status(500).json({ error: 'TTS fallback error' });
   }
 }
