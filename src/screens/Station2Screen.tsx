@@ -281,6 +281,7 @@ export default function Station2Screen({ onBack }: Props) {
   const [isNormalPracticing, setIsNormalPracticing] = useState<boolean>(false);
   const [isRecordingNormal, setIsRecordingNormal] = useState<boolean>(false);
   const [isEvaluating, setIsEvaluating] = useState<boolean>(false);
+  const [evaluatingStatus, setEvaluatingStatus] = useState<string>('⚡ AI ĐANG PHÂN TÍCH PHÁT ÂM & CHẤM ĐIỂM CHI TIẾT...');
   const [normalTimer, setNormalTimer] = useState<number>(0);
   const normalMediaRecorderRef = useRef<any>(null);
   const normalAudioChunksRef = useRef<any[]>([]);
@@ -468,12 +469,25 @@ Output ONLY raw JSON:
       setLiveTranscript('');
       liveTranscriptRef.current = '';
 
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // 🎯 TỐI ƯU HÓA PAYLOAD: Thu mono 1 channel, mẫu 16kHz chuẩn ASR giúp giảm 70% dung lượng
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: { 
+          channelCount: 1, 
+          sampleRate: 16000, 
+          echoCancellation: true, 
+          noiseSuppression: true, 
+          autoGainControl: true 
+        } 
+      });
       
       const detectedFormat = getSupportedAudioMimeType();
       activeMimeTypeRef.current = detectedFormat;
 
-      const options: any = detectedFormat.mimeType ? { mimeType: detectedFormat.mimeType } : undefined;
+      // 🎯 TỐI ƯU BITRATE: Ép bitrate ~32kbps vừa đủ nét cho Whisper mà payload siêu nhẹ (chỉ ~15-20KB cho câu 5s)
+      const options: any = {
+        audioBitsPerSecond: 32000,
+        ...(detectedFormat.mimeType ? { mimeType: detectedFormat.mimeType } : {})
+      };
       const mediaRecorder = new (window as any).MediaRecorder(stream, options);
       normalMediaRecorderRef.current = mediaRecorder;
 
@@ -603,9 +617,11 @@ Output ONLY raw JSON:
     return () => { if (timer) clearInterval(timer); };
   }, [isRecordingNormal]);
 
-  // 🎯 BỘ CHẤM ĐIỂM CHÍNH XÁC: GIẢI QUYẾT LỖI 58 ĐIỂM & TAPESCRIPT TRÊN ĐIỆN THOẠI
+  // 🎯 BỘ CHẤM ĐIỂM CHÍNH XÁC: ĐÃ TỐI ƯU HÓA BITRATE + CƠ CHẾ RETRY THÔNG BÁO MẠNG
   const finishSubmissionAndEvaluate = async (audioBlob: Blob, pitchHistory: number[], localAudioUrl?: string) => {
     setIsEvaluating(true);
+    setEvaluatingStatus('⚡ AI ĐANG PHÂN TÍCH PHÁT ÂM & BÓC TÁCH TAPESCRIPT...');
+
     if (localAudioUrl) {
       setRecordedAudioUrl(localAudioUrl);
     } else {
@@ -613,26 +629,58 @@ Output ONLY raw JSON:
     }
 
     let actualTranscript = liveTranscriptRef.current.trim();
-
-    // 🌟 BƯỚC 1: TRÊN ĐIỆN THOẠI (KHI LIVE TRANSCRIPT BỊ RỖNG), GỌI EVALUATESPEAKING LẤY TAPESCRIPT THẬT
     let serverEvalData: any = null;
-    try {
-      const targetPrompt = practiceMode === 'READ_SAMPLE' 
-        ? (currentChallenge?.prompt || '') 
-        : `Reflex challenge: ${currentChallenge?.contextDesc || ''}`;
 
-      serverEvalData = await evaluateSpeaking(audioBlob, selectedLevel, '2', targetPrompt);
-      
-      if (serverEvalData?.transcript && serverEvalData.transcript.trim()) {
-        actualTranscript = serverEvalData.transcript.trim();
-        setLiveTranscript(actualTranscript);
-        liveTranscriptRef.current = actualTranscript;
+    const targetPrompt = practiceMode === 'READ_SAMPLE' 
+      ? (currentChallenge?.prompt || '') 
+      : `Reflex challenge: ${currentChallenge?.contextDesc || ''}`;
+
+    // 🌟 BƯỚC 1: CƠ CHẾ RETRY KHI MẠNG CHẬP CHỜN (THỬ LẠI TỐI ĐA 2 LẦN VỚI THÔNG BÁO RÕ RÀNG)
+    const MAX_RETRIES = 2;
+    let attempt = 0;
+    let success = false;
+
+    while (attempt <= MAX_RETRIES && !success) {
+      try {
+        if (attempt > 0) {
+          setEvaluatingStatus(`🔄 Đang thử kết nối lại máy chủ chấm điểm (lần ${attempt}/${MAX_RETRIES})...`);
+          await new Promise(r => setTimeout(r, 1200));
+        }
+
+        serverEvalData = await evaluateSpeaking(audioBlob, selectedLevel, '2', targetPrompt);
+        if (serverEvalData) {
+          success = true;
+          if (serverEvalData.transcript && serverEvalData.transcript.trim()) {
+            actualTranscript = serverEvalData.transcript.trim();
+            setLiveTranscript(actualTranscript);
+            liveTranscriptRef.current = actualTranscript;
+          }
+        }
+      } catch (err) {
+        attempt++;
+        console.warn(`Lỗi gọi evaluateSpeaking lần ${attempt}:`, err);
       }
-    } catch (err) {
-      console.warn("Lỗi trích xuất tapescript từ server:", err);
+    }
+
+    // ⚠️ NẾU MẤT MẠNG HOÀN TOÀN: Báo lỗi để học viên bấm 'Thử lại' thay vì ghim điểm 58
+    if (!success && (!actualTranscript || actualTranscript.length < 3)) {
+      setIsEvaluating(false);
+      Alert.alert(
+        "Mất kết nối máy chủ chấm điểm",
+        "Đường truyền mạng bị gián đoạn nên AI chưa nhận được bài thu âm. Bản thu của bạn vẫn được giữ nguyên, hãy kiểm tra wifi/4G và bấm 'Thử chấm lại'!",
+        [
+          { text: "Để sau", style: "cancel" },
+          { 
+            text: "🔄 Thử chấm lại", 
+            onPress: () => finishSubmissionAndEvaluate(audioBlob, pitchHistory, localAudioUrl) 
+          }
+        ]
+      );
+      return;
     }
 
     // 🌟 BƯỚC 2: CHẤM ĐIỂM PHÂN HÓA THEO TAPESCRIPT ĐÃ NHẬN DIỆN THỰC TẾ
+    setEvaluatingStatus('📊 Đang tổng hợp phổ điểm phát âm và ngữ điệu...');
     const duration = Math.max(normalTimer, 2);
     let evaluated: any;
 
@@ -1053,7 +1101,7 @@ Output ONLY raw JSON:
             {isEvaluating ? (
               <View style={styles.evaluatingBox}>
                 <ActivityIndicator size="small" color="#00FFFF" />
-                <Text style={styles.evaluatingText}>⚡ AI ĐANG PHÂN TÍCH PHÁT ÂM & CHẤM ĐIỂM CHI TIẾT...</Text>
+                <Text style={styles.evaluatingText}>{evaluatingStatus}</Text>
               </View>
             ) : !isRecordingNormal ? (
               <View style={{ flexDirection: 'row', gap: 10 }}>
