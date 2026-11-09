@@ -1,9 +1,6 @@
 // api/tts.js
-import Groq from 'groq-sdk';
-
-const groq = new Groq({
-  apiKey: process.env.GROQ_API_KEY,
-});
+// Bộ phát âm thanh AI Serverless: Hỗ trợ cả GET (nghe mẫu Trạm 2) và POST (Shadow Boss),
+// tự động chọn OpenAI TTS (nếu có key) hoặc Fallback TTS miễn phí chất lượng cao.
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Credentials', true);
@@ -18,40 +15,73 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
 
-  if (req.method !== 'POST') {
+  // 1. Nhận dữ liệu linh hoạt từ cả GET (query param) lẫn POST (request body)
+  let text = '';
+  let voice = 'nova'; // Mặc định giọng tự nhiên cho luyện nói
+
+  if (req.method === 'GET') {
+    text = req.query.text || '';
+    if (req.query.voice) voice = req.query.voice;
+  } else if (req.method === 'POST') {
+    const body = req.body || {};
+    text = body.text || '';
+    if (body.voice) voice = body.voice; // ví dụ: 'onyx' cho Shadow Boss
+  } else {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
-  try {
-    const { text, voice = 'onyx' } = req.body || {}; // 'onyx' cho giọng Boss trầm hùng, uy quyền
+  if (!text || !text.trim()) {
+    return res.status(400).json({ error: 'Text content is required' });
+  }
 
-    if (!text) {
-      return res.status(400).json({ error: 'Text content is required' });
+  const cleanText = text.replace(/["']/g, '').trim().slice(0, 500);
+
+  try {
+    // 2. Ưu tiên 1: OpenAI TTS chính thống (nếu có cấu hình OPENAI_API_KEY)
+    const openaiKey = process.env.OPENAI_API_KEY;
+    if (openaiKey) {
+      try {
+        const openAiRes = await fetch('https://api.openai.com/v1/audio/speech', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${openaiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'tts-1',
+            input: cleanText,
+            voice: voice, // 'nova' cho luyện nói thông thường, 'onyx' cho Shadow Boss
+            speed: 0.95,
+          }),
+        });
+
+        if (openAiRes.ok) {
+          const audioBuffer = await openAiRes.arrayBuffer();
+          res.setHeader('Content-Type', 'audio/mpeg');
+          res.setHeader('Cache-Control', 'public, max-age=86400, s-maxage=86400');
+          return res.send(Buffer.from(audioBuffer));
+        }
+      } catch (err) {
+        console.warn('OpenAI TTS error, falling back:', err.message);
+      }
     }
 
-    // Gọi API TTS qua Groq / OpenAI endpoint
-    const response = await fetch('https://api.groq.com/openai/v1/audio/speech', {
-      method: 'POST',
+    // 3. Ưu tiên 2: Streaming TTS chất lượng cao miễn phí (chạy được ngay 100% không cần key)
+    const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(cleanText)}&tl=en-US&client=tw-ob`;
+    const fallbackRes = await fetch(ttsUrl, {
       headers: {
-        'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
-        'Content-Type': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
       },
-      body: JSON.stringify({
-        model: 'tts-1',
-        input: text,
-        voice: voice,
-      }),
     });
 
-    if (!response.ok) {
-      const errText = await response.text();
-      console.error('TTS API Error:', errText);
-      return res.status(500).json({ error: 'TTS Synthesis failed' });
+    if (fallbackRes.ok) {
+      const audioBuffer = await fallbackRes.arrayBuffer();
+      res.setHeader('Content-Type', 'audio/mpeg');
+      res.setHeader('Cache-Control', 'public, max-age=86400, s-maxage=86400');
+      return res.send(Buffer.from(audioBuffer));
     }
 
-    const audioBuffer = await response.arrayBuffer();
-    res.setHeader('Content-Type', 'audio/mpeg');
-    return res.send(Buffer.from(audioBuffer));
+    return res.status(502).json({ error: 'TTS Synthesis failed on all providers' });
   } catch (error) {
     console.error('TTS Server Error:', error);
     return res.status(500).json({ error: 'Internal Server Error', details: error.message });
