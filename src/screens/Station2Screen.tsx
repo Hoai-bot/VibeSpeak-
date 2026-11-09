@@ -1242,10 +1242,10 @@ const styles = StyleSheet.create({
   modeTabBtnTextActive: { color: '#FFF', fontWeight: '900' },
 
   tierSelector: { flexDirection: 'row', gap: 6, marginBottom: 6 },
-  tierTab: { flex: 1, paddingVertical: 9, backgroundColor: '#0D0620', borderRadius: 10, borderWidth: 1.5, borderColor: '#332255', alignItems: 'center' },
+  tierTab: { flex: 1, paddingVertical: 9, paddingHorizontal: 4, backgroundColor: '#0D0620', borderRadius: 10, borderWidth: 1.5, borderColor: '#332255', alignItems: 'center', justifyContent: 'center' },
   tierTabActive: { backgroundColor: '#1E0B36', borderColor: '#39FF14' },
-  tierTabIcon: { fontSize: 13, marginBottom: 2 },
-  tierTabText: { color: '#8888AA', fontSize: 9, fontWeight: 'bold' },
+  tierTabIcon: { fontSize: 13, marginBottom: 4 },
+  tierTabText: { color: '#8888AA', fontSize: 8.5, fontWeight: 'bold', textAlign: 'center' },
   tierTabTextActive: { color: '#39FF14', fontWeight: '900' },
   tierInfoBox: { backgroundColor: '#0F0624', padding: 8, borderRadius: 8, borderWidth: 1, borderColor: '#221144', marginBottom: 8 },
   tierInfoText: { color: '#FFD700', fontSize: 9, lineHeight: 14, fontStyle: 'italic' },
