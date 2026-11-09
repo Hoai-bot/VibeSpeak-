@@ -704,17 +704,25 @@ Output ONLY raw JSON:
       if (actualTranscript && actualTranscript.split(/\s+/).filter(Boolean).length >= 4) {
         evaluated.spontaneityScore = Math.min(100, Math.max(evaluated.spontaneityScore, 85));
         evaluated.rubrics.content.score = Math.min(100, Math.max(evaluated.rubrics.content.score, 88));
-        evaluated.totalScore = Math.round((evaluated.totalScore + evaluated.spontaneityScore) / 2);
       }
     }
 
-    // Cân bằng với điểm AI server nếu có
-    if (serverEvalData?.score && actualTranscript) {
-      evaluated.totalScore = Math.round((evaluated.totalScore + serverEvalData.score) / 2);
-      if (serverEvalData.criteria?.pronunciation) {
-        evaluated.rubrics.pronunciation.score = serverEvalData.criteria.pronunciation;
-      }
+    // Cập nhật điểm phát âm từ AI server nếu có
+    if (serverEvalData?.criteria?.pronunciation) {
+      evaluated.rubrics.pronunciation.score = serverEvalData.criteria.pronunciation;
     }
+
+    // 🎯 ĐỒNG BỘ ĐIỂM TỔNG CHUẨN XÁC THEO 6 TIÊU CHÍ RUBRICS (TRÁNH LỆCH ĐIỂM 74 SO VỚI >90)
+    const r = evaluated.rubrics;
+    const weightedTotal = Math.round(
+      (r.pronunciation.score * 0.20) +
+      (r.intonation.score * 0.20) +
+      (r.fluency.score * 0.15) +
+      (r.vocabulary.score * 0.15) +
+      (r.grammar.score * 0.15) +
+      (r.content.score * 0.15)
+    );
+    evaluated.totalScore = weightedTotal;
 
     // 🌟 BƯỚC 3: LƯU BÀI NỘP LÊN SUPABASE
     let audioUrl = '';
