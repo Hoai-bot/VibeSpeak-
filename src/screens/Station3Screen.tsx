@@ -141,10 +141,18 @@ export default function Station3Screen({ onBack }: Props) {
   const audioContextRef = useRef<AudioContext | null>(null);
   const pitchIntervalRef = useRef<any>(null);
   const pitchSamplesRef = useRef<number[]>([]);
+  const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
 
   const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
 
   const stopAllAudio = () => {
+    // Dừng âm thanh máy chủ Edge-TTS (HTML5 Audio)
+    if (audioPlayerRef.current) {
+      audioPlayerRef.current.pause();
+      audioPlayerRef.current.currentTime = 0;
+      audioPlayerRef.current = null;
+    }
+    // Dừng âm thanh trình duyệt nếu có fallback
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       window.speechSynthesis.cancel();
     }
@@ -178,26 +186,60 @@ export default function Station3Screen({ onBack }: Props) {
     audioChunksRef.current = [];
   };
 
-  // 🔊 GIỌNG ĐỌC MẪU CHUẨN TỰ NHIÊN
-  const getBestNaturalVoice = (): SpeechSynthesisVoice | null => {
-    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return null;
-    const voices = window.speechSynthesis.getVoices();
-    if (!voices || voices.length === 0) return null;
-    const voice = voices.find(v => v.lang.startsWith('en') && (v.name.includes('Google US English') || v.name.includes('Siri') || v.name.includes('Natural') || v.name.includes('Samantha')));
-    return voice || voices.find(v => v.lang === 'en-US') || voices.find(v => v.lang.startsWith('en')) || null;
+  // 🎙️ PHÁT GIỌNG SHADOW BOSS TỪ SERVER (CHRISTOPHER NEURAL - NAM TRẦM UY QUYỀN)
+  const playNaturalTTS = async (text: string) => {
+    if (isPlayingAudio) {
+      stopAllAudio();
+      return;
+    }
+
+    const cleanText = text.replace(/["']/g, '').trim();
+    if (!cleanText) return;
+
+    setIsPlayingAudio(true);
+
+    // ⚡ LỚP 1: GỌI API SERVER VỚI GIỌNG ONYX (en-US-ChristopherNeural)
+    try {
+      const bossTtsUrl = `/api/tts?voice=onyx&text=${encodeURIComponent(cleanText)}`;
+      const audio = new Audio(bossTtsUrl);
+      audioPlayerRef.current = audio;
+
+      audio.onended = () => {
+        setIsPlayingAudio(false);
+        audioPlayerRef.current = null;
+      };
+
+      audio.onerror = () => {
+        console.warn("Server TTS không tải được, kích hoạt fallback máy khách...");
+        playLocalBossFallback(cleanText);
+      };
+
+      await audio.play();
+      return;
+    } catch (e) {
+      console.warn("Lỗi phát audio server Shadow Boss:", e);
+      playLocalBossFallback(cleanText);
+    }
   };
 
-  const playNaturalTTS = (text: string) => {
-    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+  // 🛡️ LỚP 2: DỰ PHÒNG NỘI BỘ NẾU MẤT KẾT NỐI MẠNG
+  const playLocalBossFallback = (cleanText: string) => {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+      setIsPlayingAudio(false);
+      return;
+    }
     const synth = window.speechSynthesis;
     synth.cancel();
 
-    const utterance = new SpeechSynthesisUtterance(text.replace(/["']/g, '').trim());
-    const voice = getBestNaturalVoice();
-    if (voice) utterance.voice = voice;
+    const utterance = new SpeechSynthesisUtterance(cleanText);
+    const voices = synth.getVoices();
+    // Ưu tiên chọn giọng nam cho Boss nếu chạy fallback
+    const maleVoice = voices.find(v => v.lang.startsWith('en') && (v.name.includes('David') || v.name.includes('Guy') || v.name.includes('Mark') || v.name.includes('Aaron')));
+    if (maleVoice) utterance.voice = maleVoice;
+
     utterance.lang = 'en-US';
-    utterance.rate = 0.90;
-    utterance.pitch = 1.0;
+    utterance.rate = 0.85; // Tốc độ chậm hơn tạo vẻ bí ẩn
+    utterance.pitch = 0.8; // Hạ tone giọng trầm xuống
 
     utterance.onstart = () => setIsPlayingAudio(true);
     utterance.onend = () => setIsPlayingAudio(false);
