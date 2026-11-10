@@ -53,20 +53,12 @@ export interface ChallengeItem {
 
 const CEFR_LEVELS: CefrLevel[] = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
 
-const LANG_FLAGS: Record<SupportedLang, string> = {
-  vi: '🇻🇳',
-  th: '🇹🇭',
-  ja: '🇯🇵',
-  ko: '🇰🇷',
-  id: '🇮🇩'
-};
-
-const LANG_NAMES: Record<SupportedLang, string> = {
-  vi: 'Tiếng Việt',
-  th: 'ภาษาไทย',
-  ja: '日本語',
-  ko: '한국어',
-  id: 'Bahasa Indonesia'
+const LANG_CONFIG: Record<SupportedLang, { flag: string; label: string }> = {
+  vi: { flag: '🇻🇳', label: 'Tiếng Việt' },
+  th: { flag: '🇹🇭', label: 'ภาษาไทย' },
+  ja: { flag: '🇯🇵', label: '日本語' },
+  ko: { flag: '🇰🇷', label: '한국어' },
+  id: { flag: '🇮🇩', label: 'Bahasa Indonesia' }
 };
 
 const TIERS: { key: Station2Tier; label: string; icon: string; desc: string }[] = [
@@ -411,7 +403,7 @@ export default function Station2Screen({ onBack }: Props) {
   const [teacherAssignments, setTeacherAssignments] = useState<ChallengeItem[]>([]);
   const [loadingAssignments, setLoadingAssignments] = useState<boolean>(true);
 
-  // 🌐 CƠ CHẾ GỢI Ý ĐA NGÔN NGỮ (MULTILINGUAL HINTS)
+  // 🌐 CƠ CHẾ GỢI Ý ĐA NGÔN NGỮ CHÂU Á (ASIA MULTILINGUAL HINTS)
   const [selectedLang, setSelectedLang] = useState<SupportedLang>('vi');
   const [showHint, setShowHint] = useState<boolean>(false);
 
@@ -791,6 +783,7 @@ Output ONLY raw JSON:
             liveTranscriptRef.current = cleanLive;
             setLiveTranscript(cleanLive);
           };
+          recognition.onerror = () => {};
           recognition.start();
           speechRecognitionRef.current = recognition;
         } catch (e) {
@@ -1276,46 +1269,54 @@ Output ONLY raw JSON:
                   
                   <Text style={styles.contextText}>📌 {currentChallenge.contextDesc}</Text>
 
-                  {/* 🌐 MULTILINGUAL HINT BAR */}
-                  <View style={styles.hintControlRow}>
-                    <TouchableOpacity 
-                      style={[styles.hintToggleBtn, showHint && styles.hintToggleBtnActive]} 
-                      onPress={() => setShowHint(prev => !prev)}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={[styles.hintToggleBtnText, showHint && { color: '#000' }]}>
-                        {showHint ? '💡 HIDE NATIVE HINT' : `💡 NATIVE HINT (${LANG_FLAGS[selectedLang]})`}
-                      </Text>
-                    </TouchableOpacity>
+                  {/* 🌐 THANH ĐIỀU KHIỂN GỢI Ý ĐA NGÔN NGỮ CHÂU Á */}
+                  <View style={styles.hintContainer}>
+                    <View style={styles.hintHeaderRow}>
+                      <TouchableOpacity 
+                        style={[styles.hintToggleBtn, showHint && styles.hintToggleBtnActive]} 
+                        onPress={() => setShowHint(prev => !prev)}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={[styles.hintToggleText, showHint && { color: '#000' }]}>
+                          {showHint ? '✕ HIDE HINT' : `💡 NATIVE HINT (${LANG_CONFIG[selectedLang].flag})`}
+                        </Text>
+                      </TouchableOpacity>
 
-                    {showHint && (
+                      {/* DÃY CỜ CHỌN NGÔN NGỮ LUÔN HIỂN THỊ ĐỂ CHỌN */}
                       <View style={styles.flagPickerRow}>
                         {(['vi', 'th', 'ja', 'ko', 'id'] as SupportedLang[]).map((lang) => (
                           <TouchableOpacity
                             key={lang}
                             style={[styles.flagBtn, selectedLang === lang && styles.flagBtnActive]}
-                            onPress={() => setSelectedLang(lang)}
+                            onPress={() => {
+                              setSelectedLang(lang);
+                              setShowHint(true);
+                            }}
+                            activeOpacity={0.7}
                           >
-                            <Text style={styles.flagText}>{LANG_FLAGS[lang]}</Text>
+                            <Text style={styles.flagIcon}>{LANG_CONFIG[lang].flag}</Text>
                           </TouchableOpacity>
                         ))}
                       </View>
+                    </View>
+
+                    {/* HỘP NỘI DUNG GỢI Ý NATIVE SCAFFOLDING */}
+                    {showHint && currentChallenge && (
+                      <View style={styles.hintContentBox}>
+                        <View style={styles.scaffoldingMetaRow}>
+                          <Text style={styles.scaffoldingMetaText}>📍 <Text style={{ color: '#00FFFF' }}>Place:</Text> {currentChallenge.place || 'General Context'}</Text>
+                          <Text style={styles.scaffoldingMetaText}>🎯 <Text style={{ color: '#FFD700' }}>Goal:</Text> {currentChallenge.task || 'Reflex response'}</Text>
+                        </View>
+                        <View style={styles.nativeTranslateDivider} />
+                        <Text style={styles.hintLanguageTag}>
+                          👉 {LANG_CONFIG[selectedLang].flag} {LANG_CONFIG[selectedLang].label}:
+                        </Text>
+                        <Text style={styles.hintBodyText}>
+                          "{currentChallenge.hint?.[selectedLang] || currentChallenge.hint?.vi || currentChallenge.contextDesc}"
+                        </Text>
+                      </View>
                     )}
                   </View>
-
-                  {/* 📌 SCAFFOLDING BOX FOR A1-A2 & ASIA LEARNERS */}
-                  {showHint && currentChallenge.hint && (
-                    <View style={styles.scaffoldingBox}>
-                      <View style={styles.scaffoldingMetaRow}>
-                        <Text style={styles.scaffoldingMetaText}>📍 <Text style={{ color: '#00FFFF' }}>Place:</Text> {currentChallenge.place || 'General Context'}</Text>
-                        <Text style={styles.scaffoldingMetaText}>🎯 <Text style={{ color: '#FFD700' }}>Goal:</Text> {currentChallenge.task || 'Reflex response'}</Text>
-                      </View>
-                      <View style={styles.nativeTranslateDivider} />
-                      <Text style={styles.nativeTranslateText}>
-                        👉 <Text style={{ fontWeight: 'bold' }}>{LANG_NAMES[selectedLang]}:</Text> "{currentChallenge.hint[selectedLang] || currentChallenge.hint.vi}"
-                      </Text>
-                    </View>
-                  )}
 
                   {practiceMode === 'READ_SAMPLE' ? (
                     <View style={styles.previewPromptBox}>
@@ -1384,39 +1385,46 @@ Output ONLY raw JSON:
             <Text style={styles.normalPromptDesc}>{currentChallenge.contextDesc}</Text>
 
             {/* HINT BAR IN PRACTICE ROOM */}
-            <View style={styles.hintControlRow}>
-              <TouchableOpacity 
-                style={[styles.hintToggleBtn, showHint && styles.hintToggleBtnActive]} 
-                onPress={() => setShowHint(prev => !prev)}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.hintToggleBtnText, showHint && { color: '#000' }]}>
-                  {showHint ? '💡 HIDE NATIVE HINT' : `💡 NATIVE HINT (${LANG_FLAGS[selectedLang]})`}
-                </Text>
-              </TouchableOpacity>
+            <View style={styles.hintContainer}>
+              <View style={styles.hintHeaderRow}>
+                <TouchableOpacity 
+                  style={[styles.hintToggleBtn, showHint && styles.hintToggleBtnActive]} 
+                  onPress={() => setShowHint(prev => !prev)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.hintToggleText, showHint && { color: '#000' }]}>
+                    {showHint ? '✕ HIDE HINT' : `💡 NATIVE HINT (${LANG_CONFIG[selectedLang].flag})`}
+                  </Text>
+                </TouchableOpacity>
 
-              {showHint && (
                 <View style={styles.flagPickerRow}>
                   {(['vi', 'th', 'ja', 'ko', 'id'] as SupportedLang[]).map((lang) => (
                     <TouchableOpacity
                       key={lang}
                       style={[styles.flagBtn, selectedLang === lang && styles.flagBtnActive]}
-                      onPress={() => setSelectedLang(lang)}
+                      onPress={() => {
+                        setSelectedLang(lang);
+                        setShowHint(true);
+                      }}
+                      activeOpacity={0.7}
                     >
-                      <Text style={styles.flagText}>{LANG_FLAGS[lang]}</Text>
+                      <Text style={styles.flagIcon}>{LANG_CONFIG[lang].flag}</Text>
                     </TouchableOpacity>
                   ))}
                 </View>
+              </View>
+
+              {showHint && currentChallenge && (
+                <View style={styles.hintContentBox}>
+                  <Text style={styles.hintLanguageTag}>
+                    👉 {LANG_CONFIG[selectedLang].flag} {LANG_CONFIG[selectedLang].label}:
+                  </Text>
+                  <Text style={styles.hintBodyText}>
+                    "{currentChallenge.hint?.[selectedLang] || currentChallenge.hint?.vi || currentChallenge.contextDesc}"
+                  </Text>
+                </View>
               )}
             </View>
-
-            {showHint && currentChallenge.hint && (
-              <View style={styles.scaffoldingBox}>
-                <Text style={styles.nativeTranslateText}>
-                  👉 <Text style={{ fontWeight: 'bold' }}>{LANG_NAMES[selectedLang]}:</Text> "{currentChallenge.hint[selectedLang] || currentChallenge.hint.vi}"
-                </Text>
-              </View>
-            )}
 
             {practiceMode === 'READ_SAMPLE' ? (
               <View style={styles.promptDisplayBox}>
@@ -1613,77 +1621,88 @@ const styles = StyleSheet.create({
   levelBadge: { color: '#000', backgroundColor: '#39FF14', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, fontSize: 8.5, fontWeight: '900' },
   contextText: { color: '#FFF', fontSize: 11, lineHeight: 16, marginBottom: 8 },
 
-  hintControlRow: {
+  hintContainer: {
+    marginVertical: 8,
+    width: '100%',
+  },
+  hintHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 4,
-    marginBottom: 8
+    gap: 8,
   },
   hintToggleBtn: {
     backgroundColor: '#16082F',
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: '#FFD700',
-    paddingVertical: 4,
-    paddingHorizontal: 9,
-    borderRadius: 6
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: 7,
   },
   hintToggleBtnActive: {
-    backgroundColor: '#FFD700'
+    backgroundColor: '#FFD700',
   },
-  hintToggleBtnText: {
+  hintToggleText: {
     color: '#FFD700',
-    fontSize: 9,
-    fontWeight: '900'
+    fontSize: 9.5,
+    fontWeight: '900',
   },
   flagPickerRow: {
     flexDirection: 'row',
-    gap: 5,
+    gap: 6,
     backgroundColor: '#0D0620',
     padding: 3,
-    borderRadius: 6,
+    borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#332255'
+    borderColor: '#332255',
   },
   flagBtn: {
-    paddingHorizontal: 4,
+    paddingHorizontal: 5,
     paddingVertical: 2,
-    borderRadius: 4
+    borderRadius: 5,
   },
   flagBtnActive: {
-    backgroundColor: '#2A144E'
+    backgroundColor: '#331A66',
+    borderWidth: 1,
+    borderColor: '#00FFFF',
   },
-  flagText: {
-    fontSize: 13
+  flagIcon: {
+    fontSize: 14,
   },
-  scaffoldingBox: {
-    backgroundColor: '#0B0418',
+  hintContentBox: {
+    backgroundColor: '#07180D',
     borderLeftWidth: 3,
     borderLeftColor: '#39FF14',
-    padding: 8,
-    borderRadius: 6,
-    marginBottom: 10
+    padding: 10,
+    borderRadius: 8,
+    marginTop: 8,
   },
   scaffoldingMetaRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 4
+    marginBottom: 4,
   },
   scaffoldingMetaText: {
     color: '#DDD',
     fontSize: 9,
-    fontWeight: 'bold'
+    fontWeight: 'bold',
   },
   nativeTranslateDivider: {
     height: 1,
-    backgroundColor: '#221144',
-    marginVertical: 4
+    backgroundColor: '#1A3322',
+    marginVertical: 4,
   },
-  nativeTranslateText: {
+  hintLanguageTag: {
     color: '#39FF14',
-    fontSize: 10,
+    fontSize: 9.5,
+    fontWeight: '900',
+    marginBottom: 2,
+  },
+  hintBodyText: {
+    color: '#88FFBB',
+    fontSize: 11,
+    lineHeight: 16,
     fontStyle: 'italic',
-    lineHeight: 15
   },
 
   previewPromptBox: { backgroundColor: '#070212', padding: 10, borderRadius: 8, marginBottom: 12, borderWidth: 1, borderColor: '#221144' },
