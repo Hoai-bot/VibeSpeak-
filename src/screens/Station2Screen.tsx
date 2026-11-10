@@ -195,6 +195,7 @@ export default function Station2Screen({ onBack }: Props) {
   // Quản lý Text-To-Speech
   const [isPlayingSample, setIsPlayingSample] = useState<boolean>(false);
   const synthRef = useRef<SpeechSynthesis | null>(null);
+  const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
@@ -232,30 +233,62 @@ export default function Station2Screen({ onBack }: Props) {
   };
 
   const stopSampleAudio = () => {
+    if (audioPlayerRef.current) {
+      audioPlayerRef.current.pause();
+      audioPlayerRef.current.currentTime = 0;
+      audioPlayerRef.current = null;
+    }
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       window.speechSynthesis.cancel();
     }
     setIsPlayingSample(false);
   };
 
-  const playNaturalTTS = (text: string) => {
-    if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
-      Alert.alert("Lỗi âm thanh", "Trình duyệt không hỗ trợ Text-to-Speech");
+  const playNaturalTTS = async (text: string) => {
+    if (isPlayingSample) {
+      stopSampleAudio();
       return;
     }
-    const synth = window.speechSynthesis;
 
-    if (isPlayingSample) {
-      synth.cancel();
+    const cleanText = text.replace(/["']/g, '').trim();
+    if (!cleanText) return;
+
+    setIsPlayingSample(true);
+
+    // ⚡ LỚP 1: GỌI API SERVER MICROSOFT EDGE-TTS (GIỌNG NEURAL TỰ NHIÊN CHUẨN BẢN XỨ)
+    try {
+      const ttsUrl = `/api/tts?voice=nova&text=${encodeURIComponent(cleanText)}`;
+      const audio = new Audio(ttsUrl);
+      audioPlayerRef.current = audio;
+
+      audio.onended = () => {
+        setIsPlayingSample(false);
+        audioPlayerRef.current = null;
+      };
+
+      audio.onerror = () => {
+        console.warn("Server TTS không tải được, chuyển sang fallback máy khách...");
+        playLocalSampleFallback(cleanText);
+      };
+
+      await audio.play();
+      return;
+    } catch (e) {
+      console.warn("Lỗi phát server TTS Trạm 2:", e);
+      playLocalSampleFallback(cleanText);
+    }
+  };
+
+  // 🛡️ LỚP 2: DỰ PHÒNG NỘI BỘ NẾU MẤT KẾT NỐI MẠNG
+  const playLocalSampleFallback = (cleanText: string) => {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
       setIsPlayingSample(false);
       return;
     }
-
+    const synth = window.speechSynthesis;
     synth.cancel();
 
-    const cleanText = text.replace(/["']/g, '').trim();
     const utterance = new SpeechSynthesisUtterance(cleanText);
-
     const bestVoice = getBestNaturalVoice();
     if (bestVoice) {
       utterance.voice = bestVoice;
