@@ -28,7 +28,7 @@ export type CefrLevel = 'A1' | 'A2' | 'B1' | 'B2' | 'C1' | 'C2';
 export type Station2Tier = 'SOLO' | 'RELAY' | 'ROLEPLAY';
 export type PracticeMode = 'READ_SAMPLE' | 'FREE_SPEECH';
 export type TopicOrigin = 'SYSTEM' | 'TEACHER_DASHBOARD' | 'STUDENT_CUSTOM';
-export type SupportedLang = 'vi' | 'th' | 'ja' | 'ko' | 'id';
+export type SupportedLang = 'vi' | 'th' | 'ja' | 'ko' | 'id' | 'zh';
 
 export interface MultilingualHint {
   vi: string; // Tiếng Việt
@@ -36,6 +36,7 @@ export interface MultilingualHint {
   ja: string; // 日本語
   ko: string; // 한국어
   id: string; // Bahasa Indonesia
+  zh: string; // 中文 (Chinese)
 }
 
 export interface ChallengeItem {
@@ -58,7 +59,8 @@ const LANG_CONFIG: Record<SupportedLang, { flag: string; label: string; code: st
   th: { flag: '🇹🇭', label: 'ภาษาไทย', code: 'TH' },
   ja: { flag: '🇯🇵', label: '日本語', code: 'JP' },
   ko: { flag: '🇰🇷', label: '한국어', code: 'KR' },
-  id: { flag: '🇮🇩', label: 'Bahasa Indonesia', code: 'ID' }
+  id: { flag: '🇮🇩', label: 'Bahasa Indonesia', code: 'ID' },
+  zh: { flag: '🇨🇳', label: '中文', code: 'CN' }
 };
 
 const TIERS: { key: Station2Tier; label: string; icon: string; desc: string }[] = [
@@ -67,7 +69,7 @@ const TIERS: { key: Station2Tier; label: string; icon: string; desc: string }[] 
   { key: 'ROLEPLAY', label: 'TIER 3: ROLEPLAY (DYNAMIC DUO)', icon: '🎭', desc: 'Interactive roleplay: Resolve interpersonal conflicts and negotiate practical scenarios.' }
 ];
 
-// 🎯 KHO KỊCH BẢN CHUẨN 100% ENGLISH-FIRST + ĐỦ 5 THỨ TIẾNG CHÂU Á
+// 🎯 KHO KỊCH BẢN CHUẨN 100% ENGLISH-FIRST + ĐỦ 6 THỨ TIẾNG CHÂU Á
 const SCENARIO_LIBRARY: Record<string, Omit<ChallengeItem, 'id' | 'tier' | 'level' | 'isTeacherAssigned'>[]> = {
   'SOLO_A1': [
     {
@@ -81,7 +83,8 @@ const SCENARIO_LIBRARY: Record<string, Omit<ChallengeItem, 'id' | 'tier' | 'leve
         th: "บอกทางเดิน: ตรงไปสองบล็อกแล้วเลี้ยวซ้าย สถานีอยู่ติดกับธนาคาร",
         ja: "道案内：2ブロック直進して左折します。駅は銀行のすぐ隣にあります。",
         ko: "길 안내: 두 블록 직진 후 좌회전하세요. 역은 은행 바로 옆에 있습니다.",
-        id: "Memberi petunjuk jalan: lurus dua blok, lalu belok kiri; stasiun ada di sebelah bank."
+        id: "Memberi petunjuk jalan: lurus dua blok, lalu belok kiri; stasiun ada di sebelah bank.",
+        zh: "指路提示：直行两个街区然后左转，地铁站就在银行隔壁。"
       }
     },
     {
@@ -95,7 +98,8 @@ const SCENARIO_LIBRARY: Record<string, Omit<ChallengeItem, 'id' | 'tier' | 'leve
         th: "สั่งอาหารกลับบ้าน: สั่งชุดข้าวไก่ 1 ชุดและน้ำดื่ม 1 ขวด",
         ja: "テイクアウト注文：チキンライスセット1つとミネラルウォーター1本を持ち帰りで注文します。",
         ko: "포장 주문: 치킨 라이스 세트 하나와 생수 한 병을 포장 주문하세요.",
-        id: "Pesan bawa pulang: pesan 1 paket nasi ayam bungkus dan 1 botol air mineral."
+        id: "Pesan bawa pulang: pesan 1 paket nasi ayam bungkus dan 1 botol air mineral.",
+        zh: "打包点餐：请给我一份外带的鸡肉饭套餐和一瓶矿泉水。"
       }
     },
     {
@@ -109,7 +113,8 @@ const SCENARIO_LIBRARY: Record<string, Omit<ChallengeItem, 'id' | 'tier' | 'leve
         th: "ถามเวลาอย่างสุภาพ: แบตโทรศัพท์หมด ถามคนข้างๆ ว่าเวลากี่โมงแล้ว",
         ja: "時間を尋ねる：スマホの充電が切れたので、近くの人に時間を丁寧に尋ねます。",
         ko: "시간 묻기: 휴대전화 배터리가 다 닳았으니 근처 사람에게 정중히 시간을 물어보세요.",
-        id: "Menanyakan waktu: baterai ponsel habis, tanyakan jam berapa kepada orang di dekat Anda."
+        id: "Menanyakan waktu: baterai ponsel habis, tanyakan jam berapa kepada orang di dekat Anda.",
+        zh: "礼貌问时间：手机完全没电了，礼貌询问身边的人现在几点了。"
       }
     }
   ],
@@ -125,7 +130,8 @@ const SCENARIO_LIBRARY: Record<string, Omit<ChallengeItem, 'id' | 'tier' | 'leve
         th: "ปฏิเสธคำชวนอย่างสุภาพ: อยากไปมากแต่สัญญาว่าจะไปหาปู่ย่าตายายสุดสัปดาห์นี้แล้ว",
         ja: "丁寧にお誘いを断る：行きたいのは山々ですが、今週末は祖父母を訪ねる約束があります。",
         ko: "정중히 거절하기: 정말 가고 싶지만 이번 주말에 조부모님을 뵙기로 약속했습니다.",
-        id: "Menolak ajakan: sangat ingin ikut, tapi sudah berjanji mengunjungi kakek-nenek akhir pekan ini."
+        id: "Menolak ajakan: sangat ingin ikut, tapi sudah berjanji mengunjungi kakek-nenek akhir pekan ini.",
+        zh: "礼貌拒绝邀请：非常想去，但本周末已经答应回老家看望祖父母了。"
       }
     },
     {
@@ -139,7 +145,8 @@ const SCENARIO_LIBRARY: Record<string, Omit<ChallengeItem, 'id' | 'tier' | 'leve
         th: "แจ้งอาหารเย็นชืด: ขอความกรุณาพนักงานช่วยนำบะหมี่ไปอุ่นให้ร้อนอีกครั้ง",
         ja: "料理の温め直し：麺が冷たいので、キッチンで温め直してもらうよう店員に丁寧に頼みます。",
         ko: "음식 데우기 요청: 면이 너무 식었으니 주방에 다시 데워달라고 정중히 요청하세요.",
-        id: "Komplain makanan dingin: minta pelayan với sopan agar dapur memanaskan kembali mi Anda."
+        id: "Komplain makanan dingin: minta pelayan dengan sopan agar dapur memanaskan kembali mi Anda.",
+        zh: "反馈菜品过凉：炒面端上来完全是凉的，请服务员帮忙拿回厨房重新加热。"
       }
     }
   ],
@@ -155,7 +162,8 @@ const SCENARIO_LIBRARY: Record<string, Omit<ChallengeItem, 'id' | 'tier' | 'leve
         th: "ชี้แจงงบประมาณ: แม้ต้นทุนเริ่มต้นจะสูง แต่การประหยัดค่าดำเนินการใน 6 เดือนจะคุ้มทุนอย่างแน่นอน",
         ja: "初期費用の正当化：初期投資は必要ですが、6か月間の運用削減により全額回収できます。",
         ko: "프로젝트 비용 정당화: 초기 투자가 필요하지만 6개월간의 운영 절감으로 충분히 상쇄됩니다.",
-        id: "Mempertahankan biaya proyek: biaya awal memang tinggi, tapi penghematan 6 bulan akan menutupinya."
+        id: "Mempertahankan biaya proyek: biaya awal memang tinggi, tapi penghematan 6 bulan akan menutupinya.",
+        zh: "论证初期成本：虽然前期投入较大，但6个月内节省的运营开支将完全抵消这笔成本。"
       }
     },
     {
@@ -169,7 +177,8 @@ const SCENARIO_LIBRARY: Record<string, Omit<ChallengeItem, 'id' | 'tier' | 'leve
         th: "เจรจาแบ่งงาน: เสนอให้จัดสรรงานวิจัยทางเทคนิคใหม่เพื่อให้สมาชิกทุกคนมีส่วนร่วมเท่าๆ กัน",
         ja: "業務分担の再調整：全員が公平に貢献できるよう、技術調査のタスクを再配分することを提案します。",
         ko: "업무 재분배 제안: 모든 팀원이 동등하게 기여할 수 있도록 기술 연구 업무를 재분배하자고 제안하세요.",
-        id: "Negosiasi pembagian tugas: usulkan pembagian ulang beban riset teknis agar kontribusi seimbang."
+        id: "Negosiasi pembagian tugas: usulkan pembagian ulang beban riset teknis agar kontribusi seimbang.",
+        zh: "提议重新分工：建议重新分配技术调研工作量，让每位组员都能公平分担。"
       }
     }
   ],
@@ -185,7 +194,8 @@ const SCENARIO_LIBRARY: Record<string, Omit<ChallengeItem, 'id' | 'tier' | 'leve
         th: "ปฏิเสธกำหนดการเร่งด่วน: การเร่งส่งมอบงานเร็วขึ้นหนึ่งสัปดาห์จะทำให้การตรวจสอบความปลอดภัยมีช่องโหว่",
         ja: "納期短縮への反論：リリースを1週間前倒しするとセキュリティ監査が不十分になり、脆弱性のリスクが高まります。",
         ko: "일정 단축 거절: 일주일 일찍 배포하면 보안 감사 일정이 촉박해져 심각한 취약점이 발생할 수 있습니다.",
-        id: "Menolak percepatan tenggat: memajukan rilis seminggu membatasi audit keamanan dan memicu celah bahaya."
+        id: "Menolak percepatan tenggat: memajukan rilis seminggu membatasi audit keamanan dan memicu celah bahaya.",
+        zh: "婉拒赶工期：提前一周上线会严重压缩安全审计周期，恐留下重大漏洞隐患。"
       }
     }
   ],
@@ -201,7 +211,8 @@ const SCENARIO_LIBRARY: Record<string, Omit<ChallengeItem, 'id' | 'tier' | 'leve
         th: "แถลงการณ์รับมือวิกฤต: ทีมงานได้แยกขอบเขตความเสียหาย ว่าจ้างผู้ตรวจสอบภายนอก และจะอัปเดตอย่างโปร่งใสทุกชั่วโมง",
         ja: "緊急記者会見：インシデント対応チームが感染範囲を隔離し、第三者監査機関を介入させ、毎時最新情報を公開します。",
         ko: "데이터 유출 위기 대응: 사고 대응팀이 침해 구역을 격리하고 외부 전문 감사관을 투입해 매시간 투명하게 공지하겠습니다.",
-        id: "Pernyataan krisis: tim insiden telah mengisolasi area, melibatkan auditor forensik, dan memberi update transparan."
+        id: "Pernyataan krisis: tim insiden telah mengisolasi area, melibatkan auditor forensik, dan memberi update transparan.",
+        zh: "危机公关发声：应急响应团队已隔离泄露范围，引入第三方取证机构，并将按小时公开进展。"
       }
     }
   ],
@@ -217,7 +228,8 @@ const SCENARIO_LIBRARY: Record<string, Omit<ChallengeItem, 'id' | 'tier' | 'leve
         th: "การตัดสินด้วย AI: การตัดสินคดีด้วยอัลกอริทึมเพียงแค่อิงตามบรรทัดฐานในอดีต ซึ่งเป็นการตอกย้ำอคติในระบบภายใต้คำว่ายุติธรรม",
         ja: "AI司法の批判的検討：アルゴリズムによる判決は過去の判例を最適化するに過ぎず、中立の名の下に構造的偏見を固定化します。",
         ko: "AI 판결 윤리 논쟁: 알고리즘 판결은 과거 선례를 최적화할 뿐이며 중립이라는 미명 하에 구조적 편향을 공식화합니다.",
-        id: "Debat etika AI peradilan: putusan algoritmik hanya mengoptimalkan preseden masa lalu, melegalkan bias sistemik."
+        id: "Debat etika AI peradilan: putusan algoritmik hanya mengoptimalkan preseden masa lalu, melegalkan bias sistemik.",
+        zh: "AI司法批判：算法裁决本质上仅优化历史既定判例，反而在客观中立的伪装下固化了系统性偏见。"
       }
     }
   ],
@@ -233,7 +245,8 @@ const SCENARIO_LIBRARY: Record<string, Omit<ChallengeItem, 'id' | 'tier' | 'leve
         th: "ต่อยอดไอเดียงานเลี้ยง: เพื่อน A เสนอพิซซ่าและเครื่องดื่ม -> เพื่อน B สานต่อเรื่องลำโพงและโคมไฟตกแต่ง",
         ja: "リレー会話：Aがピザと飲み物を提案 -> Bがテラスの飾り付け用スピーカーと提灯を持ってくると続けます。",
         ko: "릴레이 대화: 친구 A가 피자와 음료 제안 -> 친구 B가 스피커와 종이등 장식을 가져오겠다고 이어가세요.",
-        id: "Estafet pesta perpisahan: Rekan A usul piza & minuman -> Rekan B sambung dengan membawa speaker dan lentera."
+        id: "Estafet pesta perpisahan: Rekan A usul piza & minuman -> Rekan B sambung dengan membawa speaker dan lentera.",
+        zh: "接力派对策划：同学A提议买披萨和饮料 -> 同学B接着补充音响和庭院纸灯笼装饰。"
       }
     }
   ],
@@ -249,7 +262,8 @@ const SCENARIO_LIBRARY: Record<string, Omit<ChallengeItem, 'id' | 'tier' | 'leve
         th: "ลดขยะพลาสติก: เพื่อน A เสนอเลิกใช้แก้วพลาสติก -> เพื่อน B ต่อยอดด้วยการลดราคา 10% เมื่อนำแก้วส่วนตัวมา",
         ja: "プラスチック削減：Aが使い捨てカップ廃止を提案 -> Bがマイボトル持参者に10%割引を設ける案を補足します。",
         ko: "플라스틱 줄이기 릴레이: A가 일회용 컵 중단 제안 -> B가 텀블러 지참 시 10% 할인 정책을 연계 제안하세요.",
-        id: "Estafet kurangi plastik: A usul stop cangkir sekali pakai -> B sambung dengan diskon 10% untuk tumbler pribadi."
+        id: "Estafet kurangi plastik: A usul stop cangkir sekali pakai -> B sambung dengan diskon 10% untuk tumbler pribadi.",
+        zh: "环保减塑接力：同学A建议停用一次性杯子 -> 同学B跟进提出自带保温杯立享九折优惠。"
       }
     }
   ],
@@ -265,7 +279,8 @@ const SCENARIO_LIBRARY: Record<string, Omit<ChallengeItem, 'id' | 'tier' | 'leve
         th: "โครงสร้างพื้นฐาน EV: เพื่อน A พูดถึงการอุดหนุนมอเตอร์ไซค์ไฟฟ้า -> เพื่อน B เน้นย้ำสถานีสลับแบตเตอรี่ตามแนวรถไฟฟ้า",
         ja: "EV普及リレー：Aが電動バイク補助金を提案 -> Bが主要幹線道路沿いへの規格化されたバッテリー交換ステーション整備を補足します。",
         ko: "친환경 전기차 인프라: A가 전기 오토바이 보조금 주장 -> B가 주요 환승 통로에 표준 배터리 교환소 확충을 덧붙이세요.",
-        id: "Estafet motor listrik: A usulkan subsidi -> B tekankan perluasan stasiun penukaran baterai terstandarisasi."
+        id: "Estafet motor listrik: A usulkan subsidi -> B tekankan perluasan stasiun penukaran baterai terstandarisasi.",
+        zh: "城市电动化接力：嘉宾A主张补贴电摩 -> 嘉宾B紧接着呼吁在主要交通走廊同步布局标准化换电站。"
       }
     }
   ],
@@ -281,7 +296,8 @@ const SCENARIO_LIBRARY: Record<string, Omit<ChallengeItem, 'id' | 'tier' | 'leve
         th: "สวมบทบาทสั่งอาหาร: สั่งชุดไก่ทอดและสอบถามว่าสามารถสแกนจ่ายด้วย QR Code ได้หรือไม่",
         ja: "ロールプレイ（注文）：フライドチキンコンボを注文し、モバイルQR決済ができるか尋ねます。",
         ko: "역할극 주문: 치킨 콤보를 주문하고 모바일 QR 코드로 결제 가능한지 물어보세요.",
-        id: "Roleplay pesan makanan: pesan paket ayam goreng dan tanyakan apakah bisa bayar pakai QR."
+        id: "Roleplay pesan makanan: pesan paket ayam goreng dan tanyakan apakah bisa bayar pakai QR.",
+        zh: "角色扮演点餐：请给我一份炸鸡套餐，并询问能否使用手机扫码支付。"
       }
     }
   ],
@@ -297,7 +313,8 @@ const SCENARIO_LIBRARY: Record<string, Omit<ChallengeItem, 'id' | 'tier' | 'leve
         th: "เปลี่ยนขนาดเสื้อ: เสื้อที่ซื้อเมื่อวานแน่นช่วงไหล่ นำใบเสร็จมาขอเปลี่ยนเป็นไซส์ L",
         ja: "サイズ交換：昨日買ったシャツの肩周りが窮屈なため、レシートを提示してLサイズへの交換を依頼します。",
         ko: "사이즈 교환: 어제 산 셔츠 어깨가 꽉 끼니 영수증을 보여주고 L 사이즈로 교환을 요청하세요.",
-        id: "Tukar ukuran baju: kemeja kemarin kesempitan di bahu, tunjukkan struk untuk tukar ke ukuran L."
+        id: "Tukar ukuran baju: kemeja kemarin kesempitan di bahu, tunjukkan struk untuk tukar ke ukuran L.",
+        zh: "角色扮演调换尺码：昨天买的衬衫肩膀偏紧，出示小票礼貌申请更换为L码。"
       }
     }
   ],
@@ -313,7 +330,8 @@ const SCENARIO_LIBRARY: Record<string, Omit<ChallengeItem, 'id' | 'tier' | 'leve
         th: "เปลี่ยนเครื่องดื่มด่วน: สั่งชาพีชเย็นแต่ได้คาปูชิโน่ร้อน เครื่องบินจะขึ้นใน 10 นาที ขอให้เปลี่ยนให้อย่างรวดเร็ว",
         ja: "急ぎのドリンク交換：アイスピーチティーを頼んだのにカプチーノが届いた。搭乗まで10分なので至急交換を求めます。",
         ko: "음료 긴급 교환: 아이스 피치티를 주문했는데 따뜻한 카푸치노가 나왔고 10분 뒤 탑승이니 즉시 교환을 요청하세요.",
-        id: "Tukar minuman darurat: pesan es teh persik dapat cappuccino panas, pesawat boarding 10 menit lagi."
+        id: "Tukar minuman darurat: pesan es teh persik dapat cappuccino panas, pesawat boarding 10 menit lagi.",
+        zh: "紧急换饮品：点了冰桃茶却拿到热卡布奇诺，飞机还有10分钟登机，急求立刻调换。"
       }
     }
   ],
@@ -329,7 +347,8 @@ const SCENARIO_LIBRARY: Record<string, Omit<ChallengeItem, 'id' | 'tier' | 'leve
         th: "เจรจาความล่าช้า: ยอมรับว่าโมดูลรายงานล่าช้า 3 วัน เพื่อไม่ให้งานสะดุด เสนอติดตั้งฟังก์ชันส่งออกข้อมูลหลักให้ช่วงบ่ายนี้",
         ja: "進捗遅延の交渉：レポート機能の3日遅延を認め、業務を止めないよう本日の午後に主要データ出力機能を先行納品すると提案します。",
         ko: "프로젝트 지연 협상: 보고서 모듈의 3일 지연을 인정하고, 팀 업무를 위해 핵심 데이터 내보내기 기능을 오늘 오후 즉시 배포하겠다고 제안하세요.",
-        id: "Negosiasi modul tertunda: akui modul telat 3 hari, tawarkan rilis fitur ekspor data utama sore ini."
+        id: "Negosiasi modul tertunda: akui modul telat 3 hari, tawarkan rilis fitur ekspor data utama sore ini.",
+        zh: "延期协商：承认报表模块耽误了3天，为保障业务运转，承诺今天下午率先部署核心数据导出功能。"
       }
     }
   ],
@@ -345,7 +364,8 @@ const SCENARIO_LIBRARY: Record<string, Omit<ChallengeItem, 'id' | 'tier' | 'leve
         th: "รับมือแขก VIP: ผู้จัดการขออภัยเหตุแอร์เสีย และย้ายห้องพักไปยังเพนต์เฮาส์สุดหรูพร้อมบริการฟรีทั้งหมด",
         ja: "VIPクレーム対応：総支配人としてエアコン故障を陳謝し、最上階ペントハウスへの即時移動と全額無償対応を提示します。",
         ko: "VIP 객실 에어컨 고장 대응: 총지배인으로서 심야 에어컨 고장에 사과하고 최고급 펜트하우스로 무료 업그레이드 조치하세요.",
-        id: "Penanganan komplain VIP: sebagai GM minta maaf atas AC rusak dan gratiskan upgrade ke Presidential Penthouse."
+        id: "Penanganan komplain VIP: sebagai GM minta maaf atas AC rusak dan gratiskan upgrade ke Presidential Penthouse.",
+        zh: "贵宾投诉处理：作为总经理就深夜总统套房空调故障致歉，并亲自安排即刻升级至顶层阁楼套房且全程免单。"
       }
     }
   ]
@@ -567,7 +587,8 @@ export default function Station2Screen({ onBack }: Props) {
                 th: item.description || "งานที่ได้รับมอบหมายจากอาจารย์",
                 ja: item.description || "講師から直接割り当てられた課題です。",
                 ko: item.description || "담당 교수가 직접 부여한 과제입니다.",
-                id: item.description || "Tugas yang diberikan langsung oleh pengajar."
+                id: item.description || "Tugas yang diberikan langsung oleh pengajar.",
+                zh: item.description || "教师布置的专属口语挑战。"
               },
               isTeacherAssigned: true
             };
@@ -620,7 +641,8 @@ Output ONLY raw JSON:
   "hintTh": "Summary hint in Thai",
   "hintJa": "Summary hint in Japanese",
   "hintKo": "Summary hint in Korean",
-  "hintId": "Summary hint in Indonesian"
+  "hintId": "Summary hint in Indonesian",
+  "hintZh": "Summary hint in Chinese"
 }`;
 
       const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -654,7 +676,8 @@ Output ONLY raw JSON:
             th: content.hintTh || content.contextDesc,
             ja: content.hintJa || content.contextDesc,
             ko: content.hintKo || content.contextDesc,
-            id: content.hintId || content.contextDesc
+            id: content.hintId || content.contextDesc,
+            zh: content.hintZh || content.contextDesc
           },
           isTeacherAssigned: false,
         };
@@ -706,7 +729,8 @@ Output ONLY raw JSON:
         th: customContext.trim() || customTitle.trim(),
         ja: customContext.trim() || customTitle.trim(),
         ko: customContext.trim() || customTitle.trim(),
-        id: customContext.trim() || customTitle.trim()
+        id: customContext.trim() || customTitle.trim(),
+        zh: customContext.trim() || customTitle.trim()
       },
       isTeacherAssigned: false
     };
@@ -1282,7 +1306,7 @@ Output ONLY raw JSON:
                   
                   <Text style={styles.contextText}>📌 {currentChallenge.contextDesc}</Text>
 
-                  {/* 🌐 THANH CHỌN CỜ ĐA NGÔN NGỮ CHÂU Á - ĐÃ FIX MÀU CHỮ SÁNG NỔI BẬT */}
+                  {/* 🌐 THANH CHỌN CỜ 6 NƯỚC (ĐÃ BỔ SUNG 🇨🇳 TRUNG QUỐC) */}
                   <View style={styles.hintContainer}>
                     <View style={styles.hintHeaderRow}>
                       <TouchableOpacity 
@@ -1295,9 +1319,9 @@ Output ONLY raw JSON:
                         </Text>
                       </TouchableOpacity>
 
-                      {/* DÃY CỜ 5 NƯỚC LUÔN NẰM TRỰC DIỆN ĐỂ BẤM CHỌN */}
+                      {/* DÃY CỜ 6 NƯỚC LUÔN NẰM TRỰC DIỆN ĐỂ BẤM CHỌN */}
                       <View style={styles.flagPickerRow}>
-                        {(['vi', 'th', 'ja', 'ko', 'id'] as SupportedLang[]).map((lang) => {
+                        {(['vi', 'th', 'ja', 'ko', 'id', 'zh'] as SupportedLang[]).map((lang) => {
                           const isSelected = selectedLang === lang;
                           return (
                             <TouchableOpacity
@@ -1403,7 +1427,7 @@ Output ONLY raw JSON:
             <Text style={styles.normalPromptTitle}>{currentChallenge.title} ({currentChallenge.level})</Text>
             <Text style={styles.normalPromptDesc}>{currentChallenge.contextDesc}</Text>
 
-            {/* HINT BAR TRONG PHÒNG THU CŨNG ĐỒNG BỘ 5 CỜ SÁNG RÕ */}
+            {/* HINT BAR TRONG PHÒNG THU CŨNG ĐỒNG BỘ 6 CỜ */}
             <View style={styles.hintContainer}>
               <View style={styles.hintHeaderRow}>
                 <TouchableOpacity 
@@ -1417,7 +1441,7 @@ Output ONLY raw JSON:
                 </TouchableOpacity>
 
                 <View style={styles.flagPickerRow}>
-                  {(['vi', 'th', 'ja', 'ko', 'id'] as SupportedLang[]).map((lang) => {
+                  {(['vi', 'th', 'ja', 'ko', 'id', 'zh'] as SupportedLang[]).map((lang) => {
                     const isSelected = selectedLang === lang;
                     return (
                       <TouchableOpacity
@@ -1677,26 +1701,26 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
   },
   hintToggleBtn: {
     backgroundColor: '#16082F',
     borderWidth: 1.5,
     borderColor: '#FFD700',
     paddingVertical: 6,
-    paddingHorizontal: 11,
+    paddingHorizontal: 10,
     borderRadius: 7,
   },
   hintToggleBtnActive: {
     backgroundColor: '#FFD700',
   },
   hintToggleText: {
-    fontSize: 9.5,
+    fontSize: 9,
     fontWeight: '900',
   },
   flagPickerRow: {
     flexDirection: 'row',
-    gap: 5,
+    gap: 4,
     backgroundColor: '#0D0620',
     padding: 3,
     borderRadius: 8,
@@ -1707,8 +1731,8 @@ const styles = StyleSheet.create({
   flagBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 3,
-    paddingHorizontal: 6,
+    gap: 2,
+    paddingHorizontal: 5,
     paddingVertical: 4,
     borderRadius: 6,
     backgroundColor: '#16082F',
@@ -1720,10 +1744,10 @@ const styles = StyleSheet.create({
     borderColor: '#00FFFF',
   },
   flagIcon: {
-    fontSize: 13,
+    fontSize: 12.5,
   },
   flagCodeText: {
-    fontSize: 9.5,
+    fontSize: 9,
     fontWeight: '900',
   },
   hintContentBox: {
