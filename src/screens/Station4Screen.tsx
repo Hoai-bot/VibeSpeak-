@@ -10,6 +10,16 @@ interface Props {
 }
 
 export type CEFRLevel = 'A1' | 'A2' | 'B1' | 'B2' | 'C1' | 'C2';
+export type SupportedLang = 'vi' | 'th' | 'ja' | 'ko' | 'id' | 'zh';
+
+export interface MultilingualHint {
+  vi: string;
+  th: string;
+  ja: string;
+  ko: string;
+  id: string;
+  zh: string;
+}
 
 export interface Station4TopicItem {
   id: string;
@@ -20,7 +30,17 @@ export interface Station4TopicItem {
   targetDuration: number;
   suggestedKeywords?: string[];
   expressType?: string;
+  hint?: MultilingualHint;
 }
+
+const LANG_CONFIG: Record<SupportedLang, { flag: string; label: string; code: string }> = {
+  vi: { flag: '🇻🇳', label: 'Tiếng Việt', code: 'VN' },
+  th: { flag: '🇹🇭', label: 'ภาษาไทย', code: 'TH' },
+  ja: { flag: '🇯🇵', label: '日本語', code: 'JP' },
+  ko: { flag: '🇰🇷', label: '한국어', code: 'KR' },
+  id: { flag: '🇮🇩', label: 'Bahasa Indonesia', code: 'ID' },
+  zh: { flag: '🇨🇳', label: '中文', code: 'CN' }
+};
 
 // Chuẩn WPM và thời lượng theo khung CEFR
 const CEFR_CONFIG: Record<CEFRLevel, { minWpm: number; targetDuration: number }> = {
@@ -32,7 +52,6 @@ const CEFR_CONFIG: Record<CEFRLevel, { minWpm: number; targetDuration: number }>
   C2: { minWpm: 140, targetDuration: 120 },
 };
 
-// Chuyển đổi từ dữ liệu kho ExpressExerciseItem sang định dạng Trạm 4
 const mapExpressToTopic = (item: ExpressExerciseItem, loopIndex?: number): Station4TopicItem => {
   const config = CEFR_CONFIG[item.level] || CEFR_CONFIG['B1'];
   const suffix = loopIndex && loopIndex > 15 ? ` (#${Math.floor(loopIndex / 15) + 1})` : '';
@@ -45,6 +64,14 @@ const mapExpressToTopic = (item: ExpressExerciseItem, loopIndex?: number): Stati
     targetDuration: item.timeLimitSeconds > 30 ? item.timeLimitSeconds : config.targetDuration,
     suggestedKeywords: item.suggestedKeywords || [],
     expressType: item.expressType,
+    hint: {
+      vi: item.promptVi || item.promptEn,
+      th: item.promptVi || item.promptEn,
+      ja: item.promptVi || item.promptEn,
+      ko: item.promptVi || item.promptEn,
+      id: item.promptVi || item.promptEn,
+      zh: item.promptVi || item.promptEn
+    }
   };
 };
 
@@ -64,6 +91,10 @@ const safeBlobToBase64 = (blob: Blob): Promise<string> => {
 export default function Station4Screen({ onBack }: Props) {
   const [cefrLevel, setCefrLevel] = useState<CEFRLevel>('B1');
   const [topicSource, setTopicSource] = useState<'ai' | 'custom'>('ai');
+
+  // 🌐 MULTILINGUAL HINT STATE (HIGH CONTRAST & PERSISTENT)
+  const [selectedLang, setSelectedLang] = useState<SupportedLang>('vi');
+  const [showHint, setShowHint] = useState<boolean>(true);
 
   // Đề tự dán từ Giảng viên
   const [customTitle, setCustomTitle] = useState<string>('');
@@ -88,79 +119,77 @@ export default function Station4Screen({ onBack }: Props) {
       targetDuration: cfg.targetDuration,
       suggestedKeywords: ["technology", "productivity", "efficiency"],
       expressType: 'quick_response',
+      hint: {
+        vi: "Trình bày quan điểm cá nhân về công nghệ và năng suất hàng ngày.",
+        th: "นำเสนอมุมมองส่วนตัวเกี่ยวกับเทคโนโลยีและประสิทธิภาพการทำงานประจำวัน",
+        ja: "現代のテクノロジーと日々の生産性についての個人的な見解を述べてください。",
+        ko: "현대 기술과 일상 생산성에 대한 개인적인 견해를 발표하세요.",
+        id: "Sampaikan pandangan pribadi Anda tentang teknologi modern dan produktivitas harian.",
+        zh: "阐述你对现代科技与日常工作效率的个人观点。"
+      }
     };
   };
 
   const [runtimeTopic, setRuntimeTopic] = useState<Station4TopicItem>(() => getInitialTopicForLevel('B1'));
 
-  // 🔊 BỘ PHÁT ÂM TỰ NHIÊN ĐA NỀN TẢNG (IOS, ANDROID, WINDOWS, MACOS)
+  // 🔊 EDGE NEURAL TTS VỚI LOCAL SYNTHESIS FALLBACK
   const [isPlayingPromptAudio, setIsPlayingPromptAudio] = useState<boolean>(false);
-  const synthRef = useRef<SpeechSynthesis | null>(null);
-
-  useEffect(() => {
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      synthRef.current = window.speechSynthesis;
-      window.speechSynthesis.onvoiceschanged = () => {
-        window.speechSynthesis.getVoices();
-      };
-    }
-    return () => {
-      stopPromptAudio();
-    };
-  }, []);
-
-  const getBestNaturalVoice = (): SpeechSynthesisVoice | null => {
-    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return null;
-    const voices = window.speechSynthesis.getVoices();
-    if (!voices || voices.length === 0) return null;
-
-    const androidVoice = voices.find(v => 
-      v.lang.startsWith('en') && (v.name.includes('Google US English') || v.name.includes('Network') || v.voiceURI.includes('en-us-x'))
-    );
-    if (androidVoice) return androidVoice;
-
-    const iosVoice = voices.find(v => 
-      v.lang.startsWith('en') && (v.name.includes('Siri') || v.name.includes('Samantha') || v.name.includes('Nicky') || v.name.includes('Aaron'))
-    );
-    if (iosVoice) return iosVoice;
-
-    const desktopVoice = voices.find(v => 
-      v.lang.startsWith('en') && (v.name.includes('Natural') || v.name.includes('Jenny') || v.name.includes('Guy') || v.name.includes('Aria'))
-    );
-    if (desktopVoice) return desktopVoice;
-
-    return voices.find(v => v.lang === 'en-US') || voices.find(v => v.lang.startsWith('en')) || null;
-  };
+  const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
 
   const stopPromptAudio = () => {
+    if (audioPlayerRef.current) {
+      audioPlayerRef.current.pause();
+      audioPlayerRef.current.currentTime = 0;
+      audioPlayerRef.current = null;
+    }
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       window.speechSynthesis.cancel();
     }
     setIsPlayingPromptAudio(false);
   };
 
-  const playNaturalTTS = (text: string) => {
-    if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
-      Alert.alert("Lỗi âm thanh", "Trình duyệt không hỗ trợ Text-to-Speech");
+  const playNaturalTTS = async (text: string) => {
+    if (isPlayingPromptAudio) {
+      stopPromptAudio();
       return;
     }
-    const synth = window.speechSynthesis;
 
-    if (isPlayingPromptAudio) {
-      synth.cancel();
+    const cleanText = text.replace(/["']/g, '').trim();
+    if (!cleanText) return;
+
+    setIsPlayingPromptAudio(true);
+
+    try {
+      const ttsUrl = `/api/tts?voice=nova&text=${encodeURIComponent(cleanText)}`;
+      const audio = new Audio(ttsUrl);
+      audioPlayerRef.current = audio;
+
+      audio.onended = () => {
+        setIsPlayingPromptAudio(false);
+        audioPlayerRef.current = null;
+      };
+
+      audio.onerror = () => {
+        console.warn("Server TTS unavailable, activating client fallback...");
+        playLocalPromptFallback(cleanText);
+      };
+
+      await audio.play();
+    } catch (e) {
+      console.warn("TTS Error:", e);
+      playLocalPromptFallback(cleanText);
+    }
+  };
+
+  const playLocalPromptFallback = (cleanText: string) => {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
       setIsPlayingPromptAudio(false);
       return;
     }
-
+    const synth = window.speechSynthesis;
     synth.cancel();
 
-    const cleanText = text.replace(/["']/g, '').trim();
     const utterance = new SpeechSynthesisUtterance(cleanText);
-
-    const bestVoice = getBestNaturalVoice();
-    if (bestVoice) {
-      utterance.voice = bestVoice;
-    }
     utterance.lang = 'en-US';
     utterance.rate = 0.90;
     utterance.pitch = 1.0;
@@ -203,13 +232,21 @@ export default function Station4Screen({ onBack }: Props) {
       const cfg = CEFR_CONFIG[cefrLevel] || CEFR_CONFIG['B1'];
       return {
         id: 'custom_express',
-        title: customTitle.trim() || 'Chủ đề Express do Giảng viên giao',
-        challengeQuestion: customQuestion.trim() || 'Tự do trình bày theo câu hỏi/chủ đề được giao trên lớp.',
+        title: customTitle.trim() || 'Instructor Assigned Topic',
+        challengeQuestion: customQuestion.trim() || 'Deliver spontaneous monologue based on the classroom topic.',
         guideVi: customContextVi.trim(),
         minWpm: cfg.minWpm,
         targetDuration: cfg.targetDuration,
         suggestedKeywords: [],
         expressType: 'custom',
+        hint: {
+          vi: customContextVi.trim() || customTitle.trim(),
+          th: customContextVi.trim() || customTitle.trim(),
+          ja: customContextVi.trim() || customTitle.trim(),
+          ko: customContextVi.trim() || customTitle.trim(),
+          id: customContextVi.trim() || customTitle.trim(),
+          zh: customContextVi.trim() || customTitle.trim()
+        }
       };
     }
     return runtimeTopic;
@@ -217,7 +254,6 @@ export default function Station4Screen({ onBack }: Props) {
 
   const activeTopic = getActiveTopic();
 
-  // Reset khi đổi Level hoặc Nguồn đề
   useEffect(() => {
     stopPromptAudio();
     if (topicSource === 'ai') {
@@ -251,7 +287,7 @@ export default function Station4Screen({ onBack }: Props) {
     audioChunksRef.current = [];
   };
 
-  // 🤖 TIẾN TRÌNH NẠP BÙ AI NGẦM CHO TRẠM 4 (CHẠY HẬU CẢNH - KHÔNG LÀM ĐƠ MÀN HÌNH)
+  // 🤖 BACKGROUND AI REFILL VIA GROQ (ZERO-LATENCY BUFFER)
   const triggerBackgroundAiRefill = async (level: CEFRLevel) => {
     const apiKey = process.env.EXPO_PUBLIC_GROQ_API_KEY;
     if (!apiKey || isFetchingAiRef.current) return;
@@ -264,7 +300,12 @@ Output ONLY raw JSON (no markdown):
 {
   "title": "Short title in English",
   "challengeQuestion": "The English prompt or question triggering spontaneous monologue",
-  "guideVi": "Short Vietnamese direction / translation",
+  "hintVi": "Summary hint in Vietnamese",
+  "hintTh": "Summary hint in Thai",
+  "hintJa": "Summary hint in Japanese",
+  "hintKo": "Summary hint in Korean",
+  "hintId": "Summary hint in Indonesian",
+  "hintZh": "Summary hint in Chinese",
   "suggestedKeywords": ["keyword1", "keyword2", "keyword3"],
   "expressType": "quick_response"
 }`;
@@ -288,13 +329,21 @@ Output ONLY raw JSON (no markdown):
         const content = JSON.parse(data.choices[0].message.content);
         const newAiTopic: Station4TopicItem = {
           id: `ai_${Date.now()}_${Math.random()}`,
-          title: `🤖 [AI MỚI] ${content.title}`,
+          title: `🤖 [AI] ${content.title}`,
           challengeQuestion: content.challengeQuestion,
-          guideVi: content.guideVi || '',
+          guideVi: content.hintVi || '',
           minWpm: cfg.minWpm,
           targetDuration: cfg.targetDuration,
           suggestedKeywords: content.suggestedKeywords || [],
           expressType: content.expressType || 'quick_response',
+          hint: {
+            vi: content.hintVi || content.challengeQuestion,
+            th: content.hintTh || content.challengeQuestion,
+            ja: content.hintJa || content.challengeQuestion,
+            ko: content.hintKo || content.challengeQuestion,
+            id: content.hintId || content.challengeQuestion,
+            zh: content.hintZh || content.challengeQuestion
+          }
         };
         setAiQueue(prev => [...prev, newAiTopic]);
       }
@@ -305,7 +354,7 @@ Output ONLY raw JSON (no markdown):
     }
   };
 
-  // ⚡ ĐỔI ĐỀ TỨC THÌ 0MS + KÍCH HOẠT NẠP BÙ AI NGAY KHI ĐỀ ĐƯỢC ĐƯA RA
+  // ⚡ 0MS ROTATION & REFILL HOOK
   const handleNextAiTopic = () => {
     stopPromptAudio();
     resetRecordingSession();
@@ -334,7 +383,7 @@ Output ONLY raw JSON (no markdown):
     stopPromptAudio();
     if (!isRecording) {
       if (topicSource === 'custom' && !customQuestion.trim()) {
-        alert("Vui lòng nhập câu hỏi / chủ đề tiếng Anh từ Giảng viên trước khi thu âm!");
+        Alert.alert("Notice", "Please enter the English challenge question before recording!");
         return;
       }
 
@@ -367,7 +416,7 @@ Output ONLY raw JSON (no markdown):
               setAudioUrl(url);
               setHasRecorded(true);
             } else {
-              alert("⚠️ Chưa ghi nhận giọng nói rõ ràng. Hãy thử thu âm lại!");
+              Alert.alert("Notice", "⚠️ No clear speech captured. Please try recording again!");
             }
             stream.getTracks().forEach((track) => track.stop());
           };
@@ -397,7 +446,7 @@ Output ONLY raw JSON (no markdown):
           }, 1000);
         }
       } catch (err) {
-        alert("🔒 Trình duyệt chưa được cấp quyền Microphone! Vui lòng cho phép truy cập micro.");
+        Alert.alert("Microphone Error", "🔒 Microphone permission is required in your browser!");
       }
     } else {
       if (timerRef.current) clearInterval(timerRef.current);
@@ -413,7 +462,7 @@ Output ONLY raw JSON (no markdown):
   const handleSubmitSpeech = async () => {
     stopPromptAudio();
     if (!recordedBlob || recordedBlob.size <= 1000) {
-      alert("Bạn chưa hoàn thành bài nói hoặc bản thu quá ngắn!");
+      Alert.alert("Notice", "Speech recording is empty or too short!");
       return;
     }
 
@@ -428,37 +477,34 @@ Output ONLY raw JSON (no markdown):
 
       setCalculatedWpm(wpm);
 
-      // ⚡ BẬT CƠ CHẾ ĐIỂM ĐỘNG THEO WPM (CHỐNG GHIM CỨNG 94 ĐIỂM)
+      // ⚡ DYNAMIC WPM SPEED SCORING
       const targetMinWpm = activeTopic.minWpm || 100;
       const wpmRatio = wpm / targetMinWpm;
       
-      // Tính điểm tốc độ WPM (Tối đa 100 điểm)
       let wpmScore = 0;
       if (wpmRatio >= 1.15) {
-        wpmScore = 100; // Siêu lưu loát vượt chuẩn
+        wpmScore = 100;
       } else if (wpmRatio >= 1.0) {
-        wpmScore = Math.round(90 + (wpmRatio - 1.0) * 66); // 90 - 100 điểm
+        wpmScore = Math.round(90 + (wpmRatio - 1.0) * 66);
       } else if (wpmRatio >= 0.75) {
-        wpmScore = Math.round(75 + (wpmRatio - 0.75) * 60); // 75 - 90 điểm
+        wpmScore = Math.round(75 + (wpmRatio - 0.75) * 60);
       } else {
-        wpmScore = Math.max(30, Math.round(wpmRatio * 100)); // Dưới chuẩn bị trừ điểm mạnh
+        wpmScore = Math.max(30, Math.round(wpmRatio * 100));
       }
 
-      // Điểm tổng cuối cùng = 50% Điểm chất lượng bài nói (AI) + 50% Điểm tốc độ phản xạ (WPM)
       const baseAiScore = evalData.score || 85;
       const dynamicTotalScore = Math.round((baseAiScore * 0.5) + (wpmScore * 0.5));
 
-      // Hiệu chỉnh kết quả đánh giá để hiển thị đúng và đồng bộ
       const calibratedEvalData: AssessmentResult = {
         ...evalData,
         score: dynamicTotalScore,
         isWin: dynamicTotalScore >= 65,
         criteria: {
           pronunciation: (evalData as any).pronunciation || 85,
-          fluency: wpmScore, // Độ trôi chảy lấy trực tiếp từ điểm WPM
+          fluency: wpmScore,
           content: (evalData as any).content || baseAiScore
         } as any,
-        detailedFeedback: `Tốc độ phản xạ: ${wpm} WPM (Chuẩn: ${targetMinWpm} WPM) | Điểm tốc độ: ${wpmScore}đ. ${evalData.detailedFeedback || ''}`
+        detailedFeedback: `Spontaneous reflex rate: ${wpm} WPM (Benchmark: ${targetMinWpm} WPM) | Fluency Index: ${wpmScore} pts. ${evalData.detailedFeedback || ''}`
       };
 
       setResult(calibratedEvalData);
@@ -466,8 +512,8 @@ Output ONLY raw JSON (no markdown):
 
       setShowIdentityModal(true);
     } catch (err) {
-      console.error("Lỗi chấm điểm Express:", err);
-      alert("⚠️ Lỗi kết nối AI khi phân tích bài nói. Vui lòng bấm nộp lại!");
+      console.error("Express scoring error:", err);
+      Alert.alert("Evaluation Error", "⚠️ Connection latency during acoustic evaluation. Please tap submit again!");
     } finally {
       setIsAnalyzing(false);
     }
@@ -475,7 +521,7 @@ Output ONLY raw JSON (no markdown):
 
   const handleConfirmSubmission = async () => {
     if (!studentNameInput.trim()) {
-      alert("Vui lòng nhập Họ tên hoặc Mã sinh viên để lưu điểm!");
+      Alert.alert("Notice", "Please enter your Name or Student ID!");
       return;
     }
 
@@ -488,39 +534,39 @@ Output ONLY raw JSON (no markdown):
 
     await saveSubmissionToCloud({
       studentName: studentNameInput.trim(),
-      className: 'LỚP CHUYÊN ĐỀ EXPRESS',
+      className: 'EXPRESS MONOLOGUE COHORT',
       mode: 'EXPRESS',
       cefrLevel: cefrLevel,
       score: result.score || 85,
       transcript: result.transcript || '',
       audioUrl: base64Audio || audioUrl || undefined,
-      feedback: `WPM: ${calculatedWpm} từ/phút | ${result.detailedFeedback || 'Đạt yêu cầu phản xạ lưu loát.'}`,
+      feedback: `Reflex Speed: ${calculatedWpm} WPM | ${result.detailedFeedback || 'Fluency threshold attained.'}`,
       timestamp: new Date().toISOString()
     });
 
     setShowIdentityModal(false);
-    alert("✅ Đã ghi nhận điểm Express lên Bảng điểm Giáo viên!");
+    Alert.alert("Success", "✅ Express scorecard successfully synced to Teacher Dashboard!");
   };
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack} style={styles.backBtn}>
-          <Text style={styles.backText}>🔙 QUAY LẠI MAP</Text>
+          <Text style={styles.backText}>🔙 MAP</Text>
         </TouchableOpacity>
-        <Text style={styles.title}>🎙️ TRẠM 4: EXPRESS (FLUENCY & MONOLOGUE ARENA)</Text>
+        <Text style={styles.title}>🎙️ STATION 4: EXPRESS (FLUENCY & MONOLOGUE ARENA)</Text>
       </View>
 
       <ScrollView contentContainerStyle={{ alignItems: 'center', width: '100%', paddingBottom: 35 }}>
-        {/* 1. CHỌN NGUỒN ĐỀ BÀI */}
-        <Text style={styles.sectionLabel}>1. NGUỒN CHỦ ĐỀ EXPRESS:</Text>
+        {/* 1. TOPIC SOURCE SELECTOR */}
+        <Text style={styles.sectionLabel}>1. SELECT TOPIC SOURCE:</Text>
         <View style={styles.sourceRow}>
           <TouchableOpacity 
             style={[styles.sourceBtn, topicSource === 'ai' && styles.sourceBtnActive]} 
             onPress={() => setTopicSource('ai')}
           >
             <Text style={[styles.sourceText, topicSource === 'ai' && styles.sourceTextActive]}>
-              🤖 ĐỀ PHẢN XẠ TỪ KHO & AI
+              🤖 CURATED & AI GENERATED
             </Text>
           </TouchableOpacity>
           <TouchableOpacity 
@@ -528,13 +574,13 @@ Output ONLY raw JSON (no markdown):
             onPress={() => setTopicSource('custom')}
           >
             <Text style={[styles.sourceText, topicSource === 'custom' && styles.sourceTextActive]}>
-              📝 DÁN ĐỀ TỪ GIẢNG VIÊN
+              📝 INSTRUCTOR ASSIGNED
             </Text>
           </TouchableOpacity>
         </View>
 
-        {/* 2. CHỌN LEVEL CEFR */}
-        <Text style={styles.sectionLabel}>2. CẤP ĐỘ ĐÁNH GIÁ (CEFR):</Text>
+        {/* 2. CEFR LEVEL SELECTOR */}
+        <Text style={styles.sectionLabel}>2. CEFR BENCHMARK LEVEL:</Text>
         <View style={styles.cefrRow}>
           {levels.map((lvl) => (
             <TouchableOpacity 
@@ -547,12 +593,12 @@ Output ONLY raw JSON (no markdown):
           ))}
         </View>
 
-        {/* KHUNG THỬ THÁCH NÓI TỰ DO (KHÔNG CÓ BÀI MẪU) */}
+        {/* MAIN CHALLENGE CARD */}
         <View style={styles.card}>
           <View style={styles.natureBadgeRow}>
             <View style={styles.natureBadge}>
               <Text style={styles.natureBadgeText}>
-                ⚡ THỬ THÁCH NÓI TỰ DO (KHÔNG ĐỌC THEO VĂN MẪU)
+                ⚡ SPONTANEOUS MONOLOGUE (ZERO PRE-SCRIPTED ANSWERS)
               </Text>
             </View>
             {activeTopic.expressType && (
@@ -564,29 +610,29 @@ Output ONLY raw JSON (no markdown):
 
           {topicSource === 'custom' ? (
             <View style={styles.customInputContainer}>
-              <Text style={styles.inputLabel}>📌 Tên chủ đề / Tình huống:</Text>
+              <Text style={styles.inputLabel}>📌 Challenge Title:</Text>
               <TextInput
                 style={styles.textInput}
-                placeholder="Ví dụ: Impact of Social Media on Mental Health"
+                placeholder="e.g., Impact of Social Media on Mental Health"
                 placeholderTextColor="#666688"
                 value={customTitle}
                 onChangeText={setCustomTitle}
               />
 
-              <Text style={styles.inputLabel}>❓ Câu hỏi gợi mở tiếng Anh từ Giảng viên (*):</Text>
+              <Text style={styles.inputLabel}>❓ English Challenge Question (*):</Text>
               <TextInput
                 style={[styles.textInput, styles.textArea]}
-                placeholder="Ví dụ: How does excessive social media usage impact students' academic performance and wellbeing?"
+                placeholder="e.g., How does excessive social media usage impact students' academic performance and wellbeing?"
                 placeholderTextColor="#666688"
                 multiline
                 value={customQuestion}
                 onChangeText={setCustomQuestion}
               />
 
-              <Text style={styles.inputLabel}>💡 Bối cảnh / Gợi ý tiếng Việt (tuỳ chọn):</Text>
+              <Text style={styles.inputLabel}>💡 Context / Scaffolding Hint (Optional):</Text>
               <TextInput
                 style={styles.textInput}
-                placeholder="Ví dụ: Nêu quan điểm cá nhân và dẫn chứng thực tế..."
+                placeholder="e.g., Present personal arguments with empirical evidence..."
                 placeholderTextColor="#666688"
                 value={customContextVi}
                 onChangeText={setCustomContextVi}
@@ -595,27 +641,75 @@ Output ONLY raw JSON (no markdown):
           ) : (
             <>
               <Text style={styles.topicTitle}>{activeTopic.title}</Text>
+              
               <View style={styles.promptBox}>
                 <View style={styles.promptHeaderRow}>
-                  <Text style={styles.promptQuestionLabel}>❓ Câu hỏi kích hoạt tư duy:</Text>
+                  <Text style={styles.promptQuestionLabel}>❓ Cognitive Reflex Prompt:</Text>
                   <TouchableOpacity 
                     style={[styles.ttsMiniBtn, isPlayingPromptAudio && styles.ttsMiniBtnActive]}
                     activeOpacity={0.7}
                     onPress={() => playNaturalTTS(activeTopic.challengeQuestion)}
                   >
                     <Text style={styles.ttsMiniBtnText}>
-                      {isPlayingPromptAudio ? '⏹ DỪNG' : '🔊 NGHE CÂU HỎI'}
+                      {isPlayingPromptAudio ? '⏹ STOP' : '🔊 HEAR PROMPT'}
                     </Text>
                   </TouchableOpacity>
                 </View>
 
                 <Text style={styles.promptEn}>"{activeTopic.challengeQuestion}"</Text>
-                {activeTopic.guideVi && <Text style={styles.promptVi}>💡 Gợi ý định hướng: "{activeTopic.guideVi}"</Text>}
 
-                {/* Gợi ý từ khóa nếu có */}
+                {/* 🌐 MULTILINGUAL HINT BAR WITH HIGH-CONTRAST 6-NATION FLAGS */}
+                <View style={styles.hintContainer}>
+                  <View style={styles.hintHeaderRow}>
+                    <TouchableOpacity 
+                      style={[styles.hintToggleBtn, showHint && styles.hintToggleBtnActive]} 
+                      onPress={() => setShowHint(prev => !prev)}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={[styles.hintToggleText, showHint ? { color: '#000000' } : { color: '#FFD700' }]}>
+                        {showHint ? '✕ HIDE HINT' : `💡 SHOW HINT (${LANG_CONFIG[selectedLang].code})`}
+                      </Text>
+                    </TouchableOpacity>
+
+                    <View style={styles.flagPickerRow}>
+                      {(['vi', 'th', 'ja', 'ko', 'id', 'zh'] as SupportedLang[]).map((lang) => {
+                        const isSelected = selectedLang === lang;
+                        return (
+                          <TouchableOpacity
+                            key={lang}
+                            style={[styles.flagBtn, isSelected && styles.flagBtnActive]}
+                            onPress={() => {
+                              setSelectedLang(lang);
+                              setShowHint(true);
+                            }}
+                            activeOpacity={0.7}
+                          >
+                            <Text style={styles.flagIcon}>{LANG_CONFIG[lang].flag}</Text>
+                            <Text style={[styles.flagCodeText, isSelected ? { color: '#00FFFF' } : { color: '#AAAACC' }]}>
+                              {LANG_CONFIG[lang].code}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  </View>
+
+                  {showHint && (
+                    <View style={styles.hintContentBox}>
+                      <Text style={styles.hintLanguageTag}>
+                        👉 {LANG_CONFIG[selectedLang].flag} {LANG_CONFIG[selectedLang].label}:
+                      </Text>
+                      <Text style={styles.hintBodyText}>
+                        "{activeTopic.hint?.[selectedLang] || activeTopic.guideVi || activeTopic.challengeQuestion}"
+                      </Text>
+                    </View>
+                  )}
+                </View>
+
+                {/* SUGGESTED KEYWORDS */}
                 {activeTopic.suggestedKeywords && activeTopic.suggestedKeywords.length > 0 && (
                   <View style={styles.keywordContainer}>
-                    <Text style={styles.keywordLabel}>🔑 Gợi ý từ vựng:</Text>
+                    <Text style={styles.keywordLabel}>🔑 Target Keywords:</Text>
                     <View style={styles.keywordWrap}>
                       {activeTopic.suggestedKeywords.map((kw, i) => (
                         <View key={i} style={styles.keywordBadge}>
@@ -628,27 +722,27 @@ Output ONLY raw JSON (no markdown):
               </View>
 
               <View style={styles.targetRow}>
-                <Text style={styles.targetBadge}>🎯 Mục tiêu WPM: {activeTopic.minWpm} từ/phút</Text>
-                <Text style={styles.targetBadge}>⏱️ Thời lượng: {activeTopic.targetDuration}s</Text>
+                <Text style={styles.targetBadge}>🎯 Benchmark: {activeTopic.minWpm} WPM</Text>
+                <Text style={styles.targetBadge}>⏱️ Duration: {activeTopic.targetDuration}s</Text>
               </View>
 
-              {/* NÚT ĐỔI CÂU HỎI TỨC THÌ 0MS */}
+              {/* 0MS ROTATION BUTTON */}
               <TouchableOpacity style={styles.refreshBtn} activeOpacity={0.7} onPress={handleNextAiTopic}>
-                <Text style={styles.refreshBtnText}>🔄 ĐỔI CÂU HỎI KHÁC (0MS + AI BÙ ĐỀ)</Text>
+                <Text style={styles.refreshBtnText}>🔄 NEXT SCENARIO (0MS + AI BUFFER)</Text>
               </TouchableOpacity>
             </>
           )}
 
           <Text style={styles.monologueGuide}>
-            👉 Không có câu mẫu! Bạn hãy tự do suy nghĩ và phát biểu quan điểm bằng tiếng Anh. Giữ nhịp nói liên tục và hạn chế khoảng lặng kéo dài để đạt điểm lưu loát cao nhất!
+            👉 Zero sample scripts provided! Synthesize your viewpoint and deliver fluent extemporaneous speech. Maintain steady vocal cadence to maximize your Fluency & WPM score.
           </Text>
         </View>
 
-        {/* KHU VỰC THU ÂM & ĐỒNG HỒ */}
+        {/* RECORDING & TIMER CARD */}
         <View style={styles.actionCard}>
           <View style={styles.timerHeader}>
             <Text style={styles.timerTitle}>
-              {isRecording ? `🔴 ĐANG NÓI: ${recordedDuration}s` : `⏱️ THỜI GIAN CÒN LẠI: ${timeLeft}s`}
+              {isRecording ? `🔴 SPEAKING DURATION: ${recordedDuration}s` : `⏱️ TIME REMAINING: ${timeLeft}s`}
             </Text>
           </View>
 
@@ -658,19 +752,19 @@ Output ONLY raw JSON (no markdown):
           >
             <Text style={styles.recordBtnText}>
               {isRecording 
-                ? '🛑 DỪNG BÀI NÓI (HOÀN TẤT)' 
+                ? '🛑 STOP RECORDING (FINALIZE SPEECH)' 
                 : hasRecorded 
-                  ? '🔄 THU ÂM LẠI BÀI NÓI MỚI' 
-                  : '🎙️ BẮT ĐẦU NÓI PHẢN XẠ'}
+                  ? '🔄 RETAKE RECORDING (ENHANCE WPM)' 
+                  : '🎙️ START SPONTANEOUS MONOLOGUE'}
             </Text>
           </TouchableOpacity>
 
-          {/* 🎧 THANH NGHE LẠI BẢN THU ÂM CỦA CHÍNH SINH VIÊN */}
+          {/* AUDIO PLAYBACK REVIEW */}
           {audioUrl && !isRecording && (
             <View style={styles.audioPreviewContainer}>
               <View style={styles.audioPreviewHeader}>
-                <Text style={styles.audioPreviewTitle}>🎧 NGHE LẠI BẢN THU ÂM CỦA BẠN ({recordedDuration}s):</Text>
-                <Text style={styles.audioPreviewSub}>Bấm phát để kiểm tra độ to, rõ ràng và nhịp điệu của bạn trước khi nộp</Text>
+                <Text style={styles.audioPreviewTitle}>🎧 REVIEW RECORDED TRACK ({recordedDuration}s):</Text>
+                <Text style={styles.audioPreviewSub}>Audit your acoustic clarity, articulation rate, and pause intervals before submission</Text>
               </View>
               {React.createElement('audio', {
                 controls: true,
@@ -684,7 +778,7 @@ Output ONLY raw JSON (no markdown):
             <View style={{ alignItems: 'center', marginVertical: 10 }}>
               <ActivityIndicator size="large" color="#39FF14" />
               <Text style={{ color: '#39FF14', fontSize: 11, fontWeight: 'bold', marginTop: 6 }}>
-                ⚡ GROQ AI ĐANG TÍNH TỐC ĐỘ WPM & ĐỘ LƯU LOÁT...
+                ⚡ GROQ AI COMPUTING ACOUSTIC WPM & FLUENCY INDICES...
               </Text>
             </View>
           ) : (
@@ -693,30 +787,30 @@ Output ONLY raw JSON (no markdown):
               onPress={handleSubmitSpeech}
               disabled={!hasRecorded || isRecording}
             >
-              <Text style={styles.submitBtnText}>⚡ NỘP BÀI EXPRESS & AI CHẤM ĐIỂM</Text>
+              <Text style={styles.submitBtnText}>⚡ SUBMIT EXPRESS SPEECH & AI EVALUATION</Text>
             </TouchableOpacity>
           )}
         </View>
 
-        {/* KẾT QUẢ ĐÁNH GIÁ PHẢN XẠ */}
+        {/* RESULTS & AUDIT CARD */}
         {result && (
           <View style={styles.resultCard}>
             <Text style={[styles.resultTitle, { color: result.isWin ? '#39FF14' : '#FF0055' }]}>
-              {result.isWin ? '🎉 BÀI NÓI PHẢN XẠ LƯU LOÁT XUẤT SẮC!' : '💡 CẦN NÂNG CAO TỐC ĐỘ NÓI & SỰ TỰ NHIÊN'}
+              {result.isWin ? '🎉 OUTSTANDING SPONTANEOUS FLUENCY!' : '💡 ENHANCE ARTICULATION RATE & CONTINUITY'}
             </Text>
 
             <View style={styles.wpmBanner}>
-              <Text style={styles.wpmTitle}>⚡ TỐC ĐỘ NÓI THỰC TẾ: {calculatedWpm} WPM</Text>
+              <Text style={styles.wpmTitle}>⚡ ACTUAL REFLEX SPEED: {calculatedWpm} WPM</Text>
               <Text style={styles.wpmSub}>
                 {calculatedWpm >= activeTopic.minWpm 
-                  ? '✅ Tốc độ nói đạt chuẩn lưu loát của cấp độ!' 
-                  : `⚠️ Tốc độ nói thấp hơn khuyến nghị (${activeTopic.minWpm} WPM). Cần giảm thời gian ngập ngừng để nói trôi chảy hơn.`}
+                  ? '✅ Speaking pace fulfills the CEFR fluency benchmark!' 
+                  : `⚠️ Reflex rate is below recommended standard (${activeTopic.minWpm} WPM). Minimize hesitation pauses to elevate fluency.`}
               </Text>
             </View>
 
             {audioUrl && (
               <View style={styles.audioPreviewContainer}>
-                <Text style={styles.audioPreviewTitle}>🎧 NGHE LẠI BẢN THU HOÀN CHỈNH:</Text>
+                <Text style={styles.audioPreviewTitle}>🎧 FINAL SUBMISSION TRACK:</Text>
                 {React.createElement('audio', {
                   controls: true,
                   src: audioUrl,
@@ -726,45 +820,45 @@ Output ONLY raw JSON (no markdown):
             )}
 
             <View style={styles.transcriptBox}>
-              <Text style={styles.transcriptHeader}>🎙️ VĂN BẢN TỰ NHIÊN AI GHI NHẬN TỪ GIỌNG BẠN:</Text>
+              <Text style={styles.transcriptHeader}>🎙️ AI ACOUSTIC RECOGNITION TAPESCRIPT:</Text>
               <Text style={styles.transcriptBody}>"{result.transcript}"</Text>
             </View>
 
             <View style={styles.breakdownRow}>
               <View style={styles.breakdownItem}>
-                <Text style={styles.breakdownLabel}>Tổng điểm:</Text>
+                <Text style={styles.breakdownLabel}>Composite Score:</Text>
                 <Text style={styles.breakdownValue}>{result.score}/100</Text>
               </View>
               <View style={styles.breakdownItem}>
-                <Text style={styles.breakdownLabel}>Phát âm:</Text>
+                <Text style={styles.breakdownLabel}>Pronunciation:</Text>
                 <Text style={styles.breakdownValue}>{(result as any).pronunciation || 85}/100</Text>
               </View>
               <View style={styles.breakdownItem}>
-                <Text style={styles.breakdownLabel}>Độ trôi chảy:</Text>
+                <Text style={styles.breakdownLabel}>Fluency Index:</Text>
                 <Text style={styles.breakdownValue}>{(result as any).criteria?.fluency || (result as any).content || 80}/100</Text>
               </View>
             </View>
 
-            <Text style={styles.feedbackText}>💡 Nhận xét từ AI: {result.detailedFeedback}</Text>
+            <Text style={styles.feedbackText}>💡 Diagnostic Feedback: {result.detailedFeedback}</Text>
           </View>
         )}
       </ScrollView>
 
-      {/* MODAL GỬI BÀI CHO GIẢNG VIÊN */}
+      {/* SYNC SCORECARD MODAL */}
       <Modal visible={showIdentityModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>🎖️ GHI NHẬN ĐIỂM TRẠM EXPRESS</Text>
-            <Text style={styles.modalSub}>Nhập Mã sinh viên hoặc Họ và tên để lưu vào bảng điểm Giảng viên:</Text>
+            <Text style={styles.modalTitle}>🎖️ RECORD EXPRESS SCORECARD</Text>
+            <Text style={styles.modalSub}>Enter your Student ID or Full Name to sync this record with Teacher Dashboard:</Text>
             <TextInput
               style={styles.modalInput}
-              placeholder="Ví dụ: K18 - 210088 - Nguyễn Văn B"
+              placeholder="e.g., K18 - 210088 - John Doe"
               placeholderTextColor="#666688"
               value={studentNameInput}
               onChangeText={setStudentNameInput}
             />
             <TouchableOpacity style={styles.modalBtn} onPress={handleConfirmSubmission}>
-              <Text style={styles.modalBtnText}>🚀 XÁC NHẬN GỬI BÀI</Text>
+              <Text style={styles.modalBtnText}>🚀 CONFIRM & SYNC SUBMISSION</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -776,8 +870,8 @@ Output ONLY raw JSON (no markdown):
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#05020D', padding: 18, paddingTop: 45 },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 15 },
-  backBtn: { padding: 8, backgroundColor: '#0D0620', borderRadius: 8, borderWidth: 1, borderColor: '#FF007F' },
-  backText: { color: '#FF007F', fontSize: 10, fontWeight: 'bold' },
+  backBtn: { padding: 8, backgroundColor: '#0D0620', borderRadius: 8, borderWidth: 1, borderColor: '#00FFFF' },
+  backText: { color: '#00FFFF', fontSize: 10, fontWeight: 'bold' },
   title: { color: '#FF007F', fontSize: 11, fontWeight: '900' },
   sectionLabel: { color: '#FFD700', fontSize: 10, fontWeight: 'bold', alignSelf: 'flex-start', marginBottom: 6 },
 
@@ -809,10 +903,88 @@ const styles = StyleSheet.create({
   ttsMiniBtnActive: { backgroundColor: '#FF0055', borderColor: '#FF0055' },
   ttsMiniBtnText: { color: '#00FFFF', fontSize: 8.5, fontWeight: 'bold' },
 
-  promptEn: { color: '#FFF', fontSize: 12, fontWeight: '800', lineHeight: 18, marginBottom: 6 },
-  promptVi: { color: '#AAAABB', fontSize: 10, fontStyle: 'italic', marginBottom: 6 },
+  promptEn: { color: '#FFF', fontSize: 12, fontWeight: '800', lineHeight: 18, marginBottom: 8 },
 
-  keywordContainer: { borderTopWidth: 1, borderTopColor: '#221144', paddingTop: 6, marginTop: 4 },
+  hintContainer: {
+    marginVertical: 6,
+    width: '100%',
+  },
+  hintHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 6,
+  },
+  hintToggleBtn: {
+    backgroundColor: '#16082F',
+    borderWidth: 1.5,
+    borderColor: '#FFD700',
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: 7,
+  },
+  hintToggleBtnActive: {
+    backgroundColor: '#FFD700',
+  },
+  hintToggleText: {
+    fontSize: 9,
+    fontWeight: '900',
+  },
+  flagPickerRow: {
+    flexDirection: 'row',
+    gap: 4,
+    backgroundColor: '#070314',
+    padding: 3,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#332255',
+    alignItems: 'center',
+  },
+  flagBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    paddingHorizontal: 5,
+    paddingVertical: 4,
+    borderRadius: 6,
+    backgroundColor: '#16082F',
+    borderWidth: 1,
+    borderColor: '#332255',
+  },
+  flagBtnActive: {
+    backgroundColor: '#2A144E',
+    borderColor: '#00FFFF',
+  },
+  flagIcon: {
+    fontSize: 12.5,
+  },
+  flagCodeText: {
+    fontSize: 9,
+    fontWeight: '900',
+  },
+  hintContentBox: {
+    backgroundColor: '#07180D',
+    borderLeftWidth: 3,
+    borderLeftColor: '#39FF14',
+    padding: 10,
+    borderRadius: 8,
+    marginTop: 8,
+    width: '100%',
+  },
+  hintLanguageTag: {
+    color: '#39FF14',
+    fontSize: 9.5,
+    fontWeight: '900',
+    marginBottom: 2,
+  },
+  hintBodyText: {
+    color: '#88FFBB',
+    fontSize: 11,
+    lineHeight: 16,
+    fontStyle: 'italic',
+  },
+
+  keywordContainer: { borderTopWidth: 1, borderTopColor: '#221144', paddingTop: 6, marginTop: 6 },
   keywordLabel: { color: '#FFD700', fontSize: 9, fontWeight: 'bold', marginBottom: 4 },
   keywordWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 5 },
   keywordBadge: { backgroundColor: '#0A192F', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, borderWidth: 1, borderColor: '#00FFFF' },
