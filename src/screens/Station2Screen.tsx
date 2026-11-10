@@ -139,7 +139,7 @@ const SCENARIO_LIBRARY: Record<string, Omit<ChallengeItem, 'id' | 'tier' | 'leve
         th: "แจ้งอาหารเย็นชืด: ขอความกรุณาพนักงานช่วยนำบะหมี่ไปอุ่นให้ร้อนอีกครั้ง",
         ja: "料理の温め直し：麺が冷たいので、キッチンで温め直してもらうよう店員に丁寧に頼みます。",
         ko: "음식 데우기 요청: 면이 너무 식었으니 주방에 다시 데워달라고 정중히 요청하세요.",
-        id: "Komplain makanan dingin: minta pelayan dengan sopan agar dapur memanaskan kembali mi Anda."
+        id: "Komplain makanan dingin: minta pelayan với sopan agar dapur memanaskan kembali mi Anda."
       }
     }
   ],
@@ -1282,7 +1282,7 @@ Output ONLY raw JSON:
                   
                   <Text style={styles.contextText}>📌 {currentChallenge.contextDesc}</Text>
 
-                  {/* 🌐 THANH CHỌN CỜ ĐA NGÔN NGỮ CHÂU Á LUÔN HIỂN THỊ */}
+                  {/* 🌐 THANH CHỌN CỜ ĐA NGÔN NGỮ CHÂU Á - ĐÃ FIX MÀU CHỮ SÁNG NỔI BẬT */}
                   <View style={styles.hintContainer}>
                     <View style={styles.hintHeaderRow}>
                       <TouchableOpacity 
@@ -1290,26 +1290,32 @@ Output ONLY raw JSON:
                         onPress={() => setShowHint(prev => !prev)}
                         activeOpacity={0.8}
                       >
-                        <Text style={[styles.hintToggleText, showHint && { color: '#000' }]}>
+                        <Text style={[styles.hintToggleText, showHint ? { color: '#000000' } : { color: '#FFD700' }]}>
                           {showHint ? '✕ HIDE HINT' : `💡 SHOW HINT (${LANG_CONFIG[selectedLang].code})`}
                         </Text>
                       </TouchableOpacity>
 
                       {/* DÃY CỜ 5 NƯỚC LUÔN NẰM TRỰC DIỆN ĐỂ BẤM CHỌN */}
                       <View style={styles.flagPickerRow}>
-                        {(['vi', 'th', 'ja', 'ko', 'id'] as SupportedLang[]).map((lang) => (
-                          <TouchableOpacity
-                            key={lang}
-                            style={[styles.flagBtn, selectedLang === lang && styles.flagBtnActive]}
-                            onPress={() => {
-                              setSelectedLang(lang);
-                              setShowHint(true);
-                            }}
-                            activeOpacity={0.7}
-                          >
-                            <Text style={styles.flagIcon}>{LANG_CONFIG[lang].flag}</Text>
-                          </TouchableOpacity>
-                        ))}
+                        {(['vi', 'th', 'ja', 'ko', 'id'] as SupportedLang[]).map((lang) => {
+                          const isSelected = selectedLang === lang;
+                          return (
+                            <TouchableOpacity
+                              key={lang}
+                              style={[styles.flagBtn, isSelected && styles.flagBtnActive]}
+                              onPress={() => {
+                                setSelectedLang(lang);
+                                setShowHint(true);
+                              }}
+                              activeOpacity={0.7}
+                            >
+                              <Text style={styles.flagIcon}>{LANG_CONFIG[lang].flag}</Text>
+                              <Text style={[styles.flagCodeText, isSelected ? { color: '#00FFFF' } : { color: '#AAAACC' }]}>
+                                {LANG_CONFIG[lang].code}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
                       </View>
                     </View>
 
@@ -1397,7 +1403,7 @@ Output ONLY raw JSON:
             <Text style={styles.normalPromptTitle}>{currentChallenge.title} ({currentChallenge.level})</Text>
             <Text style={styles.normalPromptDesc}>{currentChallenge.contextDesc}</Text>
 
-            {/* HINT BAR TRONG PHÒNG THU CŨNG ĐỒNG BỘ 5 CỜ */}
+            {/* HINT BAR TRONG PHÒNG THU CŨNG ĐỒNG BỘ 5 CỜ SÁNG RÕ */}
             <View style={styles.hintContainer}>
               <View style={styles.hintHeaderRow}>
                 <TouchableOpacity 
@@ -1405,25 +1411,31 @@ Output ONLY raw JSON:
                   onPress={() => setShowHint(prev => !prev)}
                   activeOpacity={0.8}
                 >
-                  <Text style={[styles.hintToggleText, showHint && { color: '#000' }]}>
+                  <Text style={[styles.hintToggleText, showHint ? { color: '#000000' } : { color: '#FFD700' }]}>
                     {showHint ? '✕ HIDE HINT' : `💡 SHOW HINT (${LANG_CONFIG[selectedLang].code})`}
                   </Text>
                 </TouchableOpacity>
 
                 <View style={styles.flagPickerRow}>
-                  {(['vi', 'th', 'ja', 'ko', 'id'] as SupportedLang[]).map((lang) => (
-                    <TouchableOpacity
-                      key={lang}
-                      style={[styles.flagBtn, selectedLang === lang && styles.flagBtnActive]}
-                      onPress={() => {
-                        setSelectedLang(lang);
-                        setShowHint(true);
-                      }}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={styles.flagIcon}>{LANG_CONFIG[lang].flag}</Text>
-                    </TouchableOpacity>
-                  ))}
+                  {(['vi', 'th', 'ja', 'ko', 'id'] as SupportedLang[]).map((lang) => {
+                    const isSelected = selectedLang === lang;
+                    return (
+                      <TouchableOpacity
+                        key={lang}
+                        style={[styles.flagBtn, isSelected && styles.flagBtnActive]}
+                        onPress={() => {
+                          setSelectedLang(lang);
+                          setShowHint(true);
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={styles.flagIcon}>{LANG_CONFIG[lang].flag}</Text>
+                        <Text style={[styles.flagCodeText, isSelected ? { color: '#00FFFF' } : { color: '#AAAACC' }]}>
+                          {LANG_CONFIG[lang].code}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
                 </View>
               </View>
 
@@ -1671,39 +1683,48 @@ const styles = StyleSheet.create({
     backgroundColor: '#16082F',
     borderWidth: 1.5,
     borderColor: '#FFD700',
-    paddingVertical: 5,
-    paddingHorizontal: 10,
+    paddingVertical: 6,
+    paddingHorizontal: 11,
     borderRadius: 7,
   },
   hintToggleBtnActive: {
     backgroundColor: '#FFD700',
   },
   hintToggleText: {
-    color: '#FFD700',
     fontSize: 9.5,
     fontWeight: '900',
   },
   flagPickerRow: {
     flexDirection: 'row',
-    gap: 6,
+    gap: 5,
     backgroundColor: '#0D0620',
     padding: 3,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#332255',
+    alignItems: 'center',
   },
   flagBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
     paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 5,
+    paddingVertical: 4,
+    borderRadius: 6,
+    backgroundColor: '#16082F',
+    borderWidth: 1,
+    borderColor: '#332255',
   },
   flagBtnActive: {
-    backgroundColor: '#331A66',
-    borderWidth: 1,
+    backgroundColor: '#2A144E',
     borderColor: '#00FFFF',
   },
   flagIcon: {
-    fontSize: 14,
+    fontSize: 13,
+  },
+  flagCodeText: {
+    fontSize: 9.5,
+    fontWeight: '900',
   },
   hintContentBox: {
     backgroundColor: '#07180D',
