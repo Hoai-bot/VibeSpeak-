@@ -3,7 +3,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, Alert } from 'react-native';
 import { BOSS_SCENARIOS_DATA, BossScenarioItem } from '../data/station3/bossScenarios';
 import { updateUserProgress } from '../services/userService';
-import { playBossVoice } from '../services/bossTtsService';
 import { evaluateSpeaking, AssessmentResult, generateWordDiff } from '../services/arena/assessmentService';
 import AudioWaveVisualizer from '../components/AudioWaveVisualizer';
 import IntonationCanvas from '../components/IntonationCanvas';
@@ -12,7 +11,27 @@ interface Props {
   onBack: () => void;
 }
 
-// Hàm trích xuất cao độ F0 cơ bản phía Client (Autocorrelation)
+export type SupportedLang = 'vi' | 'th' | 'ja' | 'ko' | 'id' | 'zh';
+
+export interface MultilingualHint {
+  vi: string;
+  th: string;
+  ja: string;
+  ko: string;
+  id: string;
+  zh: string;
+}
+
+const LANG_CONFIG: Record<SupportedLang, { flag: string; label: string; code: string }> = {
+  vi: { flag: '🇻🇳', label: 'Tiếng Việt', code: 'VN' },
+  th: { flag: '🇹🇭', label: 'ภาษาไทย', code: 'TH' },
+  ja: { flag: '🇯🇵', label: '日本語', code: 'JP' },
+  ko: { flag: '🇰🇷', label: '한국어', code: 'KR' },
+  id: { flag: '🇮🇩', label: 'Bahasa Indonesia', code: 'ID' },
+  zh: { flag: '🇨🇳', label: '中文', code: 'CN' }
+};
+
+// 🌊 CLIENT-SIDE F0 AUTOCORRELATION
 function detectPitchFrame(buffer: Float32Array, sampleRate: number): number | null {
   const size = buffer.length;
   let bestOffset = -1;
@@ -84,6 +103,10 @@ export default function Station3Screen({ onBack }: Props) {
   const [currentHp, setCurrentHp] = useState<number>(150);
   const [isPlayingAudio, setIsPlayingAudio] = useState<boolean>(false);
 
+  // 🌐 MULTILINGUAL HINT STATE (PERSISTENT & VISIBLE)
+  const [selectedLang, setSelectedLang] = useState<SupportedLang>('vi');
+  const [showHint, setShowHint] = useState<boolean>(true);
+
   // 🎯 QUẢN LÝ ĐỀ BÀI VÀ HÀNG ĐỢI NẠP BÙ AI NGẦM (0MS LATENCY)
   const [bossIndex, setBossIndex] = useState<number>(0);
   const [aiQueue, setAiQueue] = useState<BossScenarioItem[]>([]);
@@ -96,7 +119,7 @@ export default function Station3Screen({ onBack }: Props) {
       id: `boss_${lvl}_default`,
       level: lvl as any,
       bossName: 'Ghost Speed Stalker',
-      bossTitle: 'Bóng Ma Tốc Độ',
+      bossTitle: 'Speed Phantom',
       bossAvatar: '👻',
       maxHp: 150,
       timeLimitSeconds: 12,
@@ -109,7 +132,7 @@ export default function Station3Screen({ onBack }: Props) {
 
   const [bossData, setBossData] = useState<BossScenarioItem>(() => getInitialBossForLevel('B1'));
 
-  // ⚡ CƠ CHẾ ĐO TỐC ĐỘ, ĐẾM NGƯỢC & HỆ SỐ SÁT THƯƠNG
+  // ⚡ SPEED TIMING, COUNTDOWN & DAMAGE MULTIPLIER
   const [timeRemaining, setTimeRemaining] = useState<number>(12);
   const [speechDuration, setSpeechDuration] = useState<number>(0);
   const [speedMultiplier, setSpeedMultiplier] = useState<number>(1.0);
@@ -117,7 +140,7 @@ export default function Station3Screen({ onBack }: Props) {
   const timerCountdownRef = useRef<NodeJS.Timeout | null>(null);
   const speechTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // QUẢN LÝ MICRO & THU ÂM
+  // MICROPHONE & RECORDING
   const [isRecording, setIsRecording] = useState<boolean>(false);
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
@@ -129,7 +152,7 @@ export default function Station3Screen({ onBack }: Props) {
   const [transcriptResult, setTranscriptResult] = useState<string>('');
   const [activeStream, setActiveStream] = useState<MediaStream | null>(null);
 
-  // 📈 DỮ LIỆU ĐƯỜNG CONG NGỮ ĐIỆU (INTONATION CONTOUR)
+  // 📈 INTONATION CONTOUR DATA
   const [studentContour, setStudentContour] = useState<number[]>([]);
   const [targetContour, setTargetContour] = useState<number[]>([0.5, 1.8, 2.2, 1.5, 0.2, -1.0, -2.5, -3.2]);
 
@@ -137,7 +160,6 @@ export default function Station3Screen({ onBack }: Props) {
   const audioChunksRef = useRef<Blob[]>([]);
   const activeMimeTypeRef = useRef<{ mimeType: string; extension: string }>({ mimeType: '', extension: 'webm' });
 
-  // Audio Context cho Pitch Extraction
   const audioContextRef = useRef<AudioContext | null>(null);
   const pitchIntervalRef = useRef<any>(null);
   const pitchSamplesRef = useRef<number[]>([]);
@@ -146,13 +168,11 @@ export default function Station3Screen({ onBack }: Props) {
   const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
 
   const stopAllAudio = () => {
-    // Dừng âm thanh máy chủ Edge-TTS (HTML5 Audio)
     if (audioPlayerRef.current) {
       audioPlayerRef.current.pause();
       audioPlayerRef.current.currentTime = 0;
       audioPlayerRef.current = null;
     }
-    // Dừng âm thanh trình duyệt nếu có fallback
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       window.speechSynthesis.cancel();
     }
@@ -186,7 +206,7 @@ export default function Station3Screen({ onBack }: Props) {
     audioChunksRef.current = [];
   };
 
-  // 🎙️ PHÁT GIỌNG SHADOW BOSS TỪ SERVER (CHRISTOPHER NEURAL - NAM TRẦM UY QUYỀN)
+  // 🎙️ SHADOW BOSS SERVER-SIDE NEURAL TTS (ONYX / CHRISTOPHER DEEP VOICE)
   const playNaturalTTS = async (text: string) => {
     if (isPlayingAudio) {
       stopAllAudio();
@@ -198,7 +218,6 @@ export default function Station3Screen({ onBack }: Props) {
 
     setIsPlayingAudio(true);
 
-    // ⚡ LỚP 1: GỌI API SERVER VỚI GIỌNG ONYX (en-US-ChristopherNeural)
     try {
       const bossTtsUrl = `/api/tts?voice=onyx&text=${encodeURIComponent(cleanText)}`;
       const audio = new Audio(bossTtsUrl);
@@ -210,19 +229,18 @@ export default function Station3Screen({ onBack }: Props) {
       };
 
       audio.onerror = () => {
-        console.warn("Server TTS không tải được, kích hoạt fallback máy khách...");
+        console.warn("Server TTS unavailable, activating client fallback...");
         playLocalBossFallback(cleanText);
       };
 
       await audio.play();
       return;
     } catch (e) {
-      console.warn("Lỗi phát audio server Shadow Boss:", e);
+      console.warn("Server audio playback error:", e);
       playLocalBossFallback(cleanText);
     }
   };
 
-  // 🛡️ LỚP 2: DỰ PHÒNG NỘI BỘ NẾU MẤT KẾT NỐI MẠNG
   const playLocalBossFallback = (cleanText: string) => {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
       setIsPlayingAudio(false);
@@ -233,13 +251,12 @@ export default function Station3Screen({ onBack }: Props) {
 
     const utterance = new SpeechSynthesisUtterance(cleanText);
     const voices = synth.getVoices();
-    // Ưu tiên chọn giọng nam cho Boss nếu chạy fallback
     const maleVoice = voices.find(v => v.lang.startsWith('en') && (v.name.includes('David') || v.name.includes('Guy') || v.name.includes('Mark') || v.name.includes('Aaron')));
     if (maleVoice) utterance.voice = maleVoice;
 
     utterance.lang = 'en-US';
-    utterance.rate = 0.85; // Tốc độ chậm hơn tạo vẻ bí ẩn
-    utterance.pitch = 0.8; // Hạ tone giọng trầm xuống
+    utterance.rate = 0.85;
+    utterance.pitch = 0.8;
 
     utterance.onstart = () => setIsPlayingAudio(true);
     utterance.onend = () => setIsPlayingAudio(false);
@@ -248,7 +265,7 @@ export default function Station3Screen({ onBack }: Props) {
     synth.speak(utterance);
   };
 
-  // 🤖 NẠP BÙ AI NGẦM CHO TRẠM 3 (KHÔNG LÀM ĐỨNG MÀN HÌNH)
+  // 🤖 BACKGROUND AI REFILL VIA GROQ WITH MULTILINGUAL HINTS
   const triggerBackgroundAiRefill = async (level: string) => {
     const apiKey = process.env.EXPO_PUBLIC_GROQ_API_KEY;
     if (!apiKey || isFetchingAiRef.current) return;
@@ -259,12 +276,17 @@ export default function Station3Screen({ onBack }: Props) {
 Output JSON ONLY:
 {
   "bossName": "Name of Shadow Entity",
-  "bossTitle": "Title in Vietnamese",
+  "bossTitle": "Title in English (e.g., Rhythm Phantom)",
   "bossAvatar": "👻",
   "maxHp": 150,
   "timeLimitSeconds": 12,
   "bossChallengeEn": "A fluent, natural English spoken sentence to shadow fast",
-  "bossChallengeVi": "Vietnamese translation",
+  "hintVi": "Summary hint in Vietnamese",
+  "hintTh": "Summary hint in Thai",
+  "hintJa": "Summary hint in Japanese",
+  "hintKo": "Summary hint in Korean",
+  "hintId": "Summary hint in Indonesian",
+  "hintZh": "Summary hint in Chinese",
   "keyTargetPhrases": ["phrase 1", "phrase 2"]
 }`;
 
@@ -286,25 +308,33 @@ Output JSON ONLY:
           id: `ai_${Date.now()}`,
           level: level as any,
           bossName: `🤖 ${content.bossName}`,
-          bossTitle: content.bossTitle || 'Bóng Ma Tốc Độ',
+          bossTitle: content.bossTitle || 'Speed Phantom',
           bossAvatar: content.bossAvatar || '👻',
           maxHp: content.maxHp || 150,
           timeLimitSeconds: content.timeLimitSeconds || 12,
           bossChallengeEn: content.bossChallengeEn,
-          bossChallengeVi: content.bossChallengeVi || '',
+          bossChallengeVi: content.hintVi || '',
           expectedResponsePromptEn: 'Shadow fast to deal critical damage.',
-          keyTargetPhrases: content.keyTargetPhrases || []
-        };
+          keyTargetPhrases: content.keyTargetPhrases || [],
+          hint: {
+            vi: content.hintVi || content.bossChallengeEn,
+            th: content.hintTh || content.bossChallengeEn,
+            ja: content.hintJa || content.bossChallengeEn,
+            ko: content.hintKo || content.bossChallengeEn,
+            id: content.hintId || content.bossChallengeEn,
+            zh: content.hintZh || content.bossChallengeEn
+          }
+        } as any;
         setAiQueue(prev => [...prev, newBoss]);
       }
     } catch (e) {
-      console.warn("AI ngầm Trạm 3 tạm dừng:", e);
+      console.warn("Station 3 AI pre-fetch paused:", e);
     } finally {
       isFetchingAiRef.current = false;
     }
   };
 
-  // ⚡ ĐỔI ĐỀ TỨC THÌ 0MS + GỌI BÙ ĐỀ
+  // ⚡ 0MS ROTATION & REFILL HOOK
   const handleNextChallenge = () => {
     resetSession();
     const nextIdx = bossIndex + 1;
@@ -324,7 +354,18 @@ Output JSON ONLY:
     if (list.length > 0) {
       const picked = list[nextIdx % list.length];
       const loop = Math.floor(nextIdx / list.length) + 1;
-      setBossData({ ...picked, bossName: loop > 1 ? `${picked.bossName} (#${loop})` : picked.bossName });
+      setBossData({
+        ...picked,
+        bossName: loop > 1 ? `${picked.bossName} (#${loop})` : picked.bossName,
+        hint: {
+          vi: picked.bossChallengeVi || picked.bossChallengeEn,
+          th: picked.bossChallengeVi || picked.bossChallengeEn,
+          ja: picked.bossChallengeVi || picked.bossChallengeEn,
+          ko: picked.bossChallengeVi || picked.bossChallengeEn,
+          id: picked.bossChallengeVi || picked.bossChallengeEn,
+          zh: picked.bossChallengeVi || picked.bossChallengeEn
+        }
+      } as any);
       setCurrentHp(picked.maxHp || 150);
       setTimeRemaining(picked.timeLimitSeconds || 12);
     }
@@ -338,7 +379,17 @@ Output JSON ONLY:
     setBossIndex(0);
     setAiQueue([]);
     const initial = getInitialBossForLevel(lvl);
-    setBossData(initial);
+    setBossData({
+      ...initial,
+      hint: {
+        vi: initial.bossChallengeVi || initial.bossChallengeEn,
+        th: initial.bossChallengeVi || initial.bossChallengeEn,
+        ja: initial.bossChallengeVi || initial.bossChallengeEn,
+        ko: initial.bossChallengeVi || initial.bossChallengeEn,
+        id: initial.bossChallengeVi || initial.bossChallengeEn,
+        zh: initial.bossChallengeVi || initial.bossChallengeEn
+      }
+    } as any);
     setCurrentHp(initial.maxHp || 150);
     setTimeRemaining(initial.timeLimitSeconds || 12);
     triggerBackgroundAiRefill(lvl);
@@ -346,7 +397,17 @@ Output JSON ONLY:
 
   useEffect(() => {
     const initial = getInitialBossForLevel(cefrLevel);
-    setBossData(initial);
+    setBossData({
+      ...initial,
+      hint: {
+        vi: initial.bossChallengeVi || initial.bossChallengeEn,
+        th: initial.bossChallengeVi || initial.bossChallengeEn,
+        ja: initial.bossChallengeVi || initial.bossChallengeEn,
+        ko: initial.bossChallengeVi || initial.bossChallengeEn,
+        id: initial.bossChallengeVi || initial.bossChallengeEn,
+        zh: initial.bossChallengeVi || initial.bossChallengeEn
+      }
+    } as any);
     setCurrentHp(initial.maxHp || 150);
     setTimeRemaining(initial.timeLimitSeconds || 12);
     triggerBackgroundAiRefill(cefrLevel);
@@ -365,7 +426,6 @@ Output JSON ONLY:
 
         const format = getSupportedAudioMimeType();
         activeMimeTypeRef.current = format;
-
         pitchSamplesRef.current = [];
 
         try {
@@ -406,7 +466,7 @@ Output JSON ONLY:
             setAudioUrl(URL.createObjectURL(blob));
             setHasRecordedCurrentSession(true);
           } else {
-            Alert.alert("Thông báo", "⚠️ Chưa thu được giọng nói! Hãy Shadowing nhanh và to hơn.");
+            Alert.alert("Notice", "⚠️ No clear speech captured! Shadow louder and faster.");
           }
 
           if (pitchIntervalRef.current) clearInterval(pitchIntervalRef.current);
@@ -446,14 +506,14 @@ Output JSON ONLY:
                 mediaRecorderRef.current.stop();
               }
               setIsRecording(false);
-              Alert.alert("Hết giờ!", "⏳ Hết thời gian phản xạ tốc độ!");
+              Alert.alert("Time Expired!", "⏳ Speed reflex window closed!");
               return 0;
             }
             return prev - 1;
           });
         }, 1000);
       } catch {
-        Alert.alert("Lỗi Micro", "🔒 Vui lòng cấp quyền Microphone trên trình duyệt!");
+        Alert.alert("Microphone Error", "🔒 Please grant microphone permissions in your browser!");
       }
     } else {
       if (timerCountdownRef.current) clearInterval(timerCountdownRef.current);
@@ -467,7 +527,7 @@ Output JSON ONLY:
 
   const handleAttackBoss = async () => {
     if (!hasRecordedCurrentSession || !audioBlob) {
-      Alert.alert("Thông báo", "🔒 Bạn cần đọc đuổi (Shadowing) xong rồi mới tấn công!");
+      Alert.alert("Action Required", "🔒 Complete your shadowing speech before executing attack!");
       return;
     }
 
@@ -484,9 +544,8 @@ Output JSON ONLY:
 
       if (baseScore < 30) {
         setLastDamage(0);
-        setLastFeedback("❌ Phát âm chưa đạt chuẩn! Đòn đánh bị hụt.");
+        setLastFeedback("❌ Pronunciation below threshold! Attack deflected.");
       } else {
-        // ⚡ TÍNH SÁT THƯƠNG THEO TỐC ĐỘ PHẢN XẠ (SPEED MULTIPLIER)
         const maxLimit = bossData.timeLimitSeconds || 12;
         const ratio = speechDuration / maxLimit;
         let mult = 1.0;
@@ -511,16 +570,16 @@ Output JSON ONLY:
         setLastDamage(finalDamage);
 
         const notice = critical 
-          ? `🔥 BẠO KÍCH TỐC ĐỘ (x${mult})! Phản xạ trong ${speechDuration}s!` 
-          : `⚡ Tốc độ phản xạ: ${speechDuration}s (Hệ số x${mult}).`;
-        setLastFeedback(`${notice} | ${evalResult.detailedFeedback || 'Shadowing rất chuẩn nhịp!'}`);
+          ? `🔥 CRITICAL SPEED HIT (x${mult})! Reflex: ${speechDuration}s!` 
+          : `⚡ Reflex speed: ${speechDuration}s (Multiplier x${mult}).`;
+        setLastFeedback(`${notice} | ${evalResult.detailedFeedback || 'Accurate shadowing rhythm!'}`);
 
         if (newHp === 0) {
           updateUserProgress(3, 100, true);
         }
       }
     } catch {
-      Alert.alert("Lỗi", "Không thể phân tích giọng nói. Vui lòng thử lại!");
+      Alert.alert("Evaluation Error", "Unable to analyze audio acoustics. Please try again!");
     } finally {
       setIsAnalyzing(false);
     }
@@ -531,22 +590,22 @@ Output JSON ONLY:
 
   return (
     <View style={styles.container}>
-      {/* HEADER BẢO ĐẢM NÚT EXIT VÀ TITLE TRẠM 3 */}
+      {/* HEADER */}
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack} style={styles.backBtn}>
-          <Text style={styles.backText}>⬅ EXIT</Text>
+          <Text style={styles.backText}>🔙 MAP</Text>
         </TouchableOpacity>
-        <Text style={styles.title}>👻 TRẠM 3: GHOST SPEED RAID</Text>
+        <Text style={styles.title}>👻 STATION 3: GHOST SPEED RAID</Text>
       </View>
 
       <ScrollView contentContainerStyle={{ alignItems: 'center', width: '100%', paddingBottom: 35 }}>
-        {/* BANNER THÔNG TIN PHÒNG HỌC & MSSV */}
+        {/* STUDENT MODE BANNER */}
         <View style={styles.studentInfoBanner}>
-          <Text style={styles.studentModeTag}>[ SHADOWING ECHO MODE ]</Text>
-          <Text style={styles.studentNameTag}>👤 Chiến Binh Shadow (MSSV: GUEST) | 🏫 LỚP CHUNG</Text>
+          <Text style={styles.studentModeTag}>[ SHADOWING SPEED ECHO ARENA ]</Text>
+          <Text style={styles.studentNameTag}>👤 Arena Challenger | ⚔️ Extemporaneous Speed Shadowing</Text>
         </View>
 
-        {/* CHỌN CẤP ĐỘ CEFR */}
+        {/* CEFR LEVEL SELECTOR */}
         <View style={styles.cefrRow}>
           {CEFR_LEVELS.map(lvl => (
             <TouchableOpacity 
@@ -559,12 +618,12 @@ Output JSON ONLY:
           ))}
         </View>
 
-        {/* KHUNG BOSS VÀ THANH MÁU */}
+        {/* BOSS CARD & HP BAR */}
         <View style={styles.bossCard}>
           <View style={styles.bossHeaderRow}>
-            <Text style={styles.bossName}>{bossData.bossAvatar} {bossData.bossName} ({bossData.bossTitle}) [{cefrLevel}]</Text>
+            <Text style={styles.bossName}>{bossData.bossAvatar} {bossData.bossName} ({bossData.bossTitle || 'Speed Phantom'}) [{cefrLevel}]</Text>
             <TouchableOpacity style={styles.switchBossBtn} onPress={handleNextChallenge} activeOpacity={0.7}>
-              <Text style={styles.switchBossBtnText}>🔄 ĐỔI CÂU KHÁC (0MS)</Text>
+              <Text style={styles.switchBossBtnText}>🔄 NEXT SCENARIO (0MS)</Text>
             </TouchableOpacity>
           </View>
 
@@ -572,35 +631,82 @@ Output JSON ONLY:
             <View style={[styles.hpBarFill, { width: `${(currentHp / (bossData.maxHp || 150)) * 100}%` }]} />
           </View>
           <Text style={styles.hpText}>
-            {currentHp > 0 ? `HP: ${currentHp} / ${bossData.maxHp || 150}` : '☠ BOSS ĐÃ BỊ HẠ GỤC BỞI TỐC ĐỘ!'}
+            {currentHp > 0 ? `HP: ${currentHp} / ${bossData.maxHp || 150}` : '☠ BOSS VANQUISHED BY CRITICAL REFLEX SPEED!'}
           </Text>
         </View>
 
-        {/* CÂU THOẠI SHADOWING & NÚT NGHE MẪU */}
+        {/* TARGET SHADOWING PHRASE & HINT BAR */}
         <View style={styles.phraseCard}>
           <Text style={styles.phraseText}>"{bossData.bossChallengeEn}"</Text>
-          {bossData.bossChallengeVi && (
-            <Text style={styles.promptViText}>👉 Dịch: "{bossData.bossChallengeVi}"</Text>
-          )}
 
+          {/* 🌐 MULTILINGUAL HINT CONTROLLER (HIGH CONTRAST) */}
+          <View style={styles.hintContainer}>
+            <View style={styles.hintHeaderRow}>
+              <TouchableOpacity 
+                style={[styles.hintToggleBtn, showHint && styles.hintToggleBtnActive]} 
+                onPress={() => setShowHint(prev => !prev)}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.hintToggleText, showHint ? { color: '#000000' } : { color: '#FFD700' }]}>
+                  {showHint ? '✕ HIDE HINT' : `💡 SHOW HINT (${LANG_CONFIG[selectedLang].code})`}
+                </Text>
+              </TouchableOpacity>
+
+              <View style={styles.flagPickerRow}>
+                {(['vi', 'th', 'ja', 'ko', 'id', 'zh'] as SupportedLang[]).map((lang) => {
+                  const isSelected = selectedLang === lang;
+                  return (
+                    <TouchableOpacity
+                      key={lang}
+                      style={[styles.flagBtn, isSelected && styles.flagBtnActive]}
+                      onPress={() => {
+                        setSelectedLang(lang);
+                        setShowHint(true);
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.flagIcon}>{LANG_CONFIG[lang].flag}</Text>
+                      <Text style={[styles.flagCodeText, isSelected ? { color: '#00FFFF' } : { color: '#AAAACC' }]}>
+                        {LANG_CONFIG[lang].code}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+
+            {showHint && (
+              <View style={styles.hintContentBox}>
+                <Text style={styles.hintLanguageTag}>
+                  👉 {LANG_CONFIG[selectedLang].flag} {LANG_CONFIG[selectedLang].label}:
+                </Text>
+                <Text style={styles.hintBodyText}>
+                  "{(bossData as any).hint?.[selectedLang] || bossData.bossChallengeVi || bossData.bossChallengeEn}"
+                </Text>
+              </View>
+            )}
+          </View>
+
+          {/* ONYX NEURAL TTS BUTTON */}
           <TouchableOpacity 
             style={[styles.audioBtn, isPlayingAudio && styles.audioBtnPlaying]} 
             onPress={() => playNaturalTTS(bossData.bossChallengeEn)}
+            activeOpacity={0.7}
           >
             <Text style={styles.audioBtnText}>
-              {isPlayingAudio ? '🔊 ĐANG ĐỌC MẪU...' : '📢 NGHE BÓNG MA ĐỌC MẪU'}
+              {isPlayingAudio ? '⏹ PLAYING PHANTOM MODEL...' : '📢 HEAR PHANTOM SPOKEN MODEL'}
             </Text>
           </TouchableOpacity>
         </View>
 
-        {/* THANH ĐẾM NGƯỢC TỐC ĐỘ TẤN CÔNG */}
+        {/* SPEED REFLEX TIMER */}
         <View style={styles.speedTimerCard}>
           <View style={styles.speedTimerHeader}>
             <Text style={styles.speedTimerTitle}>
-              {isRecording ? `⚡ TỐC ĐỘ NÓI: ${speechDuration}s / ${maxLimit}s` : `⏱️ CỬA SỔ PHẢN XẠ: ${timeRemaining}s`}
+              {isRecording ? `⚡ SPEAKING DURATION: ${speechDuration}s / ${maxLimit}s` : `⏱️ REFLEX WINDOW: ${timeRemaining}s`}
             </Text>
             <Text style={[styles.speedStatusText, isRecording && { color: '#39FF14' }]}>
-              {isRecording ? '🔴 ĐANG TÍNH TỐC ĐỘ...' : '⚪ NÓI CÀNG NHANH - SÁT THƯƠNG CÀNG LỚN (LÊN ĐẾN X2.0)'}
+              {isRecording ? '🔴 CALCULATING SPEED MULTIPLIER...' : '⚪ FAST REFLEX DELIVERS UP TO X2.0 CRITICAL DAMAGE'}
             </Text>
           </View>
           <View style={styles.speedBarBg}>
@@ -614,10 +720,10 @@ Output JSON ONLY:
           </View>
         </View>
 
-        {/* DẢI SÓNG ÂM TRỰC TIẾP KHI GHI ÂM */}
+        {/* REALTIME AUDIO WAVE VISUALIZER */}
         <AudioWaveVisualizer stream={activeStream} isRecording={isRecording} barColor="#00FFFF" />
 
-        {/* NÚT THU ÂM VÀ TẤN CÔNG */}
+        {/* CONTROLS & ATTACK TRIGGER */}
         <View style={{ width: '100%', marginBottom: 15 }}>
           <TouchableOpacity 
             style={[styles.recordBtn, isRecording && styles.recordBtnActive]} 
@@ -625,10 +731,10 @@ Output JSON ONLY:
           >
             <Text style={styles.recordText}>
               {isRecording 
-                ? '🛑 NÓI XONG BẤM DỪNG NGAY ĐỂ LẤY BẠO KÍCH!' 
+                ? '🛑 STOP RECORDING IMMEDIATELY FOR CRITICAL MULTIPLIER!' 
                 : hasRecordedCurrentSession 
-                ? `✅ ĐÃ THU TRONG ${speechDuration}s (BẤM ĐỂ NÓI LẠI)` 
-                : '🎙️ BẮT ĐẦU ĐỌC ĐUỔI (SHADOWING TỐC ĐỘ)'}
+                ? `✅ RECORDED IN ${speechDuration}s (TAP TO RETAKE)` 
+                : '🎙️ START HIGH-SPEED SHADOWING'}
             </Text>
           </TouchableOpacity>
 
@@ -641,37 +747,37 @@ Output JSON ONLY:
               disabled={!hasRecordedCurrentSession || isRecording}
             >
               <Text style={styles.attackBtnText}>
-                {hasRecordedCurrentSession ? `⚔️ TẤN CÔNG BOSS TỐC ĐỘ (${speechDuration}s)` : '🔒 BẮT BUỘC ĐỌC ĐUỔI ĐỂ TẤN CÔNG'}
+                {hasRecordedCurrentSession ? `⚔️ EXECUTE SPEED RAID ATTACK (${speechDuration}s)` : '🔒 COMPLETE SHADOWING TO UNLOCK ATTACK'}
               </Text>
             </TouchableOpacity>
           )}
 
-          {/* HIỂN THỊ KẾT QUẢ ĐÒN ĐÁNH & SÁT THƯƠNG */}
+          {/* DAMAGE & SCORE SUMMARY */}
           {lastDamage !== null && (
             <View style={styles.damageCard}>
               <Text style={[styles.damageTitle, { color: lastDamage > 0 ? '#39FF14' : '#FF0055' }]}>
-                {lastDamage > 0 ? (isCritical ? `🔥 BẠO KÍCH TỐC ĐỘ! -${lastDamage} HP` : `💥 TẤN CÔNG THÀNH CÔNG: -${lastDamage} HP`) : '🛡️ ĐÒN ĐÁNH BỊ HỤT!'}
+                {lastDamage > 0 ? (isCritical ? `🔥 CRITICAL SPEED HIT! -${lastDamage} HP` : `💥 RAID STRIKE CONFIRMED: -${lastDamage} HP`) : '🛡️ ATTACK DEFLECTED!'}
               </Text>
               {lastBaseScore !== null && lastDamage > 0 && (
                 <Text style={styles.formulaText}>
-                  Điểm: <Text style={{ color: '#39FF14' }}>{lastBaseScore}</Text> ✖ Tốc độ: <Text style={{ color: '#FFD700' }}>x{speedMultiplier}</Text> = <Text style={{ color: '#FF0055' }}>-{lastDamage} HP</Text>
+                  Score: <Text style={{ color: '#39FF14' }}>{lastBaseScore}</Text> ✖ Speed: <Text style={{ color: '#FFD700' }}>x{speedMultiplier}</Text> = <Text style={{ color: '#FF0055' }}>-{lastDamage} HP</Text>
                 </Text>
               )}
-              <Text style={styles.scoreText}>SCORE: {lastBaseScore || 0} / 100 ĐIỂM</Text>
+              <Text style={styles.scoreText}>SESSION SCORE: {lastBaseScore || 0} / 100 PTS</Text>
               {lastFeedback ? <Text style={styles.feedbackText}>{lastFeedback}</Text> : null}
             </View>
           )}
 
-          {/* 📈 BIỂU ĐỒ ĐƯỜNG CONG NGỮ ĐIỆU (INTONATION CANVAS) */}
+          {/* 📈 INTONATION CONTOUR GRAPH */}
           <View style={styles.intonationContainer}>
-            <Text style={styles.intonationTitle}>📈 ĐƯỜNG CONG NGỮ ĐIỆU (PITCH INTONATION):</Text>
+            <Text style={styles.intonationTitle}>📈 PITCH INTONATION CONTOUR:</Text>
             <IntonationCanvas targetContour={targetContour} studentContour={studentContour} />
           </View>
 
-          {/* 🎯 KẾT QUẢ ĐỌC ĐUỔI TỪNG TỪ (WORD HIGHLIGHT DIFF) */}
+          {/* 🎯 WORD-LEVEL AUDIT */}
           {transcriptResult ? (
             <View style={styles.wordHighlightBox}>
-              <Text style={styles.wordHighlightTitle}>🎯 KẾT QUẢ ĐỌC ĐUỔI TỪNG TỪ:</Text>
+              <Text style={styles.wordHighlightTitle}>🎯 TARGET PHONEME AUDIT:</Text>
               <View style={styles.wordRow}>
                 {generateWordDiff(bossData.bossChallengeEn, transcriptResult).map((item, idx) => (
                   <View 
@@ -690,17 +796,17 @@ Output JSON ONLY:
             </View>
           ) : null}
 
-          {/* 🎧 NGHE LẠI BÀI ĐỌC ĐUỔI CỦA BẠN (HTML5 AUDIO PLAYER) */}
+          {/* 🎧 PLAYBACK PREVIEW */}
           {audioUrl && !isRecording && (
             <View style={styles.audioPreviewContainer}>
-              <Text style={styles.audioPreviewTitle}>🎧 Nghe lại bài đọc đuổi của bạn:</Text>
+              <Text style={styles.audioPreviewTitle}>🎧 Review Recorded Track:</Text>
               {React.createElement('audio', {
                 controls: true,
                 src: audioUrl,
                 style: { width: '100%', height: '38px', marginTop: '6px' }
               })}
               {transcriptResult ? (
-                <Text style={styles.transcriptNotice}>💬 AI nghe được: "{transcriptResult}"</Text>
+                <Text style={styles.transcriptNotice}>💬 Acoustic recognition: "{transcriptResult}"</Text>
               ) : null}
             </View>
           )}
@@ -708,7 +814,7 @@ Output JSON ONLY:
 
         {currentHp === 0 && (
           <TouchableOpacity style={styles.refreshBtn} onPress={handleNextChallenge}>
-            <Text style={styles.refreshText}>🔄 THÁCH ĐẤU VÒNG TIẾP THEO</Text>
+            <Text style={styles.refreshText}>🔄 ADVANCE TO NEXT PHANTOM STAGE</Text>
           </TouchableOpacity>
         )}
       </ScrollView>
@@ -744,8 +850,87 @@ const styles = StyleSheet.create({
 
   phraseCard: { backgroundColor: '#0D0620', padding: 16, borderRadius: 14, borderWidth: 2, borderColor: '#00FFFF', width: '100%', alignItems: 'center', marginBottom: 12 },
   phraseText: { color: '#FFF', fontSize: 15, fontWeight: '800', textAlign: 'center', lineHeight: 22, marginBottom: 8 },
-  promptViText: { color: '#FFD700', fontSize: 11, fontStyle: 'italic', marginBottom: 10, textAlign: 'center' },
-  audioBtn: { backgroundColor: '#1A0B2E', paddingVertical: 8, paddingHorizontal: 14, borderRadius: 8, borderWidth: 1, borderColor: '#00FFFF' },
+
+  hintContainer: {
+    marginVertical: 8,
+    width: '100%',
+  },
+  hintHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 6,
+  },
+  hintToggleBtn: {
+    backgroundColor: '#16082F',
+    borderWidth: 1.5,
+    borderColor: '#FFD700',
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 7,
+  },
+  hintToggleBtnActive: {
+    backgroundColor: '#FFD700',
+  },
+  hintToggleText: {
+    fontSize: 9,
+    fontWeight: '900',
+  },
+  flagPickerRow: {
+    flexDirection: 'row',
+    gap: 4,
+    backgroundColor: '#070314',
+    padding: 3,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#332255',
+    alignItems: 'center',
+  },
+  flagBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    paddingHorizontal: 5,
+    paddingVertical: 4,
+    borderRadius: 6,
+    backgroundColor: '#16082F',
+    borderWidth: 1,
+    borderColor: '#332255',
+  },
+  flagBtnActive: {
+    backgroundColor: '#2A144E',
+    borderColor: '#00FFFF',
+  },
+  flagIcon: {
+    fontSize: 12.5,
+  },
+  flagCodeText: {
+    fontSize: 9,
+    fontWeight: '900',
+  },
+  hintContentBox: {
+    backgroundColor: '#07180D',
+    borderLeftWidth: 3,
+    borderLeftColor: '#39FF14',
+    padding: 10,
+    borderRadius: 8,
+    marginTop: 8,
+    width: '100%',
+  },
+  hintLanguageTag: {
+    color: '#39FF14',
+    fontSize: 9.5,
+    fontWeight: '900',
+    marginBottom: 2,
+  },
+  hintBodyText: {
+    color: '#88FFBB',
+    fontSize: 11,
+    lineHeight: 16,
+    fontStyle: 'italic',
+  },
+
+  audioBtn: { backgroundColor: '#1A0B2E', paddingVertical: 9, paddingHorizontal: 14, borderRadius: 8, borderWidth: 1.5, borderColor: '#00FFFF', marginTop: 8 },
   audioBtnPlaying: { backgroundColor: '#00FFFF' },
   audioBtnText: { color: '#00FFFF', fontSize: 9.5, fontWeight: 'bold' },
 
@@ -758,10 +943,10 @@ const styles = StyleSheet.create({
 
   recordBtn: { backgroundColor: '#00FFFF', paddingVertical: 12, borderRadius: 10, width: '100%', alignItems: 'center', marginBottom: 10 },
   recordBtnActive: { backgroundColor: '#FF0055' },
-  recordText: { color: '#000', fontSize: 11, fontWeight: '900' },
+  recordText: { color: '#000', fontSize: 10.5, fontWeight: '900' },
   attackBtn: { backgroundColor: '#FF007F', paddingVertical: 12, borderRadius: 10, width: '100%', alignItems: 'center' },
   attackBtnDisabled: { backgroundColor: '#331122', opacity: 0.3 },
-  attackBtnText: { color: '#FFF', fontSize: 11, fontWeight: '900' },
+  attackBtnText: { color: '#FFF', fontSize: 10.5, fontWeight: '900' },
 
   damageCard: { width: '100%', backgroundColor: '#130628', padding: 10, borderRadius: 10, borderWidth: 1.5, borderColor: '#39FF14', marginTop: 10, alignItems: 'center' },
   damageTitle: { fontSize: 11.5, fontWeight: '900', marginBottom: 4 },
