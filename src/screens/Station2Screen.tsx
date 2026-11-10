@@ -7,7 +7,7 @@ import { evaluateSpeechSubmission } from '../utils/speechEvaluator';
 import { evaluateSpeaking } from '../services/arena/assessmentService';
 import { supabase } from '../utils/supabase';
 
-// 🛡️ TỰ ĐỘNG BÓC TÁCH COMPONENT CHUẨN XÁC DÙ LÀ DEFAULT HAY NAMED EXPORT (CHỐNG LỖI REACT #130)
+// 🛡️ TỰ ĐỘNG BÓC TÁCH COMPONENT CHUẨN XÁC CHỐNG LỖI REACT #130
 const AntiCheatSpeakingSession: React.ComponentType<any> = 
   (AntiCheatModule as any).default || 
   (AntiCheatModule as any).AntiCheatSpeakingSession || 
@@ -24,113 +24,350 @@ interface Props {
   onBack: () => void;
 }
 
-type CefrLevel = 'A1' | 'A2' | 'B1' | 'B2' | 'C1' | 'C2';
-type Station2Tier = 'SOLO' | 'RELAY' | 'ROLEPLAY';
-type PracticeMode = 'READ_SAMPLE' | 'FREE_SPEECH';
-type TopicOrigin = 'SYSTEM' | 'TEACHER_DASHBOARD' | 'STUDENT_CUSTOM';
+export type CefrLevel = 'A1' | 'A2' | 'B1' | 'B2' | 'C1' | 'C2';
+export type Station2Tier = 'SOLO' | 'RELAY' | 'ROLEPLAY';
+export type PracticeMode = 'READ_SAMPLE' | 'FREE_SPEECH';
+export type TopicOrigin = 'SYSTEM' | 'TEACHER_DASHBOARD' | 'STUDENT_CUSTOM';
+export type SupportedLang = 'vi' | 'th' | 'ja' | 'ko' | 'id';
 
-interface ChallengeItem {
+export interface MultilingualHint {
+  vi: string; // Tiếng Việt
+  th: string; // ภาษาไทย
+  ja: string; // 日本語
+  ko: string; // 한국어
+  id: string; // Bahasa Indonesia
+}
+
+export interface ChallengeItem {
   id: string;
   tier: Station2Tier;
   level: CefrLevel;
   title: string;
+  place: string;
+  task: string;
   contextDesc: string;
   prompt: string;
+  hint: MultilingualHint;
   isTeacherAssigned?: boolean;
 }
 
 const CEFR_LEVELS: CefrLevel[] = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
 
+const LANG_FLAGS: Record<SupportedLang, string> = {
+  vi: '🇻🇳',
+  th: '🇹🇭',
+  ja: '🇯🇵',
+  ko: '🇰🇷',
+  id: '🇮🇩'
+};
+
+const LANG_NAMES: Record<SupportedLang, string> = {
+  vi: 'Tiếng Việt',
+  th: 'ภาษาไทย',
+  ja: '日本語',
+  ko: '한국어',
+  id: 'Bahasa Indonesia'
+};
+
 const TIERS: { key: Station2Tier; label: string; icon: string; desc: string }[] = [
-  { key: 'SOLO', label: 'TẦNG 1: SOLO (CÁ NHÂN PHẢN XẠ)', icon: '🥊', desc: 'Độc lập phản xạ: Tự xử lý tình huống bất ngờ hoặc câu hỏi thách thức' },
-  { key: 'RELAY', label: 'TẦNG 2: RELAY (TIẾP SỨC ĐỒNG ĐỘI)', icon: '🏃', desc: 'Tiếp sức 2 người: Nối tiếp ý tưởng, bổ sung luận điểm cùng chủ đề' },
-  { key: 'ROLEPLAY', label: 'TẦNG 3: ROLEPLAY (NHẬP VAI 2 BẠN)', icon: '🎭', desc: 'Nhập vai 2 người: Phân vai giải quyết xung đột, đàm phán tình huống xã hội' }
+  { key: 'SOLO', label: 'TIER 1: SOLO (INDIVIDUAL REFLEX)', icon: '🥊', desc: 'Spontaneous reflex: Handle unexpected real-world inquiries or challenges independently.' },
+  { key: 'RELAY', label: 'TIER 2: RELAY (TEAM EXPANSION)', icon: '🏃', desc: 'Two-speaker relay: Seamlessly extend ideas and elaborate logically on the ongoing topic.' },
+  { key: 'ROLEPLAY', label: 'TIER 3: ROLEPLAY (DYNAMIC DUO)', icon: '🎭', desc: 'Interactive roleplay: Resolve interpersonal conflicts and negotiate practical scenarios.' }
 ];
 
-// 🎯 KHO DỮ LIỆU ĐỀ PHẢN XẠ ĐA DẠNG CHO TRẠM 2
-const SCENARIO_LIBRARY: Record<string, { title: string; context: string; prompt: string }[]> = {
+// 🎯 KHO KỊCH BẢN 100% ENGLISH-FIRST + HINT ĐA NGÔN NGỮ CHÂU Á
+const SCENARIO_LIBRARY: Record<string, Omit<ChallengeItem, 'id' | 'tier' | 'level' | 'isTeacherAssigned'>[]> = {
   'SOLO_A1': [
-    { title: "Hỏi thăm đường đến ga tàu điện", context: "Một người nước ngoài hỏi bạn đường đi bộ đến ga tàu điện ngầm gần nhất.", prompt: "Go straight ahead for two blocks, then turn left; the station is next to the bank." },
-    { title: "Gọi món ăn trưa mang đi", context: "Bạn vào quán ăn nhanh và gọi 1 phần cơm gà cùng một chai nước suối.", prompt: "Hello, can I please have one chicken rice set to take away and a bottle of mineral water?" },
-    { title: "Nhờ người lạ xem giờ", context: "Điện thoại của bạn bị hết pin, bạn nhờ một người bên cạnh xem giúp mấy giờ.", prompt: "Excuse me, my phone battery is completely dead. Do you happen to have the time?" },
-    { title: "Xin lỗi vì đến lớp trễ", context: "Bạn bước vào lớp trễ 10 phút vì xe hỏng xăm, giải thích ngắn gọn với thầy cô.", prompt: "I sincerely apologize for being late today, teacher; my motorbike had a flat tire on the way." },
-    { title: "Hỏi giá chiếc áo khoác", context: "Bạn đang trong cửa hàng quần áo và muốn hỏi giá chiếc áo gió màu xanh.", prompt: "Excuse me, could you tell me how much this blue jacket costs?" },
-    { title: "Giới thiệu món Phở Việt Nam", context: "Người bạn nước ngoài hỏi nên thử món ăn truyền thống nào đầu tiên tại Hà Nội.", prompt: "You definitely should try traditional Beef Pho with fresh herbs; it is absolutely delicious." },
-    { title: "Hỏi mượn bút chì trong giờ học", context: "Bút bi của bạn bị hết mực giữa giờ kiểm tra, hãy hỏi bạn cùng bàn.", prompt: "Excuse me, my pen ran out of ink. Could I borrow an extra pencil from you?" }
+    {
+      title: "Asking for Metro Directions",
+      place: "City Street",
+      task: "Give walking directions to the nearest subway",
+      contextDesc: "A foreign traveler asks you for walking directions to the nearest subway station.",
+      prompt: "Go straight ahead for two blocks, then turn left; the station is right next to the bank.",
+      hint: {
+        vi: "Chỉ đường đi bộ: đi thẳng 2 dãy nhà rồi rẽ trái, ga tàu nằm ngay cạnh ngân hàng.",
+        th: "บอกทางเดิน: ตรงไปสองบล็อกแล้วเลี้ยวซ้าย สถานีอยู่ติดกับธนาคาร",
+        ja: "道案内：2ブロック直進して左折します。駅は銀行のすぐ隣にあります。",
+        ko: "길 안내: 두 블록 직진 후 좌회전하세요. 역은 은행 바로 옆에 있습니다.",
+        id: "Memberi petunjuk jalan: lurus dua blok, lalu belok kiri; stasiun ada di sebelah bank."
+      }
+    },
+    {
+      title: "Ordering Takeout Lunch",
+      place: "Fast Food Counter",
+      task: "Order a chicken rice meal and water",
+      contextDesc: "You are at a fast-food counter. Order one chicken rice combo to take away and a bottle of water.",
+      prompt: "Hello, can I please have one chicken rice set to take away and a bottle of mineral water?",
+      hint: {
+        vi: "Gọi đồ ăn mang về: 1 phần cơm gà mang đi và 1 chai nước suối.",
+        th: "สั่งอาหารกลับบ้าน: สั่งชุดข้าวไก่ 1 ชุดและน้ำดื่ม 1 ขวด",
+        ja: "テイクアウト注文：チキンライスセット1つとミネラルウォーター1本を持ち帰りで注文します。",
+        ko: "포장 주문: 치킨 라이스 세트 하나와 생수 한 병을 포장 주문하세요.",
+        id: "Pesan bawa pulang: pesan 1 paket nasi ayam bungkus dan 1 botol air mineral."
+      }
+    },
+    {
+      title: "Asking for the Current Time",
+      place: "Bus Stop",
+      task: "Politely ask a stranger for the time",
+      contextDesc: "Your phone battery has died completely. Ask someone standing nearby for the time.",
+      prompt: "Excuse me, my phone battery is completely dead. Do you happen to have the time?",
+      hint: {
+        vi: "Hỏi giờ lịch sự: máy hết pin, hỏi người bên cạnh xem mấy giờ rồi.",
+        th: "ถามเวลาอย่างสุภาพ: แบตโทรศัพท์หมด ถามคนข้างๆ ว่าเวลากี่โมงแล้ว",
+        ja: "時間を尋ねる：スマホの充電が切れたので、近くの人に時間を丁寧に尋ねます。",
+        ko: "시간 묻기: 휴대전화 배터리가 다 닳았으니 근처 사람에게 정중히 시간을 물어보세요.",
+        id: "Menanyakan waktu: baterai ponsel habis, tanyakan jam berapa kepada orang di dekat Anda."
+      }
+    }
   ],
   'SOLO_A2': [
-    { title: "Từ chối lời mời tiệc cuối tuần", context: "Đồng nghiệp rủ bạn đi uống bia tối thứ Bảy nhưng bạn phải về quê thăm ông bà.", prompt: "I would really love to join, but I have already promised to visit my grandparents this weekend." },
-    { title: "Phản ánh món ăn bị nguội", context: "Đĩa mì xào vừa mang ra bị nguội ngắt, bạn gọi nhân viên phục vụ hỗ trợ lịch sự.", prompt: "Excuse me, my noodles are quite cold. Could you please ask the kitchen to heat them up for me?" },
-    { title: "Hỏi đổi kích cỡ giày", context: "Đôi giày bạn thử bị chật mũi ngón chân, bạn hỏi nhân viên xem có cỡ lớn hơn không.", prompt: "These shoes feel a bit tight around my toes. Do you have this model in a half size larger?" },
-    { title: "Hỏi lịch xe buýt tuyến cuối", context: "Bạn hỏi nhân viên phòng vé xem chuyến xe buýt số 150 cuối cùng trong ngày chạy lúc mấy giờ.", prompt: "Good evening, could you tell me when the last bus number one hundred and fifty departs tonight?" },
-    { title: "Hỏi về phụ phí dịch vụ", context: "Hóa đơn thanh toán tại quán ăn xuất hiện khoản phụ thu lạ, bạn hỏi nhân viên phục vụ.", prompt: "Excuse me, could you please clarify what this additional service charge on my receipt is for?" }
+    {
+      title: "Declining a Weekend Party",
+      place: "Office Hallway",
+      task: "Politely refuse an invitation due to family visit",
+      contextDesc: "A colleague invites you for beers on Saturday, but you already promised to visit your grandparents.",
+      prompt: "I would really love to join, but I have already promised to visit my grandparents this weekend.",
+      hint: {
+        vi: "Từ chối lịch sự: rất muốn đi nhưng đã hứa về quê thăm ông bà cuối tuần này.",
+        th: "ปฏิเสธคำชวนอย่างสุภาพ: อยากไปมากแต่สัญญาว่าจะไปหาปู่ย่าตายายสุดสัปดาห์นี้แล้ว",
+        ja: "丁寧にお誘いを断る：行きたいのは山々ですが、今週末は祖父母を訪ねる約束があります。",
+        ko: "정중히 거절하기: 정말 가고 싶지만 이번 주말에 조부모님을 뵙기로 약속했습니다.",
+        id: "Menolak ajakan: sangat ingin ikut, tapi sudah berjanji mengunjungi kakek-nenek akhir pekan ini."
+      }
+    },
+    {
+      title: "Reporting Cold Food",
+      place: "Casual Restaurant",
+      task: "Politely ask the server to reheat your noodles",
+      contextDesc: "Your stir-fried noodles just arrived stone-cold. Politely request the server to have the kitchen reheat them.",
+      prompt: "Excuse me, my noodles are quite cold. Could you please ask the kitchen to heat them up for me?",
+      hint: {
+        vi: "Phản ánh đồ ăn nguội: xin phép nhân viên nhờ bếp hâm nóng lại đĩa mì.",
+        th: "แจ้งอาหารเย็นชืด: ขอความกรุณาพนักงานช่วยนำบะหมี่ไปอุ่นให้ร้อนอีกครั้ง",
+        ja: "料理の温め直し：麺が冷たいので、キッチンで温め直してもらうよう店員に丁寧に頼みます。",
+        ko: "음식 데우기 요청: 면이 너무 식었으니 주방에 다시 데워달라고 정중히 요청하세요.",
+        id: "Komplain makanan dingin: minta pelayan dengan sopan agar dapur memanaskan kembali mi Anda."
+      }
+    }
   ],
   'SOLO_B1': [
-    { title: "Chất vấn chi phí triển khai dự án", context: "Trong buổi thuyết trình, khán giả hỏi giải pháp của nhóm có quá tốn kém kinh phí ban đầu không.", prompt: "While initial setup requires significant investment, operational savings over six months will completely offset the costs." },
-    { title: "Thương lượng chia lại đầu việc nhóm", context: "Bạn nhận thấy khối lượng công việc phân bổ chưa đều, đề xuất trưởng nhóm chia lại công bằng.", prompt: "I propose we redistribute the technical research workload so that every team member contributes equally." },
-    { title: "Giải trình nộp bài tập muộn", context: "Máy tính xách tay bị lỗi ổ cứng đột ngột lúc đang nộp luận văn, bạn gửi email giải trình.", prompt: "My computer suffered an unexpected drive failure an hour before the deadline; please find my verified draft attached." },
-    { title: "Phỏng vấn: Điểm yếu cần khắc phục", context: "Nhà tuyển dụng hỏi về điểm yếu lớn nhất của bạn trong công việc và cách cải thiện.", prompt: "I sometimes focus excessively on minor details, so I now use time-blocking tools to maintain perspective on core milestones." },
-    { title: "Từ chối yêu cầu làm việc ngoài giờ", context: "Quản lý nhờ bạn làm thêm vào tối Chủ Nhật nhưng bạn đã đăng ký lịch thi chứng chỉ ngoại ngữ.", prompt: "I am unable to cover the Sunday shift because I have a mandatory international certification examination scheduled." },
-    { title: "Phản ánh tiến độ giao hàng chậm", context: "Gói quà sinh nhật đặt hỏa tốc bị trễ 2 ngày mà không có thông báo từ đơn vị vận chuyển.", prompt: "I specifically paid for priority delivery; could you investigate why my parcel has been delayed for two days without update?" },
-    { title: "Thương lượng giá phòng trọ", context: "Chủ nhà thông báo tăng tiền điện 20%, bạn đại diện các bạn cùng phòng xin xem xét lại.", prompt: "A twenty percent increase is substantial for our student budget; could we negotiate a more moderate adjustment?" }
+    {
+      title: "Defending Project Setup Costs",
+      place: "Conference Room",
+      task: "Justify high upfront costs by proving long-term savings",
+      contextDesc: "During your presentation, an audience member challenges whether the proposed system is too costly.",
+      prompt: "While initial setup requires significant investment, operational savings over six months will completely offset the costs.",
+      hint: {
+        vi: "Biện hộ chi phí: chi phí ban đầu cao nhưng tiết kiệm vận hành sau 6 tháng sẽ bù đắp hoàn toàn.",
+        th: "ชี้แจงงบประมาณ: แม้ต้นทุนเริ่มต้นจะสูง แต่การประหยัดค่าดำเนินการใน 6 เดือนจะคุ้มทุนอย่างแน่นอน",
+        ja: "初期費用の正当化：初期投資は必要ですが、6か月間の運用削減により全額回収できます。",
+        ko: "프로젝트 비용 정당화: 초기 투자가 필요하지만 6개월간의 운영 절감으로 충분히 상쇄됩니다.",
+        id: "Mempertahankan biaya proyek: biaya awal memang tinggi, tapi penghematan 6 bulan akan menutupinya."
+      }
+    },
+    {
+      title: "Negotiating Task Redistribution",
+      place: "Team Workspace",
+      task: "Propose rebalancing the research workload equally",
+      contextDesc: "You notice workload distribution is skewed. Propose to the team lead that tasks be shared fairly.",
+      prompt: "I propose we redistribute the technical research workload so that every team member contributes equally.",
+      hint: {
+        vi: "Đề xuất chia lại việc: phân bổ lại phần việc nghiên cứu kỹ thuật để mọi người đóng góp công bằng.",
+        th: "เจรจาแบ่งงาน: เสนอให้จัดสรรงานวิจัยทางเทคนิคใหม่เพื่อให้สมาชิกทุกคนมีส่วนร่วมเท่าๆ กัน",
+        ja: "業務分担の再調整：全員が公平に貢献できるよう、技術調査のタスクを再配分することを提案します。",
+        ko: "업무 재분배 제안: 모든 팀원이 동등하게 기여할 수 있도록 기술 연구 업무를 재분배하자고 제안하세요.",
+        id: "Negosiasi pembagian tugas: usulkan pembagian ulang beban riset teknis agar kontribusi seimbang."
+      }
+    }
   ],
   'SOLO_B2': [
-    { title: "Thương thuyết dời hạn giao sản phẩm", context: "Khách hàng muốn bàn giao trước 1 tuần, bạn phải giải thích nguy cơ rủi ro bảo mật hệ thống.", prompt: "Accelerating deployment by a full week severely constrains our security audit cycle, risking critical vulnerabilities." },
-    { title: "Tranh biện về làm việc từ xa (Remote Work)", context: "Phản hồi câu hỏi liệu chế độ làm việc từ xa có làm giảm tính gắn kết văn hóa doanh nghiệp.", prompt: "Remote arrangements enhance personal autonomy, yet preserving institutional cohesion requires structured hybrid sync points." },
-    { title: "Giải quyết bất đồng chiến lược marketing", context: "Bạn thuyết phục ban giám đốc chuyển 40% ngân sách quảng cáo truyền thống sang các kênh TikTok.", prompt: "Legacy print advertising no longer yields measurable conversion; reallocating forty percent toward short-form video delivers targeted ROI." },
-    { title: "Từ chối tính năng phát sinh (Scope Creep)", context: "Khách hàng yêu cầu bổ sung 3 tính năng mới ngay trước thềm phát hành bản thử nghiệm.", prompt: "Incorporating additional scope at this stage threatens timeline integrity; we recommend scheduling these enhancements for phase two." }
+    {
+      title: "Resisting Unrealistic Deadlines",
+      place: "Client Sync Meeting",
+      task: "Explain why rushing delivery creates critical security risks",
+      contextDesc: "The client demands delivery one week early. Explain how this severely threatens security audit integrity.",
+      prompt: "Accelerating deployment by a full week severely constrains our security audit cycle, risking critical vulnerabilities.",
+      hint: {
+        vi: "Từ chối ép tiến độ: giao sớm 1 tuần sẽ thu hẹp thời gian kiểm tra bảo mật, gây nguy cơ lỗ hổng nghiêm trọng.",
+        th: "ปฏิเสธกำหนดการเร่งด่วน: การเร่งส่งมอบงานเร็วขึ้นหนึ่งสัปดาห์จะทำให้การตรวจสอบความปลอดภัยมีช่องโหว่",
+        ja: "納期短縮への反論：リリースを1週間前倒しするとセキュリティ監査が不十分になり、脆弱性のリスクが高まります。",
+        ko: "일정 단축 거절: 일주일 일찍 배포하면 보안 감사 일정이 촉박해져 심각한 취약점이 발생할 수 있습니다.",
+        id: "Menolak percepatan tenggat: memajukan rilis seminggu membatasi audit keamanan dan memicu celah bahaya."
+      }
+    }
   ],
   'SOLO_C1': [
-    { title: "Xử lý khủng hoảng rò rỉ dữ liệu", context: "Là phát ngôn viên doanh nghiệp, phản hồi báo chí về tin đồn cơ sở dữ liệu khách hàng bị tấn công.", prompt: "Our incident response teams have isolated the perimeter, engaged third-party forensic auditors, and will provide transparent hourly updates." },
-    { title: "Phản biện chính sách thuế carbon", context: "Tranh luận về việc áp thuế môi trường lên các nhà máy sản xuất linh kiện trong ngắn hạn.", prompt: "Unilateral fiscal penalties risk precipitating industrial offshoring unless coupled with domestic green technology tax credits." }
+    {
+      title: "Corporate Data Breach Response",
+      place: "Press Briefing",
+      task: "Deliver calm, authoritative statement on incident containment",
+      contextDesc: "As corporate spokesperson, address rumors of a database breach during a live press briefing.",
+      prompt: "Our incident response teams have isolated the perimeter, engaged third-party forensic auditors, and will provide transparent hourly updates.",
+      hint: {
+        vi: "Phát ngôn khủng hoảng: đội ứng phó đã cách ly phạm vi, mời kiểm toán độc lập và sẽ cập nhật minh bạch mỗi giờ.",
+        th: "แถลงการณ์รับมือวิกฤต: ทีมงานได้แยกขอบเขตความเสียหาย ว่าจ้างผู้ตรวจสอบภายนอก และจะอัปเดตอย่างโปร่งใสทุกชั่วโมง",
+        ja: "緊急記者会見：インシデント対応チームが感染範囲を隔離し、第三者監査機関を介入させ、毎時最新情報を公開します。",
+        ko: "데이터 유출 위기 대응: 사고 대응팀이 침해 구역을 격리하고 외부 전문 감사관을 투입해 매시간 투명하게 공지하겠습니다.",
+        id: "Pernyataan krisis: tim insiden telah mengisolasi area, melibatkan auditor forensik, dan memberi update transparan."
+      }
+    }
   ],
   'SOLO_C2': [
-    { title: "Tranh biện đạo đức AI trong tư pháp", context: "Bình luận trước hội đồng khoa học về việc thuật toán thay thế thẩm phán đưa ra phán quyết.", prompt: "Algorithmic adjudication merely optimizes for historical empirical precedents, thereby formalizing systemic biases under the guise of neutrality." }
+    {
+      title: "Algorithmic Adjudication Ethics",
+      place: "Academic Colloquium",
+      task: "Critique AI judgment replacing human judges in judicial rulings",
+      contextDesc: "Deliver an extemporaneous critique on algorithms replacing judges in commercial court rulings.",
+      prompt: "Algorithmic adjudication merely optimizes for historical empirical precedents, thereby formalizing systemic biases under the guise of neutrality.",
+      hint: {
+        vi: "Tranh biện đạo đức AI: phán quyết bằng thuật toán chỉ tối ưu theo tiền lệ quá khứ, chính thức hóa định kiến hệ thống.",
+        th: "การตัดสินด้วย AI: การตัดสินคดีด้วยอัลกอริทึมเพียงแค่อิงตามบรรทัดฐานในอดีต ซึ่งเป็นการตอกย้ำอคติในระบบภายใต้คำว่ายุติธรรม",
+        ja: "AI司法の批判的検討：アルゴリズムによる判決は過去の判例を最適化するに過ぎず、中立の名の下に構造的偏見を固定化します。",
+        ko: "AI 판결 윤리 논쟁: 알고리즘 판결은 과거 선례를 최적화할 뿐이며 중립이라는 미명 하에 구조적 편향을 공식화합니다.",
+        id: "Debat etika AI peradilan: putusan algoritmik hanya mengoptimalkan preseden masa lalu, melegalkan bias sistemik."
+      }
+    }
   ],
   'RELAY_A1': [
-    { title: "Tiếp sức: Kế hoạch tiệc chia tay", context: "Bạn A: 'We should buy pizza and drinks.' -> Bạn B tiếp sức nối ý trang trí và âm nhạc.", prompt: "Great idea! I can bring some speakers and paper lanterns to decorate the patio." },
-    { title: "Tiếp sức: Hoạt động cuối tuần", context: "Bạn A: 'I plan to ride my bicycle in the morning.' -> Bạn B tiếp sức nối ý hoạt động buổi chiều.", prompt: "Sounds refreshing! Afterward, we can visit the public library to study for next week's quiz." }
+    {
+      title: "Relay: Farewell Party Planning",
+      place: "Campus Lounge",
+      task: "Follow up partner's idea with lanterns and speakers",
+      contextDesc: "Partner A: 'We should buy pizza and drinks.' -> Partner B: Propose decoration and background music.",
+      prompt: "Great idea! I can bring some speakers and paper lanterns to decorate the patio.",
+      hint: {
+        vi: "Tiếp sức tiệc chia tay: Bạn A đề xuất pizza & đồ uống -> Bạn B nối ý mang loa và lồng đèn trang trí.",
+        th: "ต่อยอดไอเดียงานเลี้ยง: เพื่อน A เสนอพิซซ่าและเครื่องดื่ม -> เพื่อน B สานต่อเรื่องลำโพงและโคมไฟตกแต่ง",
+        ja: "リレー会話：Aがピザと飲み物を提案 -> Bがテラスの飾り付け用スピーカーと提灯を持ってくると続けます。",
+        ko: "릴레이 대화: 친구 A가 피자와 음료 제안 -> 친구 B가 스피커와 종이등 장식을 가져오겠다고 이어가세요.",
+        id: "Estafet pesta perpisahan: Rekan A usul piza & minuman -> Rekan B sambung dengan membawa speaker dan lentera."
+      }
+    }
   ],
   'RELAY_B1': [
-    { title: "Tiếp sức: Chiến dịch truyền thông sự kiện", context: "Bạn A: 'Short video clips will grab student attention on Facebook.' -> Bạn B tiếp sức nối ý minigame quà tặng.", prompt: "Building directly upon that, we could host a weekly live giveaway session to drive organic viral engagement." },
-    { title: "Tiếp sức: Giảm rác thải nhựa tại căng-tin", context: "Bạn A: 'The cafeteria must stop using disposable plastic cups.' -> Bạn B tiếp sức đề xuất giảm giá cho bình cá nhân.", prompt: "To make that policy effective, the administration should offer a ten percent discount for anyone bringing reusable tumblers." },
-    { title: "Tiếp sức: Quản lý thời gian học tập", context: "Bạn A: 'Using digital calendar alerts prevents missing deadlines.' -> Bạn B tiếp sức phương pháp chia nhỏ nhiệm vụ.", prompt: "Additionally, breaking massive assignments into thirty-minute task intervals minimizes procrastination and mental exhaustion." }
+    {
+      title: "Relay: Campus Plastic Reduction",
+      place: "Student Council",
+      task: "Build upon reusable policy with personal tumbler discounts",
+      contextDesc: "Partner A: 'The cafeteria must stop disposable cups.' -> Partner B: Propose 10% tumbler discount.",
+      prompt: "To make that policy effective, the administration should offer a ten percent discount for anyone bringing reusable tumblers.",
+      hint: {
+        vi: "Tiếp sức giảm rác thải: Bạn A muốn cấm ly dùng 1 lần -> Bạn B bổ sung đề xuất giảm 10% khi mang bình cá nhân.",
+        th: "ลดขยะพลาสติก: เพื่อน A เสนอเลิกใช้แก้วพลาสติก -> เพื่อน B ต่อยอดด้วยการลดราคา 10% เมื่อนำแก้วส่วนตัวมา",
+        ja: "プラスチック削減：Aが使い捨てカップ廃止を提案 -> Bがマイボトル持参者に10%割引を設ける案を補足します。",
+        ko: "플라스틱 줄이기 릴레이: A가 일회용 컵 중단 제안 -> B가 텀블러 지참 시 10% 할인 정책을 연계 제안하세요.",
+        id: "Estafet kurangi plastik: A usul stop cangkir sekali pakai -> B sambung dengan diskon 10% untuk tumbler pribadi."
+      }
+    }
   ],
   'RELAY_B2': [
-    { title: "Tiếp sức: Triển khai mô hình xe điện đô thị", context: "Bạn A: 'Subsidizing electric motorbikes directly curbs urban emissions.' -> Bạn B tiếp sức hạ tầng trạm sạc & pin.", prompt: "Crucially, municipal planners must simultaneously expand standardized battery-swapping stations across major transit corridors." },
-    { title: "Tiếp sức: Tối ưu hóa chuỗi cung ứng linh kiện", context: "Bạn A: 'Relying exclusively on overseas suppliers creates fragile bottlenecks.' -> Bạn B tiếp sức mô hình đối tác vệ tinh nội địa.", prompt: "Consequently, onboarding localized secondary vendors provides an essential operational buffer against geopolitical logistics halts." }
+    {
+      title: "Relay: Urban EV Infrastructure",
+      place: "Urban Planning Forum",
+      task: "Highlight battery-swapping network alongside subsidies",
+      contextDesc: "Partner A: 'Subsidizing electric motorbikes curbs emissions.' -> Partner B: Emphasize battery-swapping stations.",
+      prompt: "Crucially, municipal planners must simultaneously expand standardized battery-swapping stations across major transit corridors.",
+      hint: {
+        vi: "Tiếp sức xe điện đô thị: Bạn A nói về trợ giá xe -> Bạn B nối tiếp yêu cầu mở rộng trạm đổi pin chuẩn hóa.",
+        th: "โครงสร้างพื้นฐาน EV: เพื่อน A พูดถึงการอุดหนุนมอเตอร์ไซค์ไฟฟ้า -> เพื่อน B เน้นย้ำสถานีสลับแบตเตอรี่ตามแนวรถไฟฟ้า",
+        ja: "EV普及リレー：Aが電動バイク補助金を提案 -> Bが主要幹線道路沿いへの規格化されたバッテリー交換ステーション整備を補足します。",
+        ko: "친환경 전기차 인프라: A가 전기 오토바이 보조금 주장 -> B가 주요 환승 통로에 표준 배터리 교환소 확충을 덧붙이세요.",
+        id: "Estafet motor listrik: A usulkan subsidi -> B tekankan perluasan stasiun penukaran baterai terstandarisasi."
+      }
+    }
   ],
   'ROLEPLAY_A1': [
-    { title: "Nhập vai: Gọi món tại quán ăn nhanh", context: "Bạn là khách muốn gọi combo gà rán, nước suối và hỏi thanh toán qua mã QR.", prompt: "Hello, can I please order a fried chicken combo and pay using a mobile QR transfer?" },
-    { title: "Nhập vai: Mua vé xem phim rạp", context: "Bạn là khách muốn mua 2 vé xem phim ca tối và hỏi chính sách vé ưu đãi cho sinh viên.", prompt: "Good afternoon, could I get two student tickets for the seven PM show with my university card?" }
+    {
+      title: "Roleplay: Counter Order & QR Pay",
+      place: "Fast Food Counter",
+      task: "Order fried chicken combo and ask to pay by QR",
+      contextDesc: "You are the customer ordering a fried chicken combo and confirming mobile QR payment.",
+      prompt: "Hello, can I please order a fried chicken combo and pay using a mobile QR transfer?",
+      hint: {
+        vi: "Nhập vai gọi món: xin gọi combo gà rán và hỏi có thanh toán chuyển khoản mã QR được không.",
+        th: "สวมบทบาทสั่งอาหาร: สั่งชุดไก่ทอดและสอบถามว่าสามารถสแกนจ่ายด้วย QR Code ได้หรือไม่",
+        ja: "ロールプレイ（注文）：フライドチキンコンボを注文し、モバイルQR決済ができるか尋ねます。",
+        ko: "역할극 주문: 치킨 콤보를 주문하고 모바일 QR 코드로 결제 가능한지 물어보세요.",
+        id: "Roleplay pesan makanan: pesan paket ayam goreng dan tanyakan apakah bisa bayar pakai QR."
+      }
+    }
   ],
   'ROLEPLAY_A2': [
-    { title: "Nhập vai: Đổi kích cỡ áo quần", context: "Áo sơ mi mua hôm qua bị chật vai, mang hóa đơn đến xin đổi sang Size L.", prompt: "Good morning, I bought this shirt yesterday but it feels tight around my shoulders. Can I exchange it for a large?" },
-    { title: "Nhập vai: Gửi hành lý tại lễ tân", context: "Bạn trả phòng lúc 12h trưa nhưng muốn gửi lại 2 vali đến 17h chiều để đi dạo.", prompt: "I am checking out now. Is it possible to leave our two suitcases at the reception until five PM?" }
+    {
+      title: "Roleplay: Clothing Size Exchange",
+      place: "Boutique Counter",
+      task: "Request an exchange for Large with your receipt",
+      contextDesc: "The shirt you bought yesterday feels tight around the shoulders. Present receipt and ask to exchange for size L.",
+      prompt: "Good morning, I bought this shirt yesterday but it feels tight around my shoulders. Can I exchange it for a large?",
+      hint: {
+        vi: "Nhập vai đổi size áo: áo mua hôm qua bị chật vai, mang hóa đơn xin đổi sang size L.",
+        th: "เปลี่ยนขนาดเสื้อ: เสื้อที่ซื้อเมื่อวานแน่นช่วงไหล่ นำใบเสร็จมาขอเปลี่ยนเป็นไซส์ L",
+        ja: "サイズ交換：昨日買ったシャツの肩周りが窮屈なため、レシートを提示してLサイズへの交換を依頼します。",
+        ko: "사이즈 교환: 어제 산 셔츠 어깨가 꽉 끼니 영수증을 보여주고 L 사이즈로 교환을 요청하세요.",
+        id: "Tukar ukuran baju: kemeja kemarin kesempitan di bahu, tunjukkan struk untuk tukar ke ukuran L."
+      }
+    }
   ],
   'ROLEPLAY_B1': [
-    { title: "Nhập vai: Đổi đồ uống gấp tại sân bay", context: "Gọi trà đào đá nhưng nhận nhầm cà phê nóng, chuyến bay sắp cất cánh trong 10 phút.", prompt: "Excuse me, I ordered an iced peach tea, but I received hot cappuccino. Could you replace it quickly as my flight boards soon?" },
-    { title: "Nhập vai: Xin gia hạn nộp bài tập lớn", context: "Máy chủ nhóm bị hỏng ổ cứng, bạn đại diện gặp giảng viên xin dời hạn nộp 24 giờ.", prompt: "Dear Professor, our team experienced an unexpected hardware crash last night. May we respectfully request a twenty-four hour extension?" },
-    { title: "Nhập vai: Phàn nàn tiếng ồn khách sạn", context: "Phòng bên cạnh tiệc tùng gây ồn suốt đêm, bạn yêu cầu quản lý bồi hoàn thỏa đáng.", prompt: "The neighboring room held a loud party until four AM without intervention; I believe a concession on our final bill is warranted." }
+    {
+      title: "Roleplay: Urgent Beverage Swap",
+      place: "Airport Gate Café",
+      task: "Get wrong hot coffee replaced quickly before boarding",
+      contextDesc: "You ordered iced peach tea but received hot cappuccino. Your flight boards in 10 minutes; request an instant swap.",
+      prompt: "Excuse me, I ordered an iced peach tea, but I received hot cappuccino. Could you replace it quickly as my flight boards soon?",
+      hint: {
+        vi: "Đổi đồ uống khẩn cấp: gọi trà đào đá nhưng nhận nhầm cappuccino nóng, máy bay sắp bay trong 10 phút.",
+        th: "เปลี่ยนเครื่องดื่มด่วน: สั่งชาพีชเย็นแต่ได้คาปูชิโน่ร้อน เครื่องบินจะขึ้นใน 10 นาที ขอให้เปลี่ยนให้อย่างรวดเร็ว",
+        ja: "急ぎのドリンク交換：アイスピーチティーを頼んだのにカプチーノが届いた。搭乗まで10分なので至急交換を求めます。",
+        ko: "음료 긴급 교환: 아이스 피치티를 주문했는데 따뜻한 카푸치노가 나왔고 10분 뒤 탑승이니 즉시 교환을 요청하세요.",
+        id: "Tukar minuman darurat: pesan es teh persik dapat cappuccino panas, pesawat boarding 10 menit lagi."
+      }
+    }
   ],
   'ROLEPLAY_B2': [
-    { title: "Nhập vai: Trưởng dự án & Khách hàng phản ánh tiến độ", context: "Khách hàng bức xúc vì tính năng báo cáo bị chậm 3 ngày, bạn đàm phán bàn giao từng phần.", prompt: "We acknowledge the module delay; to keep your team operating, we can deploy the core data export feature this afternoon." },
-    { title: "Nhập vai: Ứng viên & Nhà tuyển dụng thương lượng lương", context: "Công ty đề xuất mức lương thấp hơn kỳ vọng 15%, bạn lập luận kinh nghiệm để thuyết phục.", prompt: "Given my direct experience managing similar cross-platform deployments, a ten percent upward adjustment accurately reflects the immediate value I deliver." }
+    {
+      title: "Roleplay: Project Module Delay",
+      place: "Client Conference",
+      task: "Acknowledge 3-day report delay and offer core export feature",
+      contextDesc: "The client is upset that the reporting module is delayed by 3 days. Negotiate by deploying core data export immediately.",
+      prompt: "We acknowledge the module delay; to keep your team operating, we can deploy the core data export feature this afternoon.",
+      hint: {
+        vi: "Thương lượng tiến độ: thừa nhận trễ tính năng báo cáo 3 ngày, bù lại đề xuất bàn giao phần xuất dữ liệu cốt lõi ngay chiều nay.",
+        th: "เจรจาความล่าช้า: ยอมรับว่าโมดูลรายงานล่าช้า 3 วัน เพื่อไม่ให้งานสะดุด เสนอติดตั้งฟังก์ชันส่งออกข้อมูลหลักให้ช่วงบ่ายนี้",
+        ja: "進捗遅延の交渉：レポート機能の3日遅延を認め、業務を止めないよう本日の午後に主要データ出力機能を先行納品すると提案します。",
+        ko: "프로젝트 지연 협상: 보고서 모듈의 3일 지연을 인정하고, 팀 업무를 위해 핵심 데이터 내보내기 기능을 오늘 오후 즉시 배포하겠다고 제안하세요.",
+        id: "Negosiasi modul tertunda: akui modul telat 3 hari, tawarkan rilis fitur ekspor data utama sore ini."
+      }
+    }
   ],
   'ROLEPLAY_C1': [
-    { title: "Nhập vai: Quản lý khách sạn 5 sao & Khách VIP khiếu nại", context: "Điều hòa phòng Tổng thống gặp sự cố lúc nửa đêm trước hội nghị, bạn xử lý khủng hoảng.", prompt: "I sincerely apologize for this disruption. I will personally arrange an immediate transfer to our Presidential Penthouse with all services comped." }
+    {
+      title: "Roleplay: VIP Presidential Suite AC Failure",
+      place: "5-Star Hotel Lobby",
+      task: "Resolve presidential AC breakdown with penthouse upgrade",
+      contextDesc: "As General Manager, resolve a midnight AC failure in the Presidential Suite right before an international summit.",
+      prompt: "I sincerely apologize for this disruption. I will personally arrange an immediate transfer to our Presidential Penthouse with all services comped.",
+      hint: {
+        vi: "Khủng hoảng khách VIP: quản lý đích thân xin lỗi sự cố điều hòa và nâng hạng miễn phí lên Penthouse Tổng thống.",
+        th: "รับมือแขก VIP: ผู้จัดการขออภัยเหตุแอร์เสีย และย้ายห้องพักไปยังเพนต์เฮาส์สุดหรูพร้อมบริการฟรีทั้งหมด",
+        ja: "VIPクレーム対応：総支配人としてエアコン故障を陳謝し、最上階ペントハウスへの即時移動と全額無償対応を提示します。",
+        ko: "VIP 객실 에어컨 고장 대응: 총지배인으로서 심야 에어컨 고장에 사과하고 최고급 펜트하우스로 무료 업그레이드 조치하세요.",
+        id: "Penanganan komplain VIP: sebagai GM minta maaf atas AC rusak dan gratiskan upgrade ke Presidential Penthouse."
+      }
+    }
   ]
 };
 
 const CONTEXT_VARIANTS = [
-  "Thời gian gấp gáp trong vòng 3 phút",
-  "Đối phương đang tỏ thái độ không hài lòng",
-  "Tình huống diễn ra trong buổi họp trực tuyến",
-  "Bối cảnh diễn ra tại văn phòng đối tác quốc tế",
-  "Yêu cầu phản xạ dứt khoát không ngập ngừng",
-  "Đối tác yêu cầu cam kết cụ thể bằng văn bản ngay",
-  "Thời điểm diễn ra vào cuối giờ làm việc mệt mỏi",
-  "Có sự hiện diện của giám đốc cấp cao theo dõi"
+  "Time-sensitive: respond within 3 minutes",
+  "The interlocutor appears dissatisfied and impatient",
+  "High-stakes virtual board meeting context",
+  "Global enterprise headquarters context",
+  "Requires crisp, confident delivery without filler sounds",
+  "Partner expects an immediate written commitment",
+  "End-of-day exhaustion context; keep it succinct",
+  "Monitored directly by executive evaluators"
 ];
 
 const createProceduralScenario = (tier: Station2Tier, level: CefrLevel, index: number): ChallengeItem => {
@@ -144,9 +381,12 @@ const createProceduralScenario = (tier: Station2Tier, level: CefrLevel, index: n
     id: `dynamic_${tier}_${level}_${index}_${Date.now()}`,
     tier,
     level,
-    title: caseNum > 1 ? `${base.title} (Trường hợp #${caseNum})` : base.title,
-    contextDesc: `${base.context} [Lưu ý: ${variant}].`,
+    title: caseNum > 1 ? `${base.title} (Case #${caseNum})` : base.title,
+    place: base.place,
+    task: base.task,
+    contextDesc: `${base.contextDesc} [Notice: ${variant}].`,
     prompt: base.prompt,
+    hint: base.hint,
     isTeacherAssigned: false
   };
 };
@@ -156,25 +396,12 @@ const getSupportedAudioMimeType = (): { mimeType: string; extension: string } =>
     return { mimeType: '', extension: 'webm' };
   }
   const MediaRecorderClass = (window as any).MediaRecorder;
-
   if (typeof MediaRecorderClass.isTypeSupported === 'function') {
-    if (MediaRecorderClass.isTypeSupported('audio/webm;codecs=opus')) {
-      return { mimeType: 'audio/webm;codecs=opus', extension: 'webm' };
-    }
-    if (MediaRecorderClass.isTypeSupported('audio/webm')) {
-      return { mimeType: 'audio/webm', extension: 'webm' };
-    }
-    if (MediaRecorderClass.isTypeSupported('audio/mp4')) {
-      return { mimeType: 'audio/mp4', extension: 'mp4' };
-    }
-    if (MediaRecorderClass.isTypeSupported('audio/aac')) {
-      return { mimeType: 'audio/aac', extension: 'aac' };
-    }
-    if (MediaRecorderClass.isTypeSupported('audio/ogg')) {
-      return { mimeType: 'audio/ogg', extension: 'ogg' };
-    }
+    if (MediaRecorderClass.isTypeSupported('audio/webm;codecs=opus')) return { mimeType: 'audio/webm;codecs=opus', extension: 'webm' };
+    if (MediaRecorderClass.isTypeSupported('audio/webm')) return { mimeType: 'audio/webm', extension: 'webm' };
+    if (MediaRecorderClass.isTypeSupported('audio/mp4')) return { mimeType: 'audio/mp4', extension: 'mp4' };
+    if (MediaRecorderClass.isTypeSupported('audio/aac')) return { mimeType: 'audio/aac', extension: 'aac' };
   }
-
   return { mimeType: '', extension: 'webm' };
 };
 
@@ -184,6 +411,10 @@ export default function Station2Screen({ onBack }: Props) {
   const [teacherAssignments, setTeacherAssignments] = useState<ChallengeItem[]>([]);
   const [loadingAssignments, setLoadingAssignments] = useState<boolean>(true);
 
+  // 🌐 CƠ CHẾ GỢI Ý ĐA NGÔN NGỮ (MULTILINGUAL HINTS)
+  const [selectedLang, setSelectedLang] = useState<SupportedLang>('vi');
+  const [showHint, setShowHint] = useState<boolean>(false);
+
   // 🎯 QUẢN LÝ ĐỀ BÀI VÀ HÀNG ĐỢI NẠP BÙ AI NGẦM
   const [currentChallenge, setCurrentChallenge] = useState<ChallengeItem>(() => {
     return createProceduralScenario('ROLEPLAY', 'B1', 0);
@@ -192,7 +423,7 @@ export default function Station2Screen({ onBack }: Props) {
   const [aiQueue, setAiQueue] = useState<ChallengeItem[]>([]);
   const isFetchingAiRef = useRef<boolean>(false);
 
-  // Quản lý Text-To-Speech
+  // QUẢN LÝ TTS (EDGE NEURAL SERVERLESS STREAM)
   const [isPlayingSample, setIsPlayingSample] = useState<boolean>(false);
   const synthRef = useRef<SpeechSynthesis | null>(null);
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
@@ -213,23 +444,8 @@ export default function Station2Screen({ onBack }: Props) {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) return null;
     const voices = window.speechSynthesis.getVoices();
     if (!voices || voices.length === 0) return null;
-
-    const androidVoice = voices.find(v => 
-      v.lang.startsWith('en') && (v.name.includes('Google US English') || v.name.includes('Network') || v.voiceURI.includes('en-us-x'))
-    );
-    if (androidVoice) return androidVoice;
-
-    const iosVoice = voices.find(v => 
-      v.lang.startsWith('en') && (v.name.includes('Siri') || v.name.includes('Samantha') || v.name.includes('Nicky') || v.name.includes('Aaron'))
-    );
-    if (iosVoice) return iosVoice;
-
-    const desktopVoice = voices.find(v => 
-      v.lang.startsWith('en') && (v.name.includes('Natural') || v.name.includes('Jenny') || v.name.includes('Guy') || v.name.includes('Aria'))
-    );
-    if (desktopVoice) return desktopVoice;
-
-    return voices.find(v => v.lang === 'en-US') || voices.find(v => v.lang.startsWith('en')) || null;
+    const voice = voices.find(v => v.lang.startsWith('en') && (v.name.includes('Google US English') || v.name.includes('Siri') || v.name.includes('Natural') || v.name.includes('Samantha')));
+    return voice || voices.find(v => v.lang === 'en-US') || voices.find(v => v.lang.startsWith('en')) || null;
   };
 
   const stopSampleAudio = () => {
@@ -255,7 +471,7 @@ export default function Station2Screen({ onBack }: Props) {
 
     setIsPlayingSample(true);
 
-    // ⚡ LỚP 1: GỌI API SERVER MICROSOFT EDGE-TTS (GIỌNG NEURAL TỰ NHIÊN CHUẨN BẢN XỨ)
+    // ⚡ LỚP 1: GỌI API SERVER MICROSOFT EDGE-TTS (JENNY NEURAL)
     try {
       const ttsUrl = `/api/tts?voice=nova&text=${encodeURIComponent(cleanText)}`;
       const audio = new Audio(ttsUrl);
@@ -267,19 +483,19 @@ export default function Station2Screen({ onBack }: Props) {
       };
 
       audio.onerror = () => {
-        console.warn("Server TTS không tải được, chuyển sang fallback máy khách...");
+        console.warn("Edge-TTS unavailable, falling back to client synthesis...");
         playLocalSampleFallback(cleanText);
       };
 
       await audio.play();
       return;
     } catch (e) {
-      console.warn("Lỗi phát server TTS Trạm 2:", e);
+      console.warn("TTS Error:", e);
       playLocalSampleFallback(cleanText);
     }
   };
 
-  // 🛡️ LỚP 2: DỰ PHÒNG NỘI BỘ NẾU MẤT KẾT NỐI MẠNG
+  // 🛡️ LỚP 2: DỰ PHÒNG NỘI BỘ NẾU MẤT KẾT NỐI
   const playLocalSampleFallback = (cleanText: string) => {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
       setIsPlayingSample(false);
@@ -290,9 +506,7 @@ export default function Station2Screen({ onBack }: Props) {
 
     const utterance = new SpeechSynthesisUtterance(cleanText);
     const bestVoice = getBestNaturalVoice();
-    if (bestVoice) {
-      utterance.voice = bestVoice;
-    }
+    if (bestVoice) utterance.voice = bestVoice;
     utterance.lang = 'en-US';
     utterance.rate = 0.90;
     utterance.pitch = 1.0;
@@ -314,7 +528,7 @@ export default function Station2Screen({ onBack }: Props) {
   const [isNormalPracticing, setIsNormalPracticing] = useState<boolean>(false);
   const [isRecordingNormal, setIsRecordingNormal] = useState<boolean>(false);
   const [isEvaluating, setIsEvaluating] = useState<boolean>(false);
-  const [evaluatingStatus, setEvaluatingStatus] = useState<string>('⚡ AI ĐANG PHÂN TÍCH PHÁT ÂM & CHẤM ĐIỂM CHI TIẾT...');
+  const [evaluatingStatus, setEvaluatingStatus] = useState<string>('⚡ ANALYZING ACOUSTICS & SCORING SUBMISSION...');
   const [normalTimer, setNormalTimer] = useState<number>(0);
   const normalMediaRecorderRef = useRef<any>(null);
   const normalAudioChunksRef = useRef<any[]>([]);
@@ -353,9 +567,18 @@ export default function Station2Screen({ onBack }: Props) {
               id: `teacher_${item.id}`,
               tier: detectedTier,
               level: (item.cefr_level || 'B2').toUpperCase() as CefrLevel,
-              title: item.title || 'Bài tập Giảng viên giao',
-              contextDesc: item.description || `🏫 Tình huống phản xạ (${detectedTier}):`,
+              title: item.title || 'Instructor Assigned Task',
+              place: 'Classroom / Lab',
+              task: 'Complete designated speaking challenge',
+              contextDesc: item.description || `🏫 Assigned Reflex Context (${detectedTier}):`,
               prompt: item.target_prompt || '',
+              hint: {
+                vi: "Bài tập do giảng viên giao trực tiếp.",
+                th: "งานที่ได้รับมอบหมายจากอาจารย์",
+                ja: "講師から直接割り当てられた課題です。",
+                ko: "담당 교수가 직접 부여한 과제입니다.",
+                id: "Tugas yang diberikan langsung oleh pengajar."
+              },
               isTeacherAssigned: true
             };
           });
@@ -364,7 +587,7 @@ export default function Station2Screen({ onBack }: Props) {
         }
       }
     } catch (err) {
-      console.warn("Lỗi tải bài tập giảng viên:", err);
+      console.warn("Error fetching assignments:", err);
     } finally {
       setLoadingAssignments(false);
     }
@@ -400,7 +623,18 @@ export default function Station2Screen({ onBack }: Props) {
 - RELAY: Two-person relay continuation on the same topic.
 - ROLEPLAY: Realistic interpersonal conflict resolution between 2 people.
 Output ONLY raw JSON:
-{"title": "Short title in Vietnamese", "contextDesc": "Context description in Vietnamese", "prompt": "Natural spoken English sentence"}`;
+{
+  "title": "Short title in English",
+  "place": "Short location",
+  "task": "Core speaking task in English",
+  "contextDesc": "Context description in English",
+  "prompt": "Natural spoken English sentence",
+  "hintVi": "Summary hint in Vietnamese",
+  "hintTh": "Summary hint in Thai",
+  "hintJa": "Summary hint in Japanese",
+  "hintKo": "Summary hint in Korean",
+  "hintId": "Summary hint in Indonesian"
+}`;
 
       const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
@@ -423,15 +657,24 @@ Output ONLY raw JSON:
           id: `ai_${Date.now()}_${Math.random()}`,
           tier,
           level,
-          title: `🤖 [AI MỚI] ${content.title}`,
+          title: `🤖 [AI] ${content.title}`,
+          place: content.place || 'General Context',
+          task: content.task || 'Reflex response',
           contextDesc: content.contextDesc,
           prompt: content.prompt,
+          hint: {
+            vi: content.hintVi || content.contextDesc,
+            th: content.hintTh || content.contextDesc,
+            ja: content.hintJa || content.contextDesc,
+            ko: content.hintKo || content.contextDesc,
+            id: content.hintId || content.contextDesc
+          },
           isTeacherAssigned: false,
         };
         setAiQueue(prev => [...prev, newAiItem]);
       }
     } catch (e) {
-      console.warn("AI ngầm tạm dừng:", e);
+      console.warn("Background AI refiller paused:", e);
     } finally {
       isFetchingAiRef.current = false;
     }
@@ -458,7 +701,7 @@ Output ONLY raw JSON:
   const handleStartCustomTopic = () => {
     stopSampleAudio();
     if (!customTitle.trim() || !customPrompt.trim()) {
-      Alert.alert("Chưa đủ thông tin", "Vui lòng nhập Tiêu đề và Câu hỏi/Nhiệm vụ tiếng Anh!");
+      Alert.alert("Missing Information", "Please enter both Title and English Target Prompt!");
       return;
     }
 
@@ -467,8 +710,17 @@ Output ONLY raw JSON:
       tier: selectedTier,
       level: selectedLevel,
       title: customTitle.trim(),
-      contextDesc: customContext.trim() || `📋 Đề tự dán (${selectedTier} - ${selectedLevel}):`,
+      place: 'User Defined Context',
+      task: 'Self-directed reflex response',
+      contextDesc: customContext.trim() || `Custom Challenge (${selectedTier} - ${selectedLevel}):`,
       prompt: customPrompt.trim(),
+      hint: {
+        vi: customContext.trim() || customTitle.trim(),
+        th: customContext.trim() || customTitle.trim(),
+        ja: customContext.trim() || customTitle.trim(),
+        ko: customContext.trim() || customTitle.trim(),
+        id: customContext.trim() || customTitle.trim()
+      },
       isTeacherAssigned: false
     };
 
@@ -502,21 +754,13 @@ Output ONLY raw JSON:
       setLiveTranscript('');
       liveTranscriptRef.current = '';
 
-      // 🎯 TỐI ƯU HÓA PAYLOAD: Thu mono 1 channel, mẫu 16kHz chuẩn ASR giúp giảm 70% dung lượng
       const stream = await navigator.mediaDevices.getUserMedia({ 
-        audio: { 
-          channelCount: 1, 
-          sampleRate: 16000, 
-          echoCancellation: true, 
-          noiseSuppression: true, 
-          autoGainControl: true 
-        } 
+        audio: { channelCount: 1, sampleRate: 16000, echoCancellation: true, noiseSuppression: true, autoGainControl: true } 
       });
       
       const detectedFormat = getSupportedAudioMimeType();
       activeMimeTypeRef.current = detectedFormat;
 
-      // 🎯 TỐI ƯU BITRATE: Ép bitrate ~32kbps vừa đủ nét cho Whisper mà payload siêu nhẹ (chỉ ~15-20KB cho câu 5s)
       const options: any = {
         audioBitsPerSecond: 32000,
         ...(detectedFormat.mimeType ? { mimeType: detectedFormat.mimeType } : {})
@@ -547,20 +791,16 @@ Output ONLY raw JSON:
             liveTranscriptRef.current = cleanLive;
             setLiveTranscript(cleanLive);
           };
-          recognition.onerror = () => {};
           recognition.start();
           speechRecognitionRef.current = recognition;
         } catch (e) {
-          console.warn("SpeechRecognition bypassed on mobile:", e);
+          console.warn("SpeechRecognition bypassed:", e);
         }
       }
 
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
       const audioCtx = new AudioCtx();
-      
-      if (audioCtx.state === 'suspended') {
-        await audioCtx.resume();
-      }
+      if (audioCtx.state === 'suspended') await audioCtx.resume();
 
       const source = audioCtx.createMediaStreamSource(stream);
       const analyser = audioCtx.createAnalyser();
@@ -596,7 +836,7 @@ Output ONLY raw JSON:
       };
       track();
     } catch (err) {
-      Alert.alert("Lỗi Micro", "Không thể truy cập microphone. Vui lòng cấp quyền micro trong trình duyệt.");
+      Alert.alert("Microphone Error", "Unable to access microphone. Please grant permissions in your browser.");
     }
   };
 
@@ -650,10 +890,9 @@ Output ONLY raw JSON:
     return () => { if (timer) clearInterval(timer); };
   }, [isRecordingNormal]);
 
-  // 🎯 BỘ CHẤM ĐIỂM CHÍNH XÁC: ĐÃ TỐI ƯU HÓA BITRATE + CƠ CHẾ RETRY THÔNG BÁO MẠNG
   const finishSubmissionAndEvaluate = async (audioBlob: Blob, pitchHistory: number[], localAudioUrl?: string) => {
     setIsEvaluating(true);
-    setEvaluatingStatus('⚡ AI ĐANG PHÂN TÍCH PHÁT ÂM & BÓC TÁCH TAPESCRIPT...');
+    setEvaluatingStatus('⚡ AI ANALYZING ACOUSTICS & TRANSCRIBING TAPESCRIPT...');
 
     if (localAudioUrl) {
       setRecordedAudioUrl(localAudioUrl);
@@ -668,7 +907,6 @@ Output ONLY raw JSON:
       ? (currentChallenge?.prompt || '') 
       : `Reflex challenge: ${currentChallenge?.contextDesc || ''}`;
 
-    // 🌟 BƯỚC 1: CƠ CHẾ RETRY KHI MẠNG CHẬP CHỜN (THỬ LẠI TỐI ĐA 2 LẦN VỚI THÔNG BÁO RÕ RÀNG)
     const MAX_RETRIES = 2;
     let attempt = 0;
     let success = false;
@@ -676,7 +914,7 @@ Output ONLY raw JSON:
     while (attempt <= MAX_RETRIES && !success) {
       try {
         if (attempt > 0) {
-          setEvaluatingStatus(`🔄 Đang thử kết nối lại máy chủ chấm điểm (lần ${attempt}/${MAX_RETRIES})...`);
+          setEvaluatingStatus(`🔄 Reconnecting to evaluation server (${attempt}/${MAX_RETRIES})...`);
           await new Promise(r => setTimeout(r, 1200));
         }
 
@@ -691,28 +929,23 @@ Output ONLY raw JSON:
         }
       } catch (err) {
         attempt++;
-        console.warn(`Lỗi gọi evaluateSpeaking lần ${attempt}:`, err);
+        console.warn(`Evaluation attempt ${attempt} failed:`, err);
       }
     }
 
-    // ⚠️ NẾU MẤT MẠNG HOÀN TOÀN: Báo lỗi để học viên bấm 'Thử lại' thay vì ghim điểm 58
     if (!success && (!actualTranscript || actualTranscript.length < 3)) {
       setIsEvaluating(false);
       Alert.alert(
-        "Mất kết nối máy chủ chấm điểm",
-        "Đường truyền mạng bị gián đoạn nên AI chưa nhận được bài thu âm. Bản thu của bạn vẫn được giữ nguyên, hãy kiểm tra wifi/4G và bấm 'Thử chấm lại'!",
+        "Connection Interrupted",
+        "Network latency prevented AI scoring. Your audio has been preserved; please check your connection and tap 'Retry Scoring'.",
         [
-          { text: "Để sau", style: "cancel" },
-          { 
-            text: "🔄 Thử chấm lại", 
-            onPress: () => finishSubmissionAndEvaluate(audioBlob, pitchHistory, localAudioUrl) 
-          }
+          { text: "Dismiss", style: "cancel" },
+          { text: "🔄 Retry Scoring", onPress: () => finishSubmissionAndEvaluate(audioBlob, pitchHistory, localAudioUrl) }
         ]
       );
       return;
     }
 
-    // 🛑 3 LỚP BẢO VỆ CHẶN BÀI NÓI IM LẶNG / ẢO GIÁC WHISPER (KHÓA VỀ 0 ĐIỂM)
     const WHISPER_HALLUCINATIONS = [
       'thank you', 'thank you.', 'thank you very much', 'thank you for watching',
       'thanks for watching', 'you', 'bye', 'bye.', 'subtitles', 'subscribe', 'the end'
@@ -722,7 +955,6 @@ Output ONLY raw JSON:
     const isHallucination = WHISPER_HALLUCINATIONS.some(h => cleanLowerTranscript === h);
     const validWords = actualTranscript.replace(/[^a-zA-Z0-9]/g, '').trim();
 
-    // Kiểm tra số từ khóa trùng khớp nếu ở chế độ đọc theo mẫu
     let hasMatchingSampleWord = true;
     if (practiceMode === 'READ_SAMPLE' && currentChallenge?.prompt) {
       const promptWords = currentChallenge.prompt.toLowerCase().replace(/[^a-z0-9 ]/g, '').split(/\s+/).filter(w => w.length > 2);
@@ -744,26 +976,25 @@ Output ONLY raw JSON:
         spontaneityScore: 0,
         isScriptSuspected: false,
         rubrics: {
-          pronunciation: { score: 0, feedback: "Chưa ghi nhận phát âm tiếng Anh hợp lệ." },
-          intonation: { score: 0, feedback: "Không phát hiện ngữ điệu bài nói." },
-          fluency: { score: 0, feedback: "Thời gian im lặng hoàn toàn." },
-          vocabulary: { score: 0, feedback: "Không có từ vựng của bài tập." },
-          grammar: { score: 0, feedback: "Chưa có cấu trúc câu." },
-          content: { score: 0, feedback: "Không có nội dung phản xạ." }
+          pronunciation: { score: 0, feedback: "No valid English speech detected." },
+          intonation: { score: 0, feedback: "No intonation contour detected." },
+          fluency: { score: 0, feedback: "Complete silence period." },
+          vocabulary: { score: 0, feedback: "No target vocabulary recognized." },
+          grammar: { score: 0, feedback: "No grammatical structure formed." },
+          content: { score: 0, feedback: "No relevant reflex content." }
         }
       };
 
       setFeedbackResult(zeroEvaluation);
       setDetailedModalVisible(true);
       Alert.alert(
-        "Không ghi nhận bài nói",
-        "Hệ thống không phát hiện thấy phát âm tiếng Anh hợp lệ của bài tập. Kết quả: 0 điểm. Vui lòng nói to và rõ ràng vào micro!"
+        "No Speech Detected",
+        "The system detected no valid English speech for this challenge. Result: 0 Points. Please speak clearly into the microphone!"
       );
       return;
     }
 
-    // 🌟 BƯỚC 2: CHẤM ĐIỂM PHÂN HÓA THEO TAPESCRIPT ĐÃ NHẬN DIỆN THỰC TẾ
-    setEvaluatingStatus('📊 Đang tổng hợp phổ điểm phát âm và ngữ điệu...');
+    setEvaluatingStatus('📊 Synthesizing multi-dimensional rubrics...');
     const duration = Math.max(normalTimer, 2);
     let evaluated: any;
 
@@ -790,12 +1021,10 @@ Output ONLY raw JSON:
       }
     }
 
-    // Cập nhật điểm phát âm từ AI server nếu có
     if (serverEvalData?.criteria?.pronunciation) {
       evaluated.rubrics.pronunciation.score = serverEvalData.criteria.pronunciation;
     }
 
-    // 🎯 ĐỒNG BỘ ĐIỂM TỔNG CHUẨN XÁC THEO 6 TIÊU CHÍ RUBRICS (TRÁNH LỆCH ĐIỂM 74 SO VỚI >90)
     const r = evaluated.rubrics;
     const weightedTotal = Math.round(
       (r.pronunciation.score * 0.20) +
@@ -807,7 +1036,6 @@ Output ONLY raw JSON:
     );
     evaluated.totalScore = weightedTotal;
 
-    // 🌟 BƯỚC 3: LƯU BÀI NỘP LÊN SUPABASE
     let audioUrl = '';
     try {
       if (supabase) {
@@ -826,9 +1054,9 @@ Output ONLY raw JSON:
 
         const { data: authUser } = await supabase.auth.getUser();
         await supabase.from('submissions').insert([{
-          student_name: authUser?.user?.user_metadata?.full_name || 'Học viên Trạm 2',
+          student_name: authUser?.user?.user_metadata?.full_name || 'Arena Challenger',
           student_code: authUser?.user?.email?.split('@')[0] || 'STU_S2',
-          class_name: `Trạm 2: ${selectedTier} (${selectedLevel}) [${practiceMode === 'READ_SAMPLE' ? 'Đọc mẫu' : 'Tự do'}]`,
+          class_name: `Station 2: ${selectedTier} (${selectedLevel}) [${practiceMode === 'READ_SAMPLE' ? 'Read Sample' : 'Spontaneous'}]`,
           mode: `STATION_2_${selectedTier}`,
           cefr_level: currentChallenge?.level || selectedLevel,
           score: evaluated.totalScore,
@@ -837,12 +1065,12 @@ Output ONLY raw JSON:
           pitch_variance: evaluated.rubrics.intonation.score,
           is_script_suspected: evaluated.isScriptSuspected,
           audio_url: audioUrl,
-          transcript: actualTranscript || '(Không nhận diện được giọng nói)',
-          feedback: `[Phát âm: ${evaluated.rubrics.pronunciation.score} | Ngữ điệu: ${evaluated.rubrics.intonation.score} | Trôi chảy: ${evaluated.rubrics.fluency.score}]`
+          transcript: actualTranscript || '(No audio transcribed)',
+          feedback: `[Pronunciation: ${evaluated.rubrics.pronunciation.score} | Intonation: ${evaluated.rubrics.intonation.score} | Fluency: ${evaluated.rubrics.fluency.score}]`
         }]);
       }
     } catch (err) {
-      console.warn("Lỗi lưu kết quả bài nộp:", err);
+      console.warn("Submission sync error:", err);
     }
 
     setIsEvaluating(false);
@@ -859,14 +1087,14 @@ Output ONLY raw JSON:
         <TouchableOpacity onPress={onBack} style={styles.backBtn}>
           <Text style={styles.backBtnText}>🔙 MAP</Text>
         </TouchableOpacity>
-        <Text style={styles.title}>⚔️ TRẠM 2: ALL-IN ARENA (PHẢN XẠ TÌNH HUỐNG)</Text>
+        <Text style={styles.title}>⚔️ STATION 2: ALL-IN ARENA (SITUATIONAL REFLEX)</Text>
       </View>
 
       <ScrollView contentContainerStyle={{ paddingBottom: 35 }}>
         {!isTeacherExamining && !isNormalPracticing && (
           <>
-            {/* 1. CHỌN HÌNH THỨC NHẬN ĐỀ */}
-            <Text style={styles.sectionHeaderLabel}>1. CHỌN HÌNH THỨC NHẬN ĐỀ BÀI:</Text>
+            {/* 1. SEED TOPIC ORIGIN */}
+            <Text style={styles.sectionHeaderLabel}>1. SELECT CHALLENGE SOURCE:</Text>
             <View style={styles.originTabsRow}>
               <TouchableOpacity
                 style={[styles.originTab, topicOrigin === 'SYSTEM' && styles.originTabActiveSystem]}
@@ -874,7 +1102,7 @@ Output ONLY raw JSON:
               >
                 <Text style={styles.originTabIcon}>🤖</Text>
                 <Text style={[styles.originTabText, topicOrigin === 'SYSTEM' && styles.originTabTextActive]}>
-                  ĐỀ MẪU HỆ THỐNG
+                  SYSTEM CURATED
                 </Text>
               </TouchableOpacity>
 
@@ -884,7 +1112,7 @@ Output ONLY raw JSON:
               >
                 <Text style={styles.originTabIcon}>🏫</Text>
                 <Text style={[styles.originTabText, topicOrigin === 'TEACHER_DASHBOARD' && styles.originTabTextActive]}>
-                  BÀI GIẢNG VIÊN GIAO
+                  INSTRUCTOR ASSIGNED
                 </Text>
               </TouchableOpacity>
 
@@ -894,20 +1122,20 @@ Output ONLY raw JSON:
               >
                 <Text style={styles.originTabIcon}>📋</Text>
                 <Text style={[styles.originTabText, topicOrigin === 'STUDENT_CUSTOM' && styles.originTabTextActive]}>
-                  TỰ DÁN ĐỀ TẠI CHỖ
+                  CUSTOM PROMPT
                 </Text>
               </TouchableOpacity>
             </View>
 
-            {/* 2. CHỌN CHẾ ĐỘ NÓI */}
-            <Text style={styles.sectionHeaderLabel}>2. CHẾ ĐỘ LUYỆN TẬP:</Text>
+            {/* 2. PRACTICE MODE */}
+            <Text style={styles.sectionHeaderLabel}>2. SELECT REFLEX MODE:</Text>
             <View style={styles.modeTabsRow}>
               <TouchableOpacity
                 style={[styles.modeTabBtn, practiceMode === 'READ_SAMPLE' && styles.modeTabBtnActiveSample]}
                 onPress={() => setPracticeMode('READ_SAMPLE')}
               >
                 <Text style={[styles.modeTabBtnText, practiceMode === 'READ_SAMPLE' && styles.modeTabBtnTextActive]}>
-                  📖 1. ĐỌC CÂU MẪU (CHUẨN ÂM)
+                  📖 1. READ TARGET SAMPLE
                 </Text>
               </TouchableOpacity>
 
@@ -916,13 +1144,13 @@ Output ONLY raw JSON:
                 onPress={() => setPracticeMode('FREE_SPEECH')}
               >
                 <Text style={[styles.modeTabBtnText, practiceMode === 'FREE_SPEECH' && styles.modeTabBtnTextActive]}>
-                  ⚡ 2. TỰ NÓI PHẢN XẠ (TỰ DO)
+                  ⚡ 2. SPONTANEOUS REFLEX
                 </Text>
               </TouchableOpacity>
             </View>
 
-            {/* 3. CHỌN TẦNG THI ĐẤU */}
-            <Text style={styles.sectionHeaderLabel}>3. THỂ THỨC THI ĐẤU PHẢN XẠ:</Text>
+            {/* 3. REFLEX TIER */}
+            <Text style={styles.sectionHeaderLabel}>3. BATTLE FORMAT:</Text>
             <View style={styles.tierSelector}>
               {TIERS.map(t => {
                 const isActive = selectedTier === t.key;
@@ -944,8 +1172,8 @@ Output ONLY raw JSON:
               <Text style={styles.tierInfoText}>🎯 {currentTierInfo?.desc}</Text>
             </View>
 
-            {/* 4. CHỌN LEVEL CEFR */}
-            <Text style={styles.sectionHeaderLabel}>4. CẤP ĐỘ CEFR:</Text>
+            {/* 4. CEFR LEVEL */}
+            <Text style={styles.sectionHeaderLabel}>4. CEFR LEVEL:</Text>
             <View style={styles.levelTabs}>
               {CEFR_LEVELS.map((lvl) => {
                 const isActive = selectedLevel === lvl;
@@ -963,17 +1191,17 @@ Output ONLY raw JSON:
               })}
             </View>
 
-            {/* 🎧 THANH NGHE LẠI BẢN THU */}
+            {/* 🎧 AUDIO PLAYBACK REVIEW */}
             {recordedAudioUrl && !isRecordingNormal && (
               <View style={styles.audioReviewBox}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Text style={styles.audioReviewTitle}>🎧 BẢN THU ÂM CỦA BẠN (NGHE LẠI):</Text>
+                  <Text style={styles.audioReviewTitle}>🎧 YOUR PREVIOUS RECORDING:</Text>
                   {feedbackResult && (
                     <TouchableOpacity 
                       style={styles.viewScoreBtn}
                       onPress={() => setDetailedModalVisible(true)}
                     >
-                      <Text style={styles.viewScoreBtnText}>📊 XEM LẠI BẢNG ĐIỂM</Text>
+                      <Text style={styles.viewScoreBtnText}>📊 VIEW RUBRICS SCORE</Text>
                     </TouchableOpacity>
                   )}
                 </View>
@@ -985,35 +1213,35 @@ Output ONLY raw JSON:
               </View>
             )}
 
-            {/* 5. GIAO DIỆN TÌNH HUỐNG & NÚT ĐỔI ĐỀ TRỰC QUAN */}
+            {/* 5. CHALLENGE CARD */}
             {topicOrigin === 'STUDENT_CUSTOM' ? (
               <View style={styles.customBoxWrapper}>
-                <Text style={styles.customBoxTitle}>📋 DÁN ĐỀ BÀI CỦA GIẢNG VIÊN VÀO ĐÂY:</Text>
+                <Text style={styles.customBoxTitle}>📋 PASTE CUSTOM CHALLENGE:</Text>
                 
-                <Text style={styles.fieldLabel}>Tên tình huống (*):</Text>
+                <Text style={styles.fieldLabel}>Challenge Title (*):</Text>
                 <TextInput
                   style={styles.textInput}
-                  placeholder="Ví dụ: Phỏng vấn xin việc..."
+                  placeholder="e.g., Job Interview with Executive..."
                   placeholderTextColor="#666688"
                   value={customTitle}
                   onChangeText={setCustomTitle}
                 />
 
-                <Text style={styles.fieldLabel}>Bối cảnh tình huống:</Text>
+                <Text style={styles.fieldLabel}>Context Description:</Text>
                 <TextInput
                   style={styles.textInput}
-                  placeholder="Ví dụ: Khách hàng hỏi về chính sách bảo hành..."
+                  placeholder="e.g., The hiring manager inquires about your career milestones..."
                   placeholderTextColor="#666688"
                   value={customContext}
                   onChangeText={setCustomContext}
                 />
 
                 <Text style={styles.fieldLabel}>
-                  {practiceMode === 'READ_SAMPLE' ? 'Câu phản xạ mẫu tiếng Anh (*):' : 'Câu hỏi phản xạ tiếng Anh (*):'}
+                  {practiceMode === 'READ_SAMPLE' ? 'Target English Sentence (*):' : 'Spontaneous Reflex Prompt (*):'}
                 </Text>
                 <TextInput
                   style={[styles.textInput, styles.textArea]}
-                  placeholder="Dán câu tiếng Anh mẫu hoặc câu hỏi vào đây..."
+                  placeholder="Paste the English prompt here..."
                   placeholderTextColor="#666688"
                   multiline
                   value={customPrompt}
@@ -1021,23 +1249,21 @@ Output ONLY raw JSON:
                 />
 
                 <TouchableOpacity style={styles.startCustomBtn} onPress={handleStartCustomTopic}>
-                  <Text style={styles.startCustomBtnText}>🚀 BẮT ĐẦU LUYỆN TẬP / THI ĐẤU VỚI ĐỀ NÀY</Text>
+                  <Text style={styles.startCustomBtnText}>🚀 LAUNCH REFLEX SESSION WITH THIS PROMPT</Text>
                 </TouchableOpacity>
               </View>
             ) : (
               <View style={styles.topicContainer}>
-                {/* 🔄 NÚT ĐỔI CHỦ ĐỀ MỚI (0MS) */}
                 <TouchableOpacity 
                   style={styles.prominentSwitchBtn} 
                   activeOpacity={0.7}
                   onPress={handleNextTopic}
                 >
                   <Text style={styles.prominentSwitchBtnText}>
-                    🎲 BẤM ĐỂ ĐỔI SANG TÌNH HUỐNG MỚI NGAY (0MS)
+                    🎲 TAP TO SWITCH NEW SCENARIO IMMEDIATELY (0MS)
                   </Text>
                 </TouchableOpacity>
 
-                {/* THẺ TÌNH HUỐNG HIỆN TẠI DUY NHẤT */}
                 <View style={[styles.card, currentChallenge.isTeacherAssigned && styles.teacherCard]}>
                   <View style={styles.cardHeader}>
                     <Text style={[styles.roleText, currentChallenge.isTeacherAssigned && { color: '#00FFFF' }]}>
@@ -1050,17 +1276,58 @@ Output ONLY raw JSON:
                   
                   <Text style={styles.contextText}>📌 {currentChallenge.contextDesc}</Text>
 
+                  {/* 🌐 MULTILINGUAL HINT BAR */}
+                  <View style={styles.hintControlRow}>
+                    <TouchableOpacity 
+                      style={[styles.hintToggleBtn, showHint && styles.hintToggleBtnActive]} 
+                      onPress={() => setShowHint(prev => !prev)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.hintToggleBtnText, showHint && { color: '#000' }]}>
+                        {showHint ? '💡 HIDE NATIVE HINT' : `💡 NATIVE HINT (${LANG_FLAGS[selectedLang]})`}
+                      </Text>
+                    </TouchableOpacity>
+
+                    {showHint && (
+                      <View style={styles.flagPickerRow}>
+                        {(['vi', 'th', 'ja', 'ko', 'id'] as SupportedLang[]).map((lang) => (
+                          <TouchableOpacity
+                            key={lang}
+                            style={[styles.flagBtn, selectedLang === lang && styles.flagBtnActive]}
+                            onPress={() => setSelectedLang(lang)}
+                          >
+                            <Text style={styles.flagText}>{LANG_FLAGS[lang]}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    )}
+                  </View>
+
+                  {/* 📌 SCAFFOLDING BOX FOR A1-A2 & ASIA LEARNERS */}
+                  {showHint && currentChallenge.hint && (
+                    <View style={styles.scaffoldingBox}>
+                      <View style={styles.scaffoldingMetaRow}>
+                        <Text style={styles.scaffoldingMetaText}>📍 <Text style={{ color: '#00FFFF' }}>Place:</Text> {currentChallenge.place || 'General Context'}</Text>
+                        <Text style={styles.scaffoldingMetaText}>🎯 <Text style={{ color: '#FFD700' }}>Goal:</Text> {currentChallenge.task || 'Reflex response'}</Text>
+                      </View>
+                      <View style={styles.nativeTranslateDivider} />
+                      <Text style={styles.nativeTranslateText}>
+                        👉 <Text style={{ fontWeight: 'bold' }}>{LANG_NAMES[selectedLang]}:</Text> "{currentChallenge.hint[selectedLang] || currentChallenge.hint.vi}"
+                      </Text>
+                    </View>
+                  )}
+
                   {practiceMode === 'READ_SAMPLE' ? (
                     <View style={styles.previewPromptBox}>
                       <View style={styles.sampleHeaderRow}>
-                        <Text style={styles.previewPromptLabel}>📖 Câu phản xạ mẫu:</Text>
+                        <Text style={styles.previewPromptLabel}>📖 Target Spoken Model:</Text>
                         <TouchableOpacity 
                           style={[styles.ttsMiniBtn, isPlayingSample && styles.ttsMiniBtnActive]} 
                           activeOpacity={0.7}
                           onPress={() => playNaturalTTS(currentChallenge.prompt)}
                         >
                           <Text style={styles.ttsMiniBtnText}>
-                            {isPlayingSample ? '⏹ DỪNG' : '🔊 NGHE MẪU'}
+                            {isPlayingSample ? '⏹ STOP' : '🔊 LISTEN MODEL'}
                           </Text>
                         </TouchableOpacity>
                       </View>
@@ -1068,9 +1335,9 @@ Output ONLY raw JSON:
                     </View>
                   ) : (
                     <View style={styles.freeSpeechHintBox}>
-                      <Text style={styles.freeSpeechHintLabel}>⚡ PHẢN XẠ ĐỘC LẬP (KHÔNG CÂU MẪU):</Text>
+                      <Text style={styles.freeSpeechHintLabel}>⚡ SPONTANEOUS RESPONSE REQUIRED:</Text>
                       <Text style={styles.freeSpeechHintText}>
-                        Hãy đọc kỹ bối cảnh phía trên và tự do nói ra câu phản xạ tiếng Anh của bạn!
+                        Absorb the context above and deliver your own natural spoken English reflex!
                       </Text>
                     </View>
                   )}
@@ -1080,7 +1347,7 @@ Output ONLY raw JSON:
                     onPress={() => handleEnterRoom(currentChallenge)}
                   >
                     <Text style={[styles.startBtnText, currentChallenge.isTeacherAssigned && { color: '#000' }]}>
-                      🎙️ BƯỚC VÀO PHÒNG THU LUYỆN TẬP
+                      🎙️ ENTER REFLEX RECORDING SUITE
                     </Text>
                   </TouchableOpacity>
                 </View>
@@ -1094,7 +1361,7 @@ Output ONLY raw JSON:
           <View style={styles.normalPracticeCard}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
               <Text style={styles.normalPracticeHeader}>
-                {practiceMode === 'READ_SAMPLE' ? '🎙️ PHÒNG THU: ĐỌC THEO CÂU MẪU' : '⚡ PHÒNG THU: TỰ NÓI PHẢN XẠ'}
+                {practiceMode === 'READ_SAMPLE' ? '🎙️ SUITE: READ SPOKEN MODEL' : '⚡ SUITE: SPONTANEOUS REFLEX'}
               </Text>
               
               <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
@@ -1104,11 +1371,11 @@ Output ONLY raw JSON:
                     activeOpacity={0.7} 
                     onPress={handleNextTopic}
                   >
-                    <Text style={styles.switchTopicInRoomText}>🔄 ĐỔI TÌNH HUỐNG KHÁC</Text>
+                    <Text style={styles.switchTopicInRoomText}>🔄 NEXT SCENARIO</Text>
                   </TouchableOpacity>
                 )}
                 <TouchableOpacity onPress={() => setIsNormalPracticing(false)}>
-                  <Text style={{ color: '#FF0055', fontWeight: 'bold' }}>✕ THOÁT</Text>
+                  <Text style={{ color: '#FF0055', fontWeight: 'bold' }}>✕ EXIT</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -1116,17 +1383,52 @@ Output ONLY raw JSON:
             <Text style={styles.normalPromptTitle}>{currentChallenge.title} ({currentChallenge.level})</Text>
             <Text style={styles.normalPromptDesc}>{currentChallenge.contextDesc}</Text>
 
+            {/* HINT BAR IN PRACTICE ROOM */}
+            <View style={styles.hintControlRow}>
+              <TouchableOpacity 
+                style={[styles.hintToggleBtn, showHint && styles.hintToggleBtnActive]} 
+                onPress={() => setShowHint(prev => !prev)}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.hintToggleBtnText, showHint && { color: '#000' }]}>
+                  {showHint ? '💡 HIDE NATIVE HINT' : `💡 NATIVE HINT (${LANG_FLAGS[selectedLang]})`}
+                </Text>
+              </TouchableOpacity>
+
+              {showHint && (
+                <View style={styles.flagPickerRow}>
+                  {(['vi', 'th', 'ja', 'ko', 'id'] as SupportedLang[]).map((lang) => (
+                    <TouchableOpacity
+                      key={lang}
+                      style={[styles.flagBtn, selectedLang === lang && styles.flagBtnActive]}
+                      onPress={() => setSelectedLang(lang)}
+                    >
+                      <Text style={styles.flagText}>{LANG_FLAGS[lang]}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+            </View>
+
+            {showHint && currentChallenge.hint && (
+              <View style={styles.scaffoldingBox}>
+                <Text style={styles.nativeTranslateText}>
+                  👉 <Text style={{ fontWeight: 'bold' }}>{LANG_NAMES[selectedLang]}:</Text> "{currentChallenge.hint[selectedLang] || currentChallenge.hint.vi}"
+                </Text>
+              </View>
+            )}
+
             {practiceMode === 'READ_SAMPLE' ? (
               <View style={styles.promptDisplayBox}>
                 <View style={styles.sampleHeaderRow}>
-                  <Text style={styles.promptModeNotice}>📖 CÂU PHẢN XẠ MẪU:</Text>
+                  <Text style={styles.promptModeNotice}>📖 TARGET SPOKEN PHRASE:</Text>
                   <TouchableOpacity 
                     style={[styles.ttsPlayBtn, isPlayingSample && styles.ttsPlayBtnActive]} 
                     activeOpacity={0.7}
                     onPress={() => playNaturalTTS(currentChallenge.prompt)}
                   >
                     <Text style={styles.ttsPlayBtnText}>
-                      {isPlayingSample ? '⏹ DỪNG ĐỌC' : '🔊 NGHE GIỌNG MẪU'}
+                      {isPlayingSample ? '⏹ STOP AUDIO' : '🔊 PLAY NEURAL MODEL'}
                     </Text>
                   </TouchableOpacity>
                 </View>
@@ -1135,17 +1437,17 @@ Output ONLY raw JSON:
             ) : (
               <View style={[styles.promptDisplayBox, { borderColor: '#39FF14', backgroundColor: '#07180D' }]}>
                 <Text style={[styles.promptModeNotice, { color: '#39FF14' }]}>
-                  ⚡ BẠN ĐANG PHẢN XẠ ĐỘC LẬP:
+                  ⚡ SPONTANEOUS RESPONSE ACTIVE:
                 </Text>
                 <Text style={[styles.promptDisplayText, { fontSize: 13, color: '#88FFBB', fontWeight: 'bold' }]}>
-                  Bấm nút thu âm và tự tin trả lời theo tình huống bối cảnh trên!
+                  Tap record and speak your natural response based on the scenario above!
                 </Text>
               </View>
             )}
 
             <View style={styles.liveWaveformBox}>
               <Text style={styles.liveWaveformLabel}>
-                {isRecordingNormal ? `🔴 ĐANG THU ÂM VÀ BẮT SÓNG ÂM: ${normalTimer}S` : '⚪ NHẤN NÚT ĐỂ BẮT ĐẦU THU ÂM'}
+                {isRecordingNormal ? `🔴 RECORDING LIVE AUDIO SPECTRUM: ${normalTimer}S` : '⚪ READY TO RECORD'}
               </Text>
               <canvas
                 ref={canvasRef}
@@ -1155,29 +1457,27 @@ Output ONLY raw JSON:
               />
             </View>
 
-            {/* 🎙️ PHỤ ĐỀ NHẬN DIỆN GIỌNG NÓI TRỰC TIẾP (LIVE SUBTITLE) */}
             {(isRecordingNormal || liveTranscript) && (
               <View style={styles.liveSubtitleBox}>
                 <Text style={styles.liveSubtitleLabel}>
-                  {isRecordingNormal ? '🎙️ Đang nghe giọng nói của bạn:' : '📝 Văn bản bạn vừa nói:'}
+                  {isRecordingNormal ? '🎙️ Recognizing your speech:' : '📝 Transcribed Speech:'}
                 </Text>
                 <Text style={styles.liveSubtitleText}>
-                  {liveTranscript || '... (hãy nói vào micro tiếng Anh)'}
+                  {liveTranscript || '... (speak in English clearly)'}
                 </Text>
               </View>
             )}
 
-            {/* 🎧 THANH NGHE LẠI BẢN THU TRONG PHÒNG THU */}
             {recordedAudioUrl && !isRecordingNormal && (
               <View style={styles.audioReviewBox}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                  <Text style={styles.audioReviewTitle}>🎧 NGHE LẠI BẢN THU ÂM CỦA BẠN:</Text>
+                  <Text style={styles.audioReviewTitle}>🎧 PLAYBACK RECORDING:</Text>
                   {feedbackResult && (
                     <TouchableOpacity 
                       style={styles.viewScoreBtn}
                       onPress={() => setDetailedModalVisible(true)}
                     >
-                      <Text style={styles.viewScoreBtnText}>📊 BẢNG ĐIỂM CHI TIẾT</Text>
+                      <Text style={styles.viewScoreBtnText}>📊 DETAILED RUBRICS</Text>
                     </TouchableOpacity>
                   )}
                 </View>
@@ -1202,7 +1502,7 @@ Output ONLY raw JSON:
                   onPress={startNormalRecording}
                 >
                   <Text style={styles.startRecordBtnText}>
-                    {recordedAudioUrl ? '🔄 THU ÂM LẠI' : '🔴 BẮT ĐẦU THU ÂM'}
+                    {recordedAudioUrl ? '🔄 RECORD AGAIN' : '🔴 START RECORDING'}
                   </Text>
                 </TouchableOpacity>
 
@@ -1212,13 +1512,13 @@ Output ONLY raw JSON:
                     activeOpacity={0.8} 
                     onPress={() => setDetailedModalVisible(true)}
                   >
-                    <Text style={styles.reopenModalBtnText}>📊 XEM BẢNG ĐIỂM</Text>
+                    <Text style={styles.reopenModalBtnText}>📊 VIEW SCORECARD</Text>
                   </TouchableOpacity>
                 )}
               </View>
             ) : (
               <TouchableOpacity style={styles.stopRecordBtn} activeOpacity={0.8} onPress={stopNormalRecording}>
-                <Text style={styles.stopRecordBtnText}>⏹ DỪNG & CHẤM ĐIỂM CHI TIẾT</Text>
+                <Text style={styles.stopRecordBtnText}>⏹ STOP & EVALUATE SPEECH</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -1237,7 +1537,6 @@ Output ONLY raw JSON:
         )}
       </ScrollView>
 
-      {/* 🛡️ MODAL CHẤM ĐIỂM CHI TIẾT AN TOÀN TRÁNH REACT ERROR #130 */}
       {typeof DetailedSpeechFeedbackModal === 'function' && (
         <DetailedSpeechFeedbackModal
           visible={detailedModalVisible}
@@ -1312,7 +1611,81 @@ const styles = StyleSheet.create({
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
   roleText: { color: '#FFD700', fontSize: 12, fontWeight: 'bold', flex: 1, marginRight: 8 },
   levelBadge: { color: '#000', backgroundColor: '#39FF14', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, fontSize: 8.5, fontWeight: '900' },
-  contextText: { color: '#FFF', fontSize: 11, lineHeight: 16, marginBottom: 10 },
+  contextText: { color: '#FFF', fontSize: 11, lineHeight: 16, marginBottom: 8 },
+
+  hintControlRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 4,
+    marginBottom: 8
+  },
+  hintToggleBtn: {
+    backgroundColor: '#16082F',
+    borderWidth: 1,
+    borderColor: '#FFD700',
+    paddingVertical: 4,
+    paddingHorizontal: 9,
+    borderRadius: 6
+  },
+  hintToggleBtnActive: {
+    backgroundColor: '#FFD700'
+  },
+  hintToggleBtnText: {
+    color: '#FFD700',
+    fontSize: 9,
+    fontWeight: '900'
+  },
+  flagPickerRow: {
+    flexDirection: 'row',
+    gap: 5,
+    backgroundColor: '#0D0620',
+    padding: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#332255'
+  },
+  flagBtn: {
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+    borderRadius: 4
+  },
+  flagBtnActive: {
+    backgroundColor: '#2A144E'
+  },
+  flagText: {
+    fontSize: 13
+  },
+  scaffoldingBox: {
+    backgroundColor: '#0B0418',
+    borderLeftWidth: 3,
+    borderLeftColor: '#39FF14',
+    padding: 8,
+    borderRadius: 6,
+    marginBottom: 10
+  },
+  scaffoldingMetaRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 4
+  },
+  scaffoldingMetaText: {
+    color: '#DDD',
+    fontSize: 9,
+    fontWeight: 'bold'
+  },
+  nativeTranslateDivider: {
+    height: 1,
+    backgroundColor: '#221144',
+    marginVertical: 4
+  },
+  nativeTranslateText: {
+    color: '#39FF14',
+    fontSize: 10,
+    fontStyle: 'italic',
+    lineHeight: 15
+  },
+
   previewPromptBox: { backgroundColor: '#070212', padding: 10, borderRadius: 8, marginBottom: 12, borderWidth: 1, borderColor: '#221144' },
   sampleHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
   previewPromptLabel: { color: '#00FFFF', fontSize: 8.5, fontWeight: 'bold' },
@@ -1349,7 +1722,7 @@ const styles = StyleSheet.create({
   switchTopicInRoomText: { color: '#00FFFF', fontSize: 9.5, fontWeight: 'bold' },
 
   normalPromptTitle: { color: '#FFD700', fontSize: 13, fontWeight: '900', marginTop: 8 },
-  normalPromptDesc: { color: '#8888AA', fontSize: 10.5, marginBottom: 10 },
+  normalPromptDesc: { color: '#8888AA', fontSize: 10.5, marginBottom: 8 },
   promptDisplayBox: { backgroundColor: '#130628', padding: 14, borderRadius: 10, borderWidth: 1, borderColor: '#332255', marginBottom: 12 },
   promptModeNotice: { color: '#00FFFF', fontSize: 9.5, fontWeight: 'bold' },
   promptDisplayText: { color: '#FFFFFF', fontSize: 13, lineHeight: 20, fontWeight: 'bold' },
