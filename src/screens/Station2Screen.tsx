@@ -53,12 +53,12 @@ export interface ChallengeItem {
 
 const CEFR_LEVELS: CefrLevel[] = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
 
-const LANG_CONFIG: Record<SupportedLang, { flag: string; label: string }> = {
-  vi: { flag: '🇻🇳', label: 'Tiếng Việt' },
-  th: { flag: '🇹🇭', label: 'ภาษาไทย' },
-  ja: { flag: '🇯🇵', label: '日本語' },
-  ko: { flag: '🇰🇷', label: '한국어' },
-  id: { flag: '🇮🇩', label: 'Bahasa Indonesia' }
+const LANG_CONFIG: Record<SupportedLang, { flag: string; label: string; code: string }> = {
+  vi: { flag: '🇻🇳', label: 'Tiếng Việt', code: 'VN' },
+  th: { flag: '🇹🇭', label: 'ภาษาไทย', code: 'TH' },
+  ja: { flag: '🇯🇵', label: '日本語', code: 'JP' },
+  ko: { flag: '🇰🇷', label: '한국어', code: 'KR' },
+  id: { flag: '🇮🇩', label: 'Bahasa Indonesia', code: 'ID' }
 };
 
 const TIERS: { key: Station2Tier; label: string; icon: string; desc: string }[] = [
@@ -67,7 +67,7 @@ const TIERS: { key: Station2Tier; label: string; icon: string; desc: string }[] 
   { key: 'ROLEPLAY', label: 'TIER 3: ROLEPLAY (DYNAMIC DUO)', icon: '🎭', desc: 'Interactive roleplay: Resolve interpersonal conflicts and negotiate practical scenarios.' }
 ];
 
-// 🎯 KHO KỊCH BẢN 100% ENGLISH-FIRST + HINT ĐA NGÔN NGỮ CHÂU Á
+// 🎯 KHO KỊCH BẢN CHUẨN 100% ENGLISH-FIRST + ĐỦ 5 THỨ TIẾNG CHÂU Á
 const SCENARIO_LIBRARY: Record<string, Omit<ChallengeItem, 'id' | 'tier' | 'level' | 'isTeacherAssigned'>[]> = {
   'SOLO_A1': [
     {
@@ -403,9 +403,9 @@ export default function Station2Screen({ onBack }: Props) {
   const [teacherAssignments, setTeacherAssignments] = useState<ChallengeItem[]>([]);
   const [loadingAssignments, setLoadingAssignments] = useState<boolean>(true);
 
-  // 🌐 CƠ CHẾ GỢI Ý ĐA NGÔN NGỮ CHÂU Á (ASIA MULTILINGUAL HINTS)
+  // 🌐 CƠ CHẾ GỢI Ý ĐA NGÔN NGỮ CHÂU Á (MẶC ĐỊNH MỞ ĐỂ THẤY NGAY)
   const [selectedLang, setSelectedLang] = useState<SupportedLang>('vi');
-  const [showHint, setShowHint] = useState<boolean>(false);
+  const [showHint, setShowHint] = useState<boolean>(true);
 
   // 🎯 QUẢN LÝ ĐỀ BÀI VÀ HÀNG ĐỢI NẠP BÙ AI NGẦM
   const [currentChallenge, setCurrentChallenge] = useState<ChallengeItem>(() => {
@@ -463,7 +463,6 @@ export default function Station2Screen({ onBack }: Props) {
 
     setIsPlayingSample(true);
 
-    // ⚡ LỚP 1: GỌI API SERVER MICROSOFT EDGE-TTS (JENNY NEURAL)
     try {
       const ttsUrl = `/api/tts?voice=nova&text=${encodeURIComponent(cleanText)}`;
       const audio = new Audio(ttsUrl);
@@ -487,7 +486,6 @@ export default function Station2Screen({ onBack }: Props) {
     }
   };
 
-  // 🛡️ LỚP 2: DỰ PHÒNG NỘI BỘ NẾU MẤT KẾT NỐI
   const playLocalSampleFallback = (cleanText: string) => {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
       setIsPlayingSample(false);
@@ -565,11 +563,11 @@ export default function Station2Screen({ onBack }: Props) {
               contextDesc: item.description || `🏫 Assigned Reflex Context (${detectedTier}):`,
               prompt: item.target_prompt || '',
               hint: {
-                vi: "Bài tập do giảng viên giao trực tiếp.",
-                th: "งานที่ได้รับมอบหมายจากอาจารย์",
-                ja: "講師から直接割り当てられた課題です。",
-                ko: "담당 교수가 직접 부여한 과제입니다.",
-                id: "Tugas yang diberikan langsung oleh pengajar."
+                vi: item.description || "Bài tập do giảng viên giao trực tiếp.",
+                th: item.description || "งานที่ได้รับมอบหมายจากอาจารย์",
+                ja: item.description || "講師から直接割り当てられた課題です。",
+                ko: item.description || "담당 교수가 직접 부여한 과제입니다.",
+                id: item.description || "Tugas yang diberikan langsung oleh pengajar."
               },
               isTeacherAssigned: true
             };
@@ -611,9 +609,6 @@ export default function Station2Screen({ onBack }: Props) {
     try {
       isFetchingAiRef.current = true;
       const promptInstruction = `Create 1 UNIQUE situational reflex challenge for Station 2 at CEFR level ${level} in tier ${tier}.
-- SOLO: Individual unexpected reflex situation.
-- RELAY: Two-person relay continuation on the same topic.
-- ROLEPLAY: Realistic interpersonal conflict resolution between 2 people.
 Output ONLY raw JSON:
 {
   "title": "Short title in English",
@@ -702,9 +697,9 @@ Output ONLY raw JSON:
       tier: selectedTier,
       level: selectedLevel,
       title: customTitle.trim(),
-      place: 'User Defined Context',
-      task: 'Self-directed reflex response',
-      contextDesc: customContext.trim() || `Custom Challenge (${selectedTier} - ${selectedLevel}):`,
+      place: 'Custom User Context',
+      task: 'Deliver spontaneous reflex speaking',
+      contextDesc: customContext.trim() || `Custom Reflex Challenge (${selectedTier} - ${selectedLevel}):`,
       prompt: customPrompt.trim(),
       hint: {
         vi: customContext.trim() || customTitle.trim(),
@@ -783,7 +778,6 @@ Output ONLY raw JSON:
             liveTranscriptRef.current = cleanLive;
             setLiveTranscript(cleanLive);
           };
-          recognition.onerror = () => {};
           recognition.start();
           speechRecognitionRef.current = recognition;
         } catch (e) {
@@ -1206,35 +1200,40 @@ Output ONLY raw JSON:
               </View>
             )}
 
-            {/* 5. CHALLENGE CARD */}
+            {/* 5. GIAO DIỆN TẠO ĐỀ / HIỂN THỊ ĐỀ BÀI */}
             {topicOrigin === 'STUDENT_CUSTOM' ? (
               <View style={styles.customBoxWrapper}>
-                <Text style={styles.customBoxTitle}>📋 PASTE CUSTOM CHALLENGE:</Text>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <Text style={styles.customBoxTitle}>📋 TẠO / DÁN ĐỀ BÀI RIÊNG CỦA BẠN:</Text>
+                  <TouchableOpacity onPress={() => setTopicOrigin('SYSTEM')}>
+                    <Text style={{ color: '#00FFFF', fontSize: 10.5, fontWeight: 'bold' }}>✕ HỦY / QUAY LẠI ĐỀ MẪU</Text>
+                  </TouchableOpacity>
+                </View>
                 
-                <Text style={styles.fieldLabel}>Challenge Title (*):</Text>
+                <Text style={styles.fieldLabel}>Tên chủ đề / Tình huống (*):</Text>
                 <TextInput
                   style={styles.textInput}
-                  placeholder="e.g., Job Interview with Executive..."
+                  placeholder="Ví dụ: Phỏng vấn xin việc, Đàm phán giá cả..."
                   placeholderTextColor="#666688"
                   value={customTitle}
                   onChangeText={setCustomTitle}
                 />
 
-                <Text style={styles.fieldLabel}>Context Description:</Text>
+                <Text style={styles.fieldLabel}>Bối cảnh tình huống:</Text>
                 <TextInput
                   style={styles.textInput}
-                  placeholder="e.g., The hiring manager inquires about your career milestones..."
+                  placeholder="Ví dụ: Bạn là ứng viên giải thích kinh nghiệm quản lý..."
                   placeholderTextColor="#666688"
                   value={customContext}
                   onChangeText={setCustomContext}
                 />
 
                 <Text style={styles.fieldLabel}>
-                  {practiceMode === 'READ_SAMPLE' ? 'Target English Sentence (*):' : 'Spontaneous Reflex Prompt (*):'}
+                  {practiceMode === 'READ_SAMPLE' ? 'Câu phản xạ mẫu tiếng Anh (*):' : 'Câu hỏi / Thử thách phản xạ tiếng Anh (*):'}
                 </Text>
                 <TextInput
                   style={[styles.textInput, styles.textArea]}
-                  placeholder="Paste the English prompt here..."
+                  placeholder="Dán câu tiếng Anh mục tiêu vào đây..."
                   placeholderTextColor="#666688"
                   multiline
                   value={customPrompt}
@@ -1242,21 +1241,35 @@ Output ONLY raw JSON:
                 />
 
                 <TouchableOpacity style={styles.startCustomBtn} onPress={handleStartCustomTopic}>
-                  <Text style={styles.startCustomBtnText}>🚀 LAUNCH REFLEX SESSION WITH THIS PROMPT</Text>
+                  <Text style={styles.startCustomBtnText}>🚀 BẮT ĐẦU PHẢN XẠ VỚI ĐỀ NÀY NGAY</Text>
                 </TouchableOpacity>
               </View>
             ) : (
               <View style={styles.topicContainer}>
-                <TouchableOpacity 
-                  style={styles.prominentSwitchBtn} 
-                  activeOpacity={0.7}
-                  onPress={handleNextTopic}
-                >
-                  <Text style={styles.prominentSwitchBtnText}>
-                    🎲 TAP TO SWITCH NEW SCENARIO IMMEDIATELY (0MS)
-                  </Text>
-                </TouchableOpacity>
+                {/* 🎯 HÀNG NÚT THAO TÁC KÉP: ĐỔI ĐỀ (0MS) VÀ TẠO MỚI CHỦ ĐỀ */}
+                <View style={styles.actionButtonRow}>
+                  <TouchableOpacity 
+                    style={styles.prominentSwitchBtn} 
+                    activeOpacity={0.7}
+                    onPress={handleNextTopic}
+                  >
+                    <Text style={styles.prominentSwitchBtnText}>
+                      🎲 NEXT SCENARIO (0MS)
+                    </Text>
+                  </TouchableOpacity>
 
+                  <TouchableOpacity 
+                    style={styles.prominentCreateBtn} 
+                    activeOpacity={0.7}
+                    onPress={() => setTopicOrigin('STUDENT_CUSTOM')}
+                  >
+                    <Text style={styles.prominentCreateBtnText}>
+                      ➕ CREATE / PASTE TOPIC
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* THẺ BÀI TẬP CHÍNH */}
                 <View style={[styles.card, currentChallenge.isTeacherAssigned && styles.teacherCard]}>
                   <View style={styles.cardHeader}>
                     <Text style={[styles.roleText, currentChallenge.isTeacherAssigned && { color: '#00FFFF' }]}>
@@ -1269,7 +1282,7 @@ Output ONLY raw JSON:
                   
                   <Text style={styles.contextText}>📌 {currentChallenge.contextDesc}</Text>
 
-                  {/* 🌐 THANH ĐIỀU KHIỂN GỢI Ý ĐA NGÔN NGỮ CHÂU Á */}
+                  {/* 🌐 THANH CHỌN CỜ ĐA NGÔN NGỮ CHÂU Á LUÔN HIỂN THỊ */}
                   <View style={styles.hintContainer}>
                     <View style={styles.hintHeaderRow}>
                       <TouchableOpacity 
@@ -1278,11 +1291,11 @@ Output ONLY raw JSON:
                         activeOpacity={0.8}
                       >
                         <Text style={[styles.hintToggleText, showHint && { color: '#000' }]}>
-                          {showHint ? '✕ HIDE HINT' : `💡 NATIVE HINT (${LANG_CONFIG[selectedLang].flag})`}
+                          {showHint ? '✕ HIDE HINT' : `💡 SHOW HINT (${LANG_CONFIG[selectedLang].code})`}
                         </Text>
                       </TouchableOpacity>
 
-                      {/* DÃY CỜ CHỌN NGÔN NGỮ LUÔN HIỂN THỊ ĐỂ CHỌN */}
+                      {/* DÃY CỜ 5 NƯỚC LUÔN NẰM TRỰC DIỆN ĐỂ BẤM CHỌN */}
                       <View style={styles.flagPickerRow}>
                         {(['vi', 'th', 'ja', 'ko', 'id'] as SupportedLang[]).map((lang) => (
                           <TouchableOpacity
@@ -1300,11 +1313,11 @@ Output ONLY raw JSON:
                       </View>
                     </View>
 
-                    {/* HỘP NỘI DUNG GỢI Ý NATIVE SCAFFOLDING */}
+                    {/* HỘP GỢI Ý ĐA NGỮ ĐỔI NỘI DUNG TỨC THÌ THEO CỜ ĐÃ CHỌN */}
                     {showHint && currentChallenge && (
                       <View style={styles.hintContentBox}>
                         <View style={styles.scaffoldingMetaRow}>
-                          <Text style={styles.scaffoldingMetaText}>📍 <Text style={{ color: '#00FFFF' }}>Place:</Text> {currentChallenge.place || 'General Context'}</Text>
+                          <Text style={styles.scaffoldingMetaText}>📍 <Text style={{ color: '#00FFFF' }}>Place:</Text> {currentChallenge.place || 'General Location'}</Text>
                           <Text style={styles.scaffoldingMetaText}>🎯 <Text style={{ color: '#FFD700' }}>Goal:</Text> {currentChallenge.task || 'Reflex response'}</Text>
                         </View>
                         <View style={styles.nativeTranslateDivider} />
@@ -1384,7 +1397,7 @@ Output ONLY raw JSON:
             <Text style={styles.normalPromptTitle}>{currentChallenge.title} ({currentChallenge.level})</Text>
             <Text style={styles.normalPromptDesc}>{currentChallenge.contextDesc}</Text>
 
-            {/* HINT BAR IN PRACTICE ROOM */}
+            {/* HINT BAR TRONG PHÒNG THU CŨNG ĐỒNG BỘ 5 CỜ */}
             <View style={styles.hintContainer}>
               <View style={styles.hintHeaderRow}>
                 <TouchableOpacity 
@@ -1393,7 +1406,7 @@ Output ONLY raw JSON:
                   activeOpacity={0.8}
                 >
                   <Text style={[styles.hintToggleText, showHint && { color: '#000' }]}>
-                    {showHint ? '✕ HIDE HINT' : `💡 NATIVE HINT (${LANG_CONFIG[selectedLang].flag})`}
+                    {showHint ? '✕ HIDE HINT' : `💡 SHOW HINT (${LANG_CONFIG[selectedLang].code})`}
                   </Text>
                 </TouchableOpacity>
 
@@ -1597,19 +1610,42 @@ const styles = StyleSheet.create({
   levelTabTextActive: { color: '#FFF', fontWeight: '900' },
 
   topicContainer: { width: '100%', marginTop: 4 },
+
+  actionButtonRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 10,
+    width: '100%'
+  },
   prominentSwitchBtn: {
+    flex: 1.2,
     backgroundColor: '#1E0B36',
     paddingVertical: 12,
     borderRadius: 10,
     borderWidth: 2,
     borderColor: '#00FFFF',
     alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 10
+    justifyContent: 'center'
   },
   prominentSwitchBtnText: {
     color: '#00FFFF',
     fontSize: 10.5,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  prominentCreateBtn: {
+    flex: 1,
+    backgroundColor: '#0D2619',
+    paddingVertical: 12,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: '#39FF14',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  prominentCreateBtnText: {
+    color: '#39FF14',
+    fontSize: 10,
     fontWeight: '900',
     letterSpacing: 0.5,
   },
@@ -1657,8 +1693,8 @@ const styles = StyleSheet.create({
     borderColor: '#332255',
   },
   flagBtn: {
-    paddingHorizontal: 5,
-    paddingVertical: 2,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
     borderRadius: 5,
   },
   flagBtnActive: {
@@ -1723,8 +1759,8 @@ const styles = StyleSheet.create({
   ttsMiniBtnText: { color: '#00FFFF', fontSize: 8.5, fontWeight: 'bold' },
 
   customBoxWrapper: { backgroundColor: '#0D0620', padding: 14, borderRadius: 12, borderWidth: 2, borderColor: '#FF007F', marginVertical: 8 },
-  customBoxTitle: { color: '#FF007F', fontSize: 11, fontWeight: '900', marginBottom: 8 },
-  fieldLabel: { color: '#00FFFF', fontSize: 9, fontWeight: 'bold', marginTop: 6, marginBottom: 3 },
+  customBoxTitle: { color: '#FF007F', fontSize: 11, fontWeight: '900' },
+  fieldLabel: { color: '#00FFFF', fontSize: 9, fontWeight: 'bold', marginTop: 8, marginBottom: 3 },
   textInput: { backgroundColor: '#070212', borderWidth: 1, borderColor: '#332255', borderRadius: 6, padding: 8, color: '#FFF', fontSize: 11 },
   textArea: { minHeight: 65, textAlignVertical: 'top' },
   startCustomBtn: { backgroundColor: '#39FF14', paddingVertical: 12, borderRadius: 8, alignItems: 'center', marginTop: 12 },
