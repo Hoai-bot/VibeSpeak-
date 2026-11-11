@@ -132,14 +132,16 @@ export default function Station4Screen({ onBack }: Props) {
 
   const [runtimeTopic, setRuntimeTopic] = useState<Station4TopicItem>(() => getInitialTopicForLevel('B1'));
 
-  // 🔊 EDGE NEURAL TTS VỚI LOCAL SYNTHESIS FALLBACK
+  // 🔊 BỘ PHÁT ÂM MẪU CHUẨN IOS & DESKTOP (TRẠM 4)
   const [isPlayingPromptAudio, setIsPlayingPromptAudio] = useState<boolean>(false);
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
 
   const stopPromptAudio = () => {
     if (audioPlayerRef.current) {
-      audioPlayerRef.current.pause();
-      audioPlayerRef.current.currentTime = 0;
+      try {
+        audioPlayerRef.current.pause();
+        audioPlayerRef.current.currentTime = 0;
+      } catch (e) {}
       audioPlayerRef.current = null;
     }
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
@@ -157,31 +159,49 @@ export default function Station4Screen({ onBack }: Props) {
     const cleanText = text.replace(/["']/g, '').trim();
     if (!cleanText) return;
 
+    stopPromptAudio();
     setIsPlayingPromptAudio(true);
 
+    // 1. Tạo đối tượng audio đồng bộ ngay lập tức (bảo lưu User Gesture trên Safari iOS)
+    const audio = new Audio();
+    audioPlayerRef.current = audio;
+
+    (audio as any).playsInline = true;
+    audio.setAttribute('playsinline', 'true');
+    audio.setAttribute('webkit-playsinline', 'true');
+
+    const ttsUrl = `/api/tts?voice=nova&text=${encodeURIComponent(cleanText)}`;
+
+    // 2. Lắng nghe trạng thái hoàn thành & lỗi
+    audio.onended = () => {
+      setIsPlayingPromptAudio(false);
+      audioPlayerRef.current = null;
+    };
+
+    audio.onerror = (e) => {
+      console.warn("⚠️ Không thể tải TTS từ server, kích hoạt fallback:", e);
+      setIsPlayingPromptAudio(false);
+      audioPlayerRef.current = null;
+      fallbackIOSPromptSpeech(cleanText);
+    };
+
     try {
-      const ttsUrl = `/api/tts?voice=nova&text=${encodeURIComponent(cleanText)}`;
-      const audio = new Audio(ttsUrl);
-      audioPlayerRef.current = audio;
-
-      audio.onended = () => {
-        setIsPlayingPromptAudio(false);
-        audioPlayerRef.current = null;
-      };
-
-      audio.onerror = () => {
-        console.warn("Server TTS unavailable, activating client fallback...");
-        playLocalPromptFallback(cleanText);
-      };
-
-      await audio.play();
+      audio.src = ttsUrl;
+      audio.load();
+      const playPromise = audio.play();
+      if (playPromise !== undefined) {
+        await playPromise;
+      }
     } catch (e) {
-      console.warn("TTS Error:", e);
-      playLocalPromptFallback(cleanText);
+      console.warn("⚠️ iOS WebKit chặn phát tự động, kích hoạt fallback:", e);
+      setIsPlayingPromptAudio(false);
+      audioPlayerRef.current = null;
+      fallbackIOSPromptSpeech(cleanText);
     }
   };
 
-  const playLocalPromptFallback = (cleanText: string) => {
+  // 🛡️ BỘ DỰ PHÒNG NỘI BỘ TỐI ƯU CHO IOS SAFARI
+  const fallbackIOSPromptSpeech = (cleanText: string) => {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
       setIsPlayingPromptAudio(false);
       return;
@@ -190,6 +210,15 @@ export default function Station4Screen({ onBack }: Props) {
     synth.cancel();
 
     const utterance = new SpeechSynthesisUtterance(cleanText);
+    const voices = synth.getVoices();
+    
+    // Ưu tiên các voice chuẩn tiếng Anh chất lượng cao trên iOS
+    const iosVoice = voices.find(v => 
+      v.lang.startsWith('en') && 
+      (v.name.includes('Samantha') || v.name.includes('Siri') || v.name.includes('Natural') || v.name.includes('Aria') || v.name.includes('Google US English'))
+    );
+    if (iosVoice) utterance.voice = iosVoice;
+
     utterance.lang = 'en-US';
     utterance.rate = 0.90;
     utterance.pitch = 1.0;
@@ -269,6 +298,12 @@ export default function Station4Screen({ onBack }: Props) {
     setTimeLeft(activeTopic.targetDuration || 90);
     resetRecordingSession();
   }, [activeTopic.id, cefrLevel, topicSource]);
+
+  useEffect(() => {
+    return () => {
+      stopPromptAudio();
+    };
+  }, []);
 
   const resetRecordingSession = () => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
@@ -673,11 +708,11 @@ Output ONLY raw JSON (no markdown):
 
                     <View style={styles.flagPickerRow}>
                       {(['vi', 'th', 'ja', 'ko', 'id', 'zh'] as SupportedLang[]).map((lang) => {
-                        const isSelected = selectedLang === lang;
+                        const isCurrentActive = selectedLang === lang;
                         return (
                           <TouchableOpacity
                             key={lang}
-                            style={[styles.flagBtn, isSelected && styles.flagBtnActive]}
+                            style={[styles.flagBtn, isCurrentActive && styles.flagBtnActive]}
                             onPress={() => {
                               setSelectedLang(lang);
                               setShowHint(true);
@@ -685,7 +720,7 @@ Output ONLY raw JSON (no markdown):
                             activeOpacity={0.7}
                           >
                             <Text style={styles.flagIcon}>{LANG_CONFIG[lang].flag}</Text>
-                            <Text style={[styles.flagCodeText, isSelected ? { color: '#00FFFF' } : { color: '#AAAACC' }]}>
+                            <Text style={[styles.flagCodeText, isCurrentActive ? { color: '#00FFFF' } : { color: '#AAAACC' }]}>
                               {LANG_CONFIG[lang].code}
                             </Text>
                           </TouchableOpacity>
