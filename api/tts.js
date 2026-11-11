@@ -15,7 +15,7 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,POST');
   res.setHeader(
     'Access-Control-Allow-Headers',
-    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
+    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Range'
   );
 
   if (req.method === 'OPTIONS') {
@@ -62,13 +62,36 @@ export default async function handler(req, res) {
       throw new Error("Empty audio buffer from Edge TTS");
     }
 
+    const totalLength = audioBuffer.length;
+    res.setHeader('Accept-Ranges', 'bytes');
     res.setHeader('Content-Type', 'audio/mpeg');
-    res.setHeader('Content-Length', audioBuffer.length);
     res.setHeader('Cache-Control', 'public, max-age=86400, s-maxage=86400');
+
+    // 🍎 XỬ LÝ RANGE REQUEST BẮT BUỘC CHO SAFARI / IOS WEBKIT
+    const range = req.headers.range;
+    if (range) {
+      const parts = range.replace(/bytes=/, "").split("-");
+      const start = parseInt(parts[0], 10);
+      const end = parts[1] ? parseInt(parts[1], 10) : totalLength - 1;
+
+      if (start >= totalLength || end >= totalLength) {
+        res.setHeader('Content-Range', `bytes */${totalLength}`);
+        return res.status(416).end();
+      }
+
+      const chunksize = (end - start) + 1;
+      const slicedBuffer = audioBuffer.slice(start, end + 1);
+
+      res.setHeader('Content-Range', `bytes ${start}-${end}/${totalLength}`);
+      res.setHeader('Content-Length', chunksize);
+      return res.status(206).send(slicedBuffer);
+    }
+
+    // Request thông thường
+    res.setHeader('Content-Length', totalLength);
     return res.status(200).send(audioBuffer);
   } catch (error) {
     console.error('Edge TTS Failure:', error);
-    // Trả về lỗi 500 rõ ràng thay vì trả về giọng robot của Google dịch
     return res.status(500).json({ error: 'Edge TTS synthesis failed', details: error.message });
   }
 }
