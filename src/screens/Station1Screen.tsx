@@ -173,6 +173,40 @@ function resolveArticulationTip(tipVi: string, lang: SupportedLang): string {
   return tipVi;
 }
 
+// 🔤 CHUẨN HÓA TIÊU ĐỀ SANG ENGLISH-FIRST
+const normalizeTitleToEnglish = (title: string): string => {
+  if (!title) return '';
+  return title
+    .replace(/phân biệt/gi, 'Minimal Pairs:')
+    .replace(/nối âm/gi, 'Linking Sound:')
+    .replace(/luyện âm/gi, 'Target Phoneme:')
+    .replace(/và/gi, '&')
+    .replace(/luyện phát âm/gi, 'Pronunciation Drill:');
+};
+
+// 💬 BẢN ĐỊA HÓA NHẬN XÉT ĐÁNH GIÁ TỔNG HỢP SANG 6 THỨ TIẾNG
+const localizeFeedback = (feedback: string, lang: SupportedLang, targetWords: string[]): string => {
+  if (!feedback) return '';
+
+  const repeatMatch = feedback.match(/phát âm từ "([^"]+)" 2 lần/i);
+  if (repeatMatch) {
+    const repeatedWord = repeatMatch[1];
+    const missingWord = targetWords.find(w => w.toLowerCase() !== repeatedWord.toLowerCase()) || 'second word';
+
+    const repeatDict: Record<SupportedLang, string> = {
+      vi: `⚠️ Bạn vừa phát âm từ "${repeatedWord}" 2 lần! Hãy chú ý khẩu hình: từ "${missingWord}" cần sự phân biệt rõ ràng. Hãy nghe lại âm mẫu và thử lại!`,
+      th: `⚠️ คุณออกเสียงคำว่า "${repeatedWord}" ซ้ำ 2 ครั้ง! โปรดสังเกตรูปปาก: คำว่า "${missingWord}" ต้องแยกเสียงให้ชัดเจน ลองฟังเสียงตัวอย่างแล้วฝึกใหม่อีกครั้ง!`,
+      ja: `⚠️ 単語「${repeatedWord}」を2回発音しています。「${missingWord}」の口の形を意識して、違いを明確に区別してください。お手本を聞いてもう一度試しましょう！`,
+      ko: `⚠️ "${repeatedWord}" 단어를 2번 발음했습니다! 입모양을 확인하세요: "${missingWord}" 단어와 명확히 구분해야 합니다. 원어민 음성을 듣고 다시 시도해보세요!`,
+      id: `⚠️ Anda melafalkan kata "${repeatedWord}" 2 kali! Perhatikan bentuk mulut: kata "${missingWord}" membutuhkan artikulasi yang berbeda. Dengarkan audio contoh dan coba lagi!`,
+      zh: `⚠️ 你连续两次发音了单词 "${repeatedWord}"！请注意口型：单词 "${missingWord}" 需要做出明显区分。请仔细聆听范例并再次尝试！`
+    };
+    return repeatDict[lang] || repeatDict['vi'];
+  }
+
+  return feedback;
+};
+
 // 🌊 CLIENT-SIDE F0 AUTOCORRELATION
 function detectPitchFrame(buffer: Float32Array, sampleRate: number): number | null {
   const size = buffer.length;
@@ -355,22 +389,18 @@ export default function Station1Screen({ onBack }: Props) {
   // 🎯 BỘ CHUẨN HÓA NGỮ ÂM & KHỬ TỪ "SLASH" / SỬA ÂM "LIVE" THÀNH /lɪv/
   const normalizeSpeechTextForTTS = (rawText: string): string => {
     let text = rawText.replace(/["']/g, '').trim();
-
-    // 1. Tách các từ phân cách bởi dấu gạch chéo '/' thành danh sách từ rõ ràng
     const parts = text.split('/').map(w => w.trim()).filter(Boolean);
 
-    // 2. Chuẩn hóa từng từ: Nếu gặp từ 'live' trong cặp đối lập ngữ âm -> hướng dẫn engine đọc đúng /lɪv/
     const normalizedParts = parts.map(word => {
       const lower = word.toLowerCase();
       if (lower === 'live') {
-        return 'liv'; // Trợ âm phiên âm học giúp Microsoft TTS đọc chính xác /lɪv/ thay vì /laɪv/
+        return 'liv';
       }
       if (lower === 'come in') return 'cum in';
       if (lower === 'read' && text.toLowerCase().includes('red')) return 'reed';
       return word;
     });
 
-    // 3. Nối bằng dấu chấm lửng kèm khoảng nghỉ để AI ngắt nhịp tự nhiên, KHÔNG BAO GIỜ đọc từ 'slash'
     return normalizedParts.join(' ... ');
   };
 
@@ -382,7 +412,6 @@ export default function Station1Screen({ onBack }: Props) {
 
     const cleanSpeechText = normalizeSpeechTextForTTS(textToSpeak);
 
-    // Layer 1: Call Microsoft Edge-TTS serverless endpoint
     try {
       const ttsUrl = `/api/tts?voice=nova&text=${encodeURIComponent(cleanSpeechText)}`;
       const audio = new Audio(ttsUrl);
@@ -406,7 +435,6 @@ export default function Station1Screen({ onBack }: Props) {
     }
   };
 
-  // Layer 2: Client Synthesis Fallback
   const playLocalSampleFallback = (cleanSpeechText: string) => {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
       setIsPlayingTTS(false);
@@ -510,7 +538,6 @@ Output ONLY raw JSON (no markdown):
     setPreviousScore(null);
     setAttemptCount(0);
 
-    // 1. Tiêu thụ bài từ hàng đợi AI ngầm nếu đã có
     if (aiQueue[type] && aiQueue[type].length > 0) {
       const [nextAiDrill, ...restQueue] = aiQueue[type];
       setAiQueue(prev => ({ ...prev, [type]: restQueue }));
@@ -529,7 +556,6 @@ Output ONLY raw JSON (no markdown):
       return;
     }
 
-    // 2. Nạp từ kho bài mẫu 0ms có đối chiếu từ điển đa ngôn ngữ (KHÔNG BỊ NHIỄM TIẾNG VIỆT)
     let bank: (LinkingSoundItem | MinimalPairItem | TongueTwisterItem)[] = [];
     if (type === 'minimal_pairs') bank = MINIMAL_PAIRS_DATA;
     else if (type === 'linking_sounds') bank = LINKING_SOUNDS_DATA;
@@ -542,7 +568,6 @@ Output ONLY raw JSON (no markdown):
     const rawDrill = bank[nextIdx % bank.length];
     const loopNum = Math.floor(nextIdx / bank.length) + 1;
 
-    // Đối chiếu từ điển đa ngôn ngữ chuẩn cho bài mẫu
     const lookupKey = (rawDrill.contentEn || '').toLowerCase().trim();
     const mappedHint = PRESET_MULTILINGUAL_MAP[lookupKey] || {
       vi: rawDrill.contentVi || rawDrill.contentEn,
@@ -566,7 +591,7 @@ Output ONLY raw JSON (no markdown):
     const mockRef = isQuestion 
       ? [-2, -1.5, -1, 0, 0.5, 1.2, 2.8, 4.5]
       : [0.5, 1.8, 2.2, 1.5, 0.2, -1.0, -2.5, -3.2];
-    setTargetContour(mockRef);
+      setTargetContour(mockRef);
 
     triggerBackgroundAiRefill(type);
   };
@@ -824,7 +849,8 @@ Output ONLY raw JSON (no markdown):
 
         {currentDrill && (
           <View style={styles.box} key={currentDrill.sessionKey}>
-            <Text style={styles.boxTitle}>📌 {currentDrill.title.toUpperCase()}</Text>
+            {/* TIÊU ĐỀ ĐÃ ĐƯỢC CHUẨN HÓA SANG ENGLISH-FIRST 100% */}
+            <Text style={styles.boxTitle}>📌 {normalizeTitleToEnglish(currentDrill.title).toUpperCase()}</Text>
             
             <Text style={styles.drillEn}>"{currentDrill.contentEn}"</Text>
             
@@ -1102,7 +1128,14 @@ Output ONLY raw JSON (no markdown):
               <Text style={styles.scriptContent}>"{result.transcript || '(Indistinct acoustics)'}"</Text>
             </View>
 
-            <Text style={styles.feedbackText}>{result.detailedFeedback}</Text>
+            {/* 💡 LỜI NHẬN XÉT ĐÃ ĐƯỢC BẢN ĐỊA HÓA HOÀN TOÀN THEO CỜ CHỌN */}
+            <Text style={styles.feedbackText}>
+              {localizeFeedback(
+                result.detailedFeedback,
+                selectedLang,
+                currentDrill?.contentEn?.split('/')?.map(s => s.trim()) || []
+              )}
+            </Text>
           </View>
         )}
       </ScrollView>
