@@ -16,16 +16,6 @@ interface Props {
 }
 
 export type DrillType = 'minimal_pairs' | 'linking_sounds' | 'tongue_twisters';
-export type SupportedLang = 'vi' | 'th' | 'ja' | 'ko' | 'id' | 'zh';
-
-export interface MultilingualHint {
-  vi: string;
-  th: string;
-  ja: string;
-  ko: string;
-  id: string;
-  zh: string;
-}
 
 export interface Station1DrillItem {
   id: string;
@@ -35,176 +25,21 @@ export interface Station1DrillItem {
   targetFocus: string;
   phoneticSpelling?: string;
   sessionKey?: string;
-  hint?: MultilingualHint;
+  hint?: { vi: string };
 }
 
-const LANG_CONFIG: Record<SupportedLang, { flag: string; label: string; code: string }> = {
-  vi: { flag: '🇻🇳', label: 'Tiếng Việt', code: 'VN' },
-  th: { flag: '🇹🇭', label: 'ภาษาไทย', code: 'TH' },
-  ja: { flag: '🇯🇵', label: '日本語', code: 'JP' },
-  ko: { flag: '🇰🇷', label: '한국어', code: 'KR' },
-  id: { flag: '🇮🇩', label: 'Bahasa Indonesia', code: 'ID' },
-  zh: { flag: '🇨🇳', label: '中文', code: 'CN' }
-};
-
-// 📚 TỪ ĐIỂN ĐA NGÔN NGỮ CHUẨN XÁC CHO KHO MẪU (CHỐNG NHIỄM TIẾNG VIỆT)
-const PRESET_MULTILINGUAL_MAP: Record<string, MultilingualHint> = {
-  'leave / live': {
-    vi: 'Rời đi / Sống, sinh sống',
-    th: 'ออกเดินทาง / อาศัยอยู่',
-    ja: '去る、出発する / 住む、生きる',
-    ko: '떠나다 / 살다, 거주하다',
-    id: 'Pergi, meninggalkan / Tinggal, hidup',
-    zh: '离开 / 居住、生活'
-  },
-  'sheep / ship': {
-    vi: 'Con cừu / Tàu thuyền',
-    th: 'แกะ / เรือเดินสมุทร',
-    ja: '羊 / 船',
-    ko: '양 / 배 (선박)',
-    id: 'Domba / Kapal laut',
-    zh: '绵羊 / 轮船'
-  },
-  'seat / sit': {
-    vi: 'Chỗ ngồi / Ngồi xuống',
-    th: 'ที่นั่ง / นั่งลง',
-    ja: '座席 / 座る',
-    ko: '좌석 / 앉다',
-    id: 'Tempat duduk / Duduk',
-    zh: '座位 / 坐下'
-  },
-  'heat / hit': {
-    vi: 'Hơi nóng / Đánh, va chạm',
-    th: 'ความร้อน / ตี, กระทบ',
-    ja: '熱 / 打つ、当たる',
-    ko: '열기 / 치다, 때리다',
-    id: 'Panas / Memukul',
-    zh: '热度 / 击打'
-  },
-  'reach / rich': {
-    vi: 'Chạm tới / Giàu có',
-    th: 'เอื้อมถึง / ร่ำรวย',
-    ja: '届く、達する / 裕福な',
-    ko: '도달하다 / 부유한',
-    id: 'Mencapai / Kaya raya',
-    zh: '达到、触及 / 富有'
-  },
-  'read / red': {
-    vi: 'Đọc sách / Màu đỏ',
-    th: 'อ่าน / สีแดง',
-    ja: '読む / 赤色',
-    ko: '읽다 / 빨간색',
-    id: 'Membaca / Warna merah',
-    zh: '阅读 / 红色'
-  },
-  'bad / bed': {
-    vi: 'Tồi tệ, xấu / Chiếc giường',
-    th: 'แย่, ไม่ดี / เตียงนอน',
-    ja: '悪い / ベッド',
-    ko: '나쁜 / 침대',
-    id: 'Buruk / Tempat tidur',
-    zh: '不好的 / 床铺'
-  },
-  'pan / pen': {
-    vi: 'Cái chảo / Cây bút',
-    th: 'กระทะ / ปากกา',
-    ja: 'フライパン / ペン',
-    ko: '냄비 (팬) / 펜',
-    id: 'Wajan / Pena',
-    zh: '平底锅 / 钢笔'
-  },
-  'man / men': {
-    vi: 'Một người đàn ông / Những người đàn ông',
-    th: 'ผู้ชาย 1 คน / ผู้ชายหลายคน',
-    ja: '男性（単数） / 男性たち（複数）',
-    ko: '남자 (단수) / 남자들 (복수)',
-    id: 'Seorang pria / Pria-pria',
-    zh: '男人（单数） / 男人们（复数）'
-  },
-  'fan / van': {
-    vi: 'Cái quạt / Xe tải nhỏ',
-    th: 'พัดลม / รถตู้',
-    ja: '扇風機、うちわ / バン（車）',
-    ko: '선풍기 / 밴 (승합차)',
-    id: 'Kipas angin / Mobil van',
-    zh: '风扇 / 厢式货车'
-  }
-};
-
-// 🌐 TỪ ĐIỂN MẸO KHẨU HÌNH ĐA NGÔN NGỮ THEO LÁ CỜ ĐÃ CHỌN
-const ARTICULATION_TIPS_MULTILINGUAL: Record<string, Record<SupportedLang, string>> = {
-  'correct': {
-    vi: 'Khẩu hình chuẩn xác!',
-    th: 'รูปปากและการออกเสียงถูกต้องอย่างสมบูรณ์!',
-    ja: '正確な口の形と調音です！',
-    ko: '완벽하고 정확한 조음과 입모양입니다!',
-    id: 'Bentuk mulut dan artikulasi tepat!',
-    zh: '口型与发音非常准确！'
-  },
-  'short_vowel_i': {
-    vi: 'Đừng kéo dài âm quá mức; giữ âm /ɪ/ ngắn và dứt khoát.',
-    th: 'อย่าลากเสียงยาวเกินไป รักษาเสียงสระ /ɪ/ ให้สั้นและกระชับ',
-    ja: '音を伸ばしすぎないでください。/ɪ/ は短く歯切れよく発音します。',
-    ko: '소리를 너무 길게 끌지 마세요. /ɪ/ 발음은 짧고 분명하게 유지하세요.',
-    id: 'Jangan memanjangkan vokal berlebihan; jaga vokal /ɪ/ tetap pendek dan tegas.',
-    zh: '切勿将元音拖得过长，保持短元音 /ɪ/ 短促有力。'
-  },
-  'long_vowel_i': {
-    vi: 'Kéo khóe miệng sang hai bên như đang cười mỉm để phát âm /iː/ tròn và dài hơi.',
-    th: 'ฉีกมุมปากไปด้านข้างคล้ายรอยยิ้มเพื่อลากเสียงสระยาว /iː/',
-    ja: '口角を横に引いて微笑むように、長い母音 /iː/ をしっかり伸ばします。',
-    ko: '미소를 짓듯 입꼬리를 양옆으로 당기며 장모음 /iː/를 충분히 길게 내세요.',
-    id: 'Tarik sudut bibir ke samping seperti tersenyum untuk membunyikan vokal panjang /iː/.',
-    zh: '嘴角向两侧稍展如微笑状，发足长元音 /iː/ 的时长。'
-  }
-};
-
-function resolveArticulationTip(tipVi: string, lang: SupportedLang): string {
-  if (!tipVi) return '';
-  if (tipVi.includes('chuẩn xác') || tipVi.includes('chính xác')) {
-    return ARTICULATION_TIPS_MULTILINGUAL['correct'][lang];
-  }
-  if (tipVi.includes('dứt khoát') || tipVi.includes('ngắn') || tipVi.includes('kéo dài âm quá mức')) {
-    return ARTICULATION_TIPS_MULTILINGUAL['short_vowel_i'][lang];
-  }
-  if (tipVi.includes('kéo dài') || tipVi.includes('cười mỉm')) {
-    return ARTICULATION_TIPS_MULTILINGUAL['long_vowel_i'][lang];
-  }
-  return tipVi;
-}
-
-// 🔤 CHUẨN HÓA TIÊU ĐỀ SANG ENGLISH-FIRST
-const normalizeTitleToEnglish = (title: string): string => {
-  if (!title) return '';
-  return title
-    .replace(/phân biệt/gi, 'Minimal Pairs:')
-    .replace(/nối âm/gi, 'Linking Sound:')
-    .replace(/luyện âm/gi, 'Target Phoneme:')
-    .replace(/và/gi, '&')
-    .replace(/luyện phát âm/gi, 'Pronunciation Drill:');
-};
-
-// 💬 BẢN ĐỊA HÓA NHẬN XÉT ĐÁNH GIÁ TỔNG HỢP SANG 6 THỨ TIẾNG
-const localizeFeedback = (feedback: string, lang: SupportedLang, targetWords: string[]): string => {
-  if (!feedback) return '';
-
-  const repeatMatch = feedback.match(/phát âm từ "([^"]+)" 2 lần/i);
-  if (repeatMatch) {
-    const repeatedWord = repeatMatch[1];
-    const missingWord = targetWords.find(w => w.toLowerCase() !== repeatedWord.toLowerCase()) || 'second word';
-
-    const repeatDict: Record<SupportedLang, string> = {
-      vi: `⚠️ Bạn vừa phát âm từ "${repeatedWord}" 2 lần! Hãy chú ý khẩu hình: từ "${missingWord}" cần sự phân biệt rõ ràng. Hãy nghe lại âm mẫu và thử lại!`,
-      th: `⚠️ คุณออกเสียงคำว่า "${repeatedWord}" ซ้ำ 2 ครั้ง! โปรดสังเกตรูปปาก: คำว่า "${missingWord}" ต้องแยกเสียงให้ชัดเจน ลองฟังเสียงตัวอย่างแล้วฝึกใหม่อีกครั้ง!`,
-      ja: `⚠️ 単語「${repeatedWord}」を2回発音しています。「${missingWord}」の口の形を意識して、違いを明確に区別してください。お手本を聞いてもう一度試しましょう！`,
-      ko: `⚠️ "${repeatedWord}" 단어를 2번 발음했습니다! 입모양을 확인하세요: "${missingWord}" 단어와 명확히 구분해야 합니다. 원어민 음성을 듣고 다시 시도해보세요!`,
-      id: `⚠️ Anda melafalkan kata "${repeatedWord}" 2 kali! Perhatikan bentuk mulut: kata "${missingWord}" membutuhkan artikulasi yang berbeda. Dengarkan audio contoh dan coba lagi!`,
-      zh: `⚠️ 你连续两次发音了单词 "${repeatedWord}"！请注意口型：单词 "${missingWord}" 需要做出明显区分。请仔细聆听范例并再次尝试！`
-    };
-    return repeatDict[lang] || repeatDict['vi'];
-  }
-
-  return feedback;
+// 📚 TỪ ĐIỂN DỊCH NGHĨA CHUẨN TIẾNG VIỆT CHO KHO BÀI MẪU
+const PRESET_VIETNAMESE_MAP: Record<string, string> = {
+  'leave / live': 'Rời đi / Sống, sinh sống',
+  'sheep / ship': 'Con cừu / Tàu thuyền',
+  'seat / sit': 'Chỗ ngồi / Ngồi xuống',
+  'heat / hit': 'Hơi nóng / Đánh, va chạm',
+  'reach / rich': 'Chạm tới / Giàu có',
+  'read / red': 'Đọc sách / Màu đỏ',
+  'bad / bed': 'Tồi tệ, xấu / Chiếc giường',
+  'pan / pen': 'Cái chảo / Cây bút',
+  'man / men': 'Một người đàn ông / Những người đàn ông',
+  'fan / van': 'Cái quạt / Xe tải nhỏ'
 };
 
 // 🌊 CLIENT-SIDE F0 AUTOCORRELATION
@@ -289,11 +124,11 @@ function calculateIntonationMatch(student: number[], target: number[]): { score:
 
   let feedback = '';
   if (matchScore >= 85) {
-    feedback = '🌟 Pitch contour and sentence rhythm closely match the native model!';
+    feedback = '🌟 Đường cong ngữ điệu và nhịp điệu câu rất sát với người bản xứ!';
   } else if (matchScore >= 70) {
-    feedback = '👍 Pitch contour is fairly steady; pay attention to smoother pitch transitions.';
+    feedback = '👍 Đường cong ngữ điệu tương đối ổn; hãy chú ý lướt âm mượt mà hơn.';
   } else {
-    feedback = '⚠️ Intonation contour (green) fluctuates noticeably compared to the model (gold). Listen to the model again and glide gently between pitches!';
+    feedback = '⚠️ Ngữ điệu giọng bạn (xanh ngọc) còn biến thiên nhiều so với mẫu (vàng). Hãy nghe kỹ và lướt âm nhẹ nhàng hơn nhé!';
   }
 
   return { score: matchScore, feedback };
@@ -304,8 +139,7 @@ export default function Station1Screen({ onBack }: Props) {
   const [currentDrill, setCurrentDrill] = useState<Station1DrillItem | null>(null);
   const [isPlayingTTS, setIsPlayingTTS] = useState<boolean>(false);
 
-  // 🌐 MULTILINGUAL HINT STATE (PERSISTENT & VISIBLE)
-  const [selectedLang, setSelectedLang] = useState<SupportedLang>('vi');
+  // 🌐 GỢI Ý THUẦN TIẾNG VIỆT (KHÔNG CẦN CHỌN CỜ)
   const [showHint, setShowHint] = useState<boolean>(true);
 
   // 🎯 QUEUE & HYBRID AI STATE
@@ -493,16 +327,11 @@ export default function Station1Screen({ onBack }: Props) {
 ${promptFocus}
 Output ONLY raw JSON (no markdown):
 {
-  "title": "Short title in English",
+  "title": "Short title in Vietnamese",
   "contentEn": "The English target phrase or pair",
-  "targetFocus": "Phonetic target focus in English",
+  "targetFocus": "Phonetic target focus in Vietnamese",
   "phoneticSpelling": "IPA phonetic notation",
-  "hintVi": "Summary translation in Vietnamese",
-  "hintTh": "Summary translation in Thai (MUST BE REAL THAI, e.g. ออกเดินทาง / อาศัยอยู่)",
-  "hintJa": "Summary translation in Japanese (MUST BE REAL JAPANESE, e.g. 去る / 住む)",
-  "hintKo": "Summary translation in Korean (MUST BE REAL KOREAN, e.g. 떠나다 / 살다)",
-  "hintId": "Summary translation in Indonesian (MUST BE REAL INDONESIAN, e.g. pergi / tinggal)",
-  "hintZh": "Summary translation in Chinese (MUST BE REAL CHINESE, e.g. 离开 / 居住)"
+  "hintVi": "Summary translation in Vietnamese"
 }`;
 
       const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -526,16 +355,11 @@ Output ONLY raw JSON (no markdown):
           id: `ai_${type}_${Date.now()}_${Math.random()}`,
           title: `🤖 [AI] ${content.title}`,
           contentEn: content.contentEn,
-          targetFocus: content.targetFocus || 'Acoustic Phoneme Focus',
+          targetFocus: content.targetFocus || 'Trọng tâm ngữ âm',
           phoneticSpelling: content.phoneticSpelling || '',
           sessionKey: `ai_${Date.now()}`,
           hint: {
-            vi: content.hintVi || content.contentEn,
-            th: content.hintTh || content.contentEn,
-            ja: content.hintJa || content.contentEn,
-            ko: content.hintKo || content.contentEn,
-            id: content.hintId || content.contentEn,
-            zh: content.hintZh || content.contentEn
+            vi: content.hintVi || content.contentEn
           }
         };
         setAiQueue(prev => ({
@@ -589,20 +413,13 @@ Output ONLY raw JSON (no markdown):
     const loopNum = Math.floor(nextIdx / bank.length) + 1;
 
     const lookupKey = (rawDrill.contentEn || '').toLowerCase().trim();
-    const mappedHint = PRESET_MULTILINGUAL_MAP[lookupKey] || {
-      vi: rawDrill.contentVi || rawDrill.contentEn,
-      th: rawDrill.contentEn,
-      ja: rawDrill.contentEn,
-      ko: rawDrill.contentEn,
-      id: rawDrill.contentEn,
-      zh: rawDrill.contentEn
-    };
+    const mappedViHint = PRESET_VIETNAMESE_MAP[lookupKey] || rawDrill.contentVi || rawDrill.contentEn;
 
     const newDrill: Station1DrillItem = {
       ...rawDrill,
       title: loopNum > 1 ? `${rawDrill.title} (#${loopNum})` : rawDrill.title,
       sessionKey: `preset_${type}_${nextIdx}_${Date.now()}`,
-      hint: mappedHint
+      hint: { vi: mappedViHint }
     };
 
     setCurrentDrill(newDrill);
@@ -653,7 +470,7 @@ Output ONLY raw JSON (no markdown):
     if (!isRecording) {
       try {
         if (typeof navigator === 'undefined' || !navigator.mediaDevices) {
-          safeAlert("🔒 Microphone access is not granted in your browser!");
+          safeAlert("🔒 Chưa cấp quyền truy cập Microphone trong trình duyệt!");
           return;
         }
 
@@ -746,7 +563,7 @@ Output ONLY raw JSON (no markdown):
         recorder.start(150);
         setIsRecording(true);
       } catch (err) {
-        safeAlert("🔒 Please allow microphone access in your browser to record!");
+        safeAlert("🔒 Vui lòng cho phép truy cập micro trên trình duyệt để ghi âm!");
       }
     } else {
       const durationSeconds = (Date.now() - recordingStartTimeRef.current) / 1000;
@@ -762,14 +579,14 @@ Output ONLY raw JSON (no markdown):
         setIsProcessingAudio(false);
         setHasRecorded(false);
         setRecordedAudio(null);
-        safeAlert("⚠️ Audio clip is too short! Pronounce the target sound fully before stopping.");
+        safeAlert("⚠️ Đoạn thu quá ngắn! Hãy phát âm trọn vẹn từ mục tiêu trước khi dừng.");
       }
     }
   };
 
   const handleSubmitAnswer = async () => {
     if (!hasRecorded || !recordedAudio || isProcessingAudio) {
-      safeAlert("🔒 Please pronounce the target sound into the microphone before submitting!");
+      safeAlert("🔒 Vui lòng phát âm vào micro trước khi gửi đánh giá!");
       return;
     }
 
@@ -794,7 +611,7 @@ Output ONLY raw JSON (no markdown):
 
       let finalFeedback = evalData.detailedFeedback;
       if (intonation.score < 70 && rawPronunciationScore >= 80) {
-        finalFeedback = `👍 Accurate phoneme clarity (${rawPronunciationScore} pts), but intonation pitch (green) needs smoother modulation (${intonation.score} pts). ${intonation.feedback}`;
+        finalFeedback = `👍 Phát âm tròn vành rõ chữ (${rawPronunciationScore} điểm), nhưng cao độ ngữ điệu (xanh ngọc) cần lướt mềm mại hơn (${intonation.score} điểm). ${intonation.feedback}`;
       } else if (intonation.feedback) {
         finalFeedback = `${evalData.detailedFeedback} ${intonation.feedback}`;
       }
@@ -818,7 +635,7 @@ Output ONLY raw JSON (no markdown):
       const isPass = (combinedScore >= 70) || calibratedResult.isWin;
       if (isPass) updateUserProgress(1, 30, true);
     } catch (err) {
-      safeAlert("⚠️ AI Evaluation latency. Please tap submit again!");
+      safeAlert("⚠️ Mạng trễ khi phân tích âm học. Vui lòng bấm chấm điểm lại!");
     } finally {
       setIsAnalyzing(false);
     }
@@ -831,9 +648,9 @@ Output ONLY raw JSON (no markdown):
     <View style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack} style={styles.backBtn}>
-          <Text style={styles.backText}>🔙 MAP</Text>
+          <Text style={styles.backText}>🔙 BẢN ĐỒ</Text>
         </TouchableOpacity>
-        <Text style={styles.title}>🎯 STATION 1: PRONUNCIATION LAB</Text>
+        <Text style={styles.title}>🎯 TRẠM 1: PHÒNG LAB LUYỆN NGỮ ÂM</Text>
       </View>
 
       <ScrollView contentContainerStyle={{ alignItems: 'center', width: '100%', paddingBottom: 35 }}>
@@ -844,7 +661,7 @@ Output ONLY raw JSON (no markdown):
             onPress={() => setActiveType('minimal_pairs')}
           >
             <Text style={[styles.tabText, activeType === 'minimal_pairs' && styles.tabTextActive]}>
-              👯 Minimal Pairs
+              👯 Cặp Âm Đối Lập
             </Text>
           </TouchableOpacity>
 
@@ -853,7 +670,7 @@ Output ONLY raw JSON (no markdown):
             onPress={() => setActiveType('linking_sounds')}
           >
             <Text style={[styles.tabText, activeType === 'linking_sounds' && styles.tabTextActive]}>
-              🔗 Linking Sounds
+              🔗 Luyện Nối Âm
             </Text>
           </TouchableOpacity>
 
@@ -862,25 +679,25 @@ Output ONLY raw JSON (no markdown):
             onPress={() => setActiveType('tongue_twisters')}
           >
             <Text style={[styles.tabText, activeType === 'tongue_twisters' && styles.tabTextActive]}>
-              🐍 Tongue Twisters
+              🐍 Uốn Lưỡi Phản Xạ
             </Text>
           </TouchableOpacity>
         </View>
 
         {currentDrill && (
           <View style={styles.box} key={currentDrill.sessionKey}>
-            {/* TIÊU ĐỀ ĐÃ ĐƯỢC CHUẨN HÓA SANG ENGLISH-FIRST 100% */}
-            <Text style={styles.boxTitle}>📌 {normalizeTitleToEnglish(currentDrill.title).toUpperCase()}</Text>
+            {/* TIÊU ĐỀ THUẦN TIẾNG VIỆT */}
+            <Text style={styles.boxTitle}>📌 {currentDrill.title.toUpperCase()}</Text>
             
             <Text style={styles.drillEn}>"{currentDrill.contentEn}"</Text>
             
             {currentDrill.phoneticSpelling && (
-              <Text style={styles.phonetics}>🔊 IPA: {currentDrill.phoneticSpelling}</Text>
+              <Text style={styles.phonetics}>🔊 Phiên âm IPA: {currentDrill.phoneticSpelling}</Text>
             )}
             
-            <Text style={styles.targetFocus}>🎯 Focus: {currentDrill.targetFocus}</Text>
+            <Text style={styles.targetFocus}>🎯 Trọng tâm: {currentDrill.targetFocus}</Text>
 
-            {/* 🌐 MULTILINGUAL HINT BAR - ĐÃ SẠCH BÓNG NHIỄM TIẾNG VIỆT */}
+            {/* 🇻🇳 HỘP GỢI Ý THUẦN TIẾNG VIỆT (ĐÃ LƯỢC BỎ THANH CHỌN CỜ) */}
             <View style={styles.hintContainer}>
               <View style={styles.hintHeaderRow}>
                 <TouchableOpacity 
@@ -889,40 +706,18 @@ Output ONLY raw JSON (no markdown):
                   activeOpacity={0.8}
                 >
                   <Text style={[styles.hintToggleText, showHint ? { color: '#000000' } : { color: '#FFD700' }]}>
-                    {showHint ? '✕ HIDE HINT' : `💡 SHOW HINT (${LANG_CONFIG[selectedLang].code})`}
+                    {showHint ? '✕ ẨN GỢI Ý NGHĨA' : '💡 XEM GỢI Ý NGHĨA TIẾNG VIỆT'}
                   </Text>
                 </TouchableOpacity>
-
-                <View style={styles.flagPickerRow}>
-                  {(['vi', 'th', 'ja', 'ko', 'id', 'zh'] as SupportedLang[]).map((lang) => {
-                    const isCurrentActive = selectedLang === lang;
-                    return (
-                      <TouchableOpacity
-                        key={lang}
-                        style={[styles.flagBtn, isCurrentActive && styles.flagBtnActive]}
-                        onPress={() => {
-                          setSelectedLang(lang);
-                          setShowHint(true);
-                        }}
-                        activeOpacity={0.7}
-                      >
-                        <Text style={styles.flagIcon}>{LANG_CONFIG[lang].flag}</Text>
-                        <Text style={[styles.flagCodeText, isCurrentActive ? { color: '#00FFFF' } : { color: '#AAAACC' }]}>
-                          {LANG_CONFIG[lang].code}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
               </View>
 
               {showHint && (
                 <View style={styles.hintContentBox}>
                   <Text style={styles.hintLanguageTag}>
-                    👉 {LANG_CONFIG[selectedLang].flag} {LANG_CONFIG[selectedLang].label}:
+                    👉 🇻🇳 Dịch nghĩa:
                   </Text>
                   <Text style={styles.hintBodyText}>
-                    "{currentDrill.hint?.[selectedLang] || currentDrill.contentVi || currentDrill.contentEn}"
+                    "{currentDrill.hint?.vi || currentDrill.contentVi || currentDrill.contentEn}"
                   </Text>
                 </View>
               )}
@@ -935,7 +730,7 @@ Output ONLY raw JSON (no markdown):
               activeOpacity={0.7}
             >
               <Text style={styles.ttsBtnText}>
-                {isPlayingTTS ? '⏹ PLAYING NEURAL MODEL...' : '🔊 LISTEN TO TARGET MODEL'}
+                {isPlayingTTS ? '⏹ ĐANG PHÁT ÂM MẪU NEURAL...' : '🔊 NGHE PHÁT ÂM MẪU BẢN XỨ'}
               </Text>
             </TouchableOpacity>
 
@@ -945,7 +740,7 @@ Output ONLY raw JSON (no markdown):
               onPress={() => handleLoadNewDrill(activeType)}
               activeOpacity={0.7}
             >
-              <Text style={styles.refreshBtnText}>🔄 NEXT DRILL (0MS + AI BUFFER)</Text>
+              <Text style={styles.refreshBtnText}>🔄 ĐỔI BÀI TẬP TIẾP THEO (0MS)</Text>
             </TouchableOpacity>
 
             {/* REALTIME AUDIO WAVE VISUALIZER */}
@@ -958,12 +753,12 @@ Output ONLY raw JSON (no markdown):
             >
               <Text style={styles.recordBtnText}>
                 {isRecording 
-                  ? '🔴 RECORDING... (TAP TO STOP)' 
+                  ? '🔴 ĐANG GHI ÂM... (CHẠM ĐỂ DỪNG)' 
                   : isProcessingAudio
-                  ? '⏳ PRESERVING AUDIO TRACK...'
+                  ? '⏳ ĐANG LƯU VẾT ÂM THANH...'
                   : hasRecorded 
-                  ? '🔄 RETAKE RECORDING (ENHANCE SCORE)' 
-                  : '🎙 TAP TO START RECORDING'}
+                  ? '🔄 THU ÂM LẠI ĐỂ TĂNG ĐIỂM' 
+                  : '🎙 CHẠM ĐỂ BẮT ĐẦU THU ÂM'}
               </Text>
             </TouchableOpacity>
 
@@ -980,7 +775,7 @@ Output ONLY raw JSON (no markdown):
                 disabled={!hasRecorded || isRecording || isProcessingAudio}
               >
                 <Text style={styles.submitBtnText}>
-                  {attemptCount > 0 ? '⚡ SUBMIT RETAKE TO UPGRADE SCORE' : '⚡ SUBMIT FOR AI PHONETIC SCORING'}
+                  {attemptCount > 0 ? '⚡ NỘP BÀI THU MỚI ĐỂ NÂNG ĐIỂM' : '⚡ NỘP BÀI ĐỂ AI CHẤM ĐIỂM NGỮ ÂM'}
                 </Text>
               </TouchableOpacity>
             )}
@@ -991,36 +786,36 @@ Output ONLY raw JSON (no markdown):
         {result && (
           <View style={[styles.box, { borderColor: isPassed ? '#39FF14' : '#FF0055' }]}>
             <Text style={[styles.resultTitle, { color: isPassed ? '#39FF14' : '#FF0055' }]}>
-              {isPassed ? '🏆 EXCELLENT PRONUNCIATION!' : '💀 MORE DRILL REQUIRED'}
+              {isPassed ? '🏆 PHÁT ÂM RẤT XUẤT SẮC!' : '💀 CẦN LUYỆN TẬP THÊM'}
             </Text>
             
-            <Text style={styles.scoreText}>⚡ Session Score: {result.score} / 100 PTS</Text>
+            <Text style={styles.scoreText}>⚡ Điểm phiên: {result.score} / 100 ĐIỂM</Text>
 
             {/* SCORE TRACKING BADGES */}
             <View style={styles.scoreComparisonRow}>
               {bestScore > 0 && (
                 <View style={styles.bestScoreBadge}>
-                  <Text style={styles.bestScoreText}>👑 Personal Best: {bestScore} pts</Text>
+                  <Text style={styles.bestScoreText}>👑 Kỷ lục cá nhân: {bestScore} điểm</Text>
                 </View>
               )}
               {scoreDiff !== null && (
                 <View style={[styles.deltaBadge, { backgroundColor: scoreDiff >= 0 ? 'rgba(57, 255, 20, 0.2)' : 'rgba(255, 0, 85, 0.2)' }]}>
                   <Text style={[styles.deltaText, { color: scoreDiff >= 0 ? '#39FF14' : '#FF0055' }]}>
-                    {scoreDiff >= 0 ? `▲ +${scoreDiff} pts` : `▼ ${scoreDiff} pts`}
+                    {scoreDiff >= 0 ? `▲ +${scoreDiff} điểm` : `▼ ${scoreDiff} điểm`}
                   </Text>
                 </View>
               )}
             </View>
 
-            {/* 📈 DUAL-TRACE INTONATION CONTOUR (ENGLISH-FIRST + EXPLICIT LEGEND) */}
+            {/* 📈 DUAL-TRACE INTONATION CONTOUR (VIETNAMESE LABELS) */}
             <View style={styles.intonationWrapper}>
               <View style={styles.intonationHeaderRow}>
                 <Text style={styles.intonationTitle}>
-                  📈 PITCH INTONATION CONTOUR:
+                  📈 BIỂU ĐỒ ĐƯỜNG CONG NGỮ ĐIỆU (PITCH):
                 </Text>
                 <View style={styles.intonationLegendRow}>
-                  <Text style={{ color: '#FFD700', fontSize: 9.5, fontWeight: 'bold' }}>— Target Model</Text>
-                  <Text style={{ color: '#00FFFF', fontSize: 9.5, fontWeight: 'bold', marginLeft: 8 }}>— Your Voice</Text>
+                  <Text style={{ color: '#FFD700', fontSize: 9.5, fontWeight: 'bold' }}>— Giọng Mẫu</Text>
+                  <Text style={{ color: '#00FFFF', fontSize: 9.5, fontWeight: 'bold', marginLeft: 8 }}>— Giọng Bạn</Text>
                 </View>
               </View>
               <IntonationCanvas targetContour={targetContour} studentContour={studentContour} />
@@ -1042,7 +837,7 @@ Output ONLY raw JSON (no markdown):
                 <>
                   {currentDrill?.contentEn && (
                     <View style={styles.ipaDiffContainer}>
-                      <Text style={styles.ipaSectionTitle}>🔬 IPA PHONEMIC INSPECTOR:</Text>
+                      <Text style={styles.ipaSectionTitle}>🔬 SOI CHI TIẾT NGỮ ÂM IPA:</Text>
                       
                       {inspectionItems.map((word: string, idx: number) => {
                         const comparison = getPhoneticComparison(word, normalizedDisplayTranscript);
@@ -1057,13 +852,13 @@ Output ONLY raw JSON (no markdown):
                             <View style={styles.ipaHeaderRow}>
                               <Text style={styles.ipaWord}>{word.toUpperCase()}</Text>
                               <Text style={[styles.ipaStatusBadge, { color: comparison.isExactMatch ? '#39FF14' : '#FF0055' }]}>
-                                {comparison.isExactMatch ? 'MATCHED ✓' : 'PHONEME DEVIATION ✗'}
+                                {comparison.isExactMatch ? 'CHUẨN XÁC ✓' : 'LỆCH ÂM ✗'}
                               </Text>
                             </View>
 
                             <View style={styles.ipaCompareRow}>
                               <View style={styles.ipaBox}>
-                                <Text style={styles.ipaBoxLabel}>TARGET PHONEME</Text>
+                                <Text style={styles.ipaBoxLabel}>IPA MỤC TIÊU</Text>
                                 <Text style={styles.targetIpaText}>{comparison.targetIpa || `/${word.toLowerCase()}/`}</Text>
                               </View>
 
@@ -1072,18 +867,18 @@ Output ONLY raw JSON (no markdown):
                               </View>
 
                               <View style={styles.ipaBox}>
-                                <Text style={[styles.ipaBoxLabel, { textAlign: 'right' }]}>AI TRANSCRIBED</Text>
+                                <Text style={[styles.ipaBoxLabel, { textAlign: 'right' }]}>AI GHI NHẬN</Text>
                                 <Text style={[styles.heardIpaText, { color: comparison.isExactMatch ? '#39FF14' : '#FF0055' }]}>
-                                  {comparison.heardIpa || '(Indistinct)'}
+                                  {comparison.heardIpa || '(Không rõ âm)'}
                                 </Text>
                               </View>
                             </View>
 
-                            {/* 💡 MẸO KHẨU HÌNH ĐÃ ĐƯỢC DỊCH THÍCH ỨNG THEO LÁ CỜ ĐÃ CHỌN */}
+                            {/* 💡 MẸO KHẨU HÌNH THUẦN TIẾNG VIỆT */}
                             {comparison.tip && (
                               <View style={styles.ipaTipBox}>
                                 <Text style={styles.ipaTipText}>
-                                  💡 Articulation Tip ({LANG_CONFIG[selectedLang].code}): {resolveArticulationTip(comparison.tip, selectedLang)}
+                                  💡 Mẹo khẩu hình: {comparison.tip}
                                 </Text>
                               </View>
                             )}
@@ -1095,7 +890,7 @@ Output ONLY raw JSON (no markdown):
 
                   {/* WORD-LEVEL HIGHLIGHT */}
                   <View style={styles.wordHighlightBox}>
-                    <Text style={styles.wordHighlightTitle}>🎯 TARGET WORD AUDIT:</Text>
+                    <Text style={styles.wordHighlightTitle}>🎯 ĐỐI CHIẾU TỪNG TỪ:</Text>
                     <View style={styles.wordRow}>
                       {generateWordDiff(currentDrill?.contentEn || '', normalizedDisplayTranscript).map((item, idx) => (
                         <TouchableOpacity 
@@ -1121,7 +916,7 @@ Output ONLY raw JSON (no markdown):
             {/* AUDIO PLAYBACK REVIEW */}
             {result.audioUrl ? (
               <View style={styles.audioPlayerBox}>
-                <Text style={styles.audioLabel}>🎧 Your Recorded Pronunciation:</Text>
+                <Text style={styles.audioLabel}>🎧 Bản thu âm phát âm của bạn:</Text>
                 {React.createElement(
                   'div',
                   {
@@ -1144,18 +939,12 @@ Output ONLY raw JSON (no markdown):
 
             {/* TRANSCRIBED SCRIPT */}
             <View style={styles.scriptBox}>
-              <Text style={styles.scriptLabel}>📝 AI Acoustic Transcription:</Text>
-              <Text style={styles.scriptContent}>"{result.transcript || '(Indistinct acoustics)'}"</Text>
+              <Text style={styles.scriptLabel}>📝 AI Tapescript ghi nhận:</Text>
+              <Text style={styles.scriptContent}>"{result.transcript || '(Âm học không rõ ràng)'}"</Text>
             </View>
 
-            {/* 💡 LỜI NHẬN XÉT ĐÃ ĐƯỢC BẢN ĐỊA HÓA HOÀN TOÀN THEO CỜ CHỌN */}
-            <Text style={styles.feedbackText}>
-              {localizeFeedback(
-                result.detailedFeedback,
-                selectedLang,
-                currentDrill?.contentEn?.split('/')?.map(s => s.trim()) || []
-              )}
-            </Text>
+            {/* 💡 LỜI NHẬN XÉT ĐÁNH GIÁ THUẦN TIẾNG VIỆT */}
+            <Text style={styles.feedbackText}>{result.detailedFeedback}</Text>
           </View>
         )}
       </ScrollView>
@@ -1188,55 +977,22 @@ const styles = StyleSheet.create({
   },
   hintHeaderRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
     alignItems: 'center',
-    gap: 6,
   },
   hintToggleBtn: {
     backgroundColor: '#16082F',
     borderWidth: 1.5,
     borderColor: '#FFD700',
     paddingVertical: 6,
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
     borderRadius: 7,
   },
   hintToggleBtnActive: {
     backgroundColor: '#FFD700',
   },
   hintToggleText: {
-    fontSize: 9,
-    fontWeight: '900',
-  },
-  flagPickerRow: {
-    flexDirection: 'row',
-    gap: 4,
-    backgroundColor: '#070314',
-    padding: 3,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#332255',
-    alignItems: 'center',
-  },
-  flagBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
-    paddingHorizontal: 5,
-    paddingVertical: 4,
-    borderRadius: 6,
-    backgroundColor: '#16082F',
-    borderWidth: 1,
-    borderColor: '#332255',
-  },
-  flagBtnActive: {
-    backgroundColor: '#2A144E',
-    borderColor: '#00FFFF',
-  },
-  flagIcon: {
-    fontSize: 12.5,
-  },
-  flagCodeText: {
-    fontSize: 9,
+    fontSize: 9.5,
     fontWeight: '900',
   },
   hintContentBox: {
