@@ -47,14 +47,16 @@ export default async function handler(req, res) {
     const tts = new MsEdgeTTS();
     await tts.setMetadata(edgeVoice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
     
-    // Thu thập toàn bộ Audio Chunks thành Buffer hoàn chỉnh
-    const readable = tts.toStream(cleanText);
+    // Bóc tách chính xác audioStream từ tts.toStream
+    const streamResult = await tts.toStream(cleanText);
+    const audioStream = streamResult.audioStream || streamResult;
+    
     const chunks = [];
-
     await new Promise((resolve, reject) => {
-      readable.on('data', (chunk) => chunks.push(chunk));
-      readable.on('end', resolve);
-      readable.on('error', reject);
+      audioStream.on('data', (chunk) => chunks.push(chunk));
+      audioStream.on('close', resolve);
+      audioStream.on('end', resolve);
+      audioStream.on('error', reject);
     });
 
     const audioBuffer = Buffer.concat(chunks);
@@ -67,7 +69,7 @@ export default async function handler(req, res) {
     res.setHeader('Content-Type', 'audio/mpeg');
     res.setHeader('Cache-Control', 'public, max-age=86400, s-maxage=86400');
 
-    // 🍎 XỬ LÝ RANGE REQUEST BẮT BUỘC CHO SAFARI / IOS WEBKIT
+    // Xử lý Range Request cho iOS Safari
     const range = req.headers.range;
     if (range) {
       const parts = range.replace(/bytes=/, "").split("-");
@@ -87,7 +89,6 @@ export default async function handler(req, res) {
       return res.status(206).send(slicedBuffer);
     }
 
-    // Request thông thường
     res.setHeader('Content-Length', totalLength);
     return res.status(200).send(audioBuffer);
   } catch (error) {
