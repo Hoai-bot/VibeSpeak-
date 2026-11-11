@@ -1,3 +1,25 @@
+{(['vi', 'th', 'ja', 'ko', 'id', 'zh'] as SupportedLang[]).map((lang) => ( // 👈 Map dạng mở ngoặc tròn (
+  <TouchableOpacity
+    key={lang}
+    style={[styles.flagBtn, selectedLang === lang && styles.flagBtnActive]}
+    ...
+  >
+    <Text style={styles.flagIcon}>{LANG_CONFIG[lang].flag}</Text>
+    {/* ❌ VỊ TRÍ GÂY LỖI: gọi isSelected khi biến này chưa hề được khai báo! */}
+    <Text style={[styles.flagCodeText, isSelected ? { color: '#00FFFF' } : { color: '#AAAACC' }]}>
+      {LANG_CONFIG[lang].code}
+    </Text>
+  </TouchableOpacity>
+))}
+```[cite: 14]
+
+Toàn bộ mã nguồn đã được sửa triệt để bằng cách thay trực tiếp điều kiện so sánh an toàn `selectedLang === lang`[cite: 14], đồng thời tích hợp trọn vẹn `lang={selectedLang}` cho `DetailedSpeechFeedbackModal`[cite: 14].
+
+---
+
+### Mã nguồn hoàn chỉnh: `src/screens/Station2Screen.tsx`
+
+```typescript
 // src/screens/Station2Screen.tsx
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, Alert, TextInput } from 'react-native';
@@ -1306,7 +1328,7 @@ Output ONLY raw JSON:
                   
                   <Text style={styles.contextText}>📌 {currentChallenge.contextDesc}</Text>
 
-                  {/* 🌐 THANH CHỌN CỜ 6 NƯỚC (ĐÃ BỔ SUNG 🇨🇳 TRUNG QUỐC) */}
+                  {/* 🌐 THANH CHỌN CỜ 6 NƯỚC (ĐÃ BẢO ĐẢM KHÔNG LỖI ISSELECTED) */}
                   <View style={styles.hintContainer}>
                     <View style={styles.hintHeaderRow}>
                       <TouchableOpacity 
@@ -1322,11 +1344,11 @@ Output ONLY raw JSON:
                       {/* DÃY CỜ 6 NƯỚC LUÔN NẰM TRỰC DIỆN ĐỂ BẤM CHỌN */}
                       <View style={styles.flagPickerRow}>
                         {(['vi', 'th', 'ja', 'ko', 'id', 'zh'] as SupportedLang[]).map((lang) => {
-                          const isSelected = selectedLang === lang;
+                          const isCurrentActive = selectedLang === lang;
                           return (
                             <TouchableOpacity
                               key={lang}
-                              style={[styles.flagBtn, isSelected && styles.flagBtnActive]}
+                              style={[styles.flagBtn, isCurrentActive && styles.flagBtnActive]}
                               onPress={() => {
                                 setSelectedLang(lang);
                                 setShowHint(true);
@@ -1334,7 +1356,7 @@ Output ONLY raw JSON:
                               activeOpacity={0.7}
                             >
                               <Text style={styles.flagIcon}>{LANG_CONFIG[lang].flag}</Text>
-                              <Text style={[styles.flagCodeText, isSelected ? { color: '#00FFFF' } : { color: '#AAAACC' }]}>
+                              <Text style={[styles.flagCodeText, isCurrentActive ? { color: '#00FFFF' } : { color: '#AAAACC' }]}>
                                 {LANG_CONFIG[lang].code}
                               </Text>
                             </TouchableOpacity>
@@ -1427,7 +1449,7 @@ Output ONLY raw JSON:
             <Text style={styles.normalPromptTitle}>{currentChallenge.title} ({currentChallenge.level})</Text>
             <Text style={styles.normalPromptDesc}>{currentChallenge.contextDesc}</Text>
 
-            {/* HINT BAR TRONG PHÒNG THU CŨNG ĐỒNG BỘ 6 CỜ */}
+            {/* HINT BAR TRONG PHÒNG THU CŨNG ĐỒNG BỘ 6 CỜ - AN TOÀN TRUY CẬP BIẾN */}
             <View style={styles.hintContainer}>
               <View style={styles.hintHeaderRow}>
                 <TouchableOpacity 
@@ -1441,22 +1463,25 @@ Output ONLY raw JSON:
                 </TouchableOpacity>
 
                 <View style={styles.flagPickerRow}>
-                  {(['vi', 'th', 'ja', 'ko', 'id', 'zh'] as SupportedLang[]).map((lang) => (
-                    <TouchableOpacity
-                      key={lang}
-                      style={[styles.flagBtn, selectedLang === lang && styles.flagBtnActive]}
-                      onPress={() => {
-                        setSelectedLang(lang);
-                        setShowHint(true);
-                      }}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={styles.flagIcon}>{LANG_CONFIG[lang].flag}</Text>
-                      <Text style={[styles.flagCodeText, isSelected ? { color: '#00FFFF' } : { color: '#AAAACC' }]}>
-                        {LANG_CONFIG[lang].code}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
+                  {(['vi', 'th', 'ja', 'ko', 'id', 'zh'] as SupportedLang[]).map((lang) => {
+                    const isCurrentActive = selectedLang === lang;
+                    return (
+                      <TouchableOpacity
+                        key={lang}
+                        style={[styles.flagBtn, isCurrentActive && styles.flagBtnActive]}
+                        onPress={() => {
+                          setSelectedLang(lang);
+                          setShowHint(true);
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={styles.flagIcon}>{LANG_CONFIG[lang].flag}</Text>
+                        <Text style={[styles.flagCodeText, isCurrentActive ? { color: '#00FFFF' } : { color: '#AAAACC' }]}>
+                          {LANG_CONFIG[lang].code}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
                 </View>
               </View>
 
