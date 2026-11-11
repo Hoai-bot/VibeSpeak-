@@ -145,7 +145,7 @@ const SCENARIO_LIBRARY: Record<string, Omit<ChallengeItem, 'id' | 'tier' | 'leve
         th: "แจ้งอาหารเย็นชืด: ขอความกรุณาพนักงานช่วยนำบะหมี่ไปอุ่นให้ร้อนอีกครั้ง",
         ja: "料理の温め直し：麺が冷たいので、キッチンで温め直してもらうよう店員に丁寧に頼みます。",
         ko: "음식 데우기 요청: 면이 너무 식었으니 주방에 다시 데워달라고 정중히 요청하세요.",
-        id: "Komplain makanan dingin: minta pelayan dengan sopan agar dapur memanaskan kembali mi Anda.",
+        id: "Komplain makanan dingin: minta pelayan với sopan agar dapur memanaskan kembali mi Anda.",
         zh: "反馈菜品过凉：炒面端上来完全是凉的，请服务员帮忙拿回厨房重新加热。"
       }
     }
@@ -211,7 +211,7 @@ const SCENARIO_LIBRARY: Record<string, Omit<ChallengeItem, 'id' | 'tier' | 'leve
         th: "แถลงการณ์รับมือวิกฤต: ทีมงานได้แยกขอบเขตความเสียหาย ว่าจ้างผู้ตรวจสอบภายนอก และจะอัปเดตอย่างโปร่งใสทุกชั่วโมง",
         ja: "緊急記者会見：インシデント対応チームが感染範囲を隔離し、第三者監査機関を介入させ、毎時最新情報を公開します。",
         ko: "데이터 유출 위기 대응: 사고 대응팀이 침해 구역을 격리하고 외부 전문 감사관을 투입해 매시간 투명하게 공지하겠습니다.",
-        id: "Pernyataan krisis: tim insiden telah mengisolasi area, melibatkan auditor forensik, dan memberi update transparan.",
+        id: "Pernyataan krisis: tim insiden telah mengisolasi area, melibatkan auditor forensik, và memberi update transparan.",
         zh: "危机公关发声：应急响应团队已隔离泄露范围，引入第三方取证机构，并将按小时公开进展。"
       }
     }
@@ -1441,25 +1441,22 @@ Output ONLY raw JSON:
                 </TouchableOpacity>
 
                 <View style={styles.flagPickerRow}>
-                  {(['vi', 'th', 'ja', 'ko', 'id', 'zh'] as SupportedLang[]).map((lang) => {
-                    const isSelected = selectedLang === lang;
-                    return (
-                      <TouchableOpacity
-                        key={lang}
-                        style={[styles.flagBtn, isSelected && styles.flagBtnActive]}
-                        onPress={() => {
-                          setSelectedLang(lang);
-                          setShowHint(true);
-                        }}
-                        activeOpacity={0.7}
-                      >
-                        <Text style={styles.flagIcon}>{LANG_CONFIG[lang].flag}</Text>
-                        <Text style={[styles.flagCodeText, isSelected ? { color: '#00FFFF' } : { color: '#AAAACC' }]}>
-                          {LANG_CONFIG[lang].code}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
+                  {(['vi', 'th', 'ja', 'ko', 'id', 'zh'] as SupportedLang[]).map((lang) => (
+                    <TouchableOpacity
+                      key={lang}
+                      style={[styles.flagBtn, selectedLang === lang && styles.flagBtnActive]}
+                      onPress={() => {
+                        setSelectedLang(lang);
+                        setShowHint(true);
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.flagIcon}>{LANG_CONFIG[lang].flag}</Text>
+                      <Text style={[styles.flagCodeText, isSelected ? { color: '#00FFFF' } : { color: '#AAAACC' }]}>
+                        {LANG_CONFIG[lang].code}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
                 </View>
               </View>
 
@@ -1594,10 +1591,12 @@ Output ONLY raw JSON:
         )}
       </ScrollView>
 
+      {/* 📊 BẢNG PHÂN TÍCH ĐIỂM CHI TIẾT ĐÃ TÍCH HỢP ĐA NGÔN NGỮ LANG={SELECTEDLANG} */}
       {typeof DetailedSpeechFeedbackModal === 'function' && (
         <DetailedSpeechFeedbackModal
           visible={detailedModalVisible}
           data={feedbackResult}
+          lang={selectedLang}
           onClose={() => setDetailedModalVisible(false)}
         />
       )}
