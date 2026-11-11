@@ -10,16 +10,6 @@ interface Props {
 }
 
 export type CEFRLevel = 'A1' | 'A2' | 'B1' | 'B2' | 'C1' | 'C2';
-export type SupportedLang = 'vi' | 'th' | 'ja' | 'ko' | 'id' | 'zh';
-
-export interface MultilingualHint {
-  vi: string;
-  th: string;
-  ja: string;
-  ko: string;
-  id: string;
-  zh: string;
-}
 
 export interface Station4TopicItem {
   id: string;
@@ -30,17 +20,8 @@ export interface Station4TopicItem {
   targetDuration: number;
   suggestedKeywords?: string[];
   expressType?: string;
-  hint?: MultilingualHint;
+  hint?: { vi: string };
 }
-
-const LANG_CONFIG: Record<SupportedLang, { flag: string; label: string; code: string }> = {
-  vi: { flag: '🇻🇳', label: 'Tiếng Việt', code: 'VN' },
-  th: { flag: '🇹🇭', label: 'ภาษาไทย', code: 'TH' },
-  ja: { flag: '🇯🇵', label: '日本語', code: 'JP' },
-  ko: { flag: '🇰🇷', label: '한국어', code: 'KR' },
-  id: { flag: '🇮🇩', label: 'Bahasa Indonesia', code: 'ID' },
-  zh: { flag: '🇨🇳', label: '中文', code: 'CN' }
-};
 
 // Chuẩn WPM và thời lượng theo khung CEFR
 const CEFR_CONFIG: Record<CEFRLevel, { minWpm: number; targetDuration: number }> = {
@@ -65,12 +46,7 @@ const mapExpressToTopic = (item: ExpressExerciseItem, loopIndex?: number): Stati
     suggestedKeywords: item.suggestedKeywords || [],
     expressType: item.expressType,
     hint: {
-      vi: item.promptVi || item.promptEn,
-      th: item.promptVi || item.promptEn,
-      ja: item.promptVi || item.promptEn,
-      ko: item.promptVi || item.promptEn,
-      id: item.promptVi || item.promptEn,
-      zh: item.promptVi || item.promptEn
+      vi: item.promptVi || item.promptEn
     }
   };
 };
@@ -92,8 +68,7 @@ export default function Station4Screen({ onBack }: Props) {
   const [cefrLevel, setCefrLevel] = useState<CEFRLevel>('B1');
   const [topicSource, setTopicSource] = useState<'ai' | 'custom'>('ai');
 
-  // 🌐 MULTILINGUAL HINT STATE (HIGH CONTRAST & PERSISTENT)
-  const [selectedLang, setSelectedLang] = useState<SupportedLang>('vi');
+  // 🌐 GỢI Ý THUẦN TIẾNG VIỆT
   const [showHint, setShowHint] = useState<boolean>(true);
 
   // Đề tự dán từ Giảng viên
@@ -112,7 +87,7 @@ export default function Station4Screen({ onBack }: Props) {
     const cfg = CEFR_CONFIG[lvl];
     return {
       id: `fallback_${lvl}_0`,
-      title: `Express Monologue [${lvl}]`,
+      title: `Độc thoại biểu đạt [${lvl}]`,
       challengeQuestion: "Present your personal viewpoint on modern technology and daily productivity.",
       guideVi: "Trình bày quan điểm cá nhân về công nghệ và năng suất hàng ngày.",
       minWpm: cfg.minWpm,
@@ -120,12 +95,7 @@ export default function Station4Screen({ onBack }: Props) {
       suggestedKeywords: ["technology", "productivity", "efficiency"],
       expressType: 'quick_response',
       hint: {
-        vi: "Trình bày quan điểm cá nhân về công nghệ và năng suất hàng ngày.",
-        th: "นำเสนอมุมมองส่วนตัวเกี่ยวกับเทคโนโลยีและประสิทธิภาพการทำงานประจำวัน",
-        ja: "現代のテクノロジーと日々の生産性についての個人的な見解を述べてください。",
-        ko: "현대 기술과 일상 생산성에 대한 개인적인 견해를 발표하세요.",
-        id: "Sampaikan pandangan pribadi Anda tentang teknologi modern dan produktivitas harian.",
-        zh: "阐述你对现代科技与日常工作效率的个人观点。"
+        vi: "Trình bày quan điểm cá nhân về công nghệ và năng suất hàng ngày."
       }
     };
   };
@@ -212,7 +182,6 @@ export default function Station4Screen({ onBack }: Props) {
     const utterance = new SpeechSynthesisUtterance(cleanText);
     const voices = synth.getVoices();
     
-    // Ưu tiên các voice chuẩn tiếng Anh chất lượng cao trên iOS
     const iosVoice = voices.find(v => 
       v.lang.startsWith('en') && 
       (v.name.includes('Samantha') || v.name.includes('Siri') || v.name.includes('Natural') || v.name.includes('Aria') || v.name.includes('Google US English'))
@@ -261,7 +230,7 @@ export default function Station4Screen({ onBack }: Props) {
       const cfg = CEFR_CONFIG[cefrLevel] || CEFR_CONFIG['B1'];
       return {
         id: 'custom_express',
-        title: customTitle.trim() || 'Instructor Assigned Topic',
+        title: customTitle.trim() || 'Chủ đề giảng viên giao',
         challengeQuestion: customQuestion.trim() || 'Deliver spontaneous monologue based on the classroom topic.',
         guideVi: customContextVi.trim(),
         minWpm: cfg.minWpm,
@@ -269,12 +238,7 @@ export default function Station4Screen({ onBack }: Props) {
         suggestedKeywords: [],
         expressType: 'custom',
         hint: {
-          vi: customContextVi.trim() || customTitle.trim(),
-          th: customContextVi.trim() || customTitle.trim(),
-          ja: customContextVi.trim() || customTitle.trim(),
-          ko: customContextVi.trim() || customTitle.trim(),
-          id: customContextVi.trim() || customTitle.trim(),
-          zh: customContextVi.trim() || customTitle.trim()
+          vi: customContextVi.trim() || customTitle.trim()
         }
       };
     }
@@ -333,14 +297,9 @@ export default function Station4Screen({ onBack }: Props) {
       const promptInstruction = `Create 1 UNIQUE speaking express challenge question for Station 4 (Fluency & Monologue / Quick Response) at CEFR level ${level}.
 Output ONLY raw JSON (no markdown):
 {
-  "title": "Short title in English",
+  "title": "Tiêu đề ngắn gọn bằng tiếng Việt",
   "challengeQuestion": "The English prompt or question triggering spontaneous monologue",
-  "hintVi": "Summary hint in Vietnamese",
-  "hintTh": "Summary hint in Thai",
-  "hintJa": "Summary hint in Japanese",
-  "hintKo": "Summary hint in Korean",
-  "hintId": "Summary hint in Indonesian",
-  "hintZh": "Summary hint in Chinese",
+  "hintVi": "Tóm tắt gợi ý dịch nghĩa hoặc hướng dẫn bằng tiếng Việt",
   "suggestedKeywords": ["keyword1", "keyword2", "keyword3"],
   "expressType": "quick_response"
 }`;
@@ -372,12 +331,7 @@ Output ONLY raw JSON (no markdown):
           suggestedKeywords: content.suggestedKeywords || [],
           expressType: content.expressType || 'quick_response',
           hint: {
-            vi: content.hintVi || content.challengeQuestion,
-            th: content.hintTh || content.challengeQuestion,
-            ja: content.hintJa || content.challengeQuestion,
-            ko: content.hintKo || content.challengeQuestion,
-            id: content.hintId || content.challengeQuestion,
-            zh: content.hintZh || content.challengeQuestion
+            vi: content.hintVi || content.challengeQuestion
           }
         };
         setAiQueue(prev => [...prev, newAiTopic]);
@@ -418,7 +372,7 @@ Output ONLY raw JSON (no markdown):
     stopPromptAudio();
     if (!isRecording) {
       if (topicSource === 'custom' && !customQuestion.trim()) {
-        Alert.alert("Notice", "Please enter the English challenge question before recording!");
+        Alert.alert("Thông báo", "Vui lòng nhập câu hỏi thử thách tiếng Anh trước khi ghi âm!");
         return;
       }
 
@@ -451,7 +405,7 @@ Output ONLY raw JSON (no markdown):
               setAudioUrl(url);
               setHasRecorded(true);
             } else {
-              Alert.alert("Notice", "⚠️ No clear speech captured. Please try recording again!");
+              Alert.alert("Thông báo", "⚠️ Không ghi nhận được giọng nói rõ ràng. Vui lòng ghi âm lại!");
             }
             stream.getTracks().forEach((track) => track.stop());
           };
@@ -481,7 +435,7 @@ Output ONLY raw JSON (no markdown):
           }, 1000);
         }
       } catch (err) {
-        Alert.alert("Microphone Error", "🔒 Microphone permission is required in your browser!");
+        Alert.alert("Lỗi Microphone", "🔒 Vui lòng cấp quyền micro trên trình duyệt của bạn!");
       }
     } else {
       if (timerRef.current) clearInterval(timerRef.current);
@@ -497,7 +451,7 @@ Output ONLY raw JSON (no markdown):
   const handleSubmitSpeech = async () => {
     stopPromptAudio();
     if (!recordedBlob || recordedBlob.size <= 1000) {
-      Alert.alert("Notice", "Speech recording is empty or too short!");
+      Alert.alert("Thông báo", "Bản ghi âm trống hoặc quá ngắn!");
       return;
     }
 
@@ -512,7 +466,7 @@ Output ONLY raw JSON (no markdown):
 
       setCalculatedWpm(wpm);
 
-      // ⚡ DYNAMIC WPM SPEED SCORING
+      // ⚡ TÍNH ĐIỂM TỐC ĐỘ WPM
       const targetMinWpm = activeTopic.minWpm || 100;
       const wpmRatio = wpm / targetMinWpm;
       
@@ -539,7 +493,7 @@ Output ONLY raw JSON (no markdown):
           fluency: wpmScore,
           content: (evalData as any).content || baseAiScore
         } as any,
-        detailedFeedback: `Spontaneous reflex rate: ${wpm} WPM (Benchmark: ${targetMinWpm} WPM) | Fluency Index: ${wpmScore} pts. ${evalData.detailedFeedback || ''}`
+        detailedFeedback: `Tốc độ phản xạ: ${wpm} WPM (Chuẩn: ${targetMinWpm} WPM) | Chỉ số lưu loát: ${wpmScore} điểm. ${evalData.detailedFeedback || ''}`
       };
 
       setResult(calibratedEvalData);
@@ -548,7 +502,7 @@ Output ONLY raw JSON (no markdown):
       setShowIdentityModal(true);
     } catch (err) {
       console.error("Express scoring error:", err);
-      Alert.alert("Evaluation Error", "⚠️ Connection latency during acoustic evaluation. Please tap submit again!");
+      Alert.alert("Lỗi chấm điểm", "⚠️ Kết nối mạng trễ khi phân tích âm học. Vui lòng bấm nộp lại!");
     } finally {
       setIsAnalyzing(false);
     }
@@ -556,7 +510,7 @@ Output ONLY raw JSON (no markdown):
 
   const handleConfirmSubmission = async () => {
     if (!studentNameInput.trim()) {
-      Alert.alert("Notice", "Please enter your Name or Student ID!");
+      Alert.alert("Thông báo", "Vui lòng nhập Họ tên hoặc Mã học viên!");
       return;
     }
 
@@ -575,33 +529,33 @@ Output ONLY raw JSON (no markdown):
       score: result.score || 85,
       transcript: result.transcript || '',
       audioUrl: base64Audio || audioUrl || undefined,
-      feedback: `Reflex Speed: ${calculatedWpm} WPM | ${result.detailedFeedback || 'Fluency threshold attained.'}`,
+      feedback: `Tốc độ phản xạ: ${calculatedWpm} WPM | ${result.detailedFeedback || 'Đạt ngưỡng lưu loát.'}`,
       timestamp: new Date().toISOString()
     });
 
     setShowIdentityModal(false);
-    Alert.alert("Success", "✅ Express scorecard successfully synced to Teacher Dashboard!");
+    Alert.alert("Thành công", "✅ Phiếu điểm Express đã được đồng bộ lên Bảng điều khiển Giảng viên!");
   };
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack} style={styles.backBtn}>
-          <Text style={styles.backText}>🔙 MAP</Text>
+          <Text style={styles.backText}>🔙 BẢN ĐỒ</Text>
         </TouchableOpacity>
-        <Text style={styles.title}>🎙️ STATION 4: EXPRESS (FLUENCY & MONOLOGUE ARENA)</Text>
+        <Text style={styles.title}>🎙️ TRẠM 4: EXPRESS (ĐẤU TRƯỜNG LƯU LOÁT & ĐỘC THOẠI)</Text>
       </View>
 
       <ScrollView contentContainerStyle={{ alignItems: 'center', width: '100%', paddingBottom: 35 }}>
-        {/* 1. TOPIC SOURCE SELECTOR */}
-        <Text style={styles.sectionLabel}>1. SELECT TOPIC SOURCE:</Text>
+        {/* 1. CHỌN NGUỒN ĐỀ */}
+        <Text style={styles.sectionLabel}>1. CHỌN NGUỒN CHỦ ĐỀ:</Text>
         <View style={styles.sourceRow}>
           <TouchableOpacity 
             style={[styles.sourceBtn, topicSource === 'ai' && styles.sourceBtnActive]} 
             onPress={() => setTopicSource('ai')}
           >
             <Text style={[styles.sourceText, topicSource === 'ai' && styles.sourceTextActive]}>
-              🤖 CURATED & AI GENERATED
+              🤖 HỆ THỐNG & AI TẠO
             </Text>
           </TouchableOpacity>
           <TouchableOpacity 
@@ -609,13 +563,13 @@ Output ONLY raw JSON (no markdown):
             onPress={() => setTopicSource('custom')}
           >
             <Text style={[styles.sourceText, topicSource === 'custom' && styles.sourceTextActive]}>
-              📝 INSTRUCTOR ASSIGNED
+              📝 GIẢNG VIÊN GIAO
             </Text>
           </TouchableOpacity>
         </View>
 
-        {/* 2. CEFR LEVEL SELECTOR */}
-        <Text style={styles.sectionLabel}>2. CEFR BENCHMARK LEVEL:</Text>
+        {/* 2. CHỌN TRÌNH ĐỘ CEFR */}
+        <Text style={styles.sectionLabel}>2. TRÌNH ĐỘ CEFR MỤC TIÊU:</Text>
         <View style={styles.cefrRow}>
           {levels.map((lvl) => (
             <TouchableOpacity 
@@ -628,12 +582,12 @@ Output ONLY raw JSON (no markdown):
           ))}
         </View>
 
-        {/* MAIN CHALLENGE CARD */}
+        {/* THẺ BÀI TẬP CHÍNH */}
         <View style={styles.card}>
           <View style={styles.natureBadgeRow}>
             <View style={styles.natureBadge}>
               <Text style={styles.natureBadgeText}>
-                ⚡ SPONTANEOUS MONOLOGUE (ZERO PRE-SCRIPTED ANSWERS)
+                ⚡ ĐỘC THOẠI TỰ NHIÊN (KHÔNG CÓ KỊCH BẢN MẪU)
               </Text>
             </View>
             {activeTopic.expressType && (
@@ -645,29 +599,29 @@ Output ONLY raw JSON (no markdown):
 
           {topicSource === 'custom' ? (
             <View style={styles.customInputContainer}>
-              <Text style={styles.inputLabel}>📌 Challenge Title:</Text>
+              <Text style={styles.inputLabel}>📌 Tên chủ đề:</Text>
               <TextInput
                 style={styles.textInput}
-                placeholder="e.g., Impact of Social Media on Mental Health"
+                placeholder="Ví dụ: Tác động của mạng xã hội tới sức khỏe tinh thần"
                 placeholderTextColor="#666688"
                 value={customTitle}
                 onChangeText={setCustomTitle}
               />
 
-              <Text style={styles.inputLabel}>❓ English Challenge Question (*):</Text>
+              <Text style={styles.inputLabel}>❓ Câu hỏi thử thách tiếng Anh (*):</Text>
               <TextInput
                 style={[styles.textInput, styles.textArea]}
-                placeholder="e.g., How does excessive social media usage impact students' academic performance and wellbeing?"
+                placeholder="Ví dụ: How does excessive social media usage impact students' academic performance and wellbeing?"
                 placeholderTextColor="#666688"
                 multiline
                 value={customQuestion}
                 onChangeText={setCustomQuestion}
               />
 
-              <Text style={styles.inputLabel}>💡 Context / Scaffolding Hint (Optional):</Text>
+              <Text style={styles.inputLabel}>💡 Bối cảnh / Gợi ý hướng dẫn (Không bắt buộc):</Text>
               <TextInput
                 style={styles.textInput}
-                placeholder="e.g., Present personal arguments with empirical evidence..."
+                placeholder="Ví dụ: Nêu quan điểm cá nhân kèm dẫn chứng cụ thể..."
                 placeholderTextColor="#666688"
                 value={customContextVi}
                 onChangeText={setCustomContextVi}
@@ -679,21 +633,21 @@ Output ONLY raw JSON (no markdown):
               
               <View style={styles.promptBox}>
                 <View style={styles.promptHeaderRow}>
-                  <Text style={styles.promptQuestionLabel}>❓ Cognitive Reflex Prompt:</Text>
+                  <Text style={styles.promptQuestionLabel}>❓ Câu hỏi phản xạ tư duy:</Text>
                   <TouchableOpacity 
                     style={[styles.ttsMiniBtn, isPlayingPromptAudio && styles.ttsMiniBtnActive]}
                     activeOpacity={0.7}
                     onPress={() => playNaturalTTS(activeTopic.challengeQuestion)}
                   >
                     <Text style={styles.ttsMiniBtnText}>
-                      {isPlayingPromptAudio ? '⏹ STOP' : '🔊 HEAR PROMPT'}
+                      {isPlayingPromptAudio ? '⏹ DỪNG' : '🔊 NGHE CÂU HỎI'}
                     </Text>
                   </TouchableOpacity>
                 </View>
 
                 <Text style={styles.promptEn}>"{activeTopic.challengeQuestion}"</Text>
 
-                {/* 🌐 MULTILINGUAL HINT BAR WITH HIGH-CONTRAST 6-NATION FLAGS */}
+                {/* 🇻🇳 HỘP GỢI Ý THUẦN TIẾNG VIỆT (ĐÃ LƯỢC BỎ THANH CHỌN CỜ) */}
                 <View style={styles.hintContainer}>
                   <View style={styles.hintHeaderRow}>
                     <TouchableOpacity 
@@ -702,49 +656,27 @@ Output ONLY raw JSON (no markdown):
                       activeOpacity={0.8}
                     >
                       <Text style={[styles.hintToggleText, showHint ? { color: '#000000' } : { color: '#FFD700' }]}>
-                        {showHint ? '✕ HIDE HINT' : `💡 SHOW HINT (${LANG_CONFIG[selectedLang].code})`}
+                        {showHint ? '✕ ẨN GỢI Ý NGHĨA' : '💡 XEM GỢI Ý NGHĨA TIẾNG VIỆT'}
                       </Text>
                     </TouchableOpacity>
-
-                    <View style={styles.flagPickerRow}>
-                      {(['vi', 'th', 'ja', 'ko', 'id', 'zh'] as SupportedLang[]).map((lang) => {
-                        const isCurrentActive = selectedLang === lang;
-                        return (
-                          <TouchableOpacity
-                            key={lang}
-                            style={[styles.flagBtn, isCurrentActive && styles.flagBtnActive]}
-                            onPress={() => {
-                              setSelectedLang(lang);
-                              setShowHint(true);
-                            }}
-                            activeOpacity={0.7}
-                          >
-                            <Text style={styles.flagIcon}>{LANG_CONFIG[lang].flag}</Text>
-                            <Text style={[styles.flagCodeText, isCurrentActive ? { color: '#00FFFF' } : { color: '#AAAACC' }]}>
-                              {LANG_CONFIG[lang].code}
-                            </Text>
-                          </TouchableOpacity>
-                        );
-                      })}
-                    </View>
                   </View>
 
                   {showHint && (
                     <View style={styles.hintContentBox}>
                       <Text style={styles.hintLanguageTag}>
-                        👉 {LANG_CONFIG[selectedLang].flag} {LANG_CONFIG[selectedLang].label}:
+                        👉 🇻🇳 Dịch nghĩa gợi ý:
                       </Text>
                       <Text style={styles.hintBodyText}>
-                        "{activeTopic.hint?.[selectedLang] || activeTopic.guideVi || activeTopic.challengeQuestion}"
+                        "{activeTopic.hint?.vi || activeTopic.guideVi || activeTopic.challengeQuestion}"
                       </Text>
                     </View>
                   )}
                 </View>
 
-                {/* SUGGESTED KEYWORDS */}
+                {/* TỪ KHÓA GỢI Ý */}
                 {activeTopic.suggestedKeywords && activeTopic.suggestedKeywords.length > 0 && (
                   <View style={styles.keywordContainer}>
-                    <Text style={styles.keywordLabel}>🔑 Target Keywords:</Text>
+                    <Text style={styles.keywordLabel}>🔑 Từ khóa mục tiêu gợi ý:</Text>
                     <View style={styles.keywordWrap}>
                       {activeTopic.suggestedKeywords.map((kw, i) => (
                         <View key={i} style={styles.keywordBadge}>
@@ -757,27 +689,27 @@ Output ONLY raw JSON (no markdown):
               </View>
 
               <View style={styles.targetRow}>
-                <Text style={styles.targetBadge}>🎯 Benchmark: {activeTopic.minWpm} WPM</Text>
-                <Text style={styles.targetBadge}>⏱️ Duration: {activeTopic.targetDuration}s</Text>
+                <Text style={styles.targetBadge}>🎯 Chuẩn tốc độ: {activeTopic.minWpm} WPM</Text>
+                <Text style={styles.targetBadge}>⏱️ Thời lượng: {activeTopic.targetDuration}s</Text>
               </View>
 
-              {/* 0MS ROTATION BUTTON */}
+              {/* NÚT ĐỔI ĐỀ (0MS) */}
               <TouchableOpacity style={styles.refreshBtn} activeOpacity={0.7} onPress={handleNextAiTopic}>
-                <Text style={styles.refreshBtnText}>🔄 NEXT SCENARIO (0MS + AI BUFFER)</Text>
+                <Text style={styles.refreshBtnText}>🔄 ĐỔI TÌNH HUỐNG TIẾP THEO (0MS)</Text>
               </TouchableOpacity>
             </>
           )}
 
           <Text style={styles.monologueGuide}>
-            👉 Zero sample scripts provided! Synthesize your viewpoint and deliver fluent extemporaneous speech. Maintain steady vocal cadence to maximize your Fluency & WPM score.
+            👉 Không có kịch bản mẫu! Hãy tổng hợp luận điểm và trình bày độc thoại lưu loát bằng tiếng Anh. Giữ nhịp nói đều đặn để tối ưu hóa điểm số Lưu loát & WPM.
           </Text>
         </View>
 
-        {/* RECORDING & TIMER CARD */}
+        {/* THẺ THU ÂM & ĐẾM THỜI GIAN */}
         <View style={styles.actionCard}>
           <View style={styles.timerHeader}>
             <Text style={styles.timerTitle}>
-              {isRecording ? `🔴 SPEAKING DURATION: ${recordedDuration}s` : `⏱️ TIME REMAINING: ${timeLeft}s`}
+              {isRecording ? `🔴 THỜI GIAN ĐÃ NÓI: ${recordedDuration}s` : `⏱️ THỜI GIAN CÒN LẠI: ${timeLeft}s`}
             </Text>
           </View>
 
@@ -787,19 +719,19 @@ Output ONLY raw JSON (no markdown):
           >
             <Text style={styles.recordBtnText}>
               {isRecording 
-                ? '🛑 STOP RECORDING (FINALIZE SPEECH)' 
+                ? '🛑 DỪNG THU ÂM (HOÀN THÀNH BÀI NÓI)' 
                 : hasRecorded 
-                  ? '🔄 RETAKE RECORDING (ENHANCE WPM)' 
-                  : '🎙️ START SPONTANEOUS MONOLOGUE'}
+                  ? '🔄 THU ÂM LẠI ĐỂ TĂNG TỐC ĐỘ WPM' 
+                  : '🎙️ BẮT ĐẦU ĐỘC THOẠI PHẢN XẠ'}
             </Text>
           </TouchableOpacity>
 
-          {/* AUDIO PLAYBACK REVIEW */}
+          {/* XEM LẠI BẢN THU */}
           {audioUrl && !isRecording && (
             <View style={styles.audioPreviewContainer}>
               <View style={styles.audioPreviewHeader}>
-                <Text style={styles.audioPreviewTitle}>🎧 REVIEW RECORDED TRACK ({recordedDuration}s):</Text>
-                <Text style={styles.audioPreviewSub}>Audit your acoustic clarity, articulation rate, and pause intervals before submission</Text>
+                <Text style={styles.audioPreviewTitle}>🎧 NGHE LẠI BẢN THU ÂM ({recordedDuration}s):</Text>
+                <Text style={styles.audioPreviewSub}>Kiểm tra độ rõ của âm thanh, tốc độ phát âm và khoảng dừng trước khi nộp bài</Text>
               </View>
               {React.createElement('audio', {
                 controls: true,
@@ -813,7 +745,7 @@ Output ONLY raw JSON (no markdown):
             <View style={{ alignItems: 'center', marginVertical: 10 }}>
               <ActivityIndicator size="large" color="#39FF14" />
               <Text style={{ color: '#39FF14', fontSize: 11, fontWeight: 'bold', marginTop: 6 }}>
-                ⚡ GROQ AI COMPUTING ACOUSTIC WPM & FLUENCY INDICES...
+                ⚡ GROQ AI ĐANG TÍNH TOÁN TỐC ĐỘ WPM VÀ CHỈ SỐ LƯU LOÁT...
               </Text>
             </View>
           ) : (
@@ -822,30 +754,30 @@ Output ONLY raw JSON (no markdown):
               onPress={handleSubmitSpeech}
               disabled={!hasRecorded || isRecording}
             >
-              <Text style={styles.submitBtnText}>⚡ SUBMIT EXPRESS SPEECH & AI EVALUATION</Text>
+              <Text style={styles.submitBtnText}>⚡ NỘP BÀI EXPRESS ĐỂ AI CHẤM ĐIỂM</Text>
             </TouchableOpacity>
           )}
         </View>
 
-        {/* RESULTS & AUDIT CARD */}
+        {/* THẺ KẾT QUẢ ĐÁNH GIÁ */}
         {result && (
           <View style={styles.resultCard}>
             <Text style={[styles.resultTitle, { color: result.isWin ? '#39FF14' : '#FF0055' }]}>
-              {result.isWin ? '🎉 OUTSTANDING SPONTANEOUS FLUENCY!' : '💡 ENHANCE ARTICULATION RATE & CONTINUITY'}
+              {result.isWin ? '🎉 PHẢN XẠ ĐỘC THOẠI XUẤT SẮC!' : '💡 CẦN NÂNG CAO TỐC ĐỘ NÓI VÀ TÍNH LIÊN TỤC'}
             </Text>
 
             <View style={styles.wpmBanner}>
-              <Text style={styles.wpmTitle}>⚡ ACTUAL REFLEX SPEED: {calculatedWpm} WPM</Text>
+              <Text style={styles.wpmTitle}>⚡ TỐC ĐỘ NÓI THỰC TẾ: {calculatedWpm} WPM</Text>
               <Text style={styles.wpmSub}>
                 {calculatedWpm >= activeTopic.minWpm 
-                  ? '✅ Speaking pace fulfills the CEFR fluency benchmark!' 
-                  : `⚠️ Reflex rate is below recommended standard (${activeTopic.minWpm} WPM). Minimize hesitation pauses to elevate fluency.`}
+                  ? '✅ Tốc độ nói đạt chuẩn lưu loát theo khung CEFR!' 
+                  : `⚠️ Tốc độ nói hiện đang dưới chuẩn đề xuất (${activeTopic.minWpm} WPM). Hãy giảm các khoảng dừng ngập ngừng để tăng điểm lưu loát.`}
               </Text>
             </View>
 
             {audioUrl && (
               <View style={styles.audioPreviewContainer}>
-                <Text style={styles.audioPreviewTitle}>🎧 FINAL SUBMISSION TRACK:</Text>
+                <Text style={styles.audioPreviewTitle}>🎧 BẢN THU ÂM ĐÃ NỘP:</Text>
                 {React.createElement('audio', {
                   controls: true,
                   src: audioUrl,
@@ -861,39 +793,39 @@ Output ONLY raw JSON (no markdown):
 
             <View style={styles.breakdownRow}>
               <View style={styles.breakdownItem}>
-                <Text style={styles.breakdownLabel}>Composite Score:</Text>
+                <Text style={styles.breakdownLabel}>Điểm tổng hợp:</Text>
                 <Text style={styles.breakdownValue}>{result.score}/100</Text>
               </View>
               <View style={styles.breakdownItem}>
-                <Text style={styles.breakdownLabel}>Pronunciation:</Text>
+                <Text style={styles.breakdownLabel}>Phát âm:</Text>
                 <Text style={styles.breakdownValue}>{(result as any).pronunciation || 85}/100</Text>
               </View>
               <View style={styles.breakdownItem}>
-                <Text style={styles.breakdownLabel}>Fluency Index:</Text>
+                <Text style={styles.breakdownLabel}>Lưu loát:</Text>
                 <Text style={styles.breakdownValue}>{(result as any).criteria?.fluency || (result as any).content || 80}/100</Text>
               </View>
             </View>
 
-            <Text style={styles.feedbackText}>💡 Diagnostic Feedback: {result.detailedFeedback}</Text>
+            <Text style={styles.feedbackText}>💡 Nhận xét chi tiết: {result.detailedFeedback}</Text>
           </View>
         )}
       </ScrollView>
 
-      {/* SYNC SCORECARD MODAL */}
+      {/* MODAL LƯU PHIẾU ĐIỂM */}
       <Modal visible={showIdentityModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>🎖️ RECORD EXPRESS SCORECARD</Text>
-            <Text style={styles.modalSub}>Enter your Student ID or Full Name to sync this record with Teacher Dashboard:</Text>
+            <Text style={styles.modalTitle}>🎖️ LƯU BẢNG ĐIỂM EXPRESS</Text>
+            <Text style={styles.modalSub}>Nhập Mã học viên hoặc Họ tên của bạn để đồng bộ lên Bảng điều khiển Giảng viên:</Text>
             <TextInput
               style={styles.modalInput}
-              placeholder="e.g., K18 - 210088 - John Doe"
+              placeholder="Ví dụ: K18 - 210088 - Nguyễn Văn A"
               placeholderTextColor="#666688"
               value={studentNameInput}
               onChangeText={setStudentNameInput}
             />
             <TouchableOpacity style={styles.modalBtn} onPress={handleConfirmSubmission}>
-              <Text style={styles.modalBtnText}>🚀 CONFIRM & SYNC SUBMISSION</Text>
+              <Text style={styles.modalBtnText}>🚀 XÁC NHẬN & ĐỒNG BỘ BÀI NỘP</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -946,55 +878,22 @@ const styles = StyleSheet.create({
   },
   hintHeaderRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
     alignItems: 'center',
-    gap: 6,
   },
   hintToggleBtn: {
     backgroundColor: '#16082F',
     borderWidth: 1.5,
     borderColor: '#FFD700',
     paddingVertical: 5,
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
     borderRadius: 7,
   },
   hintToggleBtnActive: {
     backgroundColor: '#FFD700',
   },
   hintToggleText: {
-    fontSize: 9,
-    fontWeight: '900',
-  },
-  flagPickerRow: {
-    flexDirection: 'row',
-    gap: 4,
-    backgroundColor: '#070314',
-    padding: 3,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#332255',
-    alignItems: 'center',
-  },
-  flagBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
-    paddingHorizontal: 5,
-    paddingVertical: 4,
-    borderRadius: 6,
-    backgroundColor: '#16082F',
-    borderWidth: 1,
-    borderColor: '#332255',
-  },
-  flagBtnActive: {
-    backgroundColor: '#2A144E',
-    borderColor: '#00FFFF',
-  },
-  flagIcon: {
-    fontSize: 12.5,
-  },
-  flagCodeText: {
-    fontSize: 9,
+    fontSize: 9.5,
     fontWeight: '900',
   },
   hintContentBox: {
