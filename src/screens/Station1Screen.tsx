@@ -404,7 +404,7 @@ export default function Station1Screen({ onBack }: Props) {
     return normalizedParts.join(' ... ');
   };
 
-  // 🔊 DUAL-LAYER AUDIO PLAYBACK: EDGE-TTS WITH CLIENT SYNTHESIS FALLBACK
+  // 🔊 BỘ PHÁT ÂM MẪU CHUẨN IOS & DESKTOP (TRẠM 1)
   const playSampleAudio = async (textToSpeak: string) => {
     if (!textToSpeak) return;
     stopAllAudio();
@@ -412,30 +412,46 @@ export default function Station1Screen({ onBack }: Props) {
 
     const cleanSpeechText = normalizeSpeechTextForTTS(textToSpeak);
 
+    // 1. Tạo đối tượng audio đồng bộ ngay tại thời điểm chạm tay (bảo lưu User Gesture trên iOS)
+    const audio = new Audio();
+    currentAudioRef.current = audio;
+
+    (audio as any).playsInline = true;
+    audio.setAttribute('playsinline', 'true');
+    audio.setAttribute('webkit-playsinline', 'true');
+
+    const ttsUrl = `/api/tts?voice=nova&text=${encodeURIComponent(cleanSpeechText)}`;
+
+    // 2. Lắng nghe trạng thái kết thúc & lỗi
+    audio.onended = () => {
+      setIsPlayingTTS(false);
+      currentAudioRef.current = null;
+    };
+
+    audio.onerror = (e) => {
+      console.warn("⚠️ Audio server gặp sự cố hoặc định dạng không tương thích, kích hoạt fallback:", e);
+      setIsPlayingTTS(false);
+      currentAudioRef.current = null;
+      fallbackIOSSpeech(cleanSpeechText);
+    };
+
     try {
-      const ttsUrl = `/api/tts?voice=nova&text=${encodeURIComponent(cleanSpeechText)}`;
-      const audio = new Audio(ttsUrl);
-      currentAudioRef.current = audio;
-
-      audio.onended = () => {
-        setIsPlayingTTS(false);
-        currentAudioRef.current = null;
-      };
-
-      audio.onerror = () => {
-        console.warn("Edge-TTS unavailable, falling back to local synthesis...");
-        playLocalSampleFallback(cleanSpeechText);
-      };
-
-      await audio.play();
-      return;
-    } catch (e) {
-      console.warn("TTS Error:", e);
-      playLocalSampleFallback(cleanSpeechText);
+      audio.src = ttsUrl;
+      audio.load();
+      const playPromise = audio.play();
+      if (playPromise !== undefined) {
+        await playPromise;
+      }
+    } catch (err) {
+      console.warn("⚠️ iOS WebKit chặn phát tự động, kích hoạt fallback:", err);
+      setIsPlayingTTS(false);
+      currentAudioRef.current = null;
+      fallbackIOSSpeech(cleanSpeechText);
     }
   };
 
-  const playLocalSampleFallback = (cleanSpeechText: string) => {
+  // 🛡️ BỘ DỰ PHÒNG NỘI BỘ TỐI ƯU CHO IOS SAFARI
+  const fallbackIOSSpeech = (cleanSpeechText: string) => {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
       setIsPlayingTTS(false);
       return;
@@ -445,6 +461,10 @@ export default function Station1Screen({ onBack }: Props) {
     utterance.lang = 'en-US';
     utterance.rate = 0.85;
     utterance.pitch = 1.0;
+
+    const voices = window.speechSynthesis.getVoices();
+    const iosVoice = voices.find(v => v.lang.startsWith('en') && (v.name.includes('Samantha') || v.name.includes('Siri') || v.name.includes('Nicky') || v.name.includes('Aaron')));
+    if (iosVoice) utterance.voice = iosVoice;
 
     utterance.onstart = () => setIsPlayingTTS(true);
     utterance.onend = () => setIsPlayingTTS(false);
@@ -591,7 +611,7 @@ Output ONLY raw JSON (no markdown):
     const mockRef = isQuestion 
       ? [-2, -1.5, -1, 0, 0.5, 1.2, 2.8, 4.5]
       : [0.5, 1.8, 2.2, 1.5, 0.2, -1.0, -2.5, -3.2];
-      setTargetContour(mockRef);
+    setTargetContour(mockRef);
 
     triggerBackgroundAiRefill(type);
   };
@@ -875,11 +895,11 @@ Output ONLY raw JSON (no markdown):
 
                 <View style={styles.flagPickerRow}>
                   {(['vi', 'th', 'ja', 'ko', 'id', 'zh'] as SupportedLang[]).map((lang) => {
-                    const isSelected = selectedLang === lang;
+                    const isCurrentActive = selectedLang === lang;
                     return (
                       <TouchableOpacity
                         key={lang}
-                        style={[styles.flagBtn, isSelected && styles.flagBtnActive]}
+                        style={[styles.flagBtn, isCurrentActive && styles.flagBtnActive]}
                         onPress={() => {
                           setSelectedLang(lang);
                           setShowHint(true);
@@ -887,7 +907,7 @@ Output ONLY raw JSON (no markdown):
                         activeOpacity={0.7}
                       >
                         <Text style={styles.flagIcon}>{LANG_CONFIG[lang].flag}</Text>
-                        <Text style={[styles.flagCodeText, isSelected ? { color: '#00FFFF' } : { color: '#AAAACC' }]}>
+                        <Text style={[styles.flagCodeText, isCurrentActive ? { color: '#00FFFF' } : { color: '#AAAACC' }]}>
                           {LANG_CONFIG[lang].code}
                         </Text>
                       </TouchableOpacity>
@@ -908,7 +928,7 @@ Output ONLY raw JSON (no markdown):
               )}
             </View>
 
-            {/* TTS MODEL PLAYBACK - ĐÃ KHỬ TỪ 'SLASH' VÀ SỬA ÂM /lɪv/ */}
+            {/* TTS MODEL PLAYBACK - ĐÃ KHỬ TỪ 'SLASH' VÀ SỬA ÂM /lɪv/ KÈM USER GESTURE CHUẨN IOS */}
             <TouchableOpacity 
               style={[styles.ttsBtn, isPlayingTTS && styles.ttsBtnActive]} 
               onPress={() => playSampleAudio(currentDrill.contentEn)}
