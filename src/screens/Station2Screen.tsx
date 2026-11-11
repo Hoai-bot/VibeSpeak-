@@ -31,12 +31,12 @@ export type TopicOrigin = 'SYSTEM' | 'TEACHER_DASHBOARD' | 'STUDENT_CUSTOM';
 export type SupportedLang = 'vi' | 'th' | 'ja' | 'ko' | 'id' | 'zh';
 
 export interface MultilingualHint {
-  vi: string;
-  th: string;
-  ja: string;
-  ko: string;
-  id: string;
-  zh: string;
+  vi: string; // Tiếng Việt
+  th: string; // ภาษาไทย
+  ja: string; // 日本語
+  ko: string; // 한국어
+  id: string; // Bahasa Indonesia
+  zh: string; // 中文 (Chinese)
 }
 
 export interface ChallengeItem {
@@ -144,7 +144,7 @@ const SCENARIO_LIBRARY: Record<string, Omit<ChallengeItem, 'id' | 'tier' | 'leve
         th: "แจ้งอาหารเย็นชืด: ขอความกรุณาพนักงานช่วยนำบะหมี่ไปอุ่นให้ร้อนอีกครั้ง",
         ja: "料理の温め直し：麺が冷たいので、キッチンで温め直してもらうよう店員に丁寧に頼みます。",
         ko: "음식 데우기 요청: 면이 너무 식었으니 주방에 다시 데워달라고 정중히 요청하세요.",
-        id: "Komplain makanan dingin: minta pelayan dengan sopan agar dapur memanaskan kembali mi Anda.",
+        id: "Komplain makanan dingin: minta pelayan với sopan agar dapur memanaskan kembali mi Anda.",
         zh: "反馈菜品过凉：炒面端上来完全是凉的，请服务员帮忙拿回厨房重新加热。"
       }
     }
@@ -210,7 +210,7 @@ const SCENARIO_LIBRARY: Record<string, Omit<ChallengeItem, 'id' | 'tier' | 'leve
         th: "แถลงการณ์รับมือวิกฤต: ทีมงานได้แยกขอบเขตความเสียหาย ว่าจ้างผู้ตรวจสอบภายนอก และจะอัปเดตอย่างโปร่งใสทุกชั่วโมง",
         ja: "緊急記者会見：インシデント対応チームが感染範囲を隔離し、第三者監査機関を介入させ、毎時最新情報を公開します。",
         ko: "데이터 유출 위기 대응: 사고 대응팀이 침해 구역을 격리하고 외부 전문 감사관을 투입해 매시간 투명하게 공지하겠습니다.",
-        id: "Pernyataan krisis: tim insiden telah mengisolasi area, melibatkan auditor forensik, dan memberi update transparan.",
+        id: "Pernyataan krisis: tim insiden telah mengisolasi area, melibatkan auditor forensik, và memberi update transparan.",
         zh: "危机公关发声：应急响应团队已隔离泄露范围，引入第三方取证机构，并将按小时公开进展。"
       }
     }
@@ -261,7 +261,7 @@ const SCENARIO_LIBRARY: Record<string, Omit<ChallengeItem, 'id' | 'tier' | 'leve
         th: "ลดขยะพลาสติก: เพื่อน A เสนอเลิกใช้แก้วพลาสติก -> เพื่อน B ต่อยอดด้วยการลดราคา 10% เมื่อนำแก้วส่วนตัวมา",
         ja: "プラスチック削減：Aが使い捨てカップ廃止を提案 -> Bがマイボトル持参者に10%割引を設ける案を補足します。",
         ko: "플라스틱 줄이기 릴레이: A가 일회용 컵 중단 제안 -> B가 텀블러 지참 시 10% 할인 정책을 연계 제안하세요.",
-        id: "Estafet kurangi plastik: A usul stop cangkir sekali pakai -> B sambung dengan diskon 10% untuk tumbler pribadi.",
+        id: "Estafet kurangi plastik: A usul stop cangkir sekali pakai -> B sambung với diskon 10% untuk tumbler pribadi.",
         zh: "环保减塑接力：同学A建议停用一次性杯子 -> 同学B跟进提出自带保温杯立享九折优惠。"
       }
     }
@@ -549,6 +549,9 @@ export default function Station2Screen({ onBack }: Props) {
   const [liveTranscript, setLiveTranscript] = useState<string>('');
   const liveTranscriptRef = useRef<string>('');
   const speechRecognitionRef = useRef<any>(null);
+  const isRecordingNormalRef = useRef<boolean>(false);
+  const normalStreamRef = useRef<MediaStream | null>(null);
+  const normalAudioContextRef = useRef<AudioContext | null>(null);
 
   const [recordedAudioUrl, setRecordedAudioUrl] = useState<string | null>(null);
   const [isTeacherExamining, setIsTeacherExamining] = useState<boolean>(false);
@@ -755,8 +758,23 @@ Output ONLY raw JSON:
     }
   };
 
+  // 🎙️ KHỞI ĐỘNG GHI ÂM VÀ NHẬN DIỆN GIỌNG NÓI THỜI GIAN THỰC
   const startNormalRecording = async () => {
     stopSampleAudio();
+
+    if (speechRecognitionRef.current) {
+      try { speechRecognitionRef.current.abort(); } catch (e) {}
+      speechRecognitionRef.current = null;
+    }
+    if (normalStreamRef.current) {
+      normalStreamRef.current.getTracks().forEach(t => t.stop());
+      normalStreamRef.current = null;
+    }
+    if (normalAudioContextRef.current && normalAudioContextRef.current.state !== 'closed') {
+      try { normalAudioContextRef.current.close(); } catch (e) {}
+      normalAudioContextRef.current = null;
+    }
+
     try {
       normalAudioChunksRef.current = [];
       normalPitchHistoryRef.current = [];
@@ -765,8 +783,15 @@ Output ONLY raw JSON:
       liveTranscriptRef.current = '';
 
       const stream = await navigator.mediaDevices.getUserMedia({ 
-        audio: { channelCount: 1, sampleRate: 16000, echoCancellation: true, noiseSuppression: true, autoGainControl: true } 
+        audio: { 
+          channelCount: 1, 
+          sampleRate: 16000, 
+          echoCancellation: true, 
+          noiseSuppression: true, 
+          autoGainControl: true 
+        } 
       });
+      normalStreamRef.current = stream;
       
       const detectedFormat = getSupportedAudioMimeType();
       activeMimeTypeRef.current = detectedFormat;
@@ -784,32 +809,61 @@ Output ONLY raw JSON:
 
       mediaRecorder.start(100);
       setIsRecordingNormal(true);
+      isRecordingNormalRef.current = true;
 
-      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-      if (SpeechRecognition) {
+      const SpeechRecognitionClass = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (SpeechRecognitionClass) {
         try {
-          const recognition = new SpeechRecognition();
+          const recognition = new SpeechRecognitionClass();
           recognition.continuous = true;
           recognition.interimResults = true;
           recognition.lang = 'en-US';
+          recognition.maxAlternatives = 1;
+
+          let accumulatedFinalTranscript = '';
+
           recognition.onresult = (event: any) => {
-            let live = '';
-            for (let i = 0; i < event.results.length; i++) {
-              live += event.results[i][0].transcript + ' ';
+            let interim = '';
+            for (let i = event.resultIndex; i < event.results.length; i++) {
+              const part = event.results[i][0].transcript;
+              if (event.results[i].isFinal) {
+                accumulatedFinalTranscript += part + ' ';
+              } else {
+                interim += part;
+              }
             }
-            const cleanLive = live.trim();
-            liveTranscriptRef.current = cleanLive;
-            setLiveTranscript(cleanLive);
+
+            const cleanLive = (accumulatedFinalTranscript + interim).trim();
+            if (cleanLive) {
+              liveTranscriptRef.current = cleanLive;
+              setLiveTranscript(cleanLive);
+            }
           };
+
+          recognition.onerror = (e: any) => {
+            if (e.error !== 'no-speech' && e.error !== 'aborted') {
+              console.warn("SpeechRecognition event error:", e.error);
+            }
+          };
+
+          recognition.onend = () => {
+            if (isRecordingNormalRef.current) {
+              try {
+                recognition.start();
+              } catch (err) {}
+            }
+          };
+
           recognition.start();
           speechRecognitionRef.current = recognition;
         } catch (e) {
-          console.warn("SpeechRecognition bypassed:", e);
+          console.warn("SpeechRecognition initiation bypassed:", e);
         }
       }
 
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
       const audioCtx = new AudioCtx();
+      normalAudioContextRef.current = audioCtx;
       if (audioCtx.state === 'suspended') await audioCtx.resume();
 
       const source = audioCtx.createMediaStreamSource(stream);
@@ -846,7 +900,9 @@ Output ONLY raw JSON:
       };
       track();
     } catch (err) {
-      Alert.alert("Microphone Error", "Unable to access microphone. Please grant permissions in your browser.");
+      setIsRecordingNormal(false);
+      isRecordingNormalRef.current = false;
+      Alert.alert("Microphone Error", "Unable to access microphone. Please allow microphone permissions in your browser.");
     }
   };
 
@@ -872,13 +928,32 @@ Output ONLY raw JSON:
     ctx.stroke();
   };
 
+  // 🛑 DỪNG GHI ÂM VÀ GIẢI PHÓNG TOÀN BỘ PHẦN CỨNG ÂM THANH
   const stopNormalRecording = () => {
+    isRecordingNormalRef.current = false;
+
     if (speechRecognitionRef.current) {
-      try { speechRecognitionRef.current.stop(); } catch (e) {}
+      try { 
+        speechRecognitionRef.current.stop(); 
+      } catch (e) {}
       speechRecognitionRef.current = null;
     }
 
-    if (normalAnimFrameRef.current) cancelAnimationFrame(normalAnimFrameRef.current);
+    if (normalAnimFrameRef.current) {
+      cancelAnimationFrame(normalAnimFrameRef.current);
+      normalAnimFrameRef.current = null;
+    }
+
+    if (normalAudioContextRef.current && normalAudioContextRef.current.state !== 'closed') {
+      try { normalAudioContextRef.current.close(); } catch (e) {}
+      normalAudioContextRef.current = null;
+    }
+
+    if (normalStreamRef.current) {
+      normalStreamRef.current.getTracks().forEach(t => t.stop());
+      normalStreamRef.current = null;
+    }
+
     if (normalMediaRecorderRef.current && normalMediaRecorderRef.current.state !== 'inactive') {
       normalMediaRecorderRef.current.stop();
       normalMediaRecorderRef.current.onstop = () => {
@@ -900,6 +975,7 @@ Output ONLY raw JSON:
     return () => { if (timer) clearInterval(timer); };
   }, [isRecordingNormal]);
 
+  // 📊 XỬ LÝ CHẤM ĐIỂM VÀ ĐỒNG BỘ TAPESCRIPT WHISPER
   const finishSubmissionAndEvaluate = async (audioBlob: Blob, pitchHistory: number[], localAudioUrl?: string) => {
     setIsEvaluating(true);
     setEvaluatingStatus('⚡ AI ANALYZING ACOUSTICS & TRANSCRIBING TAPESCRIPT...');
@@ -1305,7 +1381,7 @@ Output ONLY raw JSON:
                   
                   <Text style={styles.contextText}>📌 {currentChallenge.contextDesc}</Text>
 
-                  {/* 🌐 THANH CHỌN CỜ 6 NƯỚC (ĐÃ SỬA LỖI ISSELECTED HOÀN TOÀN) */}
+                  {/* 🌐 THANH CHỌN CỜ 6 NƯỚC */}
                   <View style={styles.hintContainer}>
                     <View style={styles.hintHeaderRow}>
                       <TouchableOpacity 
@@ -1318,7 +1394,6 @@ Output ONLY raw JSON:
                         </Text>
                       </TouchableOpacity>
 
-                      {/* DÃY CỜ 6 NƯỚC LUÔN NẰM TRỰC DIỆN ĐỂ BẤM CHỌN */}
                       <View style={styles.flagPickerRow}>
                         {(['vi', 'th', 'ja', 'ko', 'id', 'zh'] as SupportedLang[]).map((lang) => (
                           <TouchableOpacity
@@ -1339,7 +1414,6 @@ Output ONLY raw JSON:
                       </View>
                     </View>
 
-                    {/* HỘP GỢI Ý ĐA NGỮ ĐỔI NỘI DUNG TỨC THÌ THEO CỜ ĐÃ CHỌN */}
                     {showHint && currentChallenge && (
                       <View style={styles.hintContentBox}>
                         <View style={styles.scaffoldingMetaRow}>
@@ -1423,7 +1497,7 @@ Output ONLY raw JSON:
             <Text style={styles.normalPromptTitle}>{currentChallenge.title} ({currentChallenge.level})</Text>
             <Text style={styles.normalPromptDesc}>{currentChallenge.contextDesc}</Text>
 
-            {/* HINT BAR TRONG PHÒNG THU CŨNG ĐỒNG BỘ 6 CỜ - AN TOÀN TRUY CẬP BIẾN */}
+            {/* HINT BAR TRONG PHÒNG THU CŨNG ĐỒNG BỘ 6 CỜ */}
             <View style={styles.hintContainer}>
               <View style={styles.hintHeaderRow}>
                 <TouchableOpacity 
@@ -1527,7 +1601,7 @@ Output ONLY raw JSON:
                       style={styles.viewScoreBtn}
                       onPress={() => setDetailedModalVisible(true)}
                     >
-                      <Text style={styles.viewScoreBtnText}>📊 DETAILED RUBRICS</Text>
+                      <Text style={styles.viewScoreBtnText}>📊 VIEW SCORECARD</Text>
                     </TouchableOpacity>
                   )}
                 </View>
