@@ -169,8 +169,10 @@ export default function Station3Screen({ onBack }: Props) {
 
   const stopAllAudio = () => {
     if (audioPlayerRef.current) {
-      audioPlayerRef.current.pause();
-      audioPlayerRef.current.currentTime = 0;
+      try {
+        audioPlayerRef.current.pause();
+        audioPlayerRef.current.currentTime = 0;
+      } catch (e) {}
       audioPlayerRef.current = null;
     }
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
@@ -206,7 +208,7 @@ export default function Station3Screen({ onBack }: Props) {
     audioChunksRef.current = [];
   };
 
-  // 🎙️ SHADOW BOSS SERVER-SIDE NEURAL TTS (ONYX / CHRISTOPHER DEEP VOICE)
+  // 🎙️ PHÁT GIỌNG SHADOW BOSS CHUẨN IOS (TRẠM 3)
   const playNaturalTTS = async (text: string) => {
     if (isPlayingAudio) {
       stopAllAudio();
@@ -216,32 +218,47 @@ export default function Station3Screen({ onBack }: Props) {
     const cleanText = text.replace(/["']/g, '').trim();
     if (!cleanText) return;
 
+    stopAllAudio();
     setIsPlayingAudio(true);
 
+    // 1. Tạo audio đồng bộ ngay lập tức (bảo lưu User Gesture trên Safari iOS)
+    const audio = new Audio();
+    audioPlayerRef.current = audio;
+
+    (audio as any).playsInline = true;
+    audio.setAttribute('playsinline', 'true');
+    audio.setAttribute('webkit-playsinline', 'true');
+
+    const bossTtsUrl = `/api/tts?voice=onyx&text=${encodeURIComponent(cleanText)}`;
+
+    audio.onended = () => {
+      setIsPlayingAudio(false);
+      audioPlayerRef.current = null;
+    };
+
+    audio.onerror = (e) => {
+      console.warn("⚠️ Server TTS không tải được, kích hoạt fallback:", e);
+      setIsPlayingAudio(false);
+      audioPlayerRef.current = null;
+      fallbackIOSBossSpeech(cleanText);
+    };
+
     try {
-      const bossTtsUrl = `/api/tts?voice=onyx&text=${encodeURIComponent(cleanText)}`;
-      const audio = new Audio(bossTtsUrl);
-      audioPlayerRef.current = audio;
-
-      audio.onended = () => {
-        setIsPlayingAudio(false);
-        audioPlayerRef.current = null;
-      };
-
-      audio.onerror = () => {
-        console.warn("Server TTS unavailable, activating client fallback...");
-        playLocalBossFallback(cleanText);
-      };
-
-      await audio.play();
-      return;
+      audio.src = bossTtsUrl;
+      audio.load();
+      const playPromise = audio.play();
+      if (playPromise !== undefined) {
+        await playPromise;
+      }
     } catch (e) {
-      console.warn("Server audio playback error:", e);
-      playLocalBossFallback(cleanText);
+      console.warn("⚠️ iOS WebKit chặn phát, kích hoạt fallback:", e);
+      setIsPlayingAudio(false);
+      audioPlayerRef.current = null;
+      fallbackIOSBossSpeech(cleanText);
     }
   };
 
-  const playLocalBossFallback = (cleanText: string) => {
+  const fallbackIOSBossSpeech = (cleanText: string) => {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
       setIsPlayingAudio(false);
       return;
@@ -251,12 +268,13 @@ export default function Station3Screen({ onBack }: Props) {
 
     const utterance = new SpeechSynthesisUtterance(cleanText);
     const voices = synth.getVoices();
-    const maleVoice = voices.find(v => v.lang.startsWith('en') && (v.name.includes('David') || v.name.includes('Guy') || v.name.includes('Mark') || v.name.includes('Aaron')));
+    // Ưu tiên giọng nam trầm
+    const maleVoice = voices.find(v => v.lang.startsWith('en') && (v.name.includes('David') || v.name.includes('Guy') || v.name.includes('Aaron') || v.name.includes('Mark')));
     if (maleVoice) utterance.voice = maleVoice;
 
     utterance.lang = 'en-US';
     utterance.rate = 0.85;
-    utterance.pitch = 0.8;
+    utterance.pitch = 0.8; // Hạ tone giọng trầm
 
     utterance.onstart = () => setIsPlayingAudio(true);
     utterance.onend = () => setIsPlayingAudio(false);
@@ -654,11 +672,11 @@ Output JSON ONLY:
 
               <View style={styles.flagPickerRow}>
                 {(['vi', 'th', 'ja', 'ko', 'id', 'zh'] as SupportedLang[]).map((lang) => {
-                  const isSelected = selectedLang === lang;
+                  const isCurrentActive = selectedLang === lang;
                   return (
                     <TouchableOpacity
                       key={lang}
-                      style={[styles.flagBtn, isSelected && styles.flagBtnActive]}
+                      style={[styles.flagBtn, isCurrentActive && styles.flagBtnActive]}
                       onPress={() => {
                         setSelectedLang(lang);
                         setShowHint(true);
@@ -666,7 +684,7 @@ Output JSON ONLY:
                       activeOpacity={0.7}
                     >
                       <Text style={styles.flagIcon}>{LANG_CONFIG[lang].flag}</Text>
-                      <Text style={[styles.flagCodeText, isSelected ? { color: '#00FFFF' } : { color: '#AAAACC' }]}>
+                      <Text style={[styles.flagCodeText, isCurrentActive ? { color: '#00FFFF' } : { color: '#AAAACC' }]}>
                         {LANG_CONFIG[lang].code}
                       </Text>
                     </TouchableOpacity>
@@ -687,7 +705,7 @@ Output JSON ONLY:
             )}
           </View>
 
-          {/* ONYX NEURAL TTS BUTTON */}
+          {/* ONYX NEURAL TTS BUTTON (CHUYỂN SANG PLAYNATURALTTS CHUẨN IOS) */}
           <TouchableOpacity 
             style={[styles.audioBtn, isPlayingAudio && styles.audioBtnPlaying]} 
             onPress={() => playNaturalTTS(bossData.bossChallengeEn)}
