@@ -144,7 +144,7 @@ const SCENARIO_LIBRARY: Record<string, Omit<ChallengeItem, 'id' | 'tier' | 'leve
         th: "แจ้งอาหารเย็นชืด: ขอความกรุณาพนักงานช่วยนำบะหมี่ไปอุ่นให้ร้อนอีกครั้ง",
         ja: "料理の温め直し：麺が冷たいので、キッチンで温め直してもらうよう店員に丁寧に頼みます。",
         ko: "음식 데우기 요청: 면이 너무 식었으니 주방에 다시 데워달라고 정중히 요청하세요.",
-        id: "Komplain makanan dingin: minta pelayan với sopan agar dapur memanaskan kembali mi Anda.",
+        id: "Komplain makanan dingin: minta pelayan dengan sopan agar dapur memanaskan kembali mi Anda.",
         zh: "反馈菜品过凉：炒面端上来完全是凉的，请服务员帮忙拿回厨房重新加热。"
       }
     }
@@ -210,7 +210,7 @@ const SCENARIO_LIBRARY: Record<string, Omit<ChallengeItem, 'id' | 'tier' | 'leve
         th: "แถลงการณ์รับมือวิกฤต: ทีมงานได้แยกขอบเขตความเสียหาย ว่าจ้างผู้ตรวจสอบภายนอก และจะอัปเดตอย่างโปร่งใสทุกชั่วโมง",
         ja: "緊急記者会見：インシデント対応チームが感染範囲を隔離し、第三者監査機関を介入させ、毎時最新情報を公開します。",
         ko: "데이터 유출 위기 대응: 사고 대응팀이 침해 구역을 격리하고 외부 전문 감사관을 투입해 매시간 투명하게 공지하겠습니다.",
-        id: "Pernyataan krisis: tim insiden telah mengisolasi area, melibatkan auditor forensik, và memberi update transparan.",
+        id: "Pernyataan krisis: tim insiden telah mengisolasi area, melibatkan auditor forensik, dan memberi update transparan.",
         zh: "危机公关发声：应急响应团队已隔离泄露范围，引入第三方取证机构，并将按小时公开进展。"
       }
     }
@@ -261,7 +261,7 @@ const SCENARIO_LIBRARY: Record<string, Omit<ChallengeItem, 'id' | 'tier' | 'leve
         th: "ลดขยะพลาสติก: เพื่อน A เสนอเลิกใช้แก้วพลาสติก -> เพื่อน B ต่อยอดด้วยการลดราคา 10% เมื่อนำแก้วส่วนตัวมา",
         ja: "プラスチック削減：Aが使い捨てカップ廃止を提案 -> Bがマイボトル持参者に10%割引を設ける案を補足します。",
         ko: "플라스틱 줄이기 릴레이: A가 일회용 컵 중단 제안 -> B가 텀블러 지참 시 10% 할인 정책을 연계 제안하세요.",
-        id: "Estafet kurangi plastik: A usul stop cangkir sekali pakai -> B sambung với diskon 10% untuk tumbler pribadi.",
+        id: "Estafet kurangi plastik: A usul stop cangkir sekali pakai -> B sambung dengan diskon 10% untuk tumbler pribadi.",
         zh: "环保减塑接力：同学A建议停用一次性杯子 -> 同学B跟进提出自带保温杯立享九折优惠。"
       }
     }
@@ -279,7 +279,7 @@ const SCENARIO_LIBRARY: Record<string, Omit<ChallengeItem, 'id' | 'tier' | 'leve
         ja: "EV普及リレー：Aが電動バイク補助金を提案 -> Bが主要幹線道路沿いへの規格化されたバッテリー交換ステーション整備を補足します。",
         ko: "친환경 전기차 인프라: A가 전기 오토바이 보조금 주장 -> B가 주요 환승 통로에 표준 배터리 교환소 확충을 덧붙이세요.",
         id: "Estafet motor listrik: A usulkan subsidi -> B tekankan perluasan stasiun penukaran baterai terstandarisasi.",
-        zh: "城市电动化接力：嘉宾A主张补贴电摩 -> 嘉宾B紧接着呼吁在主要交通走廊同步布局标准化换电站。"
+        zh: "城市电动化接力：嘉宾A主张补贴电摩 -> 嘉宾B紧接着呼吁在 major 交通走廊同步布局标准化换电站。"
       }
     }
   ],
@@ -451,18 +451,12 @@ export default function Station2Screen({ onBack }: Props) {
     };
   }, []);
 
-  const getBestNaturalVoice = (): SpeechSynthesisVoice | null => {
-    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return null;
-    const voices = window.speechSynthesis.getVoices();
-    if (!voices || voices.length === 0) return null;
-    const voice = voices.find(v => v.lang.startsWith('en') && (v.name.includes('Google US English') || v.name.includes('Siri') || v.name.includes('Natural') || v.name.includes('Samantha')));
-    return voice || voices.find(v => v.lang === 'en-US') || voices.find(v => v.lang.startsWith('en')) || null;
-  };
-
   const stopSampleAudio = () => {
     if (audioPlayerRef.current) {
-      audioPlayerRef.current.pause();
-      audioPlayerRef.current.currentTime = 0;
+      try {
+        audioPlayerRef.current.pause();
+        audioPlayerRef.current.currentTime = 0;
+      } catch (e) {}
       audioPlayerRef.current = null;
     }
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
@@ -471,6 +465,7 @@ export default function Station2Screen({ onBack }: Props) {
     setIsPlayingSample(false);
   };
 
+  // 🔊 BỘ PHÁT ÂM MẪU CHUẨN IOS & DESKTOP (TRẠM 2)
   const playNaturalTTS = async (text: string) => {
     if (isPlayingSample) {
       stopSampleAudio();
@@ -480,32 +475,47 @@ export default function Station2Screen({ onBack }: Props) {
     const cleanText = text.replace(/["']/g, '').trim();
     if (!cleanText) return;
 
+    stopSampleAudio();
     setIsPlayingSample(true);
 
+    // 1. Tạo audio đồng bộ ngay lập tức
+    const audio = new Audio();
+    audioPlayerRef.current = audio;
+
+    (audio as any).playsInline = true;
+    audio.setAttribute('playsinline', 'true');
+    audio.setAttribute('webkit-playsinline', 'true');
+
+    const ttsUrl = `/api/tts?voice=nova&text=${encodeURIComponent(cleanText)}`;
+
+    audio.onended = () => {
+      setIsPlayingSample(false);
+      audioPlayerRef.current = null;
+    };
+
+    audio.onerror = (e) => {
+      console.warn("⚠️ Audio server gặp sự cố, kích hoạt fallback:", e);
+      setIsPlayingSample(false);
+      audioPlayerRef.current = null;
+      fallbackIOSSpeech(cleanText);
+    };
+
     try {
-      const ttsUrl = `/api/tts?voice=nova&text=${encodeURIComponent(cleanText)}`;
-      const audio = new Audio(ttsUrl);
-      audioPlayerRef.current = audio;
-
-      audio.onended = () => {
-        setIsPlayingSample(false);
-        audioPlayerRef.current = null;
-      };
-
-      audio.onerror = () => {
-        console.warn("Edge-TTS unavailable, falling back to client synthesis...");
-        playLocalSampleFallback(cleanText);
-      };
-
-      await audio.play();
-      return;
+      audio.src = ttsUrl;
+      audio.load();
+      const playPromise = audio.play();
+      if (playPromise !== undefined) {
+        await playPromise;
+      }
     } catch (e) {
-      console.warn("TTS Error:", e);
-      playLocalSampleFallback(cleanText);
+      console.warn("⚠️ iOS WebKit chặn phát tự động, kích hoạt fallback:", e);
+      setIsPlayingSample(false);
+      audioPlayerRef.current = null;
+      fallbackIOSSpeech(cleanText);
     }
   };
 
-  const playLocalSampleFallback = (cleanText: string) => {
+  const fallbackIOSSpeech = (cleanText: string) => {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
       setIsPlayingSample(false);
       return;
@@ -514,8 +524,10 @@ export default function Station2Screen({ onBack }: Props) {
     synth.cancel();
 
     const utterance = new SpeechSynthesisUtterance(cleanText);
-    const bestVoice = getBestNaturalVoice();
-    if (bestVoice) utterance.voice = bestVoice;
+    const voices = synth.getVoices();
+    const iosVoice = voices.find(v => v.lang.startsWith('en') && (v.name.includes('Samantha') || v.name.includes('Siri') || v.name.includes('Natural') || v.name.includes('Google US English')));
+    if (iosVoice) utterance.voice = iosVoice;
+
     utterance.lang = 'en-US';
     utterance.rate = 0.90;
     utterance.pitch = 1.0;
@@ -1287,7 +1299,7 @@ Output ONLY raw JSON:
                       style={styles.viewScoreBtn}
                       onPress={() => setDetailedModalVisible(true)}
                     >
-                      <Text style={styles.viewScoreBtnText}>📊 VIEW RUBRICS SCORE</Text>
+                      <Text style={styles.viewScoreBtnText}>📊 VIEW SCORECARD</Text>
                     </TouchableOpacity>
                   )}
                 </View>
