@@ -47,6 +47,132 @@ const LANG_CONFIG: Record<SupportedLang, { flag: string; label: string; code: st
   zh: { flag: '🇨🇳', label: '中文', code: 'CN' }
 };
 
+// 📚 TỪ ĐIỂN ĐA NGÔN NGỮ CHUẨN XÁC CHO KHO MẪU (CHỐNG NHIỄM TIẾNG VIỆT)
+const PRESET_MULTILINGUAL_MAP: Record<string, MultilingualHint> = {
+  'leave / live': {
+    vi: 'Rời đi / Sống, sinh sống',
+    th: 'ออกเดินทาง / อาศัยอยู่',
+    ja: '去る、出発する / 住む、生きる',
+    ko: '떠나다 / 살다, 거주하다',
+    id: 'Pergi, meninggalkan / Tinggal, hidup',
+    zh: '离开 / 居住、生活'
+  },
+  'sheep / ship': {
+    vi: 'Con cừu / Tàu thuyền',
+    th: 'แกะ / เรือเดินสมุทร',
+    ja: '羊 / 船',
+    ko: '양 / 배 (선박)',
+    id: 'Domba / Kapal laut',
+    zh: '绵羊 / 轮船'
+  },
+  'seat / sit': {
+    vi: 'Chỗ ngồi / Ngồi xuống',
+    th: 'ที่นั่ง / นั่งลง',
+    ja: '座席 / 座る',
+    ko: '좌석 / 앉다',
+    id: 'Tempat duduk / Duduk',
+    zh: '座位 / 坐下'
+  },
+  'heat / hit': {
+    vi: 'Hơi nóng / Đánh, va chạm',
+    th: 'ความร้อน / ตี, กระทบ',
+    ja: '熱 / 打つ、当たる',
+    ko: '열기 / 치다, 때리다',
+    id: 'Panas / Memukul',
+    zh: '热度 / 击打'
+  },
+  'reach / rich': {
+    vi: 'Chạm tới / Giàu có',
+    th: 'เอื้อมถึง / ร่ำรวย',
+    ja: '届く、達する / 裕福な',
+    ko: '도달하다 / 부유한',
+    id: 'Mencapai / Kaya raya',
+    zh: '达到、触及 / 富有'
+  },
+  'read / red': {
+    vi: 'Đọc sách / Màu đỏ',
+    th: 'อ่าน / สีแดง',
+    ja: '読む / 赤色',
+    ko: '읽다 / 빨간색',
+    id: 'Membaca / Warna merah',
+    zh: '阅读 / 红色'
+  },
+  'bad / bed': {
+    vi: 'Tồi tệ, xấu / Chiếc giường',
+    th: 'แย่, ไม่ดี / เตียงนอน',
+    ja: '悪い / ベッド',
+    ko: '나쁜 / 침대',
+    id: 'Buruk / Tempat tidur',
+    zh: '不好的 / 床铺'
+  },
+  'pan / pen': {
+    vi: 'Cái chảo / Cây bút',
+    th: 'กระทะ / ปากกา',
+    ja: 'フライパン / ペン',
+    ko: '냄비 (팬) / 펜',
+    id: 'Wajan / Pena',
+    zh: '平底锅 / 钢笔'
+  },
+  'man / men': {
+    vi: 'Một người đàn ông / Những người đàn ông',
+    th: 'ผู้ชาย 1 คน / ผู้ชายหลายคน',
+    ja: '男性（単数） / 男性たち（複数）',
+    ko: '남자 (단수) / 남자들 (복수)',
+    id: 'Seorang pria / Pria-pria',
+    zh: '男人（单数） / 男人们（复数）'
+  },
+  'fan / van': {
+    vi: 'Cái quạt / Xe tải nhỏ',
+    th: 'พัดลม / รถตู้',
+    ja: '扇風機、うちわ / バン（車）',
+    ko: '선풍기 / 밴 (승합차)',
+    id: 'Kipas angin / Mobil van',
+    zh: '风扇 / 厢式货车'
+  }
+};
+
+// 🌐 TỪ ĐIỂN MẸO KHẨU HÌNH ĐA NGÔN NGỮ THEO LÁ CỜ ĐÃ CHỌN
+const ARTICULATION_TIPS_MULTILINGUAL: Record<string, Record<SupportedLang, string>> = {
+  'correct': {
+    vi: 'Khẩu hình chuẩn xác!',
+    th: 'รูปปากและการออกเสียงถูกต้องอย่างสมบูรณ์!',
+    ja: '正確な口の形と調音です！',
+    ko: '완벽하고 정확한 조음과 입모양입니다!',
+    id: 'Bentuk mulut dan artikulasi tepat!',
+    zh: '口型与发音非常准确！'
+  },
+  'short_vowel_i': {
+    vi: 'Đừng kéo dài âm quá mức; giữ âm /ɪ/ ngắn và dứt khoát.',
+    th: 'อย่าลากเสียงยาวเกินไป รักษาเสียงสระ /ɪ/ ให้สั้นและกระชับ',
+    ja: '音を伸ばしすぎないでください。/ɪ/ は短く歯切れよく発音します。',
+    ko: '소리를 너무 길게 끌지 마세요. /ɪ/ 발음은 짧고 분명하게 유지하세요.',
+    id: 'Jangan memanjangkan vokal berlebihan; jaga vokal /ɪ/ tetap pendek dan tegas.',
+    zh: '切勿将元音拖得过长，保持短元音 /ɪ/ 短促有力。'
+  },
+  'long_vowel_i': {
+    vi: 'Kéo khóe miệng sang hai bên như đang cười mỉm để phát âm /iː/ tròn và dài hơi.',
+    th: 'ฉีกมุมปากไปด้านข้างคล้ายรอยยิ้มเพื่อลากเสียงสระยาว /iː/',
+    ja: '口角を横に引いて微笑むように、長い母音 /iː/ をしっかり伸ばします。',
+    ko: '미소를 짓듯 입꼬리를 양옆으로 당기며 장모음 /iː/를 충분히 길게 내세요.',
+    id: 'Tarik sudut bibir ke samping seperti tersenyum untuk membunyikan vokal panjang /iː/.',
+    zh: '嘴角向两侧稍展如微笑状，发足长元音 /iː/ 的时长。'
+  }
+};
+
+function resolveArticulationTip(tipVi: string, lang: SupportedLang): string {
+  if (!tipVi) return '';
+  if (tipVi.includes('chuẩn xác') || tipVi.includes('chính xác')) {
+    return ARTICULATION_TIPS_MULTILINGUAL['correct'][lang];
+  }
+  if (tipVi.includes('dứt khoát') || tipVi.includes('ngắn') || tipVi.includes('kéo dài âm quá mức')) {
+    return ARTICULATION_TIPS_MULTILINGUAL['short_vowel_i'][lang];
+  }
+  if (tipVi.includes('kéo dài') || tipVi.includes('cười mỉm')) {
+    return ARTICULATION_TIPS_MULTILINGUAL['long_vowel_i'][lang];
+  }
+  return tipVi;
+}
+
 // 🌊 CLIENT-SIDE F0 AUTOCORRELATION
 function detectPitchFrame(buffer: Float32Array, sampleRate: number): number | null {
   const size = buffer.length;
@@ -226,13 +352,35 @@ export default function Station1Screen({ onBack }: Props) {
     setIsPlayingTTS(false);
   };
 
+  // 🎯 BỘ CHUẨN HÓA NGỮ ÂM & KHỬ TỪ "SLASH" / SỬA ÂM "LIVE" THÀNH /lɪv/
+  const normalizeSpeechTextForTTS = (rawText: string): string => {
+    let text = rawText.replace(/["']/g, '').trim();
+
+    // 1. Tách các từ phân cách bởi dấu gạch chéo '/' thành danh sách từ rõ ràng
+    const parts = text.split('/').map(w => w.trim()).filter(Boolean);
+
+    // 2. Chuẩn hóa từng từ: Nếu gặp từ 'live' trong cặp đối lập ngữ âm -> hướng dẫn engine đọc đúng /lɪv/
+    const normalizedParts = parts.map(word => {
+      const lower = word.toLowerCase();
+      if (lower === 'live') {
+        return 'liv'; // Trợ âm phiên âm học giúp Microsoft TTS đọc chính xác /lɪv/ thay vì /laɪv/
+      }
+      if (lower === 'come in') return 'cum in';
+      if (lower === 'read' && text.toLowerCase().includes('red')) return 'reed';
+      return word;
+    });
+
+    // 3. Nối bằng dấu chấm lửng kèm khoảng nghỉ để AI ngắt nhịp tự nhiên, KHÔNG BAO GIỜ đọc từ 'slash'
+    return normalizedParts.join(' ... ');
+  };
+
   // 🔊 DUAL-LAYER AUDIO PLAYBACK: EDGE-TTS WITH CLIENT SYNTHESIS FALLBACK
   const playSampleAudio = async (textToSpeak: string) => {
     if (!textToSpeak) return;
     stopAllAudio();
     setIsPlayingTTS(true);
 
-    const cleanSpeechText = textToSpeak.replace(/["']/g, '').trim();
+    const cleanSpeechText = normalizeSpeechTextForTTS(textToSpeak);
 
     // Layer 1: Call Microsoft Edge-TTS serverless endpoint
     try {
@@ -301,12 +449,12 @@ Output ONLY raw JSON (no markdown):
   "contentEn": "The English target phrase or pair",
   "targetFocus": "Phonetic target focus in English",
   "phoneticSpelling": "IPA phonetic notation",
-  "hintVi": "Summary hint in Vietnamese",
-  "hintTh": "Summary hint in Thai",
-  "hintJa": "Summary hint in Japanese",
-  "hintKo": "Summary hint in Korean",
-  "hintId": "Summary hint in Indonesian",
-  "hintZh": "Summary hint in Chinese"
+  "hintVi": "Summary translation in Vietnamese",
+  "hintTh": "Summary translation in Thai (MUST BE REAL THAI, e.g. ออกเดินทาง / อาศัยอยู่)",
+  "hintJa": "Summary translation in Japanese (MUST BE REAL JAPANESE, e.g. 去る / 住む)",
+  "hintKo": "Summary translation in Korean (MUST BE REAL KOREAN, e.g. 떠나다 / 살다)",
+  "hintId": "Summary translation in Indonesian (MUST BE REAL INDONESIAN, e.g. pergi / tinggal)",
+  "hintZh": "Summary translation in Chinese (MUST BE REAL CHINESE, e.g. 离开 / 居住)"
 }`;
 
       const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -362,7 +510,7 @@ Output ONLY raw JSON (no markdown):
     setPreviousScore(null);
     setAttemptCount(0);
 
-    // 1. Consume from AI Queue if available
+    // 1. Tiêu thụ bài từ hàng đợi AI ngầm nếu đã có
     if (aiQueue[type] && aiQueue[type].length > 0) {
       const [nextAiDrill, ...restQueue] = aiQueue[type];
       setAiQueue(prev => ({ ...prev, [type]: restQueue }));
@@ -381,7 +529,7 @@ Output ONLY raw JSON (no markdown):
       return;
     }
 
-    // 2. Fall back to curated library in 0ms
+    // 2. Nạp từ kho bài mẫu 0ms có đối chiếu từ điển đa ngôn ngữ (KHÔNG BỊ NHIỄM TIẾNG VIỆT)
     let bank: (LinkingSoundItem | MinimalPairItem | TongueTwisterItem)[] = [];
     if (type === 'minimal_pairs') bank = MINIMAL_PAIRS_DATA;
     else if (type === 'linking_sounds') bank = LINKING_SOUNDS_DATA;
@@ -394,18 +542,22 @@ Output ONLY raw JSON (no markdown):
     const rawDrill = bank[nextIdx % bank.length];
     const loopNum = Math.floor(nextIdx / bank.length) + 1;
 
+    // Đối chiếu từ điển đa ngôn ngữ chuẩn cho bài mẫu
+    const lookupKey = (rawDrill.contentEn || '').toLowerCase().trim();
+    const mappedHint = PRESET_MULTILINGUAL_MAP[lookupKey] || {
+      vi: rawDrill.contentVi || rawDrill.contentEn,
+      th: rawDrill.contentEn,
+      ja: rawDrill.contentEn,
+      ko: rawDrill.contentEn,
+      id: rawDrill.contentEn,
+      zh: rawDrill.contentEn
+    };
+
     const newDrill: Station1DrillItem = {
       ...rawDrill,
       title: loopNum > 1 ? `${rawDrill.title} (#${loopNum})` : rawDrill.title,
       sessionKey: `preset_${type}_${nextIdx}_${Date.now()}`,
-      hint: {
-        vi: rawDrill.contentVi || rawDrill.contentEn,
-        th: rawDrill.contentVi || rawDrill.contentEn,
-        ja: rawDrill.contentVi || rawDrill.contentEn,
-        ko: rawDrill.contentVi || rawDrill.contentEn,
-        id: rawDrill.contentVi || rawDrill.contentEn,
-        zh: rawDrill.contentVi || rawDrill.contentEn
-      }
+      hint: mappedHint
     };
 
     setCurrentDrill(newDrill);
@@ -682,7 +834,7 @@ Output ONLY raw JSON (no markdown):
             
             <Text style={styles.targetFocus}>🎯 Focus: {currentDrill.targetFocus}</Text>
 
-            {/* 🌐 MULTILINGUAL HINT BAR WITH HIGH-CONTRAST 6-NATION FLAGS */}
+            {/* 🌐 MULTILINGUAL HINT BAR - ĐÃ SẠCH BÓNG NHIỄM TIẾNG VIỆT */}
             <View style={styles.hintContainer}>
               <View style={styles.hintHeaderRow}>
                 <TouchableOpacity 
@@ -730,7 +882,7 @@ Output ONLY raw JSON (no markdown):
               )}
             </View>
 
-            {/* TTS MODEL PLAYBACK */}
+            {/* TTS MODEL PLAYBACK - ĐÃ KHỬ TỪ 'SLASH' VÀ SỬA ÂM /lɪv/ */}
             <TouchableOpacity 
               style={[styles.ttsBtn, isPlayingTTS && styles.ttsBtnActive]} 
               onPress={() => playSampleAudio(currentDrill.contentEn)}
@@ -814,8 +966,19 @@ Output ONLY raw JSON (no markdown):
               )}
             </View>
 
-            {/* 📈 DUAL-TRACE INTONATION CONTOUR */}
-            <IntonationCanvas targetContour={targetContour} studentContour={studentContour} />
+            {/* 📈 DUAL-TRACE INTONATION CONTOUR (ENGLISH-FIRST + EXPLICIT LEGEND) */}
+            <View style={styles.intonationWrapper}>
+              <View style={styles.intonationHeaderRow}>
+                <Text style={styles.intonationTitle}>
+                  📈 PITCH INTONATION CONTOUR:
+                </Text>
+                <View style={styles.intonationLegendRow}>
+                  <Text style={{ color: '#FFD700', fontSize: 9.5, fontWeight: 'bold' }}>— Target Model</Text>
+                  <Text style={{ color: '#00FFFF', fontSize: 9.5, fontWeight: 'bold', marginLeft: 8 }}>— Your Voice</Text>
+                </View>
+              </View>
+              <IntonationCanvas targetContour={targetContour} studentContour={studentContour} />
+            </View>
 
             {/* 🔬 IPA PHONEMIC INSPECTOR */}
             {(() => {
@@ -870,9 +1033,12 @@ Output ONLY raw JSON (no markdown):
                               </View>
                             </View>
 
+                            {/* 💡 MẸO KHẨU HÌNH ĐÃ ĐƯỢC DỊCH THÍCH ỨNG THEO LÁ CỜ ĐÃ CHỌN */}
                             {comparison.tip && (
                               <View style={styles.ipaTipBox}>
-                                <Text style={styles.ipaTipText}>💡 Articulation Tip: {comparison.tip}</Text>
+                                <Text style={styles.ipaTipText}>
+                                  💡 Articulation Tip ({LANG_CONFIG[selectedLang].code}): {resolveArticulationTip(comparison.tip, selectedLang)}
+                                </Text>
                               </View>
                             )}
                           </View>
@@ -913,7 +1079,7 @@ Output ONLY raw JSON (no markdown):
                 {React.createElement(
                   'div',
                   {
-                    style: { width: '100%', marginTop: 6 },
+                    style: { width: '100%', height: '36px', marginTop: '6px' },
                     onMouseDown: (e: any) => e.stopPropagation(),
                     onTouchStart: (e: any) => e.stopPropagation(),
                     onMouseUp: (e: any) => e.stopPropagation(),
@@ -924,7 +1090,7 @@ Output ONLY raw JSON (no markdown):
                     controls: true,
                     playsInline: true,
                     src: result.audioUrl,
-                    style: { width: '100%', height: 36 }
+                    style: { width: '100%', height: '36px' }
                   })
                 )}
               </View>
@@ -1064,6 +1230,11 @@ const styles = StyleSheet.create({
   bestScoreText: { color: '#FFD700', fontSize: 10, fontWeight: 'bold' },
   deltaBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
   deltaText: { fontSize: 10, fontWeight: '900' },
+
+  intonationWrapper: { width: '100%', marginVertical: 8 },
+  intonationHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4, width: '100%' },
+  intonationTitle: { color: '#00FFFF', fontSize: 10, fontWeight: '900' },
+  intonationLegendRow: { flexDirection: 'row', alignItems: 'center' },
 
   ipaDiffContainer: { width: '100%', backgroundColor: '#070314', borderRadius: 12, borderWidth: 1.5, borderColor: '#00FFFF', padding: 12, marginVertical: 10 },
   ipaSectionTitle: { color: '#00FFFF', fontSize: 10, fontWeight: '900', marginBottom: 8, letterSpacing: 0.5 },
