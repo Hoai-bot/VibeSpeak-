@@ -6,6 +6,7 @@ import * as DetailedModalModule from '../components/DetailedSpeechFeedbackModal'
 import { evaluateSpeechSubmission } from '../utils/speechEvaluator';
 import { evaluateSpeaking } from '../services/arena/assessmentService';
 import { supabase } from '../utils/supabase';
+import { getSavedStudentProfile, saveStudentProfile } from '../utils/studentSession';
 
 // 🛡️ TỰ ĐỘNG BÓC TÁCH COMPONENT CHUẨN XÁC CHỐNG LỖI REACT #130
 const AntiCheatSpeakingSession: React.ComponentType<any> = 
@@ -313,6 +314,15 @@ export default function Station2Screen({ onBack }: Props) {
   const [teacherAssignments, setTeacherAssignments] = useState<ChallengeItem[]>([]);
   const [loadingAssignments, setLoadingAssignments] = useState<boolean>(true);
 
+  // 🎓 QUẢN LÝ MÃ LỚP & ĐỊNH DANH SINH VIÊN TỰ ĐỘNG (LOCALSTORAGE)
+  const [classCodeInput, setClassCodeInput] = useState<string>(() => getSavedStudentProfile().classCode);
+  const [studentNameInput, setStudentNameInput] = useState<string>(() => getSavedStudentProfile().studentName);
+  const [studentCodeInput, setStudentCodeInput] = useState<string>(() => getSavedStudentProfile().studentCode);
+  const [showProfileBar, setShowProfileBar] = useState<boolean>(() => {
+    const p = getSavedStudentProfile();
+    return !p.studentName || !p.studentCode;
+  });
+
   // 🌐 GỢI Ý THUẦN TIẾNG VIỆT (KHÔNG CẦN CHỌN CỜ)
   const [showHint, setShowHint] = useState<boolean>(true);
 
@@ -460,15 +470,23 @@ export default function Station2Screen({ onBack }: Props) {
   const [detailedModalVisible, setDetailedModalVisible] = useState<boolean>(false);
   const [feedbackResult, setFeedbackResult] = useState<DetailedFeedbackData | null>(null);
 
-  const fetchTeacherAssignments = async () => {
+  // 🔄 LỌC BÀI TẬP GIẢNG VIÊN GIAO THEO MÃ LỚP (CLASS CODE)
+  const fetchTeacherAssignments = async (targetClassCode?: string) => {
     setLoadingAssignments(true);
+    const activeCode = (targetClassCode ?? classCodeInput).toUpperCase().trim();
     try {
       if (supabase) {
-        const { data: assignments, error } = await supabase
+        let query = supabase
           .from('assignments')
           .select('*')
           .ilike('station_type', '%STATION_2%')
           .order('created_at', { ascending: false });
+
+        if (activeCode) {
+          query = query.eq('class_code', activeCode);
+        }
+
+        const { data: assignments, error } = await query;
 
         if (!error && assignments && assignments.length > 0) {
           const teacherItems: ChallengeItem[] = assignments.map((item: any) => {
@@ -482,7 +500,7 @@ export default function Station2Screen({ onBack }: Props) {
               tier: detectedTier,
               level: (item.cefr_level || 'B2').toUpperCase() as CefrLevel,
               title: item.title || 'Nhiệm vụ giảng viên giao',
-              place: 'Lớp học / Phòng Lab',
+              place: `Lớp ${item.class_code || 'PUBLIC'}`,
               task: 'Hoàn thành thử thách phản xạ được chỉ định',
               contextDesc: item.description || `🏫 Bối cảnh phản xạ được giao (${detectedTier}):`,
               prompt: item.target_prompt || '',
@@ -494,6 +512,8 @@ export default function Station2Screen({ onBack }: Props) {
           });
 
           setTeacherAssignments(teacherItems);
+        } else {
+          setTeacherAssignments([]);
         }
       }
     } catch (err) {
@@ -501,6 +521,20 @@ export default function Station2Screen({ onBack }: Props) {
     } finally {
       setLoadingAssignments(false);
     }
+  };
+
+  const handleSaveStudentSession = () => {
+    const updated = saveStudentProfile({
+      studentName: studentNameInput,
+      studentCode: studentCodeInput,
+      classCode: classCodeInput,
+    });
+    setStudentNameInput(updated.studentName);
+    setStudentCodeInput(updated.studentCode);
+    setClassCodeInput(updated.classCode);
+    setShowProfileBar(false);
+    fetchTeacherAssignments(updated.classCode);
+    Alert.alert("Đã lưu thông tin", `✅ Đã ghi nhớ: ${updated.studentName || 'Học viên'} (${updated.studentCode || 'Chưa có MSSV'}) - Mã lớp: ${updated.classCode || 'Tự do'}`);
   };
 
   useEffect(() => {
@@ -514,13 +548,16 @@ export default function Station2Screen({ onBack }: Props) {
       if (filtered.length > 0) {
         setCurrentChallenge(filtered[0]);
         return;
+      } else if (teacherAssignments.length > 0) {
+        setCurrentChallenge(teacherAssignments[0]);
+        return;
       }
     }
     const fresh = createProceduralScenario(selectedTier, selectedLevel, 0);
     setCurrentChallenge(fresh);
     setTopicIndex(0);
     setAiQueue([]);
-  }, [selectedTier, selectedLevel, topicOrigin]);
+  }, [selectedTier, selectedLevel, topicOrigin, teacherAssignments]);
 
   // 🤖 BACKGROUND AI REFILL QUA SERVERLESS API BẢO MẬT
   const triggerBackgroundAiRefill = async (tier: Station2Tier, level: CefrLevel) => {
@@ -574,6 +611,11 @@ Output ONLY raw JSON:
     stopSampleAudio();
     const nextIdx = topicIndex + 1;
     setTopicIndex(nextIdx);
+
+    if (topicOrigin === 'TEACHER_DASHBOARD' && teacherAssignments.length > 0) {
+      setCurrentChallenge(teacherAssignments[nextIdx % teacherAssignments.length]);
+      return;
+    }
 
     if (aiQueue.length > 0) {
       const [aiItem, ...remainingQueue] = aiQueue;
@@ -848,7 +890,7 @@ Output ONLY raw JSON:
     return () => { if (timer) clearInterval(timer); };
   }, [isRecordingNormal]);
 
-  // 📊 XỬ LÝ CHẤM ĐIỂM VÀ ĐỒNG BỘ TAPESCRIPT WHISPER
+  // 📊 XỬ LÝ CHẤM ĐIỂM VÀ ĐỒNG BỘ TAPESCRIPT WHISPER + MÃ LỚP
   const finishSubmissionAndEvaluate = async (audioBlob: Blob, pitchHistory: number[], localAudioUrl?: string) => {
     setIsEvaluating(true);
     setEvaluatingStatus('⚡ AI ĐANG PHÂN TÍCH ÂM HỌC & XUẤT BẢN GHI SCRIPT...');
@@ -1011,11 +1053,13 @@ Output ONLY raw JSON:
           audioUrl = urlData?.publicUrl || '';
         }
 
+        const profile = getSavedStudentProfile();
         const { data: authUser } = await supabase.auth.getUser();
         await supabase.from('submissions').insert([{
-          student_name: authUser?.user?.user_metadata?.full_name || 'Học viên Đấu Trường',
-          student_code: authUser?.user?.email?.split('@')[0] || 'STU_S2',
-          class_name: `Trạm 2: ${selectedTier} (${selectedLevel}) [${practiceMode === 'READ_SAMPLE' ? 'Đọc Mẫu' : 'Phản Xạ Tự Nhiên'}]`,
+          student_name: profile.studentName || authUser?.user?.user_metadata?.full_name || 'Học viên Đấu Trường',
+          student_code: profile.studentCode || authUser?.user?.email?.split('@')[0] || 'STU_S2',
+          class_code: profile.classCode || 'PUBLIC',
+          class_name: `[${profile.classCode || 'PUBLIC'}] Trạm 2: ${selectedTier} (${selectedLevel}) [${practiceMode === 'READ_SAMPLE' ? 'Đọc Mẫu' : 'Phản Xạ Tự Nhiên'}]`,
           mode: `STATION_2_${selectedTier}`,
           cefr_level: currentChallenge?.level || selectedLevel,
           score: evaluated.totalScore,
@@ -1050,6 +1094,55 @@ Output ONLY raw JSON:
       </View>
 
       <ScrollView contentContainerStyle={{ paddingBottom: 35 }}>
+        {/* 🎓 THANH ĐỊNH DANH SINH VIÊN & MÃ LỚP (TỰ ĐỘNG LƯU LOCALSTORAGE) */}
+        <View style={styles.profileBanner}>
+          <View style={styles.profileSummaryRow}>
+            <Text style={styles.profileSummaryText}>
+              👤 {studentNameInput || 'Chưa nhập tên'} {studentCodeInput ? `(${studentCodeInput})` : ''} | 🏫 Lớp: <Text style={{ color: '#00FFFF' }}>{classCodeInput || 'TỰ DO'}</Text>
+            </Text>
+            <TouchableOpacity 
+              style={styles.editProfileBtn} 
+              onPress={() => setShowProfileBar(prev => !prev)}
+            >
+              <Text style={styles.editProfileBtnText}>{showProfileBar ? '▲ Đóng' : '✏️ Nhập Mã Lớp / Tên'}</Text>
+            </TouchableOpacity>
+          </View>
+
+          {showProfileBar && (
+            <View style={styles.profileFormBox}>
+              <View style={styles.profileInputRow}>
+                <TextInput
+                  style={[styles.profileInput, { flex: 1.4 }]}
+                  placeholder="Họ và tên sinh viên (*)"
+                  placeholderTextColor="#666688"
+                  value={studentNameInput}
+                  onChangeText={setStudentNameInput}
+                />
+                <TextInput
+                  style={[styles.profileInput, { flex: 1 }]}
+                  placeholder="Mã SV (*)"
+                  placeholderTextColor="#666688"
+                  value={studentCodeInput}
+                  onChangeText={setStudentCodeInput}
+                />
+              </View>
+              <View style={styles.profileInputRow}>
+                <TextInput
+                  style={[styles.profileInput, { flex: 1.4 }]}
+                  placeholder="Mã lớp (VD: ENG101_K18)"
+                  placeholderTextColor="#666688"
+                  autoCapitalize="characters"
+                  value={classCodeInput}
+                  onChangeText={(val) => setClassCodeInput(val.toUpperCase())}
+                />
+                <TouchableOpacity style={styles.saveProfileBtn} onPress={handleSaveStudentSession}>
+                  <Text style={styles.saveProfileBtnText}>💾 LƯU THÔNG TIN</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+        </View>
+
         {!isTeacherExamining && !isNormalPracticing && (
           <>
             {/* 1. NGUỒN ĐỀ BÀI */}
@@ -1067,11 +1160,14 @@ Output ONLY raw JSON:
 
               <TouchableOpacity
                 style={[styles.originTab, topicOrigin === 'TEACHER_DASHBOARD' && styles.originTabActiveTeacher]}
-                onPress={() => setTopicOrigin('TEACHER_DASHBOARD')}
+                onPress={() => {
+                  setTopicOrigin('TEACHER_DASHBOARD');
+                  fetchTeacherAssignments(classCodeInput);
+                }}
               >
                 <Text style={styles.originTabIcon}>🏫</Text>
                 <Text style={[styles.originTabText, topicOrigin === 'TEACHER_DASHBOARD' && styles.originTabTextActive]}>
-                  GIẢNG VIÊN GIAO
+                  GIẢNG VIÊN GIAO {teacherAssignments.length > 0 ? `(${teacherAssignments.length})` : ''}
                 </Text>
               </TouchableOpacity>
 
@@ -1085,6 +1181,23 @@ Output ONLY raw JSON:
                 </Text>
               </TouchableOpacity>
             </View>
+
+            {/* THÔNG BÁO KHI CHỌN TAB GIẢNG VIÊN GIAO MÀ CHƯA CÓ BÀI */}
+            {topicOrigin === 'TEACHER_DASHBOARD' && (
+              <View style={styles.teacherFilterNotice}>
+                {loadingAssignments ? (
+                  <Text style={styles.teacherFilterText}>⏳ Đang tải danh sách bài tập của lớp {classCodeInput || 'PUBLIC'}...</Text>
+                ) : teacherAssignments.length === 0 ? (
+                  <Text style={styles.teacherFilterText}>
+                    ⚠️ Chưa tìm thấy bài tập Trạm 2 nào cho mã lớp "{classCodeInput || 'PUBLIC'}". Hãy nhập đúng Mã lớp ở thanh phía trên hoặc luyện tập với Hệ thống mẫu!
+                  </Text>
+                ) : (
+                  <Text style={[styles.teacherFilterText, { color: '#39FF14' }]}>
+                    ✅ Đã tải {teacherAssignments.length} bài tập được giao cho lớp {classCodeInput || 'PUBLIC'}.
+                  </Text>
+                )}
+              </View>
+            )}
 
             {/* 2. CHẾ ĐỘ PHẢN XẠ */}
             <Text style={styles.sectionHeaderLabel}>2. CHỌN CHẾ ĐỘ PHẢN XẠ:</Text>
@@ -1515,6 +1628,20 @@ const styles = StyleSheet.create({
   backBtn: { padding: 8, backgroundColor: '#0D0620', borderRadius: 8, borderWidth: 1, borderColor: '#00FFFF' },
   backBtnText: { color: '#00FFFF', fontSize: 10, fontWeight: 'bold' },
   title: { color: '#FF007F', fontSize: 11.5, fontWeight: '900', flexShrink: 1 },
+
+  profileBanner: { backgroundColor: '#0D0620', padding: 10, borderRadius: 10, borderWidth: 1, borderColor: '#00FFFF', marginBottom: 10 },
+  profileSummaryRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  profileSummaryText: { color: '#FFF', fontSize: 10, fontWeight: 'bold', flex: 1 },
+  editProfileBtn: { backgroundColor: '#1A0B2E', paddingVertical: 4, paddingHorizontal: 8, borderRadius: 6, borderWidth: 1, borderColor: '#FFD700' },
+  editProfileBtnText: { color: '#FFD700', fontSize: 9, fontWeight: 'bold' },
+  profileFormBox: { marginTop: 8, borderTopWidth: 1, borderTopColor: '#221144', paddingTop: 8, gap: 6 },
+  profileInputRow: { flexDirection: 'row', gap: 6 },
+  profileInput: { backgroundColor: '#070212', borderWidth: 1, borderColor: '#332255', borderRadius: 6, padding: 6, color: '#FFF', fontSize: 10.5 },
+  saveProfileBtn: { flex: 1, backgroundColor: '#39FF14', borderRadius: 6, justifyContent: 'center', alignItems: 'center', paddingVertical: 6 },
+  saveProfileBtnText: { color: '#000', fontSize: 9.5, fontWeight: '900' },
+
+  teacherFilterNotice: { backgroundColor: '#0B192C', padding: 8, borderRadius: 8, borderWidth: 1, borderColor: '#00FFFF', marginBottom: 8 },
+  teacherFilterText: { color: '#FFD700', fontSize: 9.5, lineHeight: 14 },
 
   sectionHeaderLabel: { color: '#FFD700', fontSize: 9.5, fontWeight: '900', marginTop: 8, marginBottom: 6 },
 

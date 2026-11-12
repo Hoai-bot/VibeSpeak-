@@ -4,6 +4,7 @@ import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator
 import { evaluateSpeaking, AssessmentResult } from '../services/arena/assessmentService';
 import { updateUserProgress, saveSubmissionToCloud } from '../services/userService';
 import { SPEAKING_EXPRESS_DATA, ExpressExerciseItem } from '../data/station4/speakingExpress';
+import { getSavedStudentProfile, saveStudentProfile } from '../utils/studentSession';
 
 interface Props {
   onBack: () => void;
@@ -67,6 +68,13 @@ const safeBlobToBase64 = (blob: Blob): Promise<string> => {
 export default function Station4Screen({ onBack }: Props) {
   const [cefrLevel, setCefrLevel] = useState<CEFRLevel>('B1');
   const [topicSource, setTopicSource] = useState<'ai' | 'custom'>('ai');
+
+  // 🎓 QUẢN LÝ MÃ LỚP & ĐỊNH DANH SINH VIÊN TỰ ĐỘNG (LOCALSTORAGE)
+  const savedProfile = getSavedStudentProfile();
+  const [studentNameInput, setStudentNameInput] = useState<string>(savedProfile.studentName);
+  const [studentCodeInput, setStudentCodeInput] = useState<string>(savedProfile.studentCode);
+  const [classCodeInput, setClassCodeInput] = useState<string>(savedProfile.classCode);
+  const [showProfileBar, setShowProfileBar] = useState<boolean>(() => !savedProfile.studentName || !savedProfile.studentCode);
 
   // 🌐 GỢI Ý THUẦN TIẾNG VIỆT
   const [showHint, setShowHint] = useState<boolean>(true);
@@ -218,12 +226,24 @@ export default function Station4Screen({ onBack }: Props) {
 
   // Modal nộp bài
   const [showIdentityModal, setShowIdentityModal] = useState<boolean>(false);
-  const [studentNameInput, setStudentNameInput] = useState<string>('');
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
 
   const levels: CEFRLevel[] = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
+
+  const handleSaveStudentSession = () => {
+    const updated = saveStudentProfile({
+      studentName: studentNameInput,
+      studentCode: studentCodeInput,
+      classCode: classCodeInput,
+    });
+    setStudentNameInput(updated.studentName);
+    setStudentCodeInput(updated.studentCode);
+    setClassCodeInput(updated.classCode);
+    setShowProfileBar(false);
+    Alert.alert("Đã lưu thông tin", `✅ Đã ghi nhớ: ${updated.studentName || 'Học viên'} (${updated.studentCode || 'Chưa có MSSV'}) - Mã lớp: ${updated.classCode || 'Tự do'}`);
+  };
 
   const getActiveTopic = (): Station4TopicItem => {
     if (topicSource === 'custom') {
@@ -489,6 +509,12 @@ Output ONLY raw JSON (no markdown):
       setResult(calibratedEvalData);
       updateUserProgress(4, dynamicTotalScore, dynamicTotalScore >= 65);
 
+      // Nạp lại thông tin mới nhất từ localStorage trước khi mở Modal nộp bài
+      const latest = getSavedStudentProfile();
+      if (latest.studentName) setStudentNameInput(latest.studentName);
+      if (latest.studentCode) setStudentCodeInput(latest.studentCode);
+      if (latest.classCode) setClassCodeInput(latest.classCode);
+
       setShowIdentityModal(true);
     } catch (err) {
       console.error("Express scoring error:", err);
@@ -499,32 +525,41 @@ Output ONLY raw JSON (no markdown):
   };
 
   const handleConfirmSubmission = async () => {
-    if (!studentNameInput.trim()) {
-      Alert.alert("Thông báo", "Vui lòng nhập Họ tên hoặc Mã học viên!");
+    if (!studentNameInput.trim() || !studentCodeInput.trim()) {
+      Alert.alert("Thông báo", "Vui lòng nhập đầy đủ Họ tên và Mã sinh viên!");
       return;
     }
 
     if (!result) return;
+
+    // Lưu tự động vào localStorage để đồng bộ giữa tất cả các trạm
+    const updatedProfile = saveStudentProfile({
+      studentName: studentNameInput,
+      studentCode: studentCodeInput,
+      classCode: classCodeInput || 'PUBLIC',
+    });
 
     let base64Audio = '';
     if (recordedBlob) {
       base64Audio = await safeBlobToBase64(recordedBlob);
     }
 
+    const activeClassTag = updatedProfile.classCode || 'PUBLIC';
+
     await saveSubmissionToCloud({
-      studentName: studentNameInput.trim(),
-      className: 'EXPRESS MONOLOGUE COHORT',
+      studentName: `${updatedProfile.studentCode} - ${updatedProfile.studentName}`,
+      className: `[${activeClassTag}] EXPRESS MONOLOGUE`,
       mode: 'EXPRESS',
       cefrLevel: cefrLevel,
       score: result.score || 85,
       transcript: result.transcript || '',
       audioUrl: base64Audio || audioUrl || undefined,
-      feedback: `Tốc độ phản xạ: ${calculatedWpm} WPM | ${result.detailedFeedback || 'Đạt ngưỡng lưu loát.'}`,
+      feedback: `Lớp: ${activeClassTag} | Tốc độ phản xạ: ${calculatedWpm} WPM | ${result.detailedFeedback || 'Đạt ngưỡng lưu loát.'}`,
       timestamp: new Date().toISOString()
     });
 
     setShowIdentityModal(false);
-    Alert.alert("Thành công", "✅ Phiếu điểm Express đã được đồng bộ lên Bảng điều khiển Giảng viên!");
+    Alert.alert("Thành công", `✅ Phiếu điểm Express của ${updatedProfile.studentName} (${updatedProfile.studentCode}) đã được đồng bộ lên lớp [${activeClassTag}]!`);
   };
 
   return (
@@ -537,6 +572,55 @@ Output ONLY raw JSON (no markdown):
       </View>
 
       <ScrollView contentContainerStyle={{ alignItems: 'center', width: '100%', paddingBottom: 35 }}>
+        {/* 🎓 THANH ĐỊNH DANH SINH VIÊN & MÃ LỚP (TỰ ĐỘNG LƯU LOCALSTORAGE) */}
+        <View style={styles.profileBanner}>
+          <View style={styles.profileSummaryRow}>
+            <Text style={styles.profileSummaryText}>
+              👤 {studentNameInput || 'Chưa nhập tên'} {studentCodeInput ? `(${studentCodeInput})` : ''} | 🏫 Lớp: <Text style={{ color: '#00FFFF' }}>{classCodeInput || 'TỰ DO'}</Text>
+            </Text>
+            <TouchableOpacity 
+              style={styles.editProfileBtn} 
+              onPress={() => setShowProfileBar(prev => !prev)}
+            >
+              <Text style={styles.editProfileBtnText}>{showProfileBar ? '▲ Đóng' : '✏️ Nhập Mã Lớp / Tên'}</Text>
+            </TouchableOpacity>
+          </View>
+
+          {showProfileBar && (
+            <View style={styles.profileFormBox}>
+              <View style={styles.profileInputRow}>
+                <TextInput
+                  style={[styles.profileInput, { flex: 1.4 }]}
+                  placeholder="Họ và tên sinh viên (*)"
+                  placeholderTextColor="#666688"
+                  value={studentNameInput}
+                  onChangeText={setStudentNameInput}
+                />
+                <TextInput
+                  style={[styles.profileInput, { flex: 1 }]}
+                  placeholder="Mã SV (*)"
+                  placeholderTextColor="#666688"
+                  value={studentCodeInput}
+                  onChangeText={setStudentCodeInput}
+                />
+              </View>
+              <View style={styles.profileInputRow}>
+                <TextInput
+                  style={[styles.profileInput, { flex: 1.4 }]}
+                  placeholder="Mã lớp (VD: ENG101_K18)"
+                  placeholderTextColor="#666688"
+                  autoCapitalize="characters"
+                  value={classCodeInput}
+                  onChangeText={(val) => setClassCodeInput(val.toUpperCase())}
+                />
+                <TouchableOpacity style={styles.saveProfileBtn} onPress={handleSaveStudentSession}>
+                  <Text style={styles.saveProfileBtnText}>💾 LƯU THÔNG TIN</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+        </View>
+
         {/* 1. CHỌN NGUỒN ĐỀ */}
         <Text style={styles.sectionLabel}>1. CHỌN NGUỒN CHỦ ĐỀ:</Text>
         <View style={styles.sourceRow}>
@@ -777,7 +861,7 @@ Output ONLY raw JSON (no markdown):
             )}
 
             <View style={styles.transcriptBox}>
-              <Text style={styles.transcriptHeader}>🎙️ AI ACOUSTIC RECOGNITION TAPESCRIPT:</Text>
+              <Text style={styles.transcriptHeader}>🎙️ VĂN BẢN AI NGHE VÀ GHI NHẬN ĐƯỢC:</Text>
               <Text style={styles.transcriptBody}>"{result.transcript}"</Text>
             </View>
 
@@ -801,19 +885,36 @@ Output ONLY raw JSON (no markdown):
         )}
       </ScrollView>
 
-      {/* MODAL LƯU PHIẾU ĐIỂM */}
+      {/* MODAL LƯU PHIẾU ĐIỂM (ĐÃ TÍCH HỢP TỰ ĐỘNG ĐIỀN & LƯU LOCALSTORAGE) */}
       <Modal visible={showIdentityModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>🎖️ LƯU BẢNG ĐIỂM EXPRESS</Text>
-            <Text style={styles.modalSub}>Nhập Mã học viên hoặc Họ tên của bạn để đồng bộ lên Bảng điều khiển Giảng viên:</Text>
+            <Text style={styles.modalSub}>Xác nhận thông tin sinh viên và Mã lớp để đồng bộ lên Bảng điều khiển Giảng viên:</Text>
+            
             <TextInput
               style={styles.modalInput}
-              placeholder="Ví dụ: K18 - 210088 - Nguyễn Văn A"
+              placeholder="Họ và tên sinh viên (*)"
               placeholderTextColor="#666688"
               value={studentNameInput}
               onChangeText={setStudentNameInput}
             />
+            <TextInput
+              style={styles.modalInput}
+              placeholder="Mã số sinh viên (*)"
+              placeholderTextColor="#666688"
+              value={studentCodeInput}
+              onChangeText={setStudentCodeInput}
+            />
+            <TextInput
+              style={styles.modalInput}
+              placeholder="Mã lớp (VD: ENG101_K18 - Để trống nếu luyện tự do)"
+              placeholderTextColor="#666688"
+              autoCapitalize="characters"
+              value={classCodeInput}
+              onChangeText={(val) => setClassCodeInput(val.toUpperCase())}
+            />
+
             <TouchableOpacity style={styles.modalBtn} onPress={handleConfirmSubmission}>
               <Text style={styles.modalBtnText}>🚀 XÁC NHẬN & ĐỒNG BỘ BÀI NỘP</Text>
             </TouchableOpacity>
@@ -830,6 +931,18 @@ const styles = StyleSheet.create({
   backBtn: { padding: 8, backgroundColor: '#0D0620', borderRadius: 8, borderWidth: 1, borderColor: '#00FFFF' },
   backText: { color: '#00FFFF', fontSize: 10, fontWeight: 'bold' },
   title: { color: '#FF007F', fontSize: 11, fontWeight: '900' },
+
+  profileBanner: { width: '100%', backgroundColor: '#0D0620', padding: 10, borderRadius: 10, borderWidth: 1, borderColor: '#00FFFF', marginBottom: 12 },
+  profileSummaryRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  profileSummaryText: { color: '#FFF', fontSize: 10, fontWeight: 'bold', flex: 1 },
+  editProfileBtn: { backgroundColor: '#1A0B2E', paddingVertical: 4, paddingHorizontal: 8, borderRadius: 6, borderWidth: 1, borderColor: '#FFD700' },
+  editProfileBtnText: { color: '#FFD700', fontSize: 9, fontWeight: 'bold' },
+  profileFormBox: { marginTop: 8, borderTopWidth: 1, borderTopColor: '#221144', paddingTop: 8, gap: 6 },
+  profileInputRow: { flexDirection: 'row', gap: 6 },
+  profileInput: { backgroundColor: '#070212', borderWidth: 1, borderColor: '#332255', borderRadius: 6, padding: 6, color: '#FFF', fontSize: 10.5 },
+  saveProfileBtn: { flex: 1, backgroundColor: '#39FF14', borderRadius: 6, justifyContent: 'center', alignItems: 'center', paddingVertical: 6 },
+  saveProfileBtnText: { color: '#000', fontSize: 9.5, fontWeight: '900' },
+
   sectionLabel: { color: '#FFD700', fontSize: 10, fontWeight: 'bold', alignSelf: 'flex-start', marginBottom: 6 },
 
   sourceRow: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginBottom: 14 },
@@ -966,7 +1079,7 @@ const styles = StyleSheet.create({
   modalContent: { backgroundColor: '#0D0620', padding: 20, borderRadius: 14, borderWidth: 2, borderColor: '#00FFFF', width: '100%', alignItems: 'center' },
   modalTitle: { color: '#00FFFF', fontSize: 12, fontWeight: '900', marginBottom: 6 },
   modalSub: { color: '#AAAABB', fontSize: 10, textAlign: 'center', marginBottom: 15 },
-  modalInput: { backgroundColor: '#130A2A', borderWidth: 1, borderColor: '#00FFFF', borderRadius: 8, padding: 10, color: '#FFF', width: '100%', fontSize: 11, marginBottom: 15 },
-  modalBtn: { backgroundColor: '#39FF14', paddingVertical: 12, paddingHorizontal: 20, borderRadius: 8, width: '100%', alignItems: 'center' },
+  modalInput: { backgroundColor: '#130A2A', borderWidth: 1, borderColor: '#00FFFF', borderRadius: 8, padding: 10, color: '#FFF', width: '100%', fontSize: 11, marginBottom: 10 },
+  modalBtn: { backgroundColor: '#39FF14', paddingVertical: 12, paddingHorizontal: 20, borderRadius: 8, width: '100%', alignItems: 'center', marginTop: 4 },
   modalBtnText: { color: '#000', fontSize: 10, fontWeight: '900' }
 });
