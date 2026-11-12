@@ -640,7 +640,7 @@ Output ONLY raw JSON (no markdown):
         <TouchableOpacity onPress={onBack} style={styles.backBtn}>
           <Text style={styles.backText}>🔙 BẢN ĐỒ</Text>
         </TouchableOpacity>
-        <Text style={styles.title}>🎯 TRẠM 1: PHÒNG LAB LUYỆN NGỮ ÂM</Text>
+        <Text style={styles.title}>🎯 TRẠM 1: PHÒNG THỰC HÀNH NGỮ ÂM IPA</Text>
       </View>
 
       <ScrollView contentContainerStyle={{ alignItems: 'center', width: '100%', paddingBottom: 35 }}>
@@ -720,7 +720,7 @@ Output ONLY raw JSON (no markdown):
               activeOpacity={0.7}
             >
               <Text style={styles.ttsBtnText}>
-                {isPlayingTTS ? '⏹ ĐANG PHÁT ÂM MẪU NEURAL...' : '🔊 NGHE PHÁT ÂM MẪU BẢN XỨ'}
+                {isPlayingTTS ? '⏹ ĐANG PHÁT GIỌNG MẪU...' : '🔊 NGHE GIỌNG ĐỌC MẪU BẢN XỨ'}
               </Text>
             </TouchableOpacity>
 
@@ -730,7 +730,7 @@ Output ONLY raw JSON (no markdown):
               onPress={() => handleLoadNewDrill(activeType)}
               activeOpacity={0.7}
             >
-              <Text style={styles.refreshBtnText}>🔄 ĐỔI BÀI TẬP TIẾP THEO (0MS)</Text>
+              <Text style={styles.refreshBtnText}>🔄 ĐỔI BÀI TẬP TIẾP THEO</Text>
             </TouchableOpacity>
 
             {/* REALTIME AUDIO WAVE VISUALIZER */}
@@ -929,7 +929,7 @@ Output ONLY raw JSON (no markdown):
 
             {/* TRANSCRIBED SCRIPT */}
             <View style={styles.scriptBox}>
-              <Text style={styles.scriptLabel}>📝 AI Tapescript ghi nhận:</Text>
+              <Text style={styles.scriptLabel}>📝 Văn bản AI nghe và ghi nhận được:</Text>
               <Text style={styles.scriptContent}>"{result.transcript || '(Âm học không rõ ràng)'}"</Text>
             </View>
 

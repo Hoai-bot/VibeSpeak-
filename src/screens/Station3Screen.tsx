@@ -102,7 +102,7 @@ export default function Station3Screen({ onBack }: Props) {
       id: `boss_${lvl}_default`,
       level: lvl as any,
       bossName: 'Ghost Speed Stalker',
-      bossTitle: 'Speed Phantom',
+      bossTitle: 'Thử Thách Tốc Độ',
       bossAvatar: '👻',
       maxHp: 150,
       timeLimitSeconds: 12,
@@ -191,7 +191,7 @@ export default function Station3Screen({ onBack }: Props) {
     audioChunksRef.current = [];
   };
 
-  // 🎙️ PHÁT GIỌNG SHADOW BOSS CHUẨN IOS (TRẠM 3)
+  // 🎙️ PHÁT GIỌNG MẪU TỐC ĐỘ CHUẨN IOS (TRẠM 3)
   const playNaturalTTS = async (text: string) => {
     if (isPlayingAudio) {
       stopAllAudio();
@@ -276,7 +276,7 @@ export default function Station3Screen({ onBack }: Props) {
 Output JSON ONLY:
 {
   "bossName": "Name of Shadow Entity",
-  "bossTitle": "Title in English (e.g., Rhythm Phantom)",
+  "bossTitle": "Thử Thách Tốc Độ",
   "bossAvatar": "👻",
   "maxHp": 150,
   "timeLimitSeconds": 12,
@@ -297,7 +297,7 @@ Output JSON ONLY:
           id: `ai_${Date.now()}`,
           level: level as any,
           bossName: `🤖 ${content.bossName}`,
-          bossTitle: content.bossTitle || 'Speed Phantom',
+          bossTitle: content.bossTitle || 'Thử Thách Tốc Độ',
           bossAvatar: content.bossAvatar || '👻',
           maxHp: content.maxHp || 150,
           timeLimitSeconds: content.timeLimitSeconds || 12,
@@ -435,7 +435,7 @@ Output JSON ONLY:
             setAudioUrl(URL.createObjectURL(blob));
             setHasRecordedCurrentSession(true);
           } else {
-            Alert.alert("Thông báo", "⚠️ Không ghi nhận được giọng nói rõ ràng! Hãy Shadowing to và nhanh hơn.");
+            Alert.alert("Thông báo", "⚠️ Không ghi nhận được giọng nói rõ ràng! Hãy đọc to và dứt khoát hơn.");
           }
 
           if (pitchIntervalRef.current) clearInterval(pitchIntervalRef.current);
@@ -496,7 +496,7 @@ Output JSON ONLY:
 
   const handleAttackBoss = async () => {
     if (!hasRecordedCurrentSession || !audioBlob) {
-      Alert.alert("Yêu cầu hành động", "🔒 Hãy hoàn thành phần đọc shadowing trước khi tấn công!");
+      Alert.alert("Yêu cầu hành động", "🔒 Hãy hoàn thành phần thu âm trước khi gửi chấm điểm!");
       return;
     }
 
@@ -541,7 +541,7 @@ Output JSON ONLY:
         const notice = critical 
           ? `🔥 ĐÒN ĐÁNH TỐC ĐỘ CHÍ MẠNG (x${mult})! Thời gian phản xạ: ${speechDuration}s!` 
           : `⚡ Tốc độ phản xạ: ${speechDuration}s (Hệ số nhân x${mult}).`;
-        setLastFeedback(`${notice} | ${evalResult.detailedFeedback || 'Nhịp điệu shadowing chuẩn xác!'}`);
+        setLastFeedback(`${notice} | ${evalResult.detailedFeedback || 'Nhịp điệu và tốc độ đọc đuổi rất chuẩn xác!'}`);
 
         if (newHp === 0) {
           updateUserProgress(3, 100, true);
@@ -564,14 +564,14 @@ Output JSON ONLY:
         <TouchableOpacity onPress={onBack} style={styles.backBtn}>
           <Text style={styles.backText}>🔙 BẢN ĐỒ</Text>
         </TouchableOpacity>
-        <Text style={styles.title}>👻 TRẠM 3: GHOST SPEED RAID (PHẢN XẠ SHADOWING)</Text>
+        <Text style={styles.title}>👻 TRẠM 3: ĐẤU TRƯỜNG PHẢN XẠ TỐC ĐỘ CAO</Text>
       </View>
 
       <ScrollView contentContainerStyle={{ alignItems: 'center', width: '100%', paddingBottom: 35 }}>
         {/* STUDENT MODE BANNER */}
         <View style={styles.studentInfoBanner}>
-          <Text style={styles.studentModeTag}>[ ĐẤU TRƯỜNG PHẢN XẠ SHADOWING TỐC ĐỘ ]</Text>
-          <Text style={styles.studentNameTag}>👤 Học viên Đấu Trường | ⚔️ Shadowing Tốc Độ Cao</Text>
+          <Text style={styles.studentModeTag}>[ THỬ THÁCH ĐỌC ĐUỔI TỐC ĐỘ (SHADOWING) ]</Text>
+          <Text style={styles.studentNameTag}>👤 Thí sinh Đấu Trường | ⚔️ Phản Xạ Nối Âm Nhanh</Text>
         </View>
 
         {/* CEFR LEVEL SELECTOR */}
@@ -590,9 +590,9 @@ Output JSON ONLY:
         {/* BOSS CARD & HP BAR */}
         <View style={styles.bossCard}>
           <View style={styles.bossHeaderRow}>
-            <Text style={styles.bossName}>{bossData.bossAvatar} {bossData.bossName} ({bossData.bossTitle || 'Speed Phantom'}) [{cefrLevel}]</Text>
+            <Text style={styles.bossName}>{bossData.bossAvatar} {bossData.bossName} (Thử Thách Tốc Độ) [{cefrLevel}]</Text>
             <TouchableOpacity style={styles.switchBossBtn} onPress={handleNextChallenge} activeOpacity={0.7}>
-              <Text style={styles.switchBossBtnText}>🔄 ĐỔI PHANTOM TIẾP THEO (0MS)</Text>
+              <Text style={styles.switchBossBtnText}>🔄 ĐỔI THỬ THÁCH KHÁC</Text>
             </TouchableOpacity>
           </View>
 
@@ -600,7 +600,7 @@ Output JSON ONLY:
             <View style={[styles.hpBarFill, { width: `${(currentHp / (bossData.maxHp || 150)) * 100}%` }]} />
           </View>
           <Text style={styles.hpText}>
-            {currentHp > 0 ? `HP: ${currentHp} / ${bossData.maxHp || 150}` : '☠ PHANTOM ĐÃ BỊ HẠ GỤC BỞI TỐC ĐỘ CHÍ MẠNG!'}
+            {currentHp > 0 ? `Năng lượng thử thách: ${currentHp} / ${bossData.maxHp || 150}` : '🏆 CHÚC MỪNG! BẠN ĐÃ VƯỢT QUA THỬ THÁCH TỐC ĐỘ!'}
           </Text>
         </View>
 
@@ -625,7 +625,7 @@ Output JSON ONLY:
             {showHint && (
               <View style={styles.hintContentBox}>
                 <Text style={styles.hintLanguageTag}>
-                  👉 🇻🇳 Dịch nghĩa câu Shadowing:
+                  👉 🇻🇳 Dịch nghĩa câu đọc đuổi:
                 </Text>
                 <Text style={styles.hintBodyText}>
                   "{(bossData as any).hint?.vi || bossData.bossChallengeVi || bossData.bossChallengeEn}"
@@ -641,7 +641,7 @@ Output JSON ONLY:
             activeOpacity={0.7}
           >
             <Text style={styles.audioBtnText}>
-              {isPlayingAudio ? '⏹ ĐANG PHÁT GIỌNG PHANTOM...' : '📢 NGHE GIỌNG PHANTOM MẪU'}
+              {isPlayingAudio ? '⏹ ĐANG PHÁT GIỌNG MẪU...' : '📢 NGHE GIỌNG ĐỌC MẪU TỐC ĐỘ CHUẨN'}
             </Text>
           </TouchableOpacity>
         </View>
@@ -681,7 +681,7 @@ Output JSON ONLY:
                 ? '🛑 DỪNG THU ÂM NGAY ĐỂ NHẬN HỆ SỐ CHÍ MẠNG!' 
                 : hasRecordedCurrentSession 
                 ? `✅ ĐÃ THU TRONG ${speechDuration}s (CHẠM ĐỂ THU LẠI)` 
-                : '🎙️ BẮT ĐẦU SHADOWING TỐC ĐỘ CAO'}
+                : '🎙️ BẮT ĐẦU ĐỌC ĐUỔI TỐC ĐỘ CAO'}
             </Text>
           </TouchableOpacity>
 
@@ -761,7 +761,7 @@ Output JSON ONLY:
 
         {currentHp === 0 && (
           <TouchableOpacity style={styles.refreshBtn} onPress={handleNextChallenge}>
-            <Text style={styles.refreshText}>🔄 TIẾN VÀO GIAI ĐOẠN PHANTOM TIẾP THEO</Text>
+            <Text style={styles.refreshText}>🔄 CHUYỂN SANG THỬ THÁCH TIẾP THEO</Text>
           </TouchableOpacity>
         )}
       </ScrollView>
