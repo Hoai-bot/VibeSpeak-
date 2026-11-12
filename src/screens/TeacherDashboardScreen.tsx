@@ -77,6 +77,9 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
   const [importCsvText, setImportCsvText] = useState<string>('');
   const [isImporting, setIsImporting] = useState<boolean>(false);
 
+  // 4. Quản lý Modal Hướng dẫn Giảng viên (Teacher Guidelines)
+  const [showGuideModal, setShowGuideModal] = useState<boolean>(false);
+
   const fetchDashboardData = async () => {
     setLoading(true);
     try {
@@ -429,6 +432,9 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
           <Text style={styles.roleBadge}>Quyền: {userRole}</Text>
         </View>
         <View style={styles.actionBtnGroup}>
+          <TouchableOpacity onPress={() => setShowGuideModal(true)} style={styles.guideBtn}>
+            <Text style={styles.guideBtnText}>📖 HƯỚNG DẪN</Text>
+          </TouchableOpacity>
           <TouchableOpacity onPress={fetchDashboardData} style={styles.refreshIconBtn}>
             <Text style={styles.exportBtnText}>🔄</Text>
           </TouchableOpacity>
@@ -882,6 +888,66 @@ SV2026002, Tran Thi Mai, mai.tt@student.vibespeak.edu.vn"
           </View>
         </View>
       </Modal>
+
+      {/* ========================================================================= */}
+      {/* MODAL 4: HƯỚNG DẪN SỬ DỤNG DÀNH CHO GIẢNG VIÊN (TEACHER GUIDELINES) */}
+      {/* ========================================================================= */}
+      <Modal visible={showGuideModal} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { maxWidth: 540, maxHeight: '85%' }]}>
+            <Text style={styles.modalTitle}>📖 HƯỚNG DẪN VẬN HÀNH CỔNG GIẢNG VIÊN</Text>
+            <Text style={styles.modalSubtitle}>Quy trình 4 bước giao bài, quản lý lớp và chốt điểm trên VipeSpeak</Text>
+
+            <ScrollView style={{ width: '100%', marginVertical: 8 }} showsVerticalScrollIndicator={false}>
+              {/* BƯỚC 1 */}
+              <View style={styles.guideStepBox}>
+                <Text style={styles.guideStepTitle}>1️⃣ Tạo và Giao Bài Tập Theo Mã Lớp (Class Code)</Text>
+                <Text style={styles.guideStepDesc}>
+                  • Bấm nút <Text style={{ color: '#FF007F', fontWeight: 'bold' }}>➕ GIAO BÀI THEO MÃ LỚP</Text>.{'\n'}
+                  • Nhập <Text style={{ color: '#00FFFF', fontWeight: 'bold' }}>Mã lớp</Text> riêng cho học phần của bạn (ví dụ: <Text style={{ color: '#FFD700' }}>ENG101_K18</Text>).{'\n'}
+                  • Chọn Trạm luyện tập (Trạm 1: Ngữ âm IPA, Trạm 2: Phản xạ tình huống, Trạm 3: Đọc đuổi tốc độ, Trạm 4: Độc thoại WPM), nhập đề bài tiếng Anh và bấm <Text style={{ color: '#39FF14', fontWeight: 'bold' }}>PHÁT HÀNH ĐỀ</Text>.
+                </Text>
+              </View>
+
+              {/* BƯỚC 2 */}
+              <View style={styles.guideStepBox}>
+                <Text style={styles.guideStepTitle}>2️⃣ Phổ Biến Quy Trình Cho Sinh Viên</Text>
+                <Text style={styles.guideStepDesc}>
+                  • Sinh viên không cần tạo tài khoản phức tạp. Khi vào Trạm 2 hoặc Trạm 4, sinh viên chỉ cần bấm <Text style={{ color: '#FFD700', fontWeight: 'bold' }}>✏️ Nhập Mã Lớp / Tên</Text> ở thanh trên cùng và điền: <Text style={{ color: '#FFF', fontWeight: 'bold' }}>Họ tên + MSSV + Mã lớp</Text>.{'\n'}
+                  • Hệ thống tự động lưu thông tin này trên thiết bị của sinh viên cho các lần làm bài sau.{'\n'}
+                  • Sinh viên chọn tab <Text style={{ color: '#00FFFF', fontWeight: 'bold' }}>🏫 GIẢNG VIÊN GIAO</Text> để làm đúng đề bài của lớp mình.
+                </Text>
+              </View>
+
+              {/* BƯỚC 3 */}
+              <View style={styles.guideStepBox}>
+                <Text style={styles.guideStepTitle}>3️⃣ Thẩm Định Ghi Âm & Điều Chỉnh Điểm</Text>
+                <Text style={styles.guideStepDesc}>
+                  • Trên thanh lọc phía trên bảng điểm, chọn thẻ <Text style={{ color: '#00FFFF', fontWeight: 'bold' }}>🏫 [Mã Lớp]</Text> để xem riêng bài nộp của lớp mình.{'\n'}
+                  • Bấm <Text style={{ color: '#00FFFF', fontWeight: 'bold' }}>🎧 NGHE</Text> để nghe trực tiếp file ghi âm gốc của sinh viên.{'\n'}
+                  • Nếu muốn điều chỉnh điểm AI chấm tự động hoặc ghi chú sửa lỗi phát âm, bấm <Text style={{ color: '#FF007F', fontWeight: 'bold' }}>✏️ ĐỔI ĐIỂM</Text> để nhập điểm chốt mới.
+                </Text>
+              </View>
+
+              {/* BƯỚC 4 */}
+              <View style={styles.guideStepBox}>
+                <Text style={styles.guideStepTitle}>4️⃣ Xuất Bảng Điểm Tổng Kết & Lưu Ý Thiết Bị</Text>
+                <Text style={styles.guideStepDesc}>
+                  • Sau khi lọc đúng Mã lớp, bấm <Text style={{ color: '#39FF14', fontWeight: 'bold' }}>📥 EXCEL</Text> ở góc trên bên phải để tải file bảng điểm CSV đầy đủ (bao gồm MSSV, Họ tên, Điểm AI, Điểm Giảng viên chốt và Nhận xét).{'\n'}
+                  • <Text style={{ color: '#FFD700', fontWeight: 'bold' }}>Lưu ý khi sinh viên dùng iPhone/iPad:</Text> Nhắc sinh viên gạt nút chuông bên sườn máy sang chế độ bật tiếng và cấp quyền Micro cho trình duyệt Safari/Chrome.
+                </Text>
+              </View>
+            </ScrollView>
+
+            <TouchableOpacity 
+              style={[styles.modalSaveBtn, { width: '100%', flex: undefined, marginTop: 8 }]} 
+              onPress={() => setShowGuideModal(false)}
+            >
+              <Text style={styles.modalSaveText}>✅ ĐÃ HIỂU & ĐÓNG HƯỚNG DẪN</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -894,7 +960,9 @@ const styles = StyleSheet.create({
   headerTitle: { color: '#FFD700', fontSize: 12, fontWeight: '900', textAlign: 'center' },
   roleBadge: { color: '#39FF14', fontSize: 9, fontWeight: 'bold', marginTop: 2 },
   actionBtnGroup: { flexDirection: 'row', gap: 5 },
-  refreshIconBtn: { padding: 8, backgroundColor: '#FFD700', borderRadius: 8 },
+  guideBtn: { padding: 8, backgroundColor: '#FFD700', borderRadius: 8 },
+  guideBtnText: { color: '#000', fontSize: 10, fontWeight: '900' },
+  refreshIconBtn: { padding: 8, backgroundColor: '#1A0B2E', borderRadius: 8, borderWidth: 1, borderColor: '#FFD700' },
   exportBtn: { padding: 8, backgroundColor: '#39FF14', borderRadius: 8 },
   exportBtnText: { color: '#000', fontSize: 10, fontWeight: '900' },
   pdfBtn: { padding: 8, backgroundColor: '#00FFFF', borderRadius: 8 },
@@ -958,5 +1026,25 @@ const styles = StyleSheet.create({
   modalCancelBtn: { flex: 1, padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#8888AA', alignItems: 'center' },
   modalCancelText: { color: '#8888AA', fontSize: 10, fontWeight: 'bold' },
   modalSaveBtn: { flex: 1, padding: 10, borderRadius: 8, backgroundColor: '#39FF14', alignItems: 'center' },
-  modalSaveText: { color: '#000', fontSize: 10, fontWeight: '900' }
+  modalSaveText: { color: '#000', fontSize: 10, fontWeight: '900' },
+
+  guideStepBox: {
+    backgroundColor: '#130628',
+    padding: 12,
+    borderRadius: 10,
+    borderLeftWidth: 3,
+    borderLeftColor: '#00FFFF',
+    marginBottom: 10,
+  },
+  guideStepTitle: {
+    color: '#FFD700',
+    fontSize: 11,
+    fontWeight: '900',
+    marginBottom: 4,
+  },
+  guideStepDesc: {
+    color: '#E0E0F0',
+    fontSize: 10,
+    lineHeight: 16,
+  },
 });
