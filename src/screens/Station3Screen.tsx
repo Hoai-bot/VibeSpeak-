@@ -266,17 +266,16 @@ export default function Station3Screen({ onBack }: Props) {
     synth.speak(utterance);
   };
 
-  // 🤖 BACKGROUND AI REFILL VIA GROQ WITH VIETNAMESE HINTS
+  // 🤖 BACKGROUND AI REFILL QUA SERVERLESS API BẢO MẬT
   const triggerBackgroundAiRefill = async (level: string) => {
-    const apiKey = process.env.EXPO_PUBLIC_GROQ_API_KEY;
-    if (!apiKey || isFetchingAiRef.current) return;
+    if (isFetchingAiRef.current) return;
 
     try {
       isFetchingAiRef.current = true;
-      const prompt = `Generate 1 unique shadow challenge sentence for Station 3 Speed Shadowing at CEFR level ${level}.
+      const promptInstruction = `Generate 1 unique shadow challenge sentence for Station 3 Speed Shadowing at CEFR level ${level}.
 Output JSON ONLY:
 {
-  "bossName": "Tên thực thể Shadowing (tiếng Anh hoặc tiếng Việt)",
+  "bossName": "Name of Shadow Entity",
   "bossTitle": "Title in English (e.g., Rhythm Phantom)",
   "bossAvatar": "👻",
   "maxHp": 150,
@@ -286,20 +285,14 @@ Output JSON ONLY:
   "keyTargetPhrases": ["phrase 1", "phrase 2"]
 }`;
 
-      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      const res = await fetch('/api/generate-topic', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-        body: JSON.stringify({
-          model: 'llama-3.3-70b-versatile',
-          messages: [{ role: 'user', content: prompt }],
-          temperature: 1.0,
-          response_format: { type: 'json_object' }
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ promptInstruction }),
       });
 
       if (res.ok) {
-        const data = await res.json();
-        const content = JSON.parse(data.choices[0].message.content);
+        const content = await res.json();
         const newBoss: BossScenarioItem = {
           id: `ai_${Date.now()}`,
           level: level as any,
@@ -641,7 +634,7 @@ Output JSON ONLY:
             )}
           </View>
 
-          {/* ONYX NEURAL TTS BUTTON (CHUYỂN SANG PLAYNATURALTTS CHUẨN IOS) */}
+          {/* ONYX NEURAL TTS BUTTON */}
           <TouchableOpacity 
             style={[styles.audioBtn, isPlayingAudio && styles.audioBtnPlaying]} 
             onPress={() => playNaturalTTS(bossData.bossChallengeEn)}

@@ -286,10 +286,9 @@ export default function Station4Screen({ onBack }: Props) {
     audioChunksRef.current = [];
   };
 
-  // 🤖 BACKGROUND AI REFILL VIA GROQ (ZERO-LATENCY BUFFER)
+  // 🤖 BACKGROUND AI REFILL QUA SERVERLESS API BẢO MẬT
   const triggerBackgroundAiRefill = async (level: CEFRLevel) => {
-    const apiKey = process.env.EXPO_PUBLIC_GROQ_API_KEY;
-    if (!apiKey || isFetchingAiRef.current) return;
+    if (isFetchingAiRef.current) return;
 
     try {
       isFetchingAiRef.current = true;
@@ -304,23 +303,14 @@ Output ONLY raw JSON (no markdown):
   "expressType": "quick_response"
 }`;
 
-      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      const res = await fetch('/api/generate-topic', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-          model: 'llama-3.3-70b-versatile',
-          messages: [{ role: 'user', content: promptInstruction }],
-          temperature: 1.0,
-          response_format: { type: 'json_object' },
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ promptInstruction }),
       });
 
       if (res.ok) {
-        const data = await res.json();
-        const content = JSON.parse(data.choices[0].message.content);
+        const content = await res.json();
         const newAiTopic: Station4TopicItem = {
           id: `ai_${Date.now()}_${Math.random()}`,
           title: `🤖 [AI] ${content.title}`,
