@@ -1,5 +1,5 @@
 // src/screens/TeacherDashboardScreen.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   View, 
   Text, 
@@ -21,6 +21,7 @@ interface SubmissionRecord {
   id: string;
   student_code: string;
   student_name: string;
+  class_code?: string;
   class_name: string;
   score: number;
   manual_score: number | null;
@@ -58,13 +59,15 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
   const [teacherCommentInput, setTeacherCommentInput] = useState<string>('');
   const [isSavingScore, setIsSavingScore] = useState<boolean>(false);
 
-  // 2. Quản lý Modal tạo bài tập mới
+  // 2. Quản lý Modal tạo bài tập mới (Kèm Mã lớp class_code)
   const [showCreateAssignmentModal, setShowCreateAssignmentModal] = useState<boolean>(false);
   const [assignTitle, setAssignTitle] = useState<string>('');
   const [assignPrompt, setAssignPrompt] = useState<string>('');
-  const [assignStation, setAssignStation] = useState<string>('STATION_1');
-  const [assignCefr, setAssignCefr] = useState<string>('B2');
+  const [assignDescription, setAssignDescription] = useState<string>('');
+  const [assignStation, setAssignStation] = useState<string>('STATION_2');
+  const [assignCefr, setAssignCefr] = useState<string>('B1');
   const [assignClassId, setAssignClassId] = useState<string>('');
+  const [assignClassCodeInput, setAssignClassCodeInput] = useState<string>('ENG_K24_ADV');
   const [assignDeadline, setAssignDeadline] = useState<string>('2026-12-31T23:59');
   const [isSubmittingAssign, setIsSubmittingAssign] = useState<boolean>(false);
 
@@ -106,7 +109,7 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
         }
       }
 
-      // 2. Chỉ tải danh sách lớp thuộc TRƯỜNG của giáo viên này
+      // 2. Tải danh sách lớp thuộc TRƯỜNG của giảng viên
       let classQuery = supabase.from('classes').select('id, code, name, tenant_id');
       if (activeTenantId && activeRole !== 'SUPER_ADMIN') {
         classQuery = classQuery.eq('tenant_id', activeTenantId);
@@ -120,20 +123,24 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
       if (classesData && classesData.length > 0) {
         setClassList(classesData);
         setAssignClassId(classesData[0].id);
+        setAssignClassCodeInput(classesData[0].code || 'PUBLIC');
         setImportClassId(classesData[0].id);
       } else {
-        const defaultClass = [{ id: '22222222-2222-2222-2222-222222222222', code: 'ENG_K24_ADV', name: 'Anh văn Nâng cao K24 - Cơ sở 1', tenant_id: activeTenantId }];
+        const defaultClass = [
+          { id: '22222222-2222-2222-2222-222222222222', code: 'ENG_K24_ADV', name: 'Anh văn Nâng cao K24', tenant_id: activeTenantId }
+        ];
         setClassList(defaultClass);
         setAssignClassId(defaultClass[0].id);
+        setAssignClassCodeInput(defaultClass[0].code);
         setImportClassId(defaultClass[0].id);
       }
 
-      // 3. Chỉ lấy submissions thuộc TRƯỜNG của giáo viên này
+      // 3. Lấy danh sách bài nộp (Submissions)
       let subQuery = supabase.from('submissions').select('*').order('created_at', { ascending: false });
       if (activeTenantId && activeRole !== 'SUPER_ADMIN') {
         subQuery = subQuery.eq('tenant_id', activeTenantId);
       }
-      const { data: subData, error: subErr } = await subQuery.limit(100);
+      const { data: subData, error: subErr } = await subQuery.limit(150);
 
       if (subErr) {
         console.warn("Lỗi tải submissions:", subErr.message);
@@ -151,10 +158,39 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
     fetchDashboardData();
   }, []);
 
-  // Lọc theo lớp
+  // Tổng hợp danh sách Mã lớp từ cả bảng classes và thực tế bài nộp sinh viên gửi lên
+  const availableFilterCodes = useMemo(() => {
+    const codeSet = new Set<string>();
+    classList.forEach(c => {
+      if (c.code) codeSet.add(c.code.toUpperCase().trim());
+    });
+    submissions.forEach(s => {
+      if (s.class_code) codeSet.add(s.class_code.toUpperCase().trim());
+      // Trích xuất mã lớp dạng [ENG101_K18] từ class_name nếu bản ghi cũ chưa có class_code
+      const match = (s.class_name || '').match(/^\[([A-Z0-9_-]+)\]/i);
+      if (match && match[1]) {
+        codeSet.add(match[1].toUpperCase());
+      }
+    });
+    return Array.from(codeSet);
+  }, [classList, submissions]);
+
+  // Hàm lấy mã lớp chuẩn hóa của từng bài nộp
+  const extractSubmissionClassCode = (s: SubmissionRecord): string => {
+    if (s.class_code && s.class_code.trim()) {
+      return s.class_code.toUpperCase().trim();
+    }
+    const match = (s.class_name || '').match(/^\[([A-Z0-9_-]+)\]/i);
+    if (match && match[1]) {
+      return match[1].toUpperCase();
+    }
+    return 'PUBLIC';
+  };
+
+  // Lọc theo Mã lớp
   const filteredSubmissions = selectedClass === 'ALL'
     ? submissions
-    : submissions.filter(s => (s.class_name || 'Lớp Chung') === selectedClass);
+    : submissions.filter(s => extractSubmissionClassCode(s) === selectedClass);
 
   // Thống kê
   const totalSubmissions = filteredSubmissions.length;
@@ -220,12 +256,14 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
     }
   };
 
-  // 📝 TÍNH NĂNG 1: GIẢNG VIÊN TỰ TẠO BÀI TẬP MỚI
+  // 📝 TÍNH NĂNG 1: GIẢNG VIÊN TỰ TẠO BÀI TẬP MỚI (ĐỒNG BỘ CLASS_CODE)
   const handleCreateAssignment = async () => {
     if (!assignTitle.trim() || !assignPrompt.trim()) {
-      Alert.alert("Lỗi", "Vui lòng nhập đầy đủ tiêu đề và nội dung bài tập!");
+      Alert.alert("Lỗi", "Vui lòng nhập đầy đủ tiêu đề và nội dung câu mẫu/đề bài!");
       return;
     }
+
+    const normalizedClassCode = (assignClassCodeInput || 'PUBLIC').toUpperCase().trim();
 
     setIsSubmittingAssign(true);
     try {
@@ -233,12 +271,14 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
         const selectedClassObj = classList.find(c => c.id === assignClassId);
         const { error } = await supabase.from('assignments').insert([{
           tenant_id: selectedClassObj?.tenant_id || currentTenantId,
-          class_id: assignClassId,
+          class_id: selectedClassObj ? assignClassId : null,
+          class_code: normalizedClassCode,
           created_by: currentInstructorId,
           title: assignTitle.trim(),
+          description: assignDescription.trim() || `Bài tập giao cho lớp ${normalizedClassCode}`,
           station_type: assignStation,
           target_prompt: assignPrompt.trim(),
-          cefr_level: assignCefr,
+          cefr_level: assignCefr.toUpperCase().trim(),
           deadline_at: new Date(assignDeadline).toISOString(),
           status: 'PUBLISHED'
         }]);
@@ -246,10 +286,14 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
         if (error) {
           Alert.alert("Lỗi tạo bài tập", error.message);
         } else {
-          Alert.alert("Thành công", `Đã giao bài tập mới "${assignTitle}" cho lớp học!`);
+          Alert.alert(
+            "Giao bài thành công",
+            `✅ Đã phát hành bài tập "${assignTitle}" cho mã lớp [${normalizedClassCode}]. Sinh viên chỉ cần nhập mã lớp này để nhận bài!`
+          );
           setShowCreateAssignmentModal(false);
           setAssignTitle('');
           setAssignPrompt('');
+          setAssignDescription('');
         }
       }
     } catch (err: any) {
@@ -323,19 +367,21 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
     Alert.alert("Đã tải mẫu", "Đã điền sẵn cấu trúc mẫu vào khung nhập liệu bên dưới.");
   };
 
-  // Xuất file CSV báo cáo điểm
+  // Xuất file CSV báo cáo điểm (Kèm cột Mã Lớp)
   const handleExportCSV = () => {
     if (filteredSubmissions.length === 0) {
       Alert.alert("Thông báo", "Không có dữ liệu bài nộp để xuất!");
       return;
     }
 
-    const headers = ["MSSV", "Ho va Ten", "Lop Hoc", "Diem AI", "Diem Giang Vien", "Diem Chot", "Nhan Xet Giang Vien", "Cap Do", "Ky Nang", "Thoi Gian"];
+    const headers = ["MSSV", "Ho va Ten", "Ma Lop", "Chi Tiet Tram", "Diem AI", "Diem Giang Vien", "Diem Chot", "Nhan Xet Giang Vien", "Cap Do", "Ky Nang", "Thoi Gian"];
     const rows = filteredSubmissions.map(s => {
       const finalScore = getFinalScore(s);
+      const code = extractSubmissionClassCode(s);
       return [
         `"${s.student_code || 'GUEST'}"`,
         `"${s.student_name || 'N/A'}"`,
+        `"${code}"`,
         `"${s.class_name || 'Lop Chung'}"`,
         s.score,
         s.manual_score !== null ? s.manual_score : 'Chua sua',
@@ -376,13 +422,16 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
       {/* Top Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack} style={styles.backBtn}>
-          <Text style={styles.backBtnText}>🔙 MAP</Text>
+          <Text style={styles.backBtnText}>🔙 BẢN ĐỒ</Text>
         </TouchableOpacity>
         <View style={{ flex: 1, alignItems: 'center' }}>
           <Text style={styles.headerTitle}>🏫 CỔNG GIẢNG VIÊN & ĐÀO TẠO</Text>
           <Text style={styles.roleBadge}>Quyền: {userRole}</Text>
         </View>
         <View style={styles.actionBtnGroup}>
+          <TouchableOpacity onPress={fetchDashboardData} style={styles.refreshIconBtn}>
+            <Text style={styles.exportBtnText}>🔄</Text>
+          </TouchableOpacity>
           <TouchableOpacity onPress={handleExportCSV} style={styles.exportBtn}>
             <Text style={styles.exportBtnText}>📥 EXCEL</Text>
           </TouchableOpacity>
@@ -399,13 +448,13 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
             style={styles.newAssignmentBtn}
             onPress={() => setShowCreateAssignmentModal(true)}
           >
-            <Text style={styles.newAssignmentBtnText}>➕ TẠO BÀI TẬP MỚI</Text>
+            <Text style={styles.newAssignmentBtnText}>➕ GIAO BÀI THEO MÃ LỚP</Text>
           </TouchableOpacity>
           <TouchableOpacity 
             style={styles.bulkImportBtn}
             onPress={() => setShowImportModal(true)}
           >
-            <Text style={styles.bulkImportBtnText}>👥 IMPORT SINH VIÊN (EXCEL)</Text>
+            <Text style={styles.bulkImportBtnText}>👥 IMPORT SINH VIÊN (CSV)</Text>
           </TouchableOpacity>
         </View>
 
@@ -429,26 +478,26 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
           </View>
         </View>
 
-        {/* Thanh chọn lớp học */}
+        {/* Thanh lọc theo Mã lớp (Class Code) */}
         <View style={styles.filterSection}>
-          <Text style={styles.filterLabel}>📌 LỌC THEO LỚP HỌC:</Text>
+          <Text style={styles.filterLabel}>📌 LỌC BÀI NỘP THEO MÃ LỚP HỌC PHẦN:</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll}>
             <TouchableOpacity 
               style={[styles.filterChip, selectedClass === 'ALL' && styles.filterChipActive]}
               onPress={() => setSelectedClass('ALL')}
             >
               <Text style={[styles.filterChipText, selectedClass === 'ALL' && styles.filterChipTextActive]}>
-                Tất Cả Lớp
+                Tất Cả Lớp ({submissions.length})
               </Text>
             </TouchableOpacity>
-            {classList.map((cls) => (
+            {availableFilterCodes.map((code) => (
               <TouchableOpacity 
-                key={cls.id} 
-                style={[styles.filterChip, selectedClass === cls.name && styles.filterChipActive]}
-                onPress={() => setSelectedClass(cls.name)}
+                key={code} 
+                style={[styles.filterChip, selectedClass === code && styles.filterChipActive]}
+                onPress={() => setSelectedClass(code)}
               >
-                <Text style={[styles.filterChipText, selectedClass === cls.name && styles.filterChipTextActive]}>
-                  {cls.name}
+                <Text style={[styles.filterChipText, selectedClass === code && styles.filterChipTextActive]}>
+                  🏫 {code}
                 </Text>
               </TouchableOpacity>
             ))}
@@ -459,7 +508,7 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
         <View style={styles.tableBox}>
           <View style={styles.tableHeaderRow}>
             <Text style={[styles.thText, { flex: 1.2 }]}>SINH VIÊN</Text>
-            <Text style={[styles.thText, { flex: 1 }]}>LỚP / KỸ NĂNG</Text>
+            <Text style={[styles.thText, { flex: 1 }]}>MÃ LỚP / TRẠM</Text>
             <Text style={[styles.thText, { flex: 0.9, textAlign: 'center' }]}>ĐIỂM CHỐT</Text>
             <Text style={[styles.thText, { flex: 1.2, textAlign: 'right' }]}>THAO TÁC</Text>
           </View>
@@ -467,19 +516,20 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
           {loading ? (
             <ActivityIndicator size="large" color="#00FFFF" style={{ marginVertical: 30 }} />
           ) : filteredSubmissions.length === 0 ? (
-            <Text style={styles.emptyText}>Chưa có bài nộp nào thuộc lớp học này.</Text>
+            <Text style={styles.emptyText}>Chưa có bài nộp nào thuộc mã lớp "{selectedClass}".</Text>
           ) : (
             filteredSubmissions.map((item) => {
               const finalScore = getFinalScore(item);
               const isPass = finalScore >= 70;
               const hasOverride = item.manual_score !== null && item.manual_score !== undefined;
+              const rowClassCode = extractSubmissionClassCode(item);
 
               return (
                 <View key={item.id} style={styles.tableRow}>
                   {/* Cột 1: Thông tin sinh viên */}
                   <View style={{ flex: 1.2 }}>
                     <Text style={styles.studentNameText} numberOfLines={1}>
-                      {item.student_name || 'Chiến Binh Shadow'}
+                      {item.student_name || 'Học viên VipeSpeak'}
                     </Text>
                     <Text style={styles.studentCodeText}>
                       MSSV: {item.student_code || 'GUEST'}
@@ -491,10 +541,12 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
                     )}
                   </View>
 
-                  {/* Cột 2: Lớp học & Kỹ năng */}
+                  {/* Cột 2: Mã lớp & Kỹ năng */}
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.classText} numberOfLines={1}>{item.class_name || 'Lớp Chung'}</Text>
-                    <Text style={styles.modeText}>{item.mode || 'STATION_1'} • {item.cefr_level || 'B1'}</Text>
+                    <View style={styles.classCodeTag}>
+                      <Text style={styles.classCodeTagText}>{rowClassCode}</Text>
+                    </View>
+                    <Text style={styles.modeText} numberOfLines={1}>{item.mode || 'STATION_1'} • {item.cefr_level || 'B1'}</Text>
                   </View>
 
                   {/* Cột 3: Điểm số */}
@@ -527,7 +579,7 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
                       </TouchableOpacity>
                     ) : (
                       <Text style={{ color: '#666688', fontSize: 8, fontStyle: 'italic' }}>
-                        📦 Đã lưu trữ (&gt;60 ngày)
+                        📦 Không có audio
                       </Text>
                     )}
                   </View>
@@ -567,28 +619,41 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
       </ScrollView>
 
       {/* ========================================================================= */}
-      {/* MODAL 1: TẠO BÀI TẬP MỚI (ASSIGNMENT CREATION) */}
+      {/* MODAL 1: TẠO BÀI TẬP MỚI (GẮN MÃ LỚP CLASS_CODE CHO SINH VIÊN NHẬP) */}
       {/* ========================================================================= */}
       <Modal visible={showCreateAssignmentModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { maxWidth: 500 }]}>
-            <Text style={styles.modalTitle}>📝 TẠO BÀI TẬP HỌC PHẦN MỚI</Text>
+            <Text style={styles.modalTitle}>📝 GIAO BÀI TẬP THEO MÃ LỚP</Text>
 
             <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Lớp học áp dụng:</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexDirection: 'row' }}>
+              <Text style={styles.inputLabel}>Chọn nhanh lớp có sẵn (hoặc gõ mã lớp mới bên dưới):</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexDirection: 'row', marginBottom: 6 }}>
                 {classList.map(c => (
                   <TouchableOpacity
                     key={c.id}
                     style={[styles.smallChip, assignClassId === c.id && styles.smallChipActive]}
-                    onPress={() => setAssignClassId(c.id)}
+                    onPress={() => {
+                      setAssignClassId(c.id);
+                      setAssignClassCodeInput(c.code || 'PUBLIC');
+                    }}
                   >
                     <Text style={[styles.smallChipText, assignClassId === c.id && styles.smallChipTextActive]}>
-                      {c.name}
+                      {c.code} - {c.name}
                     </Text>
                   </TouchableOpacity>
                 ))}
               </ScrollView>
+
+              <Text style={styles.inputLabel}>Mã lớp cấp cho sinh viên (*):</Text>
+              <TextInput 
+                style={[styles.textInput, { borderColor: '#00FFFF', fontWeight: 'bold' }]}
+                value={assignClassCodeInput}
+                onChangeText={(val) => setAssignClassCodeInput(val.toUpperCase())}
+                autoCapitalize="characters"
+                placeholder="Ví dụ: ENG101_K18"
+                placeholderTextColor="#666"
+              />
             </View>
 
             <View style={styles.inputGroup}>
@@ -601,7 +666,7 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
                     onPress={() => setAssignStation(st)}
                   >
                     <Text style={[styles.smallChipText, assignStation === st && styles.smallChipTextActive]}>
-                      {st.replace('_', ' ')}
+                      Trạm {st.split('_')[1]}
                     </Text>
                   </TouchableOpacity>
                 ))}
@@ -609,24 +674,35 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
             </View>
 
             <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Tiêu đề bài tập / Kỳ thi:</Text>
+              <Text style={styles.inputLabel}>Tiêu đề bài tập / Kỳ thi (*):</Text>
               <TextInput 
                 style={styles.textInput}
                 value={assignTitle}
                 onChangeText={setAssignTitle}
-                placeholder="Ví dụ: Kiểm tra giữa kỳ - Phát âm học thuật Unit 3"
+                placeholder="Ví dụ: [ROLEPLAY] Kiểm tra phản xạ tình huống Unit 3"
                 placeholderTextColor="#666"
               />
             </View>
 
             <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Nội dung câu nói mục tiêu (Prompt / IPA Target):</Text>
+              <Text style={styles.inputLabel}>Mô tả bối cảnh tiếng Việt (Gợi ý cho sinh viên):</Text>
               <TextInput 
-                style={[styles.textInput, { height: 70, textAlignVertical: 'top' }]}
+                style={styles.textInput}
+                value={assignDescription}
+                onChangeText={setAssignDescription}
+                placeholder="Ví dụ: Bạn đang thương lượng dời lịch họp với đối tác nước ngoài..."
+                placeholderTextColor="#666"
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Câu mẫu / Đề bài tiếng Anh mục tiêu (*):</Text>
+              <TextInput 
+                style={[styles.textInput, { height: 65, textAlignVertical: 'top' }]}
                 multiline
                 value={assignPrompt}
                 onChangeText={setAssignPrompt}
-                placeholder="Ví dụ: The implementation of sustainable renewable energy requires decisive government policies."
+                placeholder="Ví dụ: Could we reschedule our meeting to tomorrow afternoon due to an urgent server update?"
                 placeholderTextColor="#666"
               />
             </View>
@@ -638,12 +714,12 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
                   style={styles.textInput}
                   value={assignCefr}
                   onChangeText={setAssignCefr}
-                  placeholder="B1, B2, C1..."
+                  placeholder="A2, B1, B2..."
                   placeholderTextColor="#666"
                 />
               </View>
               <View style={{ flex: 1.5 }}>
-                <Text style={styles.inputLabel}>Hạn chót nộp bài (Deadline):</Text>
+                <Text style={styles.inputLabel}>Hạn chót nộp bài:</Text>
                 <TextInput 
                   style={styles.textInput}
                   value={assignDeadline}
@@ -670,7 +746,7 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
                 {isSubmittingAssign ? (
                   <ActivityIndicator size="small" color="#000" />
                 ) : (
-                  <Text style={styles.modalSaveText}>GIAO BÀI TẬP</Text>
+                  <Text style={styles.modalSaveText}>PHÁT HÀNH ĐỀ</Text>
                 )}
               </TouchableOpacity>
             </View>
@@ -684,7 +760,7 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
       <Modal visible={showImportModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { maxWidth: 520 }]}>
-            <Text style={styles.modalTitle}>👥 BULK IMPORT SINH VIÊN VÀO LỚP</Text>
+            <Text style={styles.modalTitle}>👥 NHẬP DANH SÁCH SINH VIÊN VÀO LỚP</Text>
             <Text style={styles.modalSubtitle}>Định dạng: MSSV, Họ và Tên, Email (Mỗi sinh viên một dòng)</Text>
 
             <View style={styles.inputGroup}>
@@ -697,7 +773,7 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
                     onPress={() => setImportClassId(c.id)}
                   >
                     <Text style={[styles.smallChipText, importClassId === c.id && styles.smallChipTextActive]}>
-                      {c.name}
+                      {c.code} - {c.name}
                     </Text>
                   </TouchableOpacity>
                 ))}
@@ -716,7 +792,8 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
               multiline
               value={importCsvText}
               onChangeText={setImportCsvText}
-              placeholder="SV2026001, Nguyen Van An, an.nv@student.vibespeak.edu.vn&#10;SV2026002, Tran Thi Mai, mai.tt@student.vibespeak.edu.vn"
+              placeholder="SV2026001, Nguyen Van An, an.nv@student.vibespeak.edu.vn
+SV2026002, Tran Thi Mai, mai.tt@student.vibespeak.edu.vn"
               placeholderTextColor="#666"
             />
 
@@ -816,7 +893,8 @@ const styles = StyleSheet.create({
   backBtnText: { color: '#00FFFF', fontSize: 10, fontWeight: 'bold' },
   headerTitle: { color: '#FFD700', fontSize: 12, fontWeight: '900', textAlign: 'center' },
   roleBadge: { color: '#39FF14', fontSize: 9, fontWeight: 'bold', marginTop: 2 },
-  actionBtnGroup: { flexDirection: 'row', gap: 6 },
+  actionBtnGroup: { flexDirection: 'row', gap: 5 },
+  refreshIconBtn: { padding: 8, backgroundColor: '#FFD700', borderRadius: 8 },
   exportBtn: { padding: 8, backgroundColor: '#39FF14', borderRadius: 8 },
   exportBtnText: { color: '#000', fontSize: 10, fontWeight: '900' },
   pdfBtn: { padding: 8, backgroundColor: '#00FFFF', borderRadius: 8 },
@@ -848,7 +926,8 @@ const styles = StyleSheet.create({
   studentNameText: { color: '#FFF', fontSize: 11, fontWeight: 'bold' },
   studentCodeText: { color: '#8888AA', fontSize: 9 },
   teacherNoteText: { color: '#FFD700', fontSize: 8, fontStyle: 'italic', marginTop: 2 },
-  classText: { color: '#00FFFF', fontSize: 10, fontWeight: '600' },
+  classCodeTag: { alignSelf: 'flex-start', backgroundColor: '#0B192C', borderWidth: 1, borderColor: '#00FFFF', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, marginBottom: 2 },
+  classCodeTagText: { color: '#00FFFF', fontSize: 8.5, fontWeight: '900' },
   modeText: { color: '#AAAABB', fontSize: 8 },
   scoreBadge: { fontSize: 13, fontWeight: '900' },
   statusText: { fontSize: 7, color: '#8888AA', fontWeight: 'bold' },
