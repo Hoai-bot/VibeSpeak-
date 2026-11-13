@@ -13,6 +13,9 @@ import {
 } from 'react-native';
 import { supabase } from '../utils/supabase';
 
+// 🔐 MÃ MỜI NỘI BỘ DÀNH CHO GIẢNG VIÊN (Bạn có thể đổi mã này tùy ý)
+const INSTRUCTOR_INVITE_CODE = 'VIBESPEAK2026';
+
 interface Props {
   onBack: () => void;
 }
@@ -45,10 +48,16 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
   // 🔐 TRẠNG THÁI XÁC THỰC GIẢNG VIÊN (AUTH GUARD)
   const [isCheckingAuth, setIsCheckingAuth] = useState<boolean>(true);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [authMode, setAuthMode] = useState<'LOGIN' | 'REGISTER'>('LOGIN');
+
+  // Form Đăng nhập / Đăng ký
+  const [fullNameInput, setFullNameInput] = useState<string>('');
   const [loginEmail, setLoginEmail] = useState<string>('');
   const [loginPassword, setLoginPassword] = useState<string>('');
+  const [inviteCodeInput, setInviteCodeInput] = useState<string>('');
   const [isLoggingIn, setIsLoggingIn] = useState<boolean>(false);
   const [authErrorMsg, setAuthErrorMsg] = useState<string>('');
+  const [authSuccessMsg, setAuthSuccessMsg] = useState<string>('');
 
   const [submissions, setSubmissions] = useState<SubmissionRecord[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -148,6 +157,7 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
 
     setIsLoggingIn(true);
     setAuthErrorMsg('');
+    setAuthSuccessMsg('');
     try {
       if (!supabase) return;
 
@@ -166,6 +176,85 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
       }
     } catch (err: any) {
       setAuthErrorMsg(err.message || 'Đăng nhập thất bại. Vui lòng thử lại.');
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
+
+  // 📝 XỬ LÝ ĐĂNG KÝ TÀI KHOẢN GIẢNG VIÊN MỚI (CÓ MÃ MỜI NỘI BỘ)
+  const handleInstructorRegister = async () => {
+    setAuthErrorMsg('');
+    setAuthSuccessMsg('');
+
+    if (!fullNameInput.trim() || !loginEmail.trim() || !loginPassword.trim() || !inviteCodeInput.trim()) {
+      setAuthErrorMsg('Vui lòng điền đầy đủ Họ tên, Email, Mật khẩu và Mã mời Giảng viên!');
+      return;
+    }
+
+    if (loginPassword.length < 6) {
+      setAuthErrorMsg('Mật khẩu phải có ít nhất 6 ký tự!');
+      return;
+    }
+
+    if (inviteCodeInput.trim().toUpperCase() !== INSTRUCTOR_INVITE_CODE) {
+      setAuthErrorMsg('⛔ Mã mời Giảng viên không chính xác! Vui lòng liên hệ Quản trị viên bộ môn.');
+      return;
+    }
+
+    setIsLoggingIn(true);
+    try {
+      if (!supabase) return;
+
+      const cleanEmail = loginEmail.trim().toLowerCase();
+      const cleanName = fullNameInput.trim();
+
+      const { data, error } = await supabase.auth.signUp({
+        email: cleanEmail,
+        password: loginPassword,
+        options: {
+          data: {
+            full_name: cleanName,
+            role: 'INSTRUCTOR',
+          },
+        },
+      });
+
+      if (error) {
+        setAuthErrorMsg(`❌ Đăng ký không thành công: ${error.message}`);
+        return;
+      }
+
+      if (data?.user) {
+        // Tự động ghi nhận quyền INSTRUCTOR vào bảng profiles
+        const { error: profileInsertErr } = await supabase
+          .from('profiles')
+          .upsert([
+            {
+              id: data.user.id,
+              email: cleanEmail,
+              full_name: cleanName,
+              role: 'INSTRUCTOR',
+              tenant_id: currentTenantId,
+            },
+          ], { onConflict: 'id' });
+
+        if (profileInsertErr) {
+          console.warn('Lưu ý cập nhật profiles:', profileInsertErr.message);
+        }
+
+        // Nếu Supabase không bật Confirm Email (có session ngay), đăng nhập thẳng vào Dashboard
+        if (data.session) {
+          await verifyInstructorSession();
+          Alert.alert('Chào mừng Giảng viên', `✅ Đăng ký thành công tài khoản ${cleanName}!`);
+        } else {
+          // Trường hợp Supabase đang bật Confirm Email
+          setAuthMode('LOGIN');
+          setInviteCodeInput('');
+          setAuthSuccessMsg('✅ Đã tạo tài khoản Giảng viên! Vui lòng kiểm tra hộp thư Email để bấm link kích hoạt rồi đăng nhập.');
+        }
+      }
+    } catch (err: any) {
+      setAuthErrorMsg(err.message || 'Lỗi kết nối khi đăng ký tài khoản.');
     } finally {
       setIsLoggingIn(false);
     }
@@ -246,7 +335,6 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
     });
     submissions.forEach(s => {
       if (s.class_code) codeSet.add(s.class_code.toUpperCase().trim());
-      // Trích xuất mã lớp dạng [ENG101_K18] từ class_name nếu bản ghi cũ chưa có class_code
       const match = (s.class_name || '').match(/^\[([A-Z0-9_-]+)\]/i);
       if (match && match[1]) {
         codeSet.add(match[1].toUpperCase());
@@ -490,7 +578,7 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
   };
 
   // =========================================================================
-  // MÀN HÌNH CHỜ KIỂM TRA QUYỀN & CỔNG ĐĂNG NHẬP GIẢNG VIÊN
+  // MÀN HÌNH CHỜ KIỂM TRA QUYỀN & CỔNG ĐĂNG NHẬP / ĐĂNG KÝ GIẢNG VIÊN
   // =========================================================================
   if (isCheckingAuth) {
     return (
@@ -514,13 +602,42 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
           <View style={{ width: 60 }} />
         </View>
 
-        <View style={styles.loginWrapper}>
+        <ScrollView contentContainerStyle={styles.loginWrapper}>
           <View style={styles.loginCard}>
             <Text style={styles.loginIcon}>🏫</Text>
             <Text style={styles.loginTitle}>CỔNG QUẢN TRỊ GIẢNG VIÊN</Text>
             <Text style={styles.loginSubtitle}>
-              Khu vực dành riêng cho Giảng viên & Cán bộ đào tạo. Vui lòng đăng nhập để giao bài và quản lý bảng điểm.
+              Khu vực dành riêng cho Giảng viên & Cán bộ đào tạo.
             </Text>
+
+            {/* THANH CHUYỂN ĐỔI ĐĂNG NHẬP / ĐĂNG KÝ GIẢNG VIÊN */}
+            <View style={styles.authTabRow}>
+              <TouchableOpacity
+                style={[styles.authTabBtn, authMode === 'LOGIN' && styles.authTabBtnActive]}
+                onPress={() => {
+                  setAuthMode('LOGIN');
+                  setAuthErrorMsg('');
+                  setAuthSuccessMsg('');
+                }}
+              >
+                <Text style={[styles.authTabText, authMode === 'LOGIN' && styles.authTabTextActive]}>
+                  🔑 ĐĂNG NHẬP
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.authTabBtn, authMode === 'REGISTER' && styles.authTabBtnRegisterActive]}
+                onPress={() => {
+                  setAuthMode('REGISTER');
+                  setAuthErrorMsg('');
+                  setAuthSuccessMsg('');
+                }}
+              >
+                <Text style={[styles.authTabText, authMode === 'REGISTER' && styles.authTabTextActive]}>
+                  📝 ĐĂNG KÝ GIẢNG VIÊN
+                </Text>
+              </TouchableOpacity>
+            </View>
 
             {authErrorMsg ? (
               <View style={styles.errorBanner}>
@@ -528,11 +645,30 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
               </View>
             ) : null}
 
+            {authSuccessMsg ? (
+              <View style={styles.successBanner}>
+                <Text style={styles.successBannerText}>{authSuccessMsg}</Text>
+              </View>
+            ) : null}
+
+            {authMode === 'REGISTER' && (
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Họ và tên Giảng viên (*):</Text>
+                <TextInput
+                  style={styles.loginInput}
+                  placeholder="Ví dụ: Cô Nguyễn Thị Lan"
+                  placeholderTextColor="#666688"
+                  value={fullNameInput}
+                  onChangeText={setFullNameInput}
+                />
+              </View>
+            )}
+
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>Email Giảng viên (*):</Text>
               <TextInput
                 style={styles.loginInput}
-                placeholder="vi-du: hoai.gv@truong.edu.vn"
+                placeholder="vi-du: lan.gv@truong.edu.vn"
                 placeholderTextColor="#666688"
                 keyboardType="email-address"
                 autoCapitalize="none"
@@ -545,7 +681,7 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
               <Text style={styles.inputLabel}>Mật khẩu (*):</Text>
               <TextInput
                 style={styles.loginInput}
-                placeholder="Nhập mật khẩu đăng nhập..."
+                placeholder={authMode === 'REGISTER' ? 'Tạo mật khẩu (tối thiểu 6 ký tự)...' : 'Nhập mật khẩu đăng nhập...'}
                 placeholderTextColor="#666688"
                 secureTextEntry
                 value={loginPassword}
@@ -553,23 +689,47 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
               />
             </View>
 
+            {authMode === 'REGISTER' && (
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Mã mời Giảng viên nội bộ (*):</Text>
+                <TextInput
+                  style={[styles.loginInput, { borderColor: '#FFD700' }]}
+                  placeholder="Nhập mã mời của bộ môn..."
+                  placeholderTextColor="#666688"
+                  autoCapitalize="characters"
+                  value={inviteCodeInput}
+                  onChangeText={setInviteCodeInput}
+                />
+              </View>
+            )}
+
             <TouchableOpacity
-              style={[styles.loginSubmitBtn, isLoggingIn && { opacity: 0.6 }]}
-              onPress={handleInstructorLogin}
+              style={[
+                styles.loginSubmitBtn,
+                authMode === 'REGISTER' && { backgroundColor: '#00FFFF' },
+                isLoggingIn && { opacity: 0.6 },
+              ]}
+              onPress={authMode === 'LOGIN' ? handleInstructorLogin : handleInstructorRegister}
               disabled={isLoggingIn}
             >
               {isLoggingIn ? (
                 <ActivityIndicator size="small" color="#000" />
               ) : (
-                <Text style={styles.loginSubmitText}>🔓 ĐĂNG NHẬP VÀO CỔNG QUẢN LÝ</Text>
+                <Text style={styles.loginSubmitText}>
+                  {authMode === 'LOGIN'
+                    ? '🔓 ĐĂNG NHẬP VÀO CỔNG QUẢN LÝ'
+                    : '🚀 HOÀN TẤT ĐĂNG KÝ GIẢNG VIÊN'}
+                </Text>
               )}
             </TouchableOpacity>
 
             <Text style={styles.loginHelperNote}>
-              💡 Chưa có tài khoản? Liên hệ Quản trị viên IT của trường để cấp tài khoản quyền INSTRUCTOR.
+              {authMode === 'LOGIN'
+                ? '💡 Giảng viên mới? Chọn tab "📝 ĐĂNG KÝ GIẢNG VIÊN" phía trên để tự tạo tài khoản bằng Mã mời.'
+                : '🔒 Mã mời giúp bảo vệ quyền quản trị lớp học, tránh sinh viên đăng ký nhầm vai trò.'}
             </Text>
           </View>
-        </View>
+        </ScrollView>
       </View>
     );
   }
@@ -1056,7 +1216,6 @@ SV2026002, Tran Thi Mai, mai.tt@student.vibespeak.edu.vn"
             <Text style={styles.modalSubtitle}>Quy trình 4 bước giao bài, quản lý lớp và chốt điểm trên VipeSpeak</Text>
 
             <ScrollView style={{ width: '100%', marginVertical: 8 }} showsVerticalScrollIndicator={false}>
-              {/* BƯỚC 1 */}
               <View style={styles.guideStepBox}>
                 <Text style={styles.guideStepTitle}>1️⃣ Tạo và Giao Bài Tập Theo Mã Lớp (Class Code)</Text>
                 <Text style={styles.guideStepDesc}>
@@ -1066,7 +1225,6 @@ SV2026002, Tran Thi Mai, mai.tt@student.vibespeak.edu.vn"
                 </Text>
               </View>
 
-              {/* BƯỚC 2 */}
               <View style={styles.guideStepBox}>
                 <Text style={styles.guideStepTitle}>2️⃣ Phổ Biến Quy Trình Cho Sinh Viên</Text>
                 <Text style={styles.guideStepDesc}>
@@ -1076,7 +1234,6 @@ SV2026002, Tran Thi Mai, mai.tt@student.vibespeak.edu.vn"
                 </Text>
               </View>
 
-              {/* BƯỚC 3 */}
               <View style={styles.guideStepBox}>
                 <Text style={styles.guideStepTitle}>3️⃣ Thẩm Định Ghi Âm & Điều Chỉnh Điểm</Text>
                 <Text style={styles.guideStepDesc}>
@@ -1086,7 +1243,6 @@ SV2026002, Tran Thi Mai, mai.tt@student.vibespeak.edu.vn"
                 </Text>
               </View>
 
-              {/* BƯỚC 4 */}
               <View style={styles.guideStepBox}>
                 <Text style={styles.guideStepTitle}>4️⃣ Xuất Bảng Điểm Tổng Kết & Lưu Ý Thiết Bị</Text>
                 <Text style={styles.guideStepDesc}>
@@ -1126,10 +1282,11 @@ const styles = StyleSheet.create({
   logoutBtnText: { color: '#FFF', fontSize: 10, fontWeight: '900' },
 
   loginWrapper: {
-    flex: 1,
+    flexGrow: 1,
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 10,
+    paddingBottom: 20,
   },
   loginCard: {
     width: '100%',
@@ -1141,23 +1298,54 @@ const styles = StyleSheet.create({
     borderColor: '#00FFFF',
   },
   loginIcon: {
-    fontSize: 36,
+    fontSize: 34,
     textAlign: 'center',
-    marginBottom: 8,
+    marginBottom: 6,
   },
   loginTitle: {
     color: '#FFD700',
     fontSize: 15,
     fontWeight: '900',
     textAlign: 'center',
-    marginBottom: 6,
+    marginBottom: 4,
   },
   loginSubtitle: {
     color: '#AAAABB',
     fontSize: 10.5,
     textAlign: 'center',
     lineHeight: 16,
-    marginBottom: 16,
+    marginBottom: 14,
+  },
+  authTabRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 14,
+  },
+  authTabBtn: {
+    flex: 1,
+    paddingVertical: 9,
+    borderRadius: 8,
+    backgroundColor: '#16082F',
+    borderWidth: 1.5,
+    borderColor: '#332255',
+    alignItems: 'center',
+  },
+  authTabBtnActive: {
+    backgroundColor: '#092B1E',
+    borderColor: '#39FF14',
+  },
+  authTabBtnRegisterActive: {
+    backgroundColor: '#0B192C',
+    borderColor: '#00FFFF',
+  },
+  authTabText: {
+    color: '#8888AA',
+    fontSize: 9.5,
+    fontWeight: 'bold',
+  },
+  authTabTextActive: {
+    color: '#FFF',
+    fontWeight: '900',
   },
   errorBanner: {
     backgroundColor: 'rgba(255, 0, 85, 0.15)',
@@ -1172,6 +1360,21 @@ const styles = StyleSheet.create({
     fontSize: 10.5,
     fontWeight: 'bold',
     textAlign: 'center',
+  },
+  successBanner: {
+    backgroundColor: 'rgba(57, 255, 20, 0.15)',
+    borderWidth: 1,
+    borderColor: '#39FF14',
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 12,
+  },
+  successBannerText: {
+    color: '#39FF14',
+    fontSize: 10.5,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    lineHeight: 15,
   },
   loginInput: {
     backgroundColor: '#070212',
