@@ -7,6 +7,7 @@ import { evaluateSpeechSubmission } from '../utils/speechEvaluator';
 import { evaluateSpeaking } from '../services/arena/assessmentService';
 import { supabase } from '../utils/supabase';
 import { getSavedStudentProfile, saveStudentProfile } from '../utils/studentSession';
+import { getStation2ScenariosByTierAndLevel } from '../data/station2';
 
 // 🛡️ TỰ ĐỘNG BÓC TÁCH COMPONENT CHUẨN XÁC CHỐNG LỖI REACT #130
 const AntiCheatSpeakingSession: React.ComponentType<any> = 
@@ -41,256 +42,70 @@ export interface ChallengeItem {
   prompt: string;
   hint: { vi: string };
   isTeacherAssigned?: boolean;
+  // Dữ liệu mở rộng cho Tầng 2 (Relay 2 lượt)
+  turn1RoleVi?: string;
+  turn1TaskVi?: string;
+  turn1SampleEn?: string;
+  turn2RoleVi?: string;
+  turn2TaskVi?: string;
+  turn2SampleEn?: string;
+  // Dữ liệu mở rộng cho Tầng 3 (Roleplay nhập vai)
+  userRoleVi?: string;
+  aiRoleVi?: string;
 }
 
 const CEFR_LEVELS: CefrLevel[] = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
 
 const TIERS: { key: Station2Tier; label: string; icon: string; desc: string }[] = [
   { key: 'SOLO', label: 'TẦNG 1: SOLO (PHẢN XẠ CÁ NHÂN)', icon: '🥊', desc: 'Phản xạ tức thì: Tự xử lý tình huống thực tế bất ngờ hoặc các thử thách độc lập.' },
-  { key: 'RELAY', label: 'TẦNG 2: RELAY (TIẾP SỨC ĐỒNG ĐỘI)', icon: '🏃', desc: 'Tiếp sức 2 người: Nối tiếp ý tưởng mượt mà và mở rộng mạch logic câu chuyện.' },
+  { key: 'RELAY', label: 'TẦNG 2: RELAY (TIẾP SỨC ĐỒNG ĐỘI)', icon: '🏃', desc: 'Tiếp sức 2 người: Bạn số 1 mở đầu chủ đề, Bạn số 2 bắt nhịp và phát triển tiếp mạch câu chuyện.' },
   { key: 'ROLEPLAY', label: 'TẦNG 3: ROLEPLAY (ĐỐI THOẠI NHẬP VAI)', icon: '🎭', desc: 'Nhập vai tương tác: Giải quyết bất đồng, đàm phán và thuyết phục thực tế.' }
 ];
 
-const SCENARIO_LIBRARY: Record<string, Omit<ChallengeItem, 'id' | 'tier' | 'level' | 'isTeacherAssigned'>[]> = {
-  'SOLO_A1': [
-    {
-      title: "Hỏi đường đến ga tàu điện ngầm",
-      place: "Đường phố",
-      task: "Chỉ đường đi bộ đến trạm metro gần nhất",
-      contextDesc: "Một du khách nước ngoài hỏi bạn đường đi bộ đến ga tàu điện ngầm gần nhất.",
-      prompt: "Go straight ahead for two blocks, then turn left; the station is right next to the bank.",
-      hint: {
-        vi: "Chỉ đường đi bộ: đi thẳng 2 dãy nhà rồi rẽ trái, ga tàu nằm ngay cạnh ngân hàng."
-      }
-    },
-    {
-      title: "Gọi món ăn trưa mang về",
-      place: "Quầy thức ăn nhanh",
-      task: "Gọi 1 phần cơm gà và 1 chai nước suối",
-      contextDesc: "Bạn đang ở quầy thức ăn nhanh. Hãy gọi một phần cơm gà mang đi và một chai nước khoáng.",
-      prompt: "Hello, can I please have one chicken rice set to take away and a bottle of mineral water?",
-      hint: {
-        vi: "Gọi đồ ăn mang về: 1 phần cơm gà mang đi và 1 chai nước suối."
-      }
-    },
-    {
-      title: "Hỏi giờ người đi đường",
-      place: "Trạm xe buýt",
-      task: "Lịch sự hỏi giờ người xung quanh",
-      contextDesc: "Điện thoại của bạn đã hết pin hoàn toàn. Hãy hỏi một người đứng gần xem bây giờ là mấy giờ.",
-      prompt: "Excuse me, my phone battery is completely dead. Do you happen to have the time?",
-      hint: {
-        vi: "Hỏi giờ lịch sự: máy hết pin, hỏi người bên cạnh xem mấy giờ rồi."
-      }
-    }
-  ],
-  'SOLO_A2': [
-    {
-      title: "Từ chối lời mời tiệc cuối tuần",
-      place: "Hành lang công ty",
-      task: "Lịch sự từ chối vì bận về thăm ông bà",
-      contextDesc: "Đồng nghiệp rủ bạn đi uống bia vào thứ Bảy, nhưng bạn đã hứa về thăm ông bà.",
-      prompt: "I would really love to join, but I have already promised to visit my grandparents this weekend.",
-      hint: {
-        vi: "Từ chối lịch sự: rất muốn đi nhưng đã hứa về quê thăm ông bà cuối tuần này."
-      }
-    },
-    {
-      title: "Phản ánh món ăn bị nguội",
-      place: "Nhà hàng",
-      task: "Nhờ nhân viên hâm nóng lại đĩa mì xào",
-      contextDesc: "Món mì xào của bạn vừa được bưng ra nhưng đã nguội ngắt. Hãy nhờ nhân viên gửi bếp hâm nóng lại.",
-      prompt: "Excuse me, my noodles are quite cold. Could you please ask the kitchen to heat them up for me?",
-      hint: {
-        vi: "Phản ánh đồ ăn nguội: xin phép nhân viên nhờ bếp hâm nóng lại đĩa mì."
-      }
-    }
-  ],
-  'SOLO_B1': [
-    {
-      title: "Bảo vệ ngân sách thiết lập dự án",
-      place: "Phòng họp hội nghị",
-      task: "Biện hộ chi phí ban đầu bằng hiệu quả tiết kiệm dài hạn",
-      contextDesc: "Trong buổi thuyết trình, một người nghe chất vấn rằng hệ thống đề xuất quá tốn kém.",
-      prompt: "While initial setup requires significant investment, operational savings over six months will completely offset the costs.",
-      hint: {
-        vi: "Biện hộ chi phí: chi phí ban đầu cao nhưng tiết kiệm vận hành sau 6 tháng sẽ bù đắp hoàn toàn."
-      }
-    },
-    {
-      title: "Đề xuất phân bổ lại khối lượng công việc",
-      place: "Khu vực làm việc nhóm",
-      task: "Đề xuất chia đều phần việc nghiên cứu kỹ thuật",
-      contextDesc: "Bạn nhận thấy khối lượng công việc phân bổ chưa đều. Hãy đề xuất nhóm trưởng chia lại công bằng.",
-      prompt: "I propose we redistribute the technical research workload so that every team member contributes equally.",
-      hint: {
-        vi: "Đề xuất chia lại việc: phân bổ lại phần việc nghiên cứu kỹ thuật để mọi người đóng góp công bằng."
-      }
-    }
-  ],
-  'SOLO_B2': [
-    {
-      title: "Từ chối ép tiến độ phi thực tế",
-      place: "Cuộc họp đồng bộ khách hàng",
-      task: "Giải thích việc đẩy nhanh bàn giao gây nguy cơ bảo mật",
-      contextDesc: "Khách hàng yêu cầu giao sản phẩm sớm hơn một tuần. Hãy giải thích việc này đe dọa nghiêm trọng tới khâu kiểm tra an toàn.",
-      prompt: "Accelerating deployment by a full week severely constrains our security audit cycle, risking critical vulnerabilities.",
-      hint: {
-        vi: "Từ chối ép tiến độ: giao sớm 1 tuần sẽ thu hẹp thời gian kiểm tra bảo mật, gây nguy cơ lỗ hổng nghiêm trọng."
-      }
-    }
-  ],
-  'SOLO_C1': [
-    {
-      title: "Ứng phó khủng hoảng rò rỉ dữ liệu",
-      place: "Họp báo khẩn",
-      task: "Đưa ra phát ngôn điềm tĩnh, kiểm soát phạm vi sự cố",
-      contextDesc: "Với tư cách người phát ngôn, hãy giải quyết tin đồn cơ sở dữ liệu bị xâm phạm trong buổi họp báo trực tiếp.",
-      prompt: "Our incident response teams have isolated the perimeter, engaged third-party forensic auditors, and will provide transparent hourly updates.",
-      hint: {
-        vi: "Phát ngôn khủng hoảng: đội ứng phó đã cách ly phạm vi, mời kiểm toán độc lập và sẽ cập nhật minh bạch mỗi giờ."
-      }
-    }
-  ],
-  'SOLO_C2': [
-    {
-      title: "Tranh biện đạo đức phán quyết bằng AI",
-      place: "Hội thảo học thuật",
-      task: "Phê phán thuật toán thay thế thẩm phán trong xét xử thương mại",
-      contextDesc: "Hãy phát biểu ngẫu ứng phê phán việc áp dụng thuật toán thay thế thẩm phán xét xử tại tòa án.",
-      prompt: "Algorithmic adjudication merely optimizes for historical empirical precedents, thereby formalizing systemic biases under the guise of neutrality.",
-      hint: {
-        vi: "Tranh biện đạo đức AI: phán quyết bằng thuật toán chỉ tối ưu theo tiền lệ quá khứ, chính thức hóa định kiến hệ thống."
-      }
-    }
-  ],
-  'RELAY_A1': [
-    {
-      title: "Tiếp sức: Lên kế hoạch tiệc chia tay",
-      place: "Phòng sinh hoạt sinh viên",
-      task: "Nối tiếp ý tưởng của bạn với loa nhạc và lồng đèn",
-      contextDesc: "Bạn A: 'Chúng ta nên mua pizza và đồ uống.' -> Bạn B: Tiếp nối đề xuất trang trí và âm nhạc nền.",
-      prompt: "Great idea! I can bring some speakers and paper lanterns to decorate the patio.",
-      hint: {
-        vi: "Tiếp sức tiệc chia tay: Bạn A đề xuất pizza & đồ uống -> Bạn B nối ý mang loa và lồng đèn trang trí."
-      }
-    }
-  ],
-  'RELAY_B1': [
-    {
-      title: "Tiếp sức: Giảm rác thải nhựa khuôn viên",
-      place: "Hội đồng sinh viên",
-      task: "Nối tiếp chính sách cấm ly nhựa bằng việc giảm giá khi mang bình",
-      contextDesc: "Bạn A: 'Nhà ăn phải dừng dùng ly một lần.' -> Bạn B: Bổ sung chính sách giảm 10% khi mang bình nước cá nhân.",
-      prompt: "To make that policy effective, the administration should offer a ten percent discount for anyone bringing reusable tumblers.",
-      hint: {
-        vi: "Tiếp sức giảm rác thải: Bạn A muốn cấm ly dùng 1 lần -> Bạn B bổ sung đề xuất giảm 10% khi mang bình cá nhân."
-      }
-    }
-  ],
-  'RELAY_B2': [
-    {
-      title: "Tiếp sức: Hạ tầng xe điện đô thị",
-      place: "Diễn đàn quy hoạch đô thị",
-      task: "Nhấn mạnh trạm đổi pin song hành cùng chính sách trợ giá",
-      contextDesc: "Khách mời A: 'Trợ giá xe máy điện giúp giảm khí thải.' -> Khách mời B: Nhấn mạnh đồng thời mở rộng trạm đổi pin tiêu chuẩn.",
-      prompt: "Crucially, municipal planners must simultaneously expand standardized battery-swapping stations across major transit corridors.",
-      hint: {
-        vi: "Tiếp sức xe điện đô thị: Bạn A nói về trợ giá xe -> Bạn B nối tiếp yêu cầu mở rộng trạm đổi pin chuẩn hóa."
-      }
-    }
-  ],
-  'ROLEPLAY_A1': [
-    {
-      title: "Nhập vai: Gọi món tại quầy & quét mã QR",
-      place: "Quầy thức ăn nhanh",
-      task: "Gọi combo gà rán và xác nhận chuyển khoản QR",
-      contextDesc: "Bạn là khách hàng gọi món combo gà rán và muốn thanh toán quét mã QR trên điện thoại.",
-      prompt: "Hello, can I please order a fried chicken combo and pay using a mobile QR transfer?",
-      hint: {
-        vi: "Nhập vai gọi món: xin gọi combo gà rán và hỏi có thanh toán chuyển khoản mã QR được không."
-      }
-    }
-  ],
-  'ROLEPLAY_A2': [
-    {
-      title: "Nhập vai: Đổi kích cỡ áo tại cửa hàng",
-      place: "Quầy thu ngân thời trang",
-      task: "Xuất trình hóa đơn xin đổi sang size L",
-      contextDesc: "Chiếc áo bạn mua hôm qua hơi chật vai. Hãy xuất trình hóa đơn và đề nghị đổi sang cỡ lớn hơn (L).",
-      prompt: "Good morning, I bought this shirt yesterday but it feels tight around my shoulders. Can I exchange it for a large?",
-      hint: {
-        vi: "Nhập vai đổi size áo: áo mua hôm qua bị chật vai, mang hóa đơn xin đổi sang size L."
-      }
-    }
-  ],
-  'ROLEPLAY_B1': [
-    {
-      title: "Nhập vai: Đổi đồ uống gấp tại sân bay",
-      place: "Quầy cà phê cổng lên máy bay",
-      task: "Đổi lại ly trà đào thay vì cappuccino vì sắp đến giờ bay",
-      contextDesc: "Bạn gọi trà đào đá nhưng lại nhận nhầm cappuccino nóng. Máy bay sẽ lên trong 10 phút; hãy nhờ đổi ngay.",
-      prompt: "Excuse me, I ordered an iced peach tea, but I received hot cappuccino. Could you replace it quickly as my flight boards soon?",
-      hint: {
-        vi: "Đổi đồ uống khẩn cấp: gọi trà đào đá nhưng nhận nhầm cappuccino nóng, máy bay sắp bay trong 10 phút."
-      }
-    }
-  ],
-  'ROLEPLAY_B2': [
-    {
-      title: "Nhập vai: Thương lượng trễ tiến độ tính năng",
-      place: "Cuộc họp đối tác",
-      task: "Thừa nhận chậm 3 ngày và đề xuất giao phần xuất dữ liệu trước",
-      contextDesc: "Khách hàng phàn nàn vì tính năng xuất báo cáo bị trễ 3 ngày. Hãy đàm phán bằng cách triển khai trước phần xuất dữ liệu cốt lõi chiều nay.",
-      prompt: "We acknowledge the module delay; to keep your team operating, we can deploy the core data export feature this afternoon.",
-      hint: {
-        vi: "Thương lượng tiến độ: thừa nhận trễ tính năng báo cáo 3 ngày, bù lại đề xuất bàn giao phần xuất dữ liệu cốt lõi ngay chiều nay."
-      }
-    }
-  ],
-  'ROLEPLAY_C1': [
-    {
-      title: "Nhập vai: Khắc phục sự cố phòng Tổng thống",
-      place: "Sảnh khách sạn 5 sao",
-      task: "Giải quyết sự cố hỏng điều hòa đêm muộn bằng cách nâng hạng",
-      contextDesc: "Với tư cách Tổng Quản lý, hãy xử lý sự cố hỏng điều hòa lúc nửa đêm tại phòng Tổng thống ngay trước thềm hội nghị quốc tế.",
-      prompt: "I sincerely apologize for this disruption. I will personally arrange an immediate transfer to our Presidential Penthouse with all services comped.",
-      hint: {
-        vi: "Khủng hoảng khách VIP: quản lý đích thân xin lỗi sự cố điều hòa và nâng hạng miễn phí lên Penthouse Tổng thống."
-      }
-    }
-  ]
-};
+// 🎯 LẤY TÌNH HUỐNG TỪ KHO DỮ LIỆU 180 CHỦ ĐỀ (SOLO / RELAY / ROLEPLAY)
+const createScenarioFromBank = (tier: Station2Tier, level: CefrLevel, index: number): ChallengeItem => {
+  const list = getStation2ScenariosByTierAndLevel(tier, level);
+  const raw: any = list[index % list.length];
+  const roundNum = Math.floor(index / list.length) + 1;
 
-const CONTEXT_VARIANTS = [
-  "Tình huống khẩn cấp: phản hồi trong vòng 3 phút",
-  "Đối phương có vẻ sốt ruột và cần câu trả lời dứt khoát",
-  "Bối cảnh cuộc họp ban giám đốc trực tuyến cấp cao",
-  "Bối cảnh trụ sở tập đoàn đa quốc gia",
-  "Yêu cầu phản xạ tự tin, gãy gọn, không đệm âm thừa",
-  "Đối tác mong đợi một cam kết hành động rõ ràng",
-  "Bối cảnh cuối ngày làm việc; trả lời ngắn gọn súc tích",
-  "Được giám sát trực tiếp bởi giám khảo chuyên môn"
-];
+  // Đối với Relay, câu mẫu phát âm & đối chiếu là chuỗi nối tiếp Lượt 1 -> Lượt 2
+  const effectivePrompt = tier === 'RELAY' && raw.turn1SampleEn && raw.turn2SampleEn
+    ? `${raw.turn1SampleEn} ${raw.turn2SampleEn}`
+    : (raw.sampleAnswerEn || raw.promptEn || '');
 
-const createProceduralScenario = (tier: Station2Tier, level: CefrLevel, index: number): ChallengeItem => {
-  const key = `${tier}_${level}`;
-  const list = SCENARIO_LIBRARY[key] || SCENARIO_LIBRARY['SOLO_B1'];
-  const base = list[index % list.length];
-  const variant = CONTEXT_VARIANTS[index % CONTEXT_VARIANTS.length];
-  const caseNum = Math.floor(index / list.length) + 1;
+  const placeLabel = tier === 'ROLEPLAY' && raw.userRoleVi
+    ? `Vai của bạn: ${raw.userRoleVi}`
+    : tier === 'RELAY'
+    ? 'Đối thoại tiếp sức 2 lượt'
+    : `Trình độ ${level}`;
+
+  const taskLabel = tier === 'ROLEPLAY' && raw.aiRoleVi
+    ? `Đối thoại cùng: ${raw.aiRoleVi}`
+    : tier === 'RELAY'
+    ? 'Bạn 1 mở ý ➔ Bạn 2 nối tiếp'
+    : 'Phản xạ giao tiếp tự nhiên';
 
   return {
-    id: `dynamic_${tier}_${level}_${index}_${Date.now()}`,
+    id: `${raw.id}_${index}_${Date.now()}`,
     tier,
     level,
-    title: caseNum > 1 ? `${base.title} (Ca #${caseNum})` : base.title,
-    place: base.place,
-    task: base.task,
-    contextDesc: `${base.contextDesc} [Lưu ý: ${variant}].`,
-    prompt: base.prompt,
-    hint: base.hint,
-    isTeacherAssigned: false
+    title: roundNum > 1 ? `${raw.title} (Lượt #${roundNum})` : raw.title,
+    place: placeLabel,
+    task: taskLabel,
+    contextDesc: raw.contextVi,
+    prompt: effectivePrompt,
+    hint: {
+      vi: raw.contextVi
+    },
+    isTeacherAssigned: false,
+    turn1RoleVi: raw.turn1RoleVi,
+    turn1TaskVi: raw.turn1TaskVi,
+    turn1SampleEn: raw.turn1SampleEn,
+    turn2RoleVi: raw.turn2RoleVi,
+    turn2TaskVi: raw.turn2TaskVi,
+    turn2SampleEn: raw.turn2SampleEn,
+    userRoleVi: raw.userRoleVi,
+    aiRoleVi: raw.aiRoleVi,
   };
 };
 
@@ -323,18 +138,19 @@ export default function Station2Screen({ onBack }: Props) {
     return !p.studentName || !p.studentCode;
   });
 
-  // 🌐 GỢI Ý THUẦN TIẾNG VIỆT (KHÔNG CẦN CHỌN CỜ)
+  // 🌐 GỢI Ý THUẦN TIẾNG VIỆT
   const [showHint, setShowHint] = useState<boolean>(true);
 
-  // 🎯 QUẢN LÝ ĐỀ BÀI VÀ HÀNG ĐỢI NẠP BÙ AI NGẦM
+  // 🎯 QUẢN LÝ ĐỀ BÀI VÀ HÀNG ĐỢI NẠP BÙ AI NGẦM (KHỞI TẠO NGẪU NHIÊN CHỐNG TRÙNG LỚP)
+  const [topicIndex, setTopicIndex] = useState<number>(() => Math.floor(Math.random() * 10));
   const [currentChallenge, setCurrentChallenge] = useState<ChallengeItem>(() => {
-    return createProceduralScenario('ROLEPLAY', 'B1', 0);
+    const startIdx = Math.floor(Math.random() * 10);
+    return createScenarioFromBank('ROLEPLAY', 'B1', startIdx);
   });
-  const [topicIndex, setTopicIndex] = useState<number>(0);
   const [aiQueue, setAiQueue] = useState<ChallengeItem[]>([]);
   const isFetchingAiRef = useRef<boolean>(false);
 
-  // QUẢN LÝ TTS (EDGE NEURAL SERVERLESS STREAM)
+  // QUẢN LÝ TTS
   const [isPlayingSample, setIsPlayingSample] = useState<boolean>(false);
   const synthRef = useRef<SpeechSynthesis | null>(null);
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
@@ -378,7 +194,6 @@ export default function Station2Screen({ onBack }: Props) {
     stopSampleAudio();
     setIsPlayingSample(true);
 
-    // 1. Tạo audio đồng bộ ngay lập tức (bảo lưu User Gesture trên Safari iOS)
     const audio = new Audio();
     audioPlayerRef.current = audio;
 
@@ -393,8 +208,7 @@ export default function Station2Screen({ onBack }: Props) {
       audioPlayerRef.current = null;
     };
 
-    audio.onerror = (e) => {
-      console.warn("⚠️ Audio server gặp sự cố, kích hoạt fallback:", e);
+    audio.onerror = () => {
       setIsPlayingSample(false);
       audioPlayerRef.current = null;
       fallbackIOSSpeech(cleanText);
@@ -408,7 +222,6 @@ export default function Station2Screen({ onBack }: Props) {
         await playPromise;
       }
     } catch (e) {
-      console.warn("⚠️ iOS WebKit chặn phát tự động, kích hoạt fallback:", e);
       setIsPlayingSample(false);
       audioPlayerRef.current = null;
       fallbackIOSSpeech(cleanText);
@@ -553,9 +366,11 @@ export default function Station2Screen({ onBack }: Props) {
         return;
       }
     }
-    const fresh = createProceduralScenario(selectedTier, selectedLevel, 0);
+    // Khởi tạo ngẫu nhiên 1 trong 10 bài của cấp độ để tránh trùng đề trong lớp
+    const randomStart = Math.floor(Math.random() * 10);
+    const fresh = createScenarioFromBank(selectedTier, selectedLevel, randomStart);
     setCurrentChallenge(fresh);
-    setTopicIndex(0);
+    setTopicIndex(randomStart);
     setAiQueue([]);
   }, [selectedTier, selectedLevel, topicOrigin, teacherAssignments]);
 
@@ -565,15 +380,26 @@ export default function Station2Screen({ onBack }: Props) {
 
     try {
       isFetchingAiRef.current = true;
-      const promptInstruction = `Create 1 UNIQUE situational reflex challenge for Station 2 at CEFR level ${level} in tier ${tier}.
+      const tierInstruction = tier === 'RELAY'
+        ? `This is a 2-speaker RELAY speaking task where Speaker 1 starts the topic and Speaker 2 continues the same topic seamlessly. Include turn1RoleVi, turn1TaskVi, turn1SampleEn, turn2RoleVi, turn2TaskVi, turn2SampleEn.`
+        : `This is a ${tier} speaking task at CEFR ${level}.`;
+
+      const promptInstruction = `Create 1 UNIQUE situational reflex challenge for Station 2 at CEFR level ${level} in tier ${tier}. ${tierInstruction}
+Avoid repeating title: "${currentChallenge?.title || ''}".
 Output ONLY raw JSON:
 {
   "title": "Tên chủ đề ngắn gọn bằng tiếng Việt",
-  "place": "Địa điểm ngắn gọn bằng tiếng Việt",
+  "place": "Vai trò hoặc bối cảnh ngắn gọn bằng tiếng Việt",
   "task": "Nhiệm vụ chính bằng tiếng Việt",
   "contextDesc": "Mô tả bối cảnh tình huống chi tiết bằng tiếng Việt",
-  "prompt": "Natural spoken English sentence for the target reflex",
-  "hintVi": "Tóm tắt gợi ý cốt lõi bằng tiếng Việt"
+  "prompt": "Natural spoken English sample answer",
+  "hintVi": "Tóm tắt gợi ý cốt lõi bằng tiếng Việt",
+  "turn1RoleVi": "🏃 Bạn số 1 (Khởi động)",
+  "turn1TaskVi": "Nhiệm vụ bạn số 1 (nếu là RELAY)",
+  "turn1SampleEn": "Sample turn 1 in English (if RELAY)",
+  "turn2RoleVi": "🏃‍♂️ Bạn số 2 (Tiếp sức)",
+  "turn2TaskVi": "Nhiệm vụ bạn số 2 nối tiếp (nếu là RELAY)",
+  "turn2SampleEn": "Sample turn 2 continuing the topic (if RELAY)"
 }`;
 
       const res = await fetch('/api/generate-topic', {
@@ -584,19 +410,29 @@ Output ONLY raw JSON:
 
       if (res.ok) {
         const content = await res.json();
+        const combinedRelayPrompt = tier === 'RELAY' && content.turn1SampleEn && content.turn2SampleEn
+          ? `${content.turn1SampleEn} ${content.turn2SampleEn}`
+          : content.prompt;
+
         const newAiItem: ChallengeItem = {
           id: `ai_${Date.now()}_${Math.random()}`,
           tier,
           level,
           title: `🤖 [AI] ${content.title}`,
-          place: content.place || 'Bối cảnh chung',
+          place: content.place || 'Bối cảnh AI tạo',
           task: content.task || 'Phản xạ giao tiếp',
           contextDesc: content.contextDesc,
-          prompt: content.prompt,
+          prompt: combinedRelayPrompt,
           hint: {
             vi: content.hintVi || content.contextDesc
           },
           isTeacherAssigned: false,
+          turn1RoleVi: content.turn1RoleVi,
+          turn1TaskVi: content.turn1TaskVi,
+          turn1SampleEn: content.turn1SampleEn,
+          turn2RoleVi: content.turn2RoleVi,
+          turn2TaskVi: content.turn2TaskVi,
+          turn2SampleEn: content.turn2SampleEn,
         };
         setAiQueue(prev => [...prev, newAiItem]);
       }
@@ -625,7 +461,7 @@ Output ONLY raw JSON:
       return;
     }
 
-    const freshPreset = createProceduralScenario(selectedTier, selectedLevel, nextIdx);
+    const freshPreset = createScenarioFromBank(selectedTier, selectedLevel, nextIdx);
     setCurrentChallenge(freshPreset);
     triggerBackgroundAiRefill(selectedTier, selectedLevel);
   };
@@ -1084,6 +920,55 @@ Output ONLY raw JSON:
 
   const currentTierInfo = TIERS.find(t => t.key === selectedTier);
 
+  // 🧩 COMPONENT HIỂN THỊ CHUỖI TIẾP SỨC 2 LƯỢT (CHO TẦNG RELAY)
+  const renderRelayTurnsCard = (item: ChallengeItem) => {
+    if (item.tier !== 'RELAY' || (!item.turn1TaskVi && !item.turn2TaskVi)) return null;
+
+    return (
+      <View style={styles.relayContainer}>
+        {/* LƯỢT 1: BẠN SỐ 1 */}
+        <View style={styles.relayTurnBox1}>
+          <View style={styles.relayTurnHeader}>
+            <Text style={styles.relayTurn1Title}>{item.turn1RoleVi || '🏃 Bạn số 1 (Khởi động)'}</Text>
+            {practiceMode === 'READ_SAMPLE' && item.turn1SampleEn && (
+              <TouchableOpacity
+                style={styles.ttsMiniBtn}
+                onPress={() => playNaturalTTS(item.turn1SampleEn!)}
+              >
+                <Text style={styles.ttsMiniBtnText}>🔊 Nghe Lượt 1</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+          <Text style={styles.relayTaskText}>📌 {item.turn1TaskVi}</Text>
+          {practiceMode === 'READ_SAMPLE' && item.turn1SampleEn && (
+            <Text style={styles.relaySampleText}>"{item.turn1SampleEn}"</Text>
+          )}
+        </View>
+
+        <Text style={styles.relayArrowText}>⬇️ CHUYỀN LƯỢT TIẾP SỨC ⬇️</Text>
+
+        {/* LƯỢT 2: BẠN SỐ 2 */}
+        <View style={styles.relayTurnBox2}>
+          <View style={styles.relayTurnHeader}>
+            <Text style={styles.relayTurn2Title}>{item.turn2RoleVi || '🏃‍♂️ Bạn số 2 (Tiếp sức)'}</Text>
+            {practiceMode === 'READ_SAMPLE' && item.turn2SampleEn && (
+              <TouchableOpacity
+                style={styles.ttsMiniBtn}
+                onPress={() => playNaturalTTS(item.turn2SampleEn!)}
+              >
+                <Text style={styles.ttsMiniBtnText}>🔊 Nghe Lượt 2</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+          <Text style={styles.relayTaskText}>📌 {item.turn2TaskVi}</Text>
+          {practiceMode === 'READ_SAMPLE' && item.turn2SampleEn && (
+            <Text style={styles.relaySampleText}>"{item.turn2SampleEn}"</Text>
+          )}
+        </View>
+      </View>
+    );
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -1094,7 +979,7 @@ Output ONLY raw JSON:
       </View>
 
       <ScrollView contentContainerStyle={{ paddingBottom: 35 }}>
-        {/* 🎓 THANH ĐỊNH DANH SINH VIÊN & MÃ LỚP (TỰ ĐỘNG LƯU LOCALSTORAGE) */}
+        {/* 🎓 THANH ĐỊNH DANH SINH VIÊN & MÃ LỚP */}
         <View style={styles.profileBanner}>
           <View style={styles.profileSummaryRow}>
             <Text style={styles.profileSummaryText}>
@@ -1154,7 +1039,7 @@ Output ONLY raw JSON:
               >
                 <Text style={styles.originTabIcon}>🤖</Text>
                 <Text style={[styles.originTabText, topicOrigin === 'SYSTEM' && styles.originTabTextActive]}>
-                  HỆ THỐNG MẪU
+                  HỆ THỐNG MẪU (180)
                 </Text>
               </TouchableOpacity>
 
@@ -1182,7 +1067,6 @@ Output ONLY raw JSON:
               </TouchableOpacity>
             </View>
 
-            {/* THÔNG BÁO KHI CHỌN TAB GIẢNG VIÊN GIAO MÀ CHƯA CÓ BÀI */}
             {topicOrigin === 'TEACHER_DASHBOARD' && (
               <View style={styles.teacherFilterNotice}>
                 {loadingAssignments ? (
@@ -1331,7 +1215,7 @@ Output ONLY raw JSON:
               </View>
             ) : (
               <View style={styles.topicContainer}>
-                {/* 🎯 HÀNG NÚT THAO TÁC KÉP: ĐỔI ĐỀ (0MS) VÀ TẠO MỚI CHỦ ĐỀ */}
+                {/* 🎯 HÀNG NÚT THAO TÁC KÉP */}
                 <View style={styles.actionButtonRow}>
                   <TouchableOpacity 
                     style={styles.prominentSwitchBtn} 
@@ -1367,7 +1251,7 @@ Output ONLY raw JSON:
                   
                   <Text style={styles.contextText}>📌 {currentChallenge.contextDesc}</Text>
 
-                  {/* 🇻🇳 HỘP GỢI Ý THUẦN TIẾNG VIỆT (ĐÃ LƯỢC BỎ THANH CHỌN CỜ) */}
+                  {/* HỘP GỢI Ý THUẦN TIẾNG VIỆT */}
                   <View style={styles.hintContainer}>
                     <View style={styles.hintHeaderRow}>
                       <TouchableOpacity 
@@ -1376,7 +1260,7 @@ Output ONLY raw JSON:
                         activeOpacity={0.8}
                       >
                         <Text style={[styles.hintToggleText, showHint ? { color: '#000000' } : { color: '#FFD700' }]}>
-                          {showHint ? '✕ ẨN GỢI Ý TÌNH HUỐNG' : '💡 XEM GỢI Ý TÌNH HUỐNG'}
+                          {showHint ? '✕ ẨN THÔNG TIN VAI DIỄN' : '💡 XEM THÔNG TIN VAI DIỄN'}
                         </Text>
                       </TouchableOpacity>
                     </View>
@@ -1384,21 +1268,29 @@ Output ONLY raw JSON:
                     {showHint && currentChallenge && (
                       <View style={styles.hintContentBox}>
                         <View style={styles.scaffoldingMetaRow}>
-                          <Text style={styles.scaffoldingMetaText}>📍 <Text style={{ color: '#00FFFF' }}>Địa điểm:</Text> {currentChallenge.place || 'Bối cảnh chung'}</Text>
-                          <Text style={styles.scaffoldingMetaText}>🎯 <Text style={{ color: '#FFD700' }}>Mục tiêu:</Text> {currentChallenge.task || 'Phản xạ giao tiếp'}</Text>
+                          <Text style={styles.scaffoldingMetaText}>🎭 <Text style={{ color: '#00FFFF' }}>{currentChallenge.place}</Text></Text>
+                          <Text style={styles.scaffoldingMetaText}>🎯 <Text style={{ color: '#FFD700' }}>{currentChallenge.task}</Text></Text>
                         </View>
-                        <View style={styles.nativeTranslateDivider} />
-                        <Text style={styles.hintLanguageTag}>
-                          👉 🇻🇳 Gợi ý bối cảnh:
-                        </Text>
-                        <Text style={styles.hintBodyText}>
-                          "{currentChallenge.hint?.vi || currentChallenge.contextDesc}"
-                        </Text>
                       </View>
                     )}
                   </View>
 
-                  {practiceMode === 'READ_SAMPLE' ? (
+                  {/* HIỂN THỊ CHUỖI 2 LƯỢT NẾU LÀ TẦNG RELAY */}
+                  {currentChallenge.tier === 'RELAY' && currentChallenge.turn1TaskVi ? (
+                    <>
+                      {renderRelayTurnsCard(currentChallenge)}
+                      {practiceMode === 'READ_SAMPLE' && (
+                        <TouchableOpacity 
+                          style={[styles.ttsMiniBtn, { alignSelf: 'center', marginBottom: 12, paddingVertical: 6, paddingHorizontal: 14 }, isPlayingSample && styles.ttsMiniBtnActive]} 
+                          onPress={() => playNaturalTTS(currentChallenge.prompt)}
+                        >
+                          <Text style={styles.ttsMiniBtnText}>
+                            {isPlayingSample ? '⏹ DỪNG ÂM MẪU' : '🔊 NGHE TRỌN VẸN CẢ 2 LƯỢT TIẾP SỨC'}
+                          </Text>
+                        </TouchableOpacity>
+                      )}
+                    </>
+                  ) : practiceMode === 'READ_SAMPLE' ? (
                     <View style={styles.previewPromptBox}>
                       <View style={styles.sampleHeaderRow}>
                         <Text style={styles.previewPromptLabel}>📖 Câu mẫu bản xứ mục tiêu:</Text>
@@ -1464,33 +1356,9 @@ Output ONLY raw JSON:
             <Text style={styles.normalPromptTitle}>{currentChallenge.title} ({currentChallenge.level})</Text>
             <Text style={styles.normalPromptDesc}>{currentChallenge.contextDesc}</Text>
 
-            {/* 🇻🇳 HỘP GỢI Ý TRONG PHÒNG THU THUẦN TIẾNG VIỆT */}
-            <View style={styles.hintContainer}>
-              <View style={styles.hintHeaderRow}>
-                <TouchableOpacity 
-                  style={[styles.hintToggleBtn, showHint && styles.hintToggleBtnActive]} 
-                  onPress={() => setShowHint(prev => !prev)}
-                  activeOpacity={0.8}
-                >
-                  <Text style={[styles.hintToggleText, showHint ? { color: '#000000' } : { color: '#FFD700' }]}>
-                    {showHint ? '✕ ẨN GỢI Ý TÌNH HUỐNG' : '💡 XEM GỢI Ý TÌNH HUỐNG'}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-
-              {showHint && currentChallenge && (
-                <View style={styles.hintContentBox}>
-                  <Text style={styles.hintLanguageTag}>
-                    👉 🇻🇳 Gợi ý bối cảnh:
-                  </Text>
-                  <Text style={styles.hintBodyText}>
-                    "{currentChallenge.hint?.vi || currentChallenge.contextDesc}"
-                  </Text>
-                </View>
-              )}
-            </View>
-
-            {practiceMode === 'READ_SAMPLE' ? (
+            {currentChallenge.tier === 'RELAY' && currentChallenge.turn1TaskVi ? (
+              renderRelayTurnsCard(currentChallenge)
+            ) : practiceMode === 'READ_SAMPLE' ? (
               <View style={styles.promptDisplayBox}>
                 <View style={styles.sampleHeaderRow}>
                   <Text style={styles.promptModeNotice}>📖 CÂU TIẾNG ANH MỤC TIÊU CẦN ĐỌC:</Text>
@@ -1724,8 +1592,62 @@ const styles = StyleSheet.create({
   levelBadge: { color: '#000', backgroundColor: '#39FF14', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, fontSize: 8.5, fontWeight: '900' },
   contextText: { color: '#FFF', fontSize: 11, lineHeight: 16, marginBottom: 8 },
 
-  hintContainer: {
+  // STYLES CHO CHUỖI RELAY 2 LƯỢT
+  relayContainer: {
     marginVertical: 8,
+    gap: 6,
+  },
+  relayTurnBox1: {
+    backgroundColor: '#081826',
+    borderLeftWidth: 3,
+    borderLeftColor: '#00FFFF',
+    padding: 10,
+    borderRadius: 8,
+  },
+  relayTurnBox2: {
+    backgroundColor: '#092216',
+    borderLeftWidth: 3,
+    borderLeftColor: '#39FF14',
+    padding: 10,
+    borderRadius: 8,
+  },
+  relayTurnHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  relayTurn1Title: {
+    color: '#00FFFF',
+    fontSize: 10,
+    fontWeight: '900',
+  },
+  relayTurn2Title: {
+    color: '#39FF14',
+    fontSize: 10,
+    fontWeight: '900',
+  },
+  relayTaskText: {
+    color: '#E0E0F5',
+    fontSize: 10,
+    lineHeight: 15,
+    marginBottom: 4,
+  },
+  relaySampleText: {
+    color: '#FFF',
+    fontSize: 11,
+    fontStyle: 'italic',
+    marginTop: 2,
+  },
+  relayArrowText: {
+    color: '#FFD700',
+    fontSize: 9,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+
+  hintContainer: {
+    marginVertical: 6,
     width: '100%',
   },
   hintHeaderRow: {
@@ -1737,7 +1659,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#16082F',
     borderWidth: 1.5,
     borderColor: '#FFD700',
-    paddingVertical: 6,
+    paddingVertical: 5,
     paddingHorizontal: 12,
     borderRadius: 7,
   },
@@ -1745,43 +1667,27 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFD700',
   },
   hintToggleText: {
-    fontSize: 9.5,
+    fontSize: 9,
     fontWeight: '900',
   },
   hintContentBox: {
     backgroundColor: '#07180D',
     borderLeftWidth: 3,
     borderLeftColor: '#39FF14',
-    padding: 10,
+    padding: 8,
     borderRadius: 8,
-    marginTop: 8,
+    marginTop: 6,
   },
   scaffoldingMetaRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 4,
+    flexWrap: 'wrap',
+    gap: 6,
   },
   scaffoldingMetaText: {
     color: '#DDD',
-    fontSize: 9,
-    fontWeight: 'bold',
-  },
-  nativeTranslateDivider: {
-    height: 1,
-    backgroundColor: '#1A3322',
-    marginVertical: 4,
-  },
-  hintLanguageTag: {
-    color: '#39FF14',
     fontSize: 9.5,
-    fontWeight: '900',
-    marginBottom: 2,
-  },
-  hintBodyText: {
-    color: '#88FFBB',
-    fontSize: 11,
-    lineHeight: 16,
-    fontStyle: 'italic',
+    fontWeight: 'bold',
   },
 
   previewPromptBox: { backgroundColor: '#070212', padding: 10, borderRadius: 8, marginBottom: 12, borderWidth: 1, borderColor: '#221144' },
