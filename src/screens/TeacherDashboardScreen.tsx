@@ -226,12 +226,15 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
       }
 
       if (data?.user) {
-        // Tự động ghi nhận quyền INSTRUCTOR vào bảng profiles
+        const generatedUsername = `${cleanEmail.split('@')[0]}_${data.user.id.slice(0, 4)}`;
+
+        // Tự động ghi nhận quyền INSTRUCTOR vào bảng profiles (kèm username bắt buộc)
         const { error: profileInsertErr } = await supabase
           .from('profiles')
           .upsert([
             {
               id: data.user.id,
+              username: generatedUsername,
               email: cleanEmail,
               full_name: cleanName,
               role: 'INSTRUCTOR',
@@ -240,7 +243,8 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
           ], { onConflict: 'id' });
 
         if (profileInsertErr) {
-          console.warn('Lưu ý cập nhật profiles:', profileInsertErr.message);
+          setAuthErrorMsg(`⚠️ Đã tạo tài khoản nhưng chưa gán được quyền trong profiles: ${profileInsertErr.message}`);
+          return;
         }
 
         // Nếu Supabase không bật Confirm Email (có session ngay), đăng nhập thẳng vào Dashboard
