@@ -220,7 +220,8 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
       });
 
       if (error) {
-        setAuthErrorMsg(`❌ Đăng ký không thành công: ${error.message}`);
+        const detail = error.message || (error as any).error_description || JSON.stringify(error);
+        setAuthErrorMsg(`❌ Đăng ký không thành công: ${detail === '{}' ? 'Lỗi cấu trúc bảng profiles trên Supabase.' : detail}`);
         return;
       }
 
