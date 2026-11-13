@@ -42,6 +42,14 @@ interface ClassItem {
 }
 
 export default function TeacherDashboardScreen({ onBack }: Props) {
+  // 🔐 TRẠNG THÁI XÁC THỰC GIẢNG VIÊN (AUTH GUARD)
+  const [isCheckingAuth, setIsCheckingAuth] = useState<boolean>(true);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [loginEmail, setLoginEmail] = useState<string>('');
+  const [loginPassword, setLoginPassword] = useState<string>('');
+  const [isLoggingIn, setIsLoggingIn] = useState<boolean>(false);
+  const [authErrorMsg, setAuthErrorMsg] = useState<string>('');
+
   const [submissions, setSubmissions] = useState<SubmissionRecord[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [selectedClass, setSelectedClass] = useState<string>('ALL');
@@ -80,7 +88,100 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
   // 4. Quản lý Modal Hướng dẫn Giảng viên (Teacher Guidelines)
   const [showGuideModal, setShowGuideModal] = useState<boolean>(false);
 
-  const fetchDashboardData = async () => {
+  // 🔍 KIỂM TRA PHIÊN ĐĂNG NHẬP & QUYỀN GIẢNG VIÊN KHI MỞ TRANG
+  const verifyInstructorSession = async () => {
+    setIsCheckingAuth(true);
+    setAuthErrorMsg('');
+    try {
+      if (!supabase) {
+        setAuthErrorMsg('Lỗi cấu hình kết nối máy chủ Supabase.');
+        setIsAuthenticated(false);
+        return;
+      }
+
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) {
+        setIsAuthenticated(false);
+        return;
+      }
+
+      // Kiểm tra role trong bảng profiles
+      const { data: profile, error: profileErr } = await supabase
+        .from('profiles')
+        .select('role, tenant_id, full_name')
+        .eq('id', session.user.id)
+        .single();
+
+      if (profileErr || !profile || (profile.role !== 'INSTRUCTOR' && profile.role !== 'SUPER_ADMIN')) {
+        await supabase.auth.signOut();
+        setIsAuthenticated(false);
+        setAuthErrorMsg('⛔ Tài khoản này chưa được cấp quyền Giảng viên (INSTRUCTOR).');
+        return;
+      }
+
+      setCurrentInstructorId(session.user.id);
+      setUserRole(profile.role);
+      if (profile.tenant_id) {
+        setCurrentTenantId(profile.tenant_id);
+      }
+
+      setIsAuthenticated(true);
+      await fetchDashboardData(profile.tenant_id, profile.role);
+    } catch (err) {
+      console.warn('Lỗi kiểm tra phiên đăng nhập:', err);
+      setIsAuthenticated(false);
+    } finally {
+      setIsCheckingAuth(false);
+    }
+  };
+
+  useEffect(() => {
+    verifyInstructorSession();
+  }, []);
+
+  // 🔑 XỬ LÝ ĐĂNG NHẬP EMAIL / MẬT KHẨU
+  const handleInstructorLogin = async () => {
+    if (!loginEmail.trim() || !loginPassword.trim()) {
+      setAuthErrorMsg('Vui lòng nhập đầy đủ Email và Mật khẩu giảng viên!');
+      return;
+    }
+
+    setIsLoggingIn(true);
+    setAuthErrorMsg('');
+    try {
+      if (!supabase) return;
+
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: loginEmail.trim(),
+        password: loginPassword,
+      });
+
+      if (error) {
+        setAuthErrorMsg('❌ Email hoặc mật khẩu không chính xác.');
+        return;
+      }
+
+      if (data?.user) {
+        await verifyInstructorSession();
+      }
+    } catch (err: any) {
+      setAuthErrorMsg(err.message || 'Đăng nhập thất bại. Vui lòng thử lại.');
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
+
+  // 🚪 XỬ LÝ ĐĂNG XUẤT
+  const handleInstructorLogout = async () => {
+    if (supabase) {
+      await supabase.auth.signOut();
+    }
+    setIsAuthenticated(false);
+    setLoginPassword('');
+    setSubmissions([]);
+  };
+
+  const fetchDashboardData = async (overrideTenantId?: string, overrideRole?: string) => {
     setLoading(true);
     try {
       if (!supabase) {
@@ -89,30 +190,10 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
         return;
       }
 
-      // 1. Lấy thông tin user hiện tại & tenant_id
-      let activeTenantId = currentTenantId;
-      let activeRole = userRole;
+      const activeTenantId = overrideTenantId || currentTenantId;
+      const activeRole = overrideRole || userRole;
 
-      const { data: authData } = await supabase.auth.getUser();
-      if (authData?.user) {
-        setCurrentInstructorId(authData.user.id);
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('role, tenant_id')
-          .eq('id', authData.user.id)
-          .single();
-
-        if (profile?.role) {
-          activeRole = profile.role;
-          setUserRole(profile.role);
-        }
-        if (profile?.tenant_id) {
-          activeTenantId = profile.tenant_id;
-          setCurrentTenantId(profile.tenant_id);
-        }
-      }
-
-      // 2. Tải danh sách lớp thuộc TRƯỜNG của giảng viên
+      // 1. Tải danh sách lớp thuộc TRƯỜNG của giảng viên
       let classQuery = supabase.from('classes').select('id, code, name, tenant_id');
       if (activeTenantId && activeRole !== 'SUPER_ADMIN') {
         classQuery = classQuery.eq('tenant_id', activeTenantId);
@@ -138,7 +219,7 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
         setImportClassId(defaultClass[0].id);
       }
 
-      // 3. Lấy danh sách bài nộp (Submissions)
+      // 2. Lấy danh sách bài nộp (Submissions)
       let subQuery = supabase.from('submissions').select('*').order('created_at', { ascending: false });
       if (activeTenantId && activeRole !== 'SUPER_ADMIN') {
         subQuery = subQuery.eq('tenant_id', activeTenantId);
@@ -156,10 +237,6 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
       setLoading(false);
     }
   };
-
-  useEffect(() => {
-    fetchDashboardData();
-  }, []);
 
   // Tổng hợp danh sách Mã lớp từ cả bảng classes và thực tế bài nộp sinh viên gửi lên
   const availableFilterCodes = useMemo(() => {
@@ -412,14 +489,94 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
     }
   };
 
-  const handlePrintPDF = () => {
-    if (typeof window !== 'undefined' && window.print) {
-      window.print();
-    } else {
-      Alert.alert("Thông báo", "Tính năng in PDF khả dụng trên nền tảng Web Desktop.");
-    }
-  };
+  // =========================================================================
+  // MÀN HÌNH CHỜ KIỂM TRA QUYỀN & CỔNG ĐĂNG NHẬP GIẢNG VIÊN
+  // =========================================================================
+  if (isCheckingAuth) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color="#00FFFF" />
+        <Text style={{ color: '#00FFFF', fontSize: 11, fontWeight: 'bold', marginTop: 12 }}>
+          🔐 ĐANG XÁC THỰC QUYỀN TRUY CẬP GIẢNG VIÊN...
+        </Text>
+      </View>
+    );
+  }
 
+  if (!isAuthenticated) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={onBack} style={styles.backBtn}>
+            <Text style={styles.backBtnText}>🔙 BẢN ĐỒ</Text>
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>🔐 XÁC THỰC GIẢNG VIÊN</Text>
+          <View style={{ width: 60 }} />
+        </View>
+
+        <View style={styles.loginWrapper}>
+          <View style={styles.loginCard}>
+            <Text style={styles.loginIcon}>🏫</Text>
+            <Text style={styles.loginTitle}>CỔNG QUẢN TRỊ GIẢNG VIÊN</Text>
+            <Text style={styles.loginSubtitle}>
+              Khu vực dành riêng cho Giảng viên & Cán bộ đào tạo. Vui lòng đăng nhập để giao bài và quản lý bảng điểm.
+            </Text>
+
+            {authErrorMsg ? (
+              <View style={styles.errorBanner}>
+                <Text style={styles.errorBannerText}>{authErrorMsg}</Text>
+              </View>
+            ) : null}
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Email Giảng viên (*):</Text>
+              <TextInput
+                style={styles.loginInput}
+                placeholder="vi-du: hoai.gv@truong.edu.vn"
+                placeholderTextColor="#666688"
+                keyboardType="email-address"
+                autoCapitalize="none"
+                value={loginEmail}
+                onChangeText={setLoginEmail}
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Mật khẩu (*):</Text>
+              <TextInput
+                style={styles.loginInput}
+                placeholder="Nhập mật khẩu đăng nhập..."
+                placeholderTextColor="#666688"
+                secureTextEntry
+                value={loginPassword}
+                onChangeText={setLoginPassword}
+              />
+            </View>
+
+            <TouchableOpacity
+              style={[styles.loginSubmitBtn, isLoggingIn && { opacity: 0.6 }]}
+              onPress={handleInstructorLogin}
+              disabled={isLoggingIn}
+            >
+              {isLoggingIn ? (
+                <ActivityIndicator size="small" color="#000" />
+              ) : (
+                <Text style={styles.loginSubmitText}>🔓 ĐĂNG NHẬP VÀO CỔNG QUẢN LÝ</Text>
+              )}
+            </TouchableOpacity>
+
+            <Text style={styles.loginHelperNote}>
+              💡 Chưa có tài khoản? Liên hệ Quản trị viên IT của trường để cấp tài khoản quyền INSTRUCTOR.
+            </Text>
+          </View>
+        </View>
+      </View>
+    );
+  }
+
+  // =========================================================================
+  // GIAO DIỆN CHÍNH CỦA CỔNG GIẢNG VIÊN (SAU KHI ĐĂNG NHẬP THÀNH CÔNG)
+  // =========================================================================
   return (
     <View style={styles.container}>
       {/* Top Header */}
@@ -435,14 +592,14 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
           <TouchableOpacity onPress={() => setShowGuideModal(true)} style={styles.guideBtn}>
             <Text style={styles.guideBtnText}>📖 HƯỚNG DẪN</Text>
           </TouchableOpacity>
-          <TouchableOpacity onPress={fetchDashboardData} style={styles.refreshIconBtn}>
+          <TouchableOpacity onPress={() => fetchDashboardData()} style={styles.refreshIconBtn}>
             <Text style={styles.exportBtnText}>🔄</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={handleExportCSV} style={styles.exportBtn}>
             <Text style={styles.exportBtnText}>📥 EXCEL</Text>
           </TouchableOpacity>
-          <TouchableOpacity onPress={handlePrintPDF} style={styles.pdfBtn}>
-            <Text style={styles.pdfBtnText}>🖨️ PDF</Text>
+          <TouchableOpacity onPress={handleInstructorLogout} style={styles.logoutBtn}>
+            <Text style={styles.logoutBtnText}>🚪 THOÁT</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -965,8 +1122,86 @@ const styles = StyleSheet.create({
   refreshIconBtn: { padding: 8, backgroundColor: '#1A0B2E', borderRadius: 8, borderWidth: 1, borderColor: '#FFD700' },
   exportBtn: { padding: 8, backgroundColor: '#39FF14', borderRadius: 8 },
   exportBtnText: { color: '#000', fontSize: 10, fontWeight: '900' },
-  pdfBtn: { padding: 8, backgroundColor: '#00FFFF', borderRadius: 8 },
-  pdfBtnText: { color: '#000', fontSize: 10, fontWeight: '900' },
+  logoutBtn: { padding: 8, backgroundColor: '#FF0055', borderRadius: 8 },
+  logoutBtnText: { color: '#FFF', fontSize: 10, fontWeight: '900' },
+
+  loginWrapper: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+  },
+  loginCard: {
+    width: '100%',
+    maxWidth: 420,
+    backgroundColor: '#0D0620',
+    padding: 22,
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: '#00FFFF',
+  },
+  loginIcon: {
+    fontSize: 36,
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  loginTitle: {
+    color: '#FFD700',
+    fontSize: 15,
+    fontWeight: '900',
+    textAlign: 'center',
+    marginBottom: 6,
+  },
+  loginSubtitle: {
+    color: '#AAAABB',
+    fontSize: 10.5,
+    textAlign: 'center',
+    lineHeight: 16,
+    marginBottom: 16,
+  },
+  errorBanner: {
+    backgroundColor: 'rgba(255, 0, 85, 0.15)',
+    borderWidth: 1,
+    borderColor: '#FF0055',
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 12,
+  },
+  errorBannerText: {
+    color: '#FF0055',
+    fontSize: 10.5,
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
+  loginInput: {
+    backgroundColor: '#070212',
+    color: '#FFF',
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: '#332255',
+    padding: 11,
+    fontSize: 12,
+  },
+  loginSubmitBtn: {
+    backgroundColor: '#39FF14',
+    paddingVertical: 13,
+    borderRadius: 10,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  loginSubmitText: {
+    color: '#000',
+    fontSize: 11.5,
+    fontWeight: '900',
+  },
+  loginHelperNote: {
+    color: '#8888AA',
+    fontSize: 9.5,
+    textAlign: 'center',
+    marginTop: 14,
+    fontStyle: 'italic',
+    lineHeight: 14,
+  },
 
   managementActionRow: { flexDirection: 'row', gap: 10, marginBottom: 14 },
   newAssignmentBtn: { flex: 1, backgroundColor: '#FF007F', paddingVertical: 10, borderRadius: 8, alignItems: 'center' },
