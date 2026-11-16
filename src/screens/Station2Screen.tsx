@@ -4,7 +4,7 @@ import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator
 import * as AntiCheatModule from '../components/AntiCheatSpeakingSession';
 import * as DetailedModalModule from '../components/DetailedSpeechFeedbackModal';
 import { evaluateSpeechSubmission } from '../utils/speechEvaluator';
-import { evaluateSpeaking } from '../services/arena/assessmentService';
+import { evaluateSpeaking, analyzeSpokenTranscript, SpokenWordAnalysis } from '../services/arena/assessmentService';
 import { supabase } from '../utils/supabase';
 import { getSavedStudentProfile, saveStudentProfile } from '../utils/studentSession';
 import { getStation2ScenariosByTierAndLevel } from '../data/station2';
@@ -272,6 +272,7 @@ export default function Station2Screen({ onBack }: Props) {
   const activeMimeTypeRef = useRef<{ mimeType: string; extension: string }>({ mimeType: '', extension: 'webm' });
 
   const [liveTranscript, setLiveTranscript] = useState<string>('');
+  const [wordAnalysisList, setWordAnalysisList] = useState<SpokenWordAnalysis[]>([]);
   const liveTranscriptRef = useRef<string>('');
   const speechRecognitionRef = useRef<any>(null);
   const isRecordingNormalRef = useRef<boolean>(false);
@@ -447,6 +448,9 @@ Output ONLY raw JSON:
     stopSampleAudio();
     const nextIdx = topicIndex + 1;
     setTopicIndex(nextIdx);
+    setWordAnalysisList([]);
+    setLiveTranscript('');
+    liveTranscriptRef.current = '';
 
     if (topicOrigin === 'TEACHER_DASHBOARD' && teacherAssignments.length > 0) {
       setCurrentChallenge(teacherAssignments[nextIdx % teacherAssignments.length]);
@@ -489,6 +493,7 @@ Output ONLY raw JSON:
     };
 
     setCurrentChallenge(customItem);
+    setWordAnalysisList([]);
     setIsNormalPracticing(true);
     setIsTeacherExamining(false);
     setNormalTimer(0);
@@ -498,6 +503,7 @@ Output ONLY raw JSON:
   const handleEnterRoom = (item: ChallengeItem) => {
     stopSampleAudio();
     setCurrentChallenge(item);
+    setWordAnalysisList([]);
     if (item.isTeacherAssigned) {
       setIsTeacherExamining(true);
       setIsNormalPracticing(false);
@@ -531,6 +537,7 @@ Output ONLY raw JSON:
       normalPitchHistoryRef.current = [];
       setNormalTimer(0);
       setLiveTranscript('');
+      setWordAnalysisList([]);
       liveTranscriptRef.current = '';
 
       const stream = await navigator.mediaDevices.getUserMedia({ 
@@ -726,7 +733,7 @@ Output ONLY raw JSON:
     return () => { if (timer) clearInterval(timer); };
   }, [isRecordingNormal]);
 
-  // 📊 XỬ LÝ CHẤM ĐIỂM VÀ ĐỒNG BỘ TAPESCRIPT WHISPER + MÃ LỚP
+  // 📊 XỬ LÝ CHẤM ĐIỂM VÀ ĐỒNG BỘ TAPESCRIPT WHISPER + SOI LỖI PHÁT ÂM / NGỮ PHÁP
   const finishSubmissionAndEvaluate = async (audioBlob: Blob, pitchHistory: number[], localAudioUrl?: string) => {
     setIsEvaluating(true);
     setEvaluatingStatus('⚡ AI ĐANG PHÂN TÍCH ÂM HỌC & XUẤT BẢN GHI SCRIPT...');
@@ -755,7 +762,14 @@ Output ONLY raw JSON:
           await new Promise(r => setTimeout(r, 1200));
         }
 
-        serverEvalData = await evaluateSpeaking(audioBlob, selectedLevel, '2', targetPrompt);
+        serverEvalData = await evaluateSpeaking(
+          audioBlob,
+          selectedLevel,
+          'STATION_2',
+          targetPrompt,
+          undefined,
+          actualTranscript
+        );
         if (serverEvalData) {
           success = true;
           if (serverEvalData.transcript && serverEvalData.transcript.trim()) {
@@ -808,6 +822,7 @@ Output ONLY raw JSON:
 
     if (isSilence) {
       setIsEvaluating(false);
+      setWordAnalysisList([]);
       const zeroEvaluation = {
         totalScore: 0,
         spontaneityScore: 0,
@@ -858,9 +873,52 @@ Output ONLY raw JSON:
       }
     }
 
+    // 🔍 Phân tích từng từ sinh viên nói ra: từ chuẩn -> Xanh lá, từ sai ngữ pháp / phát âm thiếu đuôi -> Đỏ
+    const analyzedWords: SpokenWordAnalysis[] = serverEvalData?.wordAnalysis?.length
+      ? serverEvalData.wordAnalysis
+      : analyzeSpokenTranscript(
+          actualTranscript,
+          practiceMode === 'READ_SAMPLE' ? (currentChallenge?.prompt || '') : '',
+          serverEvalData?.errorWords || []
+        );
+    setWordAnalysisList(analyzedWords);
+
+    const errorWordsDetected = analyzedWords.filter(
+      (w: SpokenWordAnalysis) => w.hasGrammarError || w.hasPronunciationError || !w.isConfident
+    );
+
     if (serverEvalData?.criteria?.pronunciation) {
       evaluated.rubrics.pronunciation.score = serverEvalData.criteria.pronunciation;
     }
+    if (serverEvalData?.criteria?.grammar) {
+      evaluated.rubrics.grammar.score = serverEvalData.criteria.grammar;
+    }
+
+    // Trừ điểm trực tiếp vào Ngữ pháp & Phát âm nếu mắc lỗi chia động từ / thiếu đuôi -s/-es/-ed
+    if (errorWordsDetected.length > 0) {
+      const grammarErrCount = analyzedWords.filter((w: SpokenWordAnalysis) => w.hasGrammarError).length;
+      const pronErrCount = analyzedWords.filter((w: SpokenWordAnalysis) => w.hasPronunciationError).length;
+
+      if (grammarErrCount > 0) {
+        evaluated.rubrics.grammar.score = Math.max(20, evaluated.rubrics.grammar.score - grammarErrCount * 15);
+        const errDetails = analyzedWords
+          .filter((w: SpokenWordAnalysis) => w.hasGrammarError)
+          .map((w: SpokenWordAnalysis) => `"${w.word}"${w.correction ? ` → "${w.correction}"` : ''}`)
+          .join(', ');
+        evaluated.rubrics.grammar.feedback = `Phát hiện ${grammarErrCount} lỗi chia động từ / ngữ pháp: ${errDetails}.`;
+      }
+
+      if (pronErrCount > 0) {
+        evaluated.rubrics.pronunciation.score = Math.max(25, evaluated.rubrics.pronunciation.score - pronErrCount * 12);
+        const pronDetails = analyzedWords
+          .filter((w: SpokenWordAnalysis) => w.hasPronunciationError)
+          .map((w: SpokenWordAnalysis) => `"${w.word}"${w.correction ? ` → "${w.correction}"` : ''}`)
+          .join(', ');
+        evaluated.rubrics.pronunciation.feedback = `Cần sửa phát âm / âm cuối các từ: ${pronDetails}.`;
+      }
+    }
+
+    evaluated.wordAnalysis = analyzedWords;
 
     const r = evaluated.rubrics;
     const weightedTotal = Math.round(
@@ -905,7 +963,7 @@ Output ONLY raw JSON:
           is_script_suspected: evaluated.isScriptSuspected,
           audio_url: audioUrl,
           transcript: actualTranscript || '(Không ghi nhận được âm thanh)',
-          feedback: `[Phát âm: ${evaluated.rubrics.pronunciation.score} | Ngữ điệu: ${evaluated.rubrics.intonation.score} | Lưu loát: ${evaluated.rubrics.fluency.score}]`
+          feedback: `[Phát âm: ${evaluated.rubrics.pronunciation.score} | Ngữ điệu: ${evaluated.rubrics.intonation.score} | Ngữ pháp: ${evaluated.rubrics.grammar.score} | Lưu loát: ${evaluated.rubrics.fluency.score}]`
         }]);
       }
     } catch (err) {
@@ -1397,14 +1455,39 @@ Output ONLY raw JSON:
               />
             </View>
 
+            {/* 📝 SCRIPT TÔ MÀU XANH LÁ (CHUẨN) / ĐỎ (SAI PHÁT ÂM HOẶC NGỮ PHÁP) */}
             {(isRecordingNormal || liveTranscript) && (
               <View style={styles.liveSubtitleBox}>
                 <Text style={styles.liveSubtitleLabel}>
-                  {isRecordingNormal ? '🎙️ Đang nhận diện giọng bạn theo thời gian thực:' : '📝 Bản ghi âm nhận diện được:'}
+                  {isRecordingNormal
+                    ? '🎙️ Đang nhận diện giọng bạn theo thời gian thực:'
+                    : '📝 Bản ghi âm & Soi lỗi từng từ (🟢 Chuẩn | 🔴 Sai phát âm / Ngữ pháp):'}
                 </Text>
-                <Text style={styles.liveSubtitleText}>
-                  {liveTranscript || '... (hãy nói tiếng Anh to, rõ ràng)'}
-                </Text>
+
+                {!isRecordingNormal && wordAnalysisList.length > 0 ? (
+                  <View style={styles.wordChipsRow}>
+                    {wordAnalysisList.map((item, idx) => {
+                      const isError = item.hasGrammarError || item.hasPronunciationError || !item.isConfident;
+                      return (
+                        <View
+                          key={`${item.word}_${idx}`}
+                          style={[styles.wordChip, isError ? styles.wordChipError : styles.wordChipOk]}
+                        >
+                          <Text style={isError ? styles.wordChipTextError : styles.wordChipTextOk}>
+                            {item.word}
+                          </Text>
+                          {isError && item.correction ? (
+                            <Text style={styles.wordCorrectionText}>→ {item.correction}</Text>
+                          ) : null}
+                        </View>
+                      );
+                    })}
+                  </View>
+                ) : (
+                  <Text style={styles.liveSubtitleText}>
+                    {liveTranscript || '... (hãy nói tiếng Anh to, rõ ràng)'}
+                  </Text>
+                )}
               </View>
             )}
 
@@ -1734,8 +1817,15 @@ const styles = StyleSheet.create({
   liveWaveformLabel: { color: '#39FF14', fontSize: 9.5, fontWeight: 'bold', marginBottom: 6 },
 
   liveSubtitleBox: { backgroundColor: '#0D0A24', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#5533AA', marginBottom: 12 },
-  liveSubtitleLabel: { color: '#FFD700', fontSize: 9, fontWeight: 'bold', marginBottom: 4 },
+  liveSubtitleLabel: { color: '#FFD700', fontSize: 9, fontWeight: 'bold', marginBottom: 6 },
   liveSubtitleText: { color: '#00FFFF', fontSize: 12, fontStyle: 'italic', lineHeight: 18 },
+  wordChipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 4 },
+  wordChip: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, borderWidth: 1 },
+  wordChipOk: { backgroundColor: 'rgba(57, 255, 20, 0.12)', borderColor: '#39FF14' },
+  wordChipError: { backgroundColor: 'rgba(255, 0, 85, 0.2)', borderColor: '#FF0055' },
+  wordChipTextOk: { color: '#39FF14', fontSize: 12.5, fontWeight: 'bold' },
+  wordChipTextError: { color: '#FF0055', fontSize: 12.5, fontWeight: '900', textDecorationLine: 'underline' },
+  wordCorrectionText: { color: '#FFD700', fontSize: 9.5, fontWeight: 'bold', marginTop: 1 },
 
   evaluatingBox: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingVertical: 14, backgroundColor: '#0D0620', borderRadius: 10, borderWidth: 1, borderColor: '#00FFFF', marginVertical: 6 },
   evaluatingText: { color: '#00FFFF', fontSize: 10, fontWeight: 'bold' },

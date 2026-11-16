@@ -55,52 +55,34 @@ export interface AssessmentResult {
   isWin?: boolean;
   errorWords?: ErrorWordItem[];
   criteria?: CriteriaBreakdown | null;
-  isOfflineSaved?: boolean; // 📦 Đánh dấu bài đã được lưu vào IndexedDB an toàn
+  wordAnalysis?: SpokenWordAnalysis[];
+  isOfflineSaved?: boolean;
 }
 
 export type StationType = 'STATION_1' | 'STATION_2' | 'STATION_3' | 'STATION_4' | string;
 
-// 🎯 DÀNH CHO TRẠM 1: So sánh từ mẫu và từ đọc được kèm Từ điển đồng âm (Homophones)
 export interface WordDiff {
   word: string;
   status: 'correct' | 'incorrect' | 'missing';
 }
 
 const HOMOPHONES_MAP: Record<string, string[]> = {
-  'sum': ['some'],
-  'some': ['sum'],
-  'sun': ['son'],
-  'son': ['sun'],
-  'sea': ['see'],
-  'see': ['sea'],
-  'bare': ['bear'],
-  'bear': ['bare'],
-  'meat': ['meet'],
-  'meet': ['meat'],
-  'wear': ['where'],
-  'where': ['wear'],
-  'pair': ['pear'],
-  'pear': ['pair'],
-  'right': ['write'],
-  'write': ['right'],
-  'buy': ['by', 'bye'],
-  'bye': ['buy', 'by'],
-  'by': ['buy', 'bye'],
-  'for': ['four'],
-  'four': ['for'],
-  'to': ['too', 'two'],
-  'two': ['to', 'too'],
-  'too': ['to', 'two'],
-  'one': ['won'],
-  'won': ['one'],
-  'flour': ['flower'],
-  'flower': ['flour'],
-  'peace': ['piece'],
-  'piece': ['peace'],
-  'wait': ['weight'],
-  'weight': ['wait'],
-  'break': ['brake'],
-  'brake': ['break']
+  'sum': ['some'], 'some': ['sum'],
+  'sun': ['son'], 'son': ['sun'],
+  'sea': ['see'], 'see': ['sea'],
+  'bare': ['bear'], 'bear': ['bare'],
+  'meat': ['meet'], 'meet': ['meat'],
+  'wear': ['where'], 'where': ['wear'],
+  'pair': ['pear'], 'pear': ['pair'],
+  'right': ['write'], 'write': ['right'],
+  'buy': ['by', 'bye'], 'bye': ['buy', 'by'], 'by': ['buy', 'bye'],
+  'for': ['four'], 'four': ['for'],
+  'to': ['too', 'two'], 'two': ['to', 'too'], 'too': ['to', 'two'],
+  'one': ['won'], 'won': ['one'],
+  'flour': ['flower'], 'flower': ['flour'],
+  'peace': ['piece'], 'piece': ['peace'],
+  'wait': ['weight'], 'weight': ['wait'],
+  'break': ['brake'], 'brake': ['break']
 };
 
 export function generateWordDiff(targetText: string, capturedTranscript: string): WordDiff[] {
@@ -122,24 +104,63 @@ export function generateWordDiff(targetText: string, capturedTranscript: string)
   });
 }
 
-// 🎯 DÀNH CHO TRẠM 2: Phân tích trực tiếp lời thoại sinh viên đã nói kèm bộ lọc ngữ pháp
+// 🎯 DÀNH CHO TRẠM 2: Phân tích từng từ sinh viên nói ra (Bắt chặt lỗi chia động từ & phát âm thiếu đuôi -s/-es/-ed)
 export interface SpokenWordAnalysis {
   word: string;
   isConfident: boolean;
   hasGrammarError?: boolean;
+  hasPronunciationError?: boolean;
+  correction?: string;
+  reason?: string;
 }
 
-export function analyzeSpokenTranscript(transcript: string): SpokenWordAnalysis[] {
+export function analyzeSpokenTranscript(
+  transcript: string,
+  targetPrompt?: string,
+  serverErrorWords?: ErrorWordItem[]
+): SpokenWordAnalysis[] {
   if (!transcript || transcript.startsWith('(')) return [];
 
   const rawWords = transcript
-    .replace(/[.,/#!$%^&*;:{}=\-_`~()?"']/g, "")
+    .replace(/[.,/#!$%^&*;:{}=\-_`~()?"]/g, "")
     .trim()
     .split(/\s+/)
     .filter(Boolean);
 
   const cleanWords = rawWords.map((w) => w.toLowerCase());
+  const targetCleanWords = (targetPrompt || '')
+    .replace(/[.,/#!$%^&*;:{}=\-_`~()?"]/g, "")
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean);
+
+  const serverErrMap = new Map<string, ErrorWordItem>();
+  (serverErrorWords || []).forEach((err) => {
+    if (err?.word) {
+      serverErrMap.set(err.word.toLowerCase().replace(/[^a-z0-9']/g, ''), err);
+    }
+  });
+
   const vowels = ['a', 'e', 'i', 'o', 'u'];
+  const singularThirdPersons = ['he', 'she', 'it', 'everyone', 'everybody', 'someone', 'somebody', 'nobody', 'mother', 'father', 'friend', 'teacher', 'student', 'boss', 'manager', 'customer'];
+  const adverbs = ['usually', 'always', 'often', 'never', 'sometimes', 'rarely', 'seldom', 'really', 'just', 'still'];
+  const commonBaseVerbs = [
+    'get', 'go', 'do', 'have', 'play', 'like', 'want', 'come', 'eat', 'sleep', 'make', 'take',
+    'drink', 'listen', 'see', 'watch', 'work', 'live', 'need', 'know', 'think', 'feel', 'try',
+    'use', 'find', 'give', 'tell', 'call', 'ask', 'seem', 'leave', 'put', 'mean', 'keep', 'let',
+    'begin', 'help', 'talk', 'turn', 'start', 'show', 'hear', 'run', 'move', 'believe', 'bring',
+    'happen', 'write', 'provide', 'sit', 'stand', 'lose', 'pay', 'meet', 'include', 'continue',
+    'set', 'learn', 'change', 'lead', 'understand', 'speak', 'read', 'spend', 'grow', 'open', 'walk', 'win', 'offer', 'remember', 'love', 'consider', 'appear', 'buy', 'wait', 'serve', 'die', 'send', 'expect', 'build', 'stay', 'fall', 'cut', 'reach', 'kill', 'remain', 'suggest', 'raise', 'pass', 'sell', 'require', 'report', 'decide', 'pull'
+  ];
+
+  const getThirdPersonForm = (verb: string): string => {
+    if (verb === 'have') return 'has';
+    if (verb === 'do') return 'does';
+    if (verb === 'go') return 'goes';
+    if (/(s|sh|ch|x|z|o)$/.test(verb)) return `${verb}es`;
+    if (/[^aeiou]y$/.test(verb)) return `${verb.slice(0, -1)}ies`;
+    return `${verb}s`;
+  };
 
   return rawWords.map((w, index) => {
     const clean = cleanWords[index];
@@ -149,56 +170,98 @@ export function analyzeSpokenTranscript(transcript: string): SpokenWordAnalysis[
 
     const isHesitation = ['uh', 'um', 'err', 'ah', 'mm'].includes(clean);
     let isGrammarError = false;
+    let isPronunciationError = false;
+    let correction = '';
+    let reason = '';
+
+    // 0. Kiểm tra lỗi do Server AI (Whisper / LLM) trả về
+    const serverErr = serverErrMap.get(clean);
+    if (serverErr) {
+      isPronunciationError = true;
+      correction = serverErr.correction || '';
+      reason = serverErr.reason || 'Lỗi phát âm / ngữ pháp từ AI';
+    }
 
     // 1. Lỗi trợ động từ ngôi thứ 3: "he/she/it don't" -> phải dùng doesn't
-    if (['don\'t', 'dont'].includes(clean) && ['he', 'she', 'it'].includes(prevWord)) {
+    if (!isGrammarError && ['don\'t', 'dont'].includes(clean) && singularThirdPersons.includes(prevWord)) {
       isGrammarError = true;
+      correction = "doesn't";
+      reason = "Ngôi thứ 3 số ít phải dùng trợ động từ doesn't";
     }
 
-    // 2. Lỗi chia thì Hiện tại đơn: he/she/it + động từ nguyên mẫu không chia
-    const singularThirdPersons = ['he', 'she', 'it'];
-    const adverbs = ['usually', 'always', 'often', 'never', 'sometimes'];
-    const commonBaseVerbs = ['get', 'go', 'do', 'have', 'play', 'like', 'want', 'come', 'eat', 'sleep', 'make', 'take', 'drink', 'listen', 'see', 'watch'];
-
-    if (singularThirdPersons.includes(prevWord) && commonBaseVerbs.includes(clean)) {
-      isGrammarError = true;
-    }
-    if (singularThirdPersons.includes(prevTwoWord) && adverbs.includes(prevWord) && commonBaseVerbs.includes(clean)) {
-      isGrammarError = true;
-    }
-
-    // 3. Lỗi trợ động từ phủ định: "doesn't" + động từ thêm s/es
-    if (['doesn\'t', 'doesnt'].includes(prevWord) && (clean.endsWith('s') || clean.endsWith('es'))) {
-      isGrammarError = true;
+    // 2. Lỗi chia động từ ngôi thứ 3 số ít thì Hiện tại đơn: he/she/it + V nguyên mẫu (không thêm -s/-es)
+    if (!isGrammarError && commonBaseVerbs.includes(clean)) {
+      if (singularThirdPersons.includes(prevWord)) {
+        isGrammarError = true;
+        correction = getThirdPersonForm(clean);
+        reason = `Động từ đi sau "${prevWord}" (ngôi 3 số ít) phải thêm -s/-es`;
+      } else if (singularThirdPersons.includes(prevTwoWord) && adverbs.includes(prevWord)) {
+        isGrammarError = true;
+        correction = getThirdPersonForm(clean);
+        reason = `Động từ đi sau "${prevTwoWord} ${prevWord}" phải chia ngôi 3 số ít`;
+      }
     }
 
-    // 4. Lỗi Quá khứ đơn (Past Simple): Dùng "didn't" đi với động từ chia quá khứ (V2/V-ed)
+    // 3. Đối chiếu trực tiếp với câu mẫu (targetPrompt): nếu câu mẫu có dạng chia -s/-es/-ed mà sinh viên đọc mất đuôi
+    if (!isGrammarError && !isPronunciationError && targetCleanWords.length > 0) {
+      const expectedThirdPerson = getThirdPersonForm(clean);
+      const expectedPastEd = clean.endsWith('e') ? `${clean}d` : `${clean}ed`;
+      if (targetCleanWords.includes(expectedThirdPerson) && !targetCleanWords.includes(clean)) {
+        isGrammarError = true;
+        isPronunciationError = true;
+        correction = expectedThirdPerson;
+        reason = `Đọc thiếu âm cuối -s/-es (câu mẫu là "${expectedThirdPerson}")`;
+      } else if (targetCleanWords.includes(expectedPastEd) && !targetCleanWords.includes(clean)) {
+        isPronunciationError = true;
+        correction = expectedPastEd;
+        reason = `Đọc thiếu đuôi quá khứ -ed (câu mẫu là "${expectedPastEd}")`;
+      }
+    }
+
+    // 4. Lỗi trợ động từ phủ định: "doesn't" + động từ thêm s/es
+    if (!isGrammarError && ['doesn\'t', 'doesnt'].includes(prevWord) && (clean.endsWith('s') || clean.endsWith('es')) && clean.length > 3) {
+      isGrammarError = true;
+      correction = clean.replace(/(es|s)$/, '');
+      reason = "Sau doesn't động từ phải để nguyên mẫu";
+    }
+
+    // 5. Lỗi Quá khứ đơn: Dùng "didn't" đi với động từ chia quá khứ (V2/V-ed)
     const pastIrregularVerbs = ['went', 'came', 'bought', 'saw', 'got', 'took', 'had', 'ate', 'made'];
-    if (['didn\'t', 'didnt'].includes(prevWord) && (clean.endsWith('ed') || pastIrregularVerbs.includes(clean))) {
+    if (!isGrammarError && ['didn\'t', 'didnt'].includes(prevWord) && (clean.endsWith('ed') || pastIrregularVerbs.includes(clean))) {
       isGrammarError = true;
+      reason = "Sau didn't động từ phải để nguyên mẫu";
     }
 
-    // 5. Lỗi Dấu hiệu thời gian quá khứ (yesterday, last, ago) đi với động từ nguyên mẫu hiện tại
+    // 6. Lỗi Dấu hiệu thời gian quá khứ (yesterday, last, ago) đi với động từ nguyên mẫu hiện tại
     const pastTimeSignals = ['yesterday', 'ago', 'last'];
-    if (pastTimeSignals.includes(prevWord) && commonBaseVerbs.includes(clean)) {
+    if (!isGrammarError && pastTimeSignals.includes(prevWord) && commonBaseVerbs.includes(clean)) {
       isGrammarError = true;
+      reason = `Có dấu hiệu quá khứ "${prevWord}", cần chia thì quá khứ đơn`;
     }
 
-    // 6. Lỗi Mạo từ "a" / "an":
-    if (clean === 'a' && nextWord && vowels.includes(nextWord[0])) {
+    // 7. Lỗi Mạo từ "a" / "an":
+    if (!isGrammarError && clean === 'a' && nextWord && vowels.includes(nextWord[0])) {
       isGrammarError = true;
+      correction = 'an';
+      reason = `Trước nguyên âm "${nextWord}" phải dùng "an"`;
     }
-    if (clean === 'an' && nextWord && !vowels.includes(nextWord[0])) {
+    if (!isGrammarError && clean === 'an' && nextWord && !vowels.includes(nextWord[0])) {
       isGrammarError = true;
+      correction = 'a';
+      reason = `Trước phụ âm "${nextWord}" phải dùng "a"`;
     }
 
     const isDigit = /^[0-9]+$/.test(clean);
     const isValidWordLength = clean.length > 1 || clean === 'i' || clean === 'a' || isDigit;
+    const hasAnyError = isHesitation || isGrammarError || isPronunciationError || !isValidWordLength;
 
     return {
       word: w,
-      isConfident: !isHesitation && !isGrammarError && isValidWordLength,
+      isConfident: !hasAnyError,
       hasGrammarError: isGrammarError,
+      hasPronunciationError: isPronunciationError,
+      correction: correction || undefined,
+      reason: reason || undefined,
     };
   });
 }
@@ -215,7 +278,6 @@ export const evaluateSpeaking = async (
     const currentStation = String(stationType || 'STATION_1').toUpperCase();
     let recognizedTranscript = (capturedSpeech || '').trim();
 
-    // 1. Kiểm tra kích thước file âm thanh
     if ((!audioBlob || audioBlob.size < 1000) && !recognizedTranscript) {
       return {
         score: 0,
@@ -223,13 +285,12 @@ export const evaluateSpeaking = async (
         transcript: "(Chưa ghi nhận được âm thanh)",
         detailedFeedback: "❌ Micro chưa thu được tiếng hoặc âm thanh quá ngắn. Vui lòng kiểm tra quyền Micro và nói to hơn!",
         errorWords: [],
-        criteria: null
+        criteria: null,
+        wordAnalysis: []
       };
     }
 
-    // 2. Gửi file ghi âm lên API Groq Whisper & LLM (/api/grade-audio)
     if (audioBlob && audioBlob.size >= 1000) {
-      // 🛡️ Kiểm tra kết nối mạng trước khi gửi
       const isOnline = typeof navigator === 'undefined' || navigator.onLine !== false;
 
       if (!isOnline) {
@@ -248,7 +309,8 @@ export const evaluateSpeaking = async (
             transcript: "(Đã lưu an toàn trên máy)",
             detailedFeedback: `📦 Mất kết nối mạng! Bản thu âm của bạn đã được lưu tạm vào máy (Mã: ${offlineId.slice(-6)}). Hệ thống sẽ tự động đồng bộ và chấm điểm ngay khi có mạng trở lại.`,
             errorWords: [],
-            criteria: null
+            criteria: null,
+            wordAnalysis: []
           };
         } catch (saveErr) {
           console.warn("Lỗi lưu offline trước khi gửi API:", saveErr);
@@ -274,14 +336,25 @@ export const evaluateSpeaking = async (
             recognizedTranscript = data.transcript.trim();
           }
           if (typeof data?.score === 'number') {
+            const errorWords: ErrorWordItem[] = Array.isArray(data.errorWords) ? data.errorWords : [];
+            const wordAnalysis = analyzeSpokenTranscript(
+              recognizedTranscript || data.transcript || '',
+              targetPrompt,
+              errorWords
+            );
+            const detectedLocalErrors = wordAnalysis.filter(w => w.hasGrammarError || w.hasPronunciationError);
+            const penalty = detectedLocalErrors.length * 6;
+            const adjustedScore = Math.max(0, Math.min(100, Number(data.score) - penalty));
+
             return {
-              score: data.score,
-              isWin: typeof data.isWin === 'boolean' ? data.isWin : data.score >= 70,
+              score: adjustedScore,
+              isWin: adjustedScore >= 70,
               transcript: recognizedTranscript || data.transcript,
-              detailedFeedback: data.feedback || `Hoàn thành bài nói cấp độ ${cefrLevel || 'A1'}!`,
+              detailedFeedback: data.feedback || `Hoàn thành bài nói cấp độ ${cefrLevel || 'B1'}!`,
               audioUrl: data.audioUrl,
-              errorWords: Array.isArray(data.errorWords) ? data.errorWords : [],
-              criteria: data.criteria || null
+              errorWords,
+              criteria: data.criteria || null,
+              wordAnalysis
             };
           }
         } else {
@@ -302,7 +375,6 @@ export const evaluateSpeaking = async (
       }
     }
 
-    // 3. Phương án xử lý khi không nhận diện được chữ
     let calculatedScore = 75;
     let feedbackMessage = "";
 
@@ -315,7 +387,8 @@ export const evaluateSpeaking = async (
           transcript: `(Đã ghi nhận bài nói ${promptPreview} qua Micro thiết bị)`,
           detailedFeedback: `✅ AI đã thu nhận bản ghi âm. Cần chú ý phát âm tròn vành rõ chữ hơn để đạt điểm tối đa!`,
           errorWords: [],
-          criteria: null
+          criteria: null,
+          wordAnalysis: []
         };
       }
 
@@ -325,11 +398,11 @@ export const evaluateSpeaking = async (
         transcript: "(Không phát hiện giọng nói hoặc âm thanh quá ngắn)",
         detailedFeedback: "❌ Bài làm chưa đạt yêu cầu! Bạn chưa nói câu trả lời hoặc thời gian nói quá ngắn. Vui lòng bấm làm lại và nói to, rõ ràng!",
         errorWords: [],
-        criteria: null
+        criteria: null,
+        wordAnalysis: []
       };
     }
 
-    // 4. Phân luồng chấm điểm dự phòng phía Client (nếu API rớt mạng)
     if (currentStation === 'STATION_1' && targetPrompt) {
       const normalize = (str: string) => str.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim();
       const targetWords = normalize(targetPrompt).split(/\s+/).filter(Boolean);
@@ -378,28 +451,32 @@ export const evaluateSpeaking = async (
         transcript: recognizedTranscript,
         detailedFeedback: feedbackMessage,
         errorWords: [],
-        criteria: null
+        criteria: null,
+        wordAnalysis: analyzeSpokenTranscript(recognizedTranscript, targetPrompt)
       };
     } else {
-      const analysis = analyzeSpokenTranscript(recognizedTranscript);
+      const analysis = analyzeSpokenTranscript(recognizedTranscript, targetPrompt);
       const wordCount = analysis.length;
-      const grammarErrors = analysis.filter(item => item.hasGrammarError).length;
+      const grammarErrors = analysis.filter(item => item.hasGrammarError || item.hasPronunciationError).length;
+      const penalty = grammarErrors * 8;
 
       if (wordCount >= 25) {
-        calculatedScore = Math.max(75, 95 - grammarErrors * 3);
+        calculatedScore = Math.max(55, 95 - penalty);
         feedbackMessage = grammarErrors > 0 
-          ? `🌟 Bài nói rất xuất sắc (${wordCount} từ) nhưng có ${grammarErrors} lỗi chia động từ/ngữ pháp.`
-          : `🌟 Bài nói tuyệt vời (${wordCount} từ)! Phản xạ tự nhiên, lưu loát và tự tin.`;
+          ? `⚠️ Bài nói trôi chảy (${wordCount} từ) nhưng mắc ${grammarErrors} lỗi chia động từ / phát âm thiếu âm cuối (đã tô đỏ).`
+          : `🌟 Bài nói tuyệt vời (${wordCount} từ)! Phản xạ tự nhiên, lưu loát và chuẩn ngữ pháp.`;
       } else if (wordCount >= 15) {
-        calculatedScore = Math.max(70, 88 - grammarErrors * 3);
+        calculatedScore = Math.max(50, 88 - penalty);
         feedbackMessage = grammarErrors > 0 
-          ? `👍 Nắm được ý (${wordCount} từ) nhưng còn ${grammarErrors} lỗi chia động từ/ngữ pháp.`
+          ? `⚠️ Nắm được ý (${wordCount} từ) nhưng còn ${grammarErrors} lỗi chia động từ / phát âm (xem các từ tô đỏ).`
           : `👍 Rất tốt! Diễn đạt mạch lạc (${wordCount} từ). Hãy mở rộng thêm các ý phụ.`;
       } else if (wordCount >= 8) {
-        calculatedScore = Math.max(60, 78 - grammarErrors * 3);
-        feedbackMessage = `👌 Đạt yêu cầu cơ bản (${wordCount} từ). Hãy tự tin nói dài hơn.`;
+        calculatedScore = Math.max(45, 78 - penalty);
+        feedbackMessage = grammarErrors > 0
+          ? `⚠️ Đạt ý cơ bản (${wordCount} từ) nhưng sai ${grammarErrors} lỗi ngữ pháp/đuôi từ (tô đỏ).`
+          : `👌 Đạt yêu cầu cơ bản (${wordCount} từ). Hãy tự tin nói dài hơn.`;
       } else {
-        calculatedScore = Math.max(40, wordCount * 6 + 20);
+        calculatedScore = Math.max(35, wordCount * 6 + 20 - penalty);
         feedbackMessage = `⚠️ Bài nói hơi ngắn (${wordCount} từ). Cần bổ sung thêm thông tin.`;
       }
 
@@ -409,7 +486,8 @@ export const evaluateSpeaking = async (
         transcript: recognizedTranscript,
         detailedFeedback: feedbackMessage,
         errorWords: [],
-        criteria: null
+        criteria: null,
+        wordAnalysis: analysis
       };
     }
 
@@ -420,7 +498,8 @@ export const evaluateSpeaking = async (
       transcript: "(Lỗi xử lý bài nói)",
       detailedFeedback: "❌ Đã có lỗi xảy ra trong quá trình chấm điểm. Vui lòng thử lại!",
       errorWords: [],
-      criteria: null
+      criteria: null,
+      wordAnalysis: []
     };
   }
 };

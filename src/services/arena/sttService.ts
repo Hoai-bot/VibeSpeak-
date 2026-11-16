@@ -15,15 +15,19 @@ export async function transcribeAudioBlob(audioBlob: Blob): Promise<string> {
     }
 
     const formData = new FormData();
-    // Tạo file WAV/M4A tương thích tốt nhất trên cả Web & Mobile
     const audioFile = new File([audioBlob], 'input_speech.m4a', { 
       type: audioBlob.type || 'audio/m4a' 
     });
 
     formData.append('file', audioFile);
-    formData.append('model', 'whisper-large-v3-turbo');
+    formData.append('model', 'whisper-large-v3');
     formData.append('language', 'en');
     formData.append('response_format', 'json');
+    // Ép Whisper ghi âm nguyên văn (verbatim), tuyệt đối không tự thêm -s/-es/-ed hay sửa ngữ pháp
+    formData.append(
+      'prompt',
+      'Transcribe strictly verbatim as spoken. Do NOT auto-correct grammar, missing third-person singular -s/-es (like "he go", "she work"), missing past tense -ed, plural -s, or mispronounced words.'
+    );
 
     const response = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
       method: 'POST',
