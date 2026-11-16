@@ -77,7 +77,7 @@ export const PHONETIC_TRAPS: PhoneticTrapRule[] = [
     scoreCap: 65,
     feedbackVi: '⚠️ Chú ý: Cả "lead" và "read" ở thì hiện tại đều có nguyên âm dài /iː/ (đọc là /liːd/ và /riːd/). Bạn vừa phát âm thành âm ngắn /led/ (như "led/chì") hoặc /rɪd/ ("rid"). Hãy căng môi cười và kéo dài âm /iː/ nhé!',
   },
-  // 8. men / man (/e/ vs /æ/) - Bẫy phát âm men bị bẹt thành man cả 2 từ
+  // 8. men / man (/e/ vs /æ/)
   {
     id: 'men_man_confusion',
     pair: ['men', 'man'],
@@ -87,7 +87,7 @@ export const PHONETIC_TRAPS: PhoneticTrapRule[] = [
     scoreCap: 65,
     feedbackVi: '⚠️ Chú ý: Phân biệt rõ âm /e/ (trong "men" - mở hé miệng, kéo khóe môi) và âm /æ/ (trong "man" - hạ quai hàm sâu). AI hiện đang nghe cả hai từ thành cùng một âm!',
   },
-  // 9. cat / cut (/æ/ vs /ʌ/) - Bẫy phát âm bẹt miệng nhầm với âm thả lỏng hạ hàm
+  // 9. cat / cut (/æ/ vs /ʌ/)
   {
     id: 'cat_cut_confusion',
     pair: ['cat', 'cut'],
@@ -97,7 +97,7 @@ export const PHONETIC_TRAPS: PhoneticTrapRule[] = [
     scoreCap: 65,
     feedbackVi: '⚠️ Chú ý: Phân biệt rõ âm /æ/ (trong "cat" - bẹt khóe môi sang hai bên) và âm /ʌ/ (trong "cut" - miệng mở tự nhiên, thả lỏng hạ hàm dưới theo chiều dọc). AI hiện đang nghe cả hai từ thành cùng một âm!',
   },
-  // 10. zoo / sue (/z/ vs /s/) - Bẫy phân biệt phụ âm rung hữu thanh và âm gió vô thanh
+  // 10. zoo / sue (/z/ vs /s/)
   {
     id: 'zoo_sue_voicing',
     pair: ['zoo', 'sue'],
@@ -187,7 +187,6 @@ export function computeDTWDistance(seq1: number[], seq2: number[]): number {
     }
   }
 
-  // Chuẩn hóa khoảng cách theo độ dài đường nối
   return dtw[n][m] / (n + m);
 }
 
@@ -197,7 +196,6 @@ export function evaluateProsodyScore(studentPitch: number[], referencePitch: num
   }
 
   const distance = computeDTWDistance(studentPitch, referencePitch);
-  // Distance thông thường dao động từ 0.5 đến 5.0
   const prosodyScore = Math.max(30, Math.min(100, Math.round(100 - distance * 14)));
 
   let feedback = '';
@@ -210,6 +208,88 @@ export function evaluateProsodyScore(studentPitch: number[], referencePitch: num
   }
 
   return { score: prosodyScore, feedback };
+}
+
+// =========================================================================
+// 🔍 HÀM BỔ TRỢ: CHIA ĐỘNG TỪ NGÔI 3 SỐ ÍT & XÂY DỰNG MẢNG TÔ MÀU TỪNG TỪ
+// =========================================================================
+function getThirdPersonForm(verb: string): string {
+  if (verb === 'have') return 'has';
+  if (verb === 'do') return 'does';
+  if (verb === 'go') return 'goes';
+  if (/(s|sh|ch|x|z|o)$/.test(verb)) return `${verb}es`;
+  if (/[^aeiou]y$/.test(verb)) return `${verb.slice(0, -1)}ies`;
+  return `${verb}s`;
+}
+
+function buildWordAnalysisArray(
+  rawTranscript: string,
+  errorWordsList: { word: string; correction: string; reason: string }[]
+) {
+  const tokens = rawTranscript
+    .replace(/[.,/#!$%^&*;:{}=\-_`~()?"]/g, '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+
+  const errMap = new Map<string, { word: string; correction: string; reason: string }>();
+  errorWordsList.forEach((err) => {
+    if (err?.word) {
+      const errTokens = err.word.toLowerCase().replace(/[^a-z0-9'\s]/g, '').split(/\s+/).filter(Boolean);
+      errTokens.forEach((tok) => {
+        if (!errMap.has(tok)) {
+          errMap.set(tok, err);
+        }
+      });
+    }
+  });
+
+  return tokens.map((token) => {
+    const clean = token.toLowerCase().replace(/[^a-z0-9']/g, '');
+    const matchedErr = errMap.get(clean);
+    if (matchedErr) {
+      return {
+        word: token,
+        isConfident: false,
+        hasGrammarError: true,
+        hasPronunciationError: true,
+        correction: matchedErr.correction || '',
+        reason: matchedErr.reason || ''
+      };
+    }
+    return {
+      word: token,
+      isConfident: true,
+      hasGrammarError: false,
+      hasPronunciationError: false
+    };
+  });
+}
+
+// =========================================================================
+// 🎓 MA TRẬN TIÊU CHÍ NGỮ PHÁP THEO CẤP ĐỘ CEFR (A1 -> C2)
+// =========================================================================
+function getCefrGrammarRubricInstruction(cefrLevel: string): string {
+  switch (cefrLevel) {
+    case 'A1':
+    case 'A2':
+      return `CEFR ${cefrLevel} (Elementary):
+- Focus on core accuracy: Present Simple (including 3rd-person singular -s/-es), Past Simple, "going to", basic prepositions, and articles (a/an/the).
+- Reward clear, accurate simple and compound sentences (and/but/because). Do NOT penalize lack of advanced structures.`;
+    case 'B1':
+    case 'B2':
+      return `CEFR ${cefrLevel} (Intermediate / Upper-Intermediate):
+- Expect a mix of simple and complex structures: Present Perfect, Conditional Type 1 & Type 2 ("If I were..., I would..."), Passive Voice, Relative Clauses (who/which/that), and Modal Verbs (should/could/might).
+- Recognize Conditional Type 2 and Present Perfect as VALID, advanced grammar—NEVER flag them as wrong tense in habitual/hypothetical prompts.
+- Penalize errors in conditional verb forms (e.g., "If I would go" instead of "If I went") as well as basic 3rd-person -s/-es mistakes.`;
+    case 'C1':
+    case 'C2':
+    default:
+      return `CEFR ${cefrLevel} (Advanced / Proficiency):
+- Expect sophisticated syntactic range: Past Perfect ("had + V3/ed"), Conditional Type 3 & Mixed Conditionals ("If he had studied..., he would have passed..."), Inversion ("Had I known...", "Not only does..."), Participle Clauses ("Having completed..."), Subjunctive Mood ("It is vital that he be..."), and Cleft Sentences ("What matters most is...").
+- Explicitly reward accurate use of these advanced structures in "advanced_structures_used" and NEVER misclassify Conditional Type 2/3 or Past Perfect as tense errors.
+- If a ${cefrLevel} speaker ONLY uses elementary simple sentences without any complex clauses, cap grammar_score at 68 and advise upgrading sentence complexity in feedback_vi.`;
+  }
 }
 
 export default async function handler(req: Request) {
@@ -255,7 +335,6 @@ export default async function handler(req: Request) {
     const stationType = (formData.get('stationType') || 'STATION_1').toUpperCase();
     const cefrLevel = (formData.get('level') || 'B2').toUpperCase();
 
-    // 📈 Trích xuất mảng Pitch (F0 Contour) gửi lên từ client (nếu có)
     let studentPitchData: number[] = [];
     let referencePitchData: number[] = [];
     try {
@@ -274,11 +353,16 @@ export default async function handler(req: Request) {
       );
     }
 
+    // 🛡️ Ép Whisper ghi âm nguyên văn (verbatim), không tự sửa ngữ pháp cơ bản lẫn nâng cao
     const whisperFormData: any = new FormData();
     whisperFormData.append('file', audioFile);
     whisperFormData.append('model', 'whisper-large-v3');
     whisperFormData.append('language', 'en');
     whisperFormData.append('response_format', 'verbose_json');
+    whisperFormData.append(
+      'prompt',
+      'Transcribe strictly verbatim as spoken. Do NOT auto-correct grammar, missing third-person singular -s/-es (e.g. "he go", "she work"), missing past tense -ed, missing past participle in conditionals/perfect tenses (e.g. "had go", "would have went"), plural -s, or mispronounced words.'
+    );
 
     const whisperResponse = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
       method: 'POST',
@@ -307,6 +391,7 @@ export default async function handler(req: Request) {
           feedback: "❌ Không nhận diện được âm thanh phát âm! Vui lòng bấm làm lại và nói to, rõ ràng hơn.",
           isWin: false,
           errorWords: [],
+          wordAnalysis: [],
           criteria: null
         }),
         { status: 200, headers: { 'Content-Type': 'application/json' } }
@@ -326,7 +411,7 @@ export default async function handler(req: Request) {
     let calculatedScore = 75;
     let feedback = '';
 
-    const normalize = (str: string) => str.toLowerCase().replace(/[^a-z0-9\s/]/g, '').trim();
+    const normalize = (str: string) => str.toLowerCase().replace(/[^a-z0-9\s/']/g, '').trim();
     const cleanPrompt = normalize(targetPrompt);
     let rawTranscript = normalize(transcript);
 
@@ -343,7 +428,6 @@ export default async function handler(req: Request) {
       "i've": 'i have',
       "it's": 'it is',
       "what'd": 'what did',
-      "don't": 'do not',
       "can't": 'can not',
       "you're": 'you are'
     };
@@ -357,42 +441,23 @@ export default async function handler(req: Request) {
     const spokenWords = rawTranscript.split(/\s+/).filter(Boolean);
 
     const homophonesMap: Record<string, string[]> = {
-      'bare': ['bear'],
-      'bear': ['bare'],
-      'sum': ['some'],
-      'some': ['sum'],
-      'sea': ['see'],
-      'see': ['sea'],
-      'meat': ['meet'],
-      'meet': ['meat'],
-      'sun': ['son'],
-      'son': ['sun'],
-      'wear': ['where'],
-      'where': ['wear'],
-      'pair': ['pear'],
-      'pear': ['pair'],
-      'right': ['write'],
-      'write': ['right'],
-      'air': ['heir'],
-      'heir': ['air'],
-      'buy': ['by', 'bye'],
-      'bye': ['buy', 'by'],
-      'by': ['buy', 'bye'],
-      'for': ['four'],
-      'four': ['for'],
-      'to': ['too', 'two'],
-      'too': ['to', 'two'],
-      'two': ['to', 'too'],
-      'one': ['won'],
-      'won': ['one'],
-      'flour': ['flower'],
-      'flower': ['flour'],
-      'peace': ['piece'],
-      'piece': ['peace'],
-      'wait': ['weight'],
-      'weight': ['wait'],
-      'break': ['brake'],
-      'brake': ['break']
+      'bare': ['bear'], 'bear': ['bare'],
+      'sum': ['some'], 'some': ['sum'],
+      'sea': ['see'], 'see': ['sea'],
+      'meat': ['meet'], 'meet': ['meat'],
+      'sun': ['son'], 'son': ['sun'],
+      'wear': ['where'], 'where': ['wear'],
+      'pair': ['pear'], 'pear': ['pair'],
+      'right': ['write'], 'write': ['right'],
+      'air': ['heir'], 'heir': ['air'],
+      'buy': ['by', 'bye'], 'bye': ['buy', 'by'], 'by': ['buy', 'bye'],
+      'for': ['four'], 'four': ['for'],
+      'to': ['too', 'two'], 'too': ['to', 'two'], 'two': ['to', 'too'],
+      'one': ['won'], 'won': ['one'],
+      'flour': ['flower'], 'flower': ['flour'],
+      'peace': ['piece'], 'piece': ['peace'],
+      'wait': ['weight'], 'weight': ['wait'],
+      'break': ['brake'], 'brake': ['break']
     };
 
     const isWordSpoken = (target: string, spokenList: string[]) => {
@@ -477,7 +542,6 @@ export default async function handler(req: Request) {
         }
       }
 
-      // 🎯 TRẢ VỀ RESPONSE TRỰC TIẾP CHO TRẠM 1
       return new Response(
         JSON.stringify({
           score: calculatedScore,
@@ -485,6 +549,7 @@ export default async function handler(req: Request) {
           feedback: feedback,
           isWin: calculatedScore >= 70,
           errorWords: [],
+          wordAnalysis: buildWordAnalysisArray(transcript, []),
           criteria: {
             pronunciation: calculatedScore,
             vocabulary: 85,
@@ -547,6 +612,7 @@ export default async function handler(req: Request) {
           feedback: feedback,
           isWin: calculatedScore >= 70,
           errorWords: [],
+          wordAnalysis: buildWordAnalysisArray(transcript, []),
           criteria: {
             pronunciation: Math.min(100, Math.round(accuracyRatio * 90 + acousticQualityBonus)),
             vocabulary: 80,
@@ -583,6 +649,7 @@ export default async function handler(req: Request) {
             feedback: feedback,
             isWin: false,
             errorWords: [],
+            wordAnalysis: [],
             criteria: { pronunciation: 30, vocabulary: 30, grammar: 30, fluency: 30, content: 20 }
           }),
           { status: 200, headers: { 'Content-Type': 'application/json' } }
@@ -597,7 +664,6 @@ export default async function handler(req: Request) {
       let errorWordsList: { word: string; correction: string; reason: string }[] = [];
       let dynamicFeedback = '';
 
-      // 1. 🛡️ QUÉT BẪY LỖI NGỮ PHÁP TẠI CHỖ (LOCAL SCANNER)
       const countNums = ['two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'];
       for (let i = 0; i < spokenWords.length - 1; i++) {
         const curr = spokenWords[i];
@@ -613,7 +679,6 @@ export default async function handler(req: Request) {
         }
       }
 
-      // 2. 🤖 GỌI GROQ LLM ĐÁNH GIÁ CHẤT LƯỢNG PHẢN XẠ & BỐI CẢNH (C1-C2 EXECUTIVE EVALUATION)
       try {
         const groqLlmResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
           method: 'POST',
@@ -622,33 +687,25 @@ export default async function handler(req: Request) {
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            model: 'llama-3.1-8b-instant',
+            model: 'llama-3.3-70b-versatile',
             temperature: 0.1,
-            max_tokens: 350,
+            max_tokens: 450,
             messages: [
               {
                 role: 'system',
-                content: `You are an executive communications coach and expert Cambridge/IELTS examiner evaluating a CEFR ${cefrLevel} student on a high-stakes 15-second rapid response prompt (Business/Crisis PR/Executive Alignment).
-
-CRITICAL EVALUATION MATRIX FOR CEFR ${cefrLevel}:
-1. C1-C2 ADVANCED CRITERIA:
-   - Executive Presence & Diplomatic Tone: Look for assertive, constructive phrasing (e.g., "While I acknowledge...", "I propose gating rollout...", "Let us formally scope...").
-   - Deflection & Problem-solving: Did the student address the conflict/crisis without combative phrasing or premature liability admission?
-   - Lexical Resource: Reward high-register collocations (e.g., "compromise roadmap", "freeze non-essential OPEX", "mitigate fallout", "contingency plan").
-   - If CEFR is C1/C2 and the student uses simplistic/childish phrasing (e.g., "I will fire people because money", "I am angry at you"), cap vocab_score at 60 and feedback must advise professional executive terminology.
-2. GENERAL CEFR RULES:
-   - If fluent, tactful, and answers the prompt within 10-15s, award 88-96.
-   - If response is incomplete or misses the prompt challenge, assign content_score 45-60.
-
+                content: `You are an expert Cambridge/IELTS speaking examiner evaluating a CEFR ${cefrLevel} student on a rapid response prompt.
+${getCefrGrammarRubricInstruction(cefrLevel)}
+Strictly detect any spoken grammar or ending errors (missing 3rd-person singular -s/-es, missing plural -s, wrong verb tenses, or malformed conditional/perfect structures).
 Return JSON ONLY:
 {
   "vocab_score": number,
   "grammar_score": number,
   "content_score": number,
+  "advanced_structures_used": ["e.g. Conditional Type 2"],
   "detected_errors": [
-    { "word": "incorrect_word", "correction": "better_word", "reason": "Lý do bằng tiếng Việt chỉ rõ cách nâng cấp từ vựng/cách diễn đạt ngoại giao" }
+    { "word": "incorrect_word", "correction": "better_word", "reason": "Lý do bằng tiếng Việt chỉ rõ lỗi ngữ pháp/phát âm" }
   ],
-  "feedback_vi": "Nhận xét sư phạm tiếng Việt sắc bén 1-2 câu, chỉ rõ nghệ thuật ứng biến ngoại giao, phong thái điều hành và từ vựng chuyên ngành"
+  "feedback_vi": "Nhận xét sư phạm tiếng Việt sắc bén 1-2 câu"
 }`
               },
               {
@@ -684,7 +741,6 @@ Return JSON ONLY:
         console.warn("LLM API Express bypassed:", llmErr);
       }
 
-      // 3. TÍNH ĐIỂM TỔNG HỢP (KẾT HỢP TỐC ĐỘ, ĐỘ CHÍNH XÁC VÀ NỘI DUNG)
       const penalty = errorWordsList.length * 8;
       calculatedScore = Math.max(
         35,
@@ -719,6 +775,7 @@ Return JSON ONLY:
           feedback: dynamicFeedback,
           isWin: calculatedScore >= 70,
           errorWords: errorWordsList,
+          wordAnalysis: buildWordAnalysisArray(transcript, errorWordsList),
           criteria: {
             pronunciation: pronunciationScore,
             vocabulary: Math.max(35, vocabScore - Math.round(penalty * 0.5)),
@@ -738,14 +795,14 @@ Return JSON ONLY:
       );
 
     // =========================================================================
-    // 🎭 NHÁNH 4: TRẠM 2 - VOCABULARY ARENA (ĐÁNH GIÁ ĐÚNG THÌ, NGỮ CẢNH & TOÀN DIỆN NGỮ PHÁP)
+    // 🎭 NHÁNH 4: TRẠM 2 - VOCABULARY & REFLEX ARENA (PHÂN TẦNG NGỮ PHÁP A1–C2)
     // =========================================================================
     } else {
       const wordCount = spokenWords.length;
       const hallucinationPhrases = ['thank you', 'thanks for watching', 'subtitles by', 'bye', 'goodbye'];
       const isHallucination = wordCount <= 3 && hallucinationPhrases.some(h => transcript.toLowerCase().includes(h));
 
-      if (isHallucination || wordCount < 5) {
+      if (isHallucination || wordCount < 4) {
         calculatedScore = Math.max(15, wordCount * 6);
         feedback = `⚠️ Bài nói quá ngắn (${wordCount} từ). Hãy đối thoại hoàn chỉnh câu để AI có thể đánh giá!`;
         return new Response(
@@ -755,6 +812,7 @@ Return JSON ONLY:
             feedback: feedback,
             isWin: false,
             errorWords: [],
+            wordAnalysis: [],
             criteria: { pronunciation: 30, vocabulary: 30, grammar: 30, fluency: 30, content: 20 }
           }),
           { status: 200, headers: { 'Content-Type': 'application/json' } }
@@ -763,9 +821,18 @@ Return JSON ONLY:
 
       const lowerTranscript = transcript.toLowerCase();
       const lowerPrompt = targetPrompt.toLowerCase();
+      const targetCleanWords = lowerPrompt.replace(/[^a-z0-9\s']/g, ' ').split(/\s+/).filter(Boolean);
 
-      // 1. 🎯 KIỂM TRA ĐỘ BÁM SÁT CHỦ ĐỀ (OFF-TOPIC DETECTOR VỚI ACADEMIC / BUSINESS KEYWORDS)
-      const stopWords = ['describe', 'talk', 'about', 'your', 'you', 'the', 'and', 'with', 'that', 'this', 'have', 'what', 'where', 'when', 'which', 'tell', 'enrolled', 'special', 'favorite', 'help', 'evaluate', 'analyze', 'extent', 'discuss', 'propose', 'deliver', 'whether', 'merely', 'particularly', 'regarding'];
+      // Phát hiện thí sinh đang sử dụng câu điều kiện giả định ("If I were...", "If he had...", "wish...")
+      const hasHypotheticalClause =
+        /\bif\b/.test(lowerTranscript) ||
+        /\bwish\b/.test(lowerTranscript) ||
+        /\bwould\s+have\b/.test(lowerTranscript) ||
+        /\bcould\s+have\b/.test(lowerTranscript) ||
+        /\bmight\s+have\b/.test(lowerTranscript);
+
+      // 1. 🎯 KIỂM TRA ĐỘ BÁM SÁT CHỦ ĐỀ (OFF-TOPIC DETECTOR)
+      const stopWords = ['describe', 'talk', 'about', 'your', 'you', 'the', 'and', 'with', 'that', 'this', 'have', 'what', 'where', 'when', 'which', 'tell', 'enrolled', 'special', 'favorite', 'help', 'evaluate', 'analyze', 'extent', 'discuss', 'propose', 'deliver', 'whether', 'merely', 'particularly', 'regarding', 'reflex', 'challenge'];
       const corePromptKeywords = lowerPrompt
         .replace(/[^a-z0-9\s]/g, ' ')
         .split(/\s+/)
@@ -782,10 +849,11 @@ Return JSON ONLY:
 
       const isOnlineCoursePrompt = lowerPrompt.includes('course') || lowerPrompt.includes('online') || lowerPrompt.includes('tutorial');
       const isFamilyHometownSpeech = lowerTranscript.includes('hometown') || lowerTranscript.includes('went home') || (lowerTranscript.includes('parents') && !lowerTranscript.includes('course'));
-      const isCompletelyOffTopic = (isOnlineCoursePrompt && isFamilyHometownSpeech) || (corePromptKeywords.length >= 2 && matchedTopicKeywords === 0);
+      const isCompletelyOffTopic = (isOnlineCoursePrompt && isFamilyHometownSpeech) || (corePromptKeywords.length >= 3 && matchedTopicKeywords === 0);
 
       let errorWordsList: { word: string; correction: string; reason: string }[] = [];
       let dynamicFeedback = '';
+      let advancedStructuresUsed: string[] = [];
 
       if (isCompletelyOffTopic) {
         errorWordsList.push({
@@ -795,7 +863,72 @@ Return JSON ONLY:
         });
       }
 
-      // 2. 🛡️ BỘ QUÉT TƯƠNG THÍCH THÌ VÀ NGỮ CẢNH ĐỀ BÀI (CONTEXT-TENSE ALIGNMENT ENGINE)
+      // 2. 🛡️ BỘ QUÉT LỖI NGỮ PHÁP & PHÁT ÂM ÂM CUỐI TẠI CHỖ (LOCAL SCANNER)
+      const singularThirdPersons = ['he', 'she', 'it', 'everyone', 'everybody', 'someone', 'somebody', 'nobody', 'mother', 'father', 'friend', 'teacher', 'student', 'boss', 'manager', 'customer'];
+      const adverbs = ['usually', 'always', 'often', 'never', 'sometimes', 'rarely', 'seldom', 'really', 'just', 'still'];
+      const commonBaseVerbs = [
+        'get', 'go', 'do', 'have', 'play', 'like', 'want', 'come', 'eat', 'sleep', 'make', 'take',
+        'drink', 'listen', 'see', 'watch', 'work', 'live', 'need', 'know', 'think', 'feel', 'try',
+        'use', 'find', 'give', 'tell', 'call', 'ask', 'seem', 'leave', 'put', 'mean', 'keep', 'let',
+        'begin', 'help', 'talk', 'turn', 'start', 'show', 'hear', 'run', 'move', 'believe', 'bring',
+        'happen', 'write', 'provide', 'sit', 'stand', 'lose', 'pay', 'meet', 'include', 'continue',
+        'set', 'learn', 'change', 'lead', 'understand', 'speak', 'read', 'spend', 'grow', 'open', 'walk', 'win', 'offer', 'remember', 'love', 'consider', 'appear', 'buy', 'wait', 'serve', 'die', 'send', 'expect', 'build', 'stay', 'fall', 'cut', 'reach', 'kill', 'remain', 'suggest', 'raise', 'pass', 'sell', 'require', 'report', 'decide', 'pull'
+      ];
+
+      for (let i = 0; i < spokenWords.length; i++) {
+        const curr = spokenWords[i];
+        const prev = i > 0 ? spokenWords[i - 1] : '';
+        const prevTwo = i > 1 ? spokenWords[i - 2] : '';
+
+        // 2a. Bắt lỗi "he/she/it don't" -> "doesn't"
+        if ((curr === "don't" || curr === 'dont') && singularThirdPersons.includes(prev)) {
+          errorWordsList.push({
+            word: curr,
+            correction: "doesn't",
+            reason: `Ngôi thứ 3 số ít ("${prev}") phải dùng trợ động từ "doesn't".`
+          });
+        }
+
+        // 2b. Bắt lỗi động từ ngôi thứ 3 số ít không thêm -s/-es ("he go", "she usually work")
+        if (commonBaseVerbs.includes(curr)) {
+          if (singularThirdPersons.includes(prev)) {
+            const correctForm = getThirdPersonForm(curr);
+            errorWordsList.push({
+              word: curr,
+              correction: correctForm,
+              reason: `Lỗi chia động từ ngôi thứ 3 số ít: Sau "${prev}", động từ "${curr}" phải thêm -s/-es thành "${correctForm}".`
+            });
+          } else if (singularThirdPersons.includes(prevTwo) && adverbs.includes(prev)) {
+            const correctForm = getThirdPersonForm(curr);
+            errorWordsList.push({
+              word: curr,
+              correction: correctForm,
+              reason: `Lỗi chia động từ ngôi thứ 3 số ít: Sau "${prevTwo} ${prev}", động từ "${curr}" phải chia thành "${correctForm}".`
+            });
+          }
+        }
+
+        // 2c. Đối chiếu câu mẫu (nếu câu mẫu có dạng -s/-es/-ed nhưng sinh viên đọc nuốt mất âm cuối)
+        if (targetCleanWords.length > 0 && !errorWordsList.some(e => e.word.toLowerCase() === curr)) {
+          const expected3rd = getThirdPersonForm(curr);
+          const expectedPast = curr.endsWith('e') ? `${curr}d` : `${curr}ed`;
+          if (targetCleanWords.includes(expected3rd) && !targetCleanWords.includes(curr)) {
+            errorWordsList.push({
+              word: curr,
+              correction: expected3rd,
+              reason: `Phát âm thiếu âm cuối -s/-es: Câu mẫu là "${expected3rd}", bạn đọc thiếu đuôi thành "${curr}".`
+            });
+          } else if (targetCleanWords.includes(expectedPast) && !targetCleanWords.includes(curr)) {
+            errorWordsList.push({
+              word: curr,
+              correction: expectedPast,
+              reason: `Phát âm thiếu đuôi quá khứ -ed: Câu mẫu là "${expectedPast}".`
+            });
+          }
+        }
+      }
+
+      // 2d. Bắt lỗi sai thì ngữ cảnh thói quen (CHỈ áp dụng khi KHÔNG phải câu điều kiện giả định loại 2/3)
       const isHabitualPrompt = 
         lowerPrompt.includes('how you help') || 
         lowerPrompt.includes('housework') || 
@@ -807,7 +940,7 @@ Return JSON ONLY:
         lowerPrompt.includes('every day') ||
         (lowerPrompt.includes('what do you do') && !lowerPrompt.includes('did'));
 
-      if (isHabitualPrompt) {
+      if (isHabitualPrompt && !hasHypotheticalClause) {
         const pastVerbsMap: Record<string, string> = {
           'cooked': 'cook / usually cook',
           'made': 'make / prepare',
@@ -821,19 +954,17 @@ Return JSON ONLY:
         };
 
         spokenWords.forEach(w => {
-          if (pastVerbsMap[w]) {
-            if (!errorWordsList.some(e => e.word.toLowerCase() === w)) {
-              errorWordsList.push({
-                word: w,
-                correction: pastVerbsMap[w],
-                reason: `Sai thì ngữ cảnh: Đề bài hỏi về thói quen/hành động thường xuyên làm ("how you help with housework"), bắt buộc phải dùng thì Hiện tại đơn (Present Simple: "${pastVerbsMap[w]}"), không dùng quá khứ đơn ("${w}").`
-              });
-            }
+          if (pastVerbsMap[w] && !errorWordsList.some(e => e.word.toLowerCase() === w)) {
+            errorWordsList.push({
+              word: w,
+              correction: pastVerbsMap[w],
+              reason: `Sai thì ngữ cảnh: Đề bài hỏi về thói quen thường xuyên, cần dùng Hiện tại đơn ("${pastVerbsMap[w]}"), không dùng quá khứ ("${w}").`
+            });
           }
         });
       }
 
-      // Bắt lỗi câu bị ngắt cụt / bỏ dở giữa chừng (Incomplete Sentence Detector)
+      // 2e. Bắt lỗi câu ngắt cụt
       const lastWord = spokenWords[spokenWords.length - 1]?.toLowerCase() || '';
       const incompleteEndings = [
         'my', 'your', 'his', 'her', 'their', 'our', 'the', 'a', 'an',
@@ -842,15 +973,15 @@ Return JSON ONLY:
       ];
       
       const isIncompleteSentence = wordCount < 15 && incompleteEndings.includes(lastWord);
-      if (isIncompleteSentence) {
+      if (isIncompleteSentence && !errorWordsList.some(e => e.word.toLowerCase() === lastWord)) {
         errorWordsList.push({
           word: lastWord,
           correction: `${lastWord} ... [cần hoàn thành vị ngữ]`,
-          reason: `Câu nói bị ngắt cụt: Bạn chưa hoàn thành trọn vẹn câu nói ở từ "${lastWord}". Hãy nói đủ cả chủ ngữ và vị ngữ!`
+          reason: `Câu nói bị ngắt cụt ở từ "${lastWord}". Hãy hoàn thành trọn vẹn câu!`
         });
       }
 
-      // Bắt lỗi nuốt âm số nhiều sau số đếm
+      // 2f. Bắt lỗi nuốt âm số nhiều sau số đếm
       const countNumbers = ['two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'many', 'several'];
       for (let i = 0; i < spokenWords.length - 1; i++) {
         const curr = spokenWords[i];
@@ -865,7 +996,7 @@ Return JSON ONLY:
             'book': 'books',
             'child': 'children'
           };
-          if (singulars[next]) {
+          if (singulars[next] && !errorWordsList.some(e => e.word.toLowerCase() === next)) {
             errorWordsList.push({
               word: next,
               correction: singulars[next],
@@ -889,19 +1020,19 @@ Return JSON ONLY:
         baseVocab = 60;
         baseFluency = 60;
       } else if (isIncompleteSentence || wordCount < 12) {
-        baseContent = Math.min(60, Math.max(40, wordCount * 5));
-        baseGrammar = Math.max(45, 60 - errorWordsList.length * 8);
-        baseVocab = Math.min(65, Math.max(45, wordCount * 5));
-        baseFluency = Math.min(62, Math.max(40, wordCount * 5));
+        baseContent = Math.min(72, Math.max(45, wordCount * 6));
+        baseGrammar = hasNoErrors ? 80 : Math.max(40, 65 - errorWordsList.length * 12);
+        baseVocab = Math.min(75, Math.max(50, wordCount * 6));
+        baseFluency = Math.min(72, Math.max(45, wordCount * 6));
       } else if (wordCount < 20) {
-        baseContent = hasNoErrors ? 78 : 68;
-        baseGrammar = hasNoErrors ? 82 : Math.max(55, 75 - errorWordsList.length * 8);
-        baseVocab = hasNoErrors ? 80 : 70;
-        baseFluency = hasNoErrors ? 78 : 68;
+        baseContent = hasNoErrors ? 82 : 70;
+        baseGrammar = hasNoErrors ? 86 : Math.max(45, 72 - errorWordsList.length * 12);
+        baseVocab = hasNoErrors ? 82 : 72;
+        baseFluency = hasNoErrors ? 80 : 70;
       } else {
-        const hasConnectors = ['and', 'so', 'because', 'but', 'also', 'although', 'however', 'when', 'while'].some(c => lowerTranscript.includes(c));
+        const hasConnectors = ['and', 'so', 'because', 'but', 'also', 'although', 'however', 'when', 'while', 'if', 'had'].some(c => lowerTranscript.includes(c));
         baseContent = hasNoErrors ? Math.min(95, 88 + (wordCount >= 28 ? 6 : 2)) : 76;
-        baseGrammar = hasNoErrors ? Math.min(96, 90 + (wordCount >= 28 ? 5 : 2)) : Math.max(50, 75 - errorWordsList.length * 8);
+        baseGrammar = hasNoErrors ? Math.min(96, 90 + (wordCount >= 28 ? 5 : 2)) : Math.max(45, 72 - errorWordsList.length * 12);
         baseVocab = hasNoErrors ? Math.min(94, 85 + (wordCount >= 28 ? 6 : 2)) : 72;
         baseFluency = Math.min(95, Math.max(72, 76 + (wordCount >= 28 ? 14 : 8) + (hasConnectors ? 5 : 0)));
       }
@@ -910,9 +1041,11 @@ Return JSON ONLY:
       let vocabScore = baseVocab;
       let contentScore = baseContent;
       let fluencyScore = baseFluency;
-      let pronunciationScore = Math.min(100, Math.max(65, 75 + acousticQualityBonus * 1.8));
+      let pronunciationScore = hasNoErrors
+        ? Math.min(100, Math.max(68, 76 + acousticQualityBonus * 1.6))
+        : Math.max(45, 74 + acousticQualityBonus - errorWordsList.length * 10);
 
-      // 4. 🤖 GỌI GROQ LLM CHUYÊN SÂU (C1-C2 ACADEMIC & STRATEGIC DISCOURSE MATRIX)
+      // 4. 🤖 GỌI GROQ LLAMA-3.3-70B PHÂN TÍCH NGỮ PHÁP CƠ BẢN ĐẾN NÂNG CAO (A1–C2)
       try {
         const groqLlmResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
           method: 'POST',
@@ -921,29 +1054,26 @@ Return JSON ONLY:
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            model: 'llama-3.1-8b-instant',
+            model: 'llama-3.3-70b-versatile',
             temperature: 0.1,
-            max_tokens: 450,
+            max_tokens: 550,
             messages: [
               {
                 role: 'system',
-                content: `You are a distinguished Cambridge CAE/CPE (CEFR ${cefrLevel}) and IELTS Academic speaking examiner.
-You are evaluating a student on an Academic/Business discourse topic: "${targetPrompt}".
+                content: `You are a strict, authoritative Cambridge & IELTS Speaking Examiner evaluating a CEFR ${cefrLevel} student.
+Target Prompt/Context: "${targetPrompt}".
 
-CRITICAL EVALUATION MATRIX:
-1. CEFR C1-C2 ACADEMIC & STRATEGIC DISCOURSE:
-   - Syntactic Sophistication: Look for advanced structures (Inversion: "Seldom does...", Cleft sentences: "It is the... that...", Participle clauses: "Having analyzed...", Subjunctive/Hedging: "arguably", "fundamentally", "were leaders to...").
-   - Depth of Argumentation: Reward balanced, multi-dimensional argumentation over simple opinions.
-   - Lexical Precision: Reward domain-specific academic/business collocations (e.g. "epistemic hegemony", "fiduciary duty", "unintended externalities", "synergy realization", "due diligence").
-   - If level is C1/C2 but the speaker delivers elementary/vague reasoning (e.g., "AI is good and bad, I like it very much"), cap vocab_score at 65 and content_score at 60, with feedback instructing how to use academic hedging and analytical depth.
-2. TENSE & CONTEXT CONSISTENCY:
-   - Routine/Duty/Habit prompts MUST use Present Simple.
-   - Past experience prompts require Past tenses.
-   - Hypothetical policy/academic queries require Conditional/Subjunctive moods.
-3. STRUCTURAL CHECKS:
-   - Truncated/incomplete speech (ends abruptly) -> cap grammar and content at 60.
-   - Off-topic speech -> content_score 20-35 and is_off_topic: true.
-   - Flawless, highly articulate speech meeting CEFR ${cefrLevel} -> score 88-96.
+${getCefrGrammarRubricInstruction(cefrLevel)}
+
+CRITICAL EVALUATION RULES:
+1. NEVER auto-correct or ignore spoken grammar/ending mistakes in the student's verbatim transcript.
+2. Detect and report EVERY grammatical or spoken ending error in "detected_errors", across BOTH basic and advanced structures:
+   - Basic errors: missing 3rd-person singular "-s/-es" ("he go" -> "goes"), missing plural "-s", wrong verb tenses, wrong subject-verb agreement ("he don't" -> "doesn't"), wrong articles ("a apple" -> "an apple").
+   - Advanced errors: malformed Conditionals Type 2/3/Mixed (e.g. "If I would have known, I will tell you" -> "If I had known, I would have told you"), wrong Past Perfect ("had went" -> "had gone"), passive voice errors ("was broke" -> "was broken"), or broken inversion ("Had I knew" -> "Had I known").
+3. WHITELIST VALID ADVANCED GRAMMAR:
+   - If the student accurately uses Past Perfect ("had + V3/ed"), Conditionals Type 2/3/Mixed ("If I were...", "If they had acted..."), Subjunctive, Passive Voice, or Inversion, list them in "advanced_structures_used", reward grammar_score (88–98), and NEVER flag them as tense errors!
+4. Deduct 10–15 points from grammar_score for each genuine grammatical/ending error.
+5. Write clear, encouraging Vietnamese pedagogical feedback ("feedback_vi") that both praises accurate advanced structures (if used) and explains any red-flagged mistakes so the student can fix them next time.
 
 Return JSON ONLY:
 {
@@ -951,15 +1081,16 @@ Return JSON ONLY:
   "grammar_score": number,
   "content_score": number,
   "is_off_topic": boolean,
+  "advanced_structures_used": ["string"],
   "detected_errors": [
-    { "word": "error_word_or_phrase", "correction": "corrected_word_or_phrase", "reason": "Lý do bằng tiếng Việt giải thích rõ ngữ pháp, thì hoặc cách nâng cấp lên văn phong C1/C2" }
+    { "word": "exact_wrong_word_or_phrase_from_transcript", "correction": "correct_form", "reason": "Giải thích quy tắc ngữ pháp/phát âm bằng tiếng Việt ngắn gọn, rõ ràng" }
   ],
-  "feedback_vi": "Nhận xét sư phạm tiếng Việt sắc bén 1-2 câu, đánh giá tính logic học thuật/chiến lược kinh doanh và gợi ý nâng cấp từ vựng học thuật cao cấp"
+  "feedback_vi": "Nhận xét tiếng Việt 1-2 câu chỉ rõ điểm ngữ pháp nâng cao đã dùng tốt (nếu có) và các lỗi bị tô đỏ cần sửa"
 }`
               },
               {
                 role: 'user',
-                content: `Prompt Topic: "${targetPrompt || 'General speaking context'}"\nStudent spoken transcript: "${transcript}"`
+                content: `CEFR Level: ${cefrLevel}\nTarget Prompt: "${targetPrompt || 'General speaking context'}"\nStudent verbatim transcript: "${transcript}"`
               }
             ]
           })
@@ -974,17 +1105,18 @@ Return JSON ONLY:
             if (typeof parsed.content_score === 'number') {
               contentScore = (parsed.is_off_topic || isCompletelyOffTopic) 
                 ? Math.min(35, parsed.content_score) 
-                : (isIncompleteSentence || wordCount < 12 ? Math.min(65, parsed.content_score) : parsed.content_score);
+                : parsed.content_score;
             }
             if (typeof parsed.grammar_score === 'number') {
-              grammarScore = (isIncompleteSentence || wordCount < 12) 
-                ? Math.min(65, parsed.grammar_score) 
-                : parsed.grammar_score;
+              grammarScore = hasNoErrors
+                ? parsed.grammar_score
+                : Math.min(parsed.grammar_score, baseGrammar);
             }
             if (typeof parsed.vocab_score === 'number') {
-              vocabScore = (isIncompleteSentence || wordCount < 12) 
-                ? Math.min(68, parsed.vocab_score) 
-                : parsed.vocab_score;
+              vocabScore = parsed.vocab_score;
+            }
+            if (Array.isArray(parsed.advanced_structures_used)) {
+              advancedStructuresUsed = parsed.advanced_structures_used.filter((s: any) => typeof s === 'string' && s.trim().length > 0);
             }
             
             if (Array.isArray(parsed.detected_errors) && parsed.detected_errors.length > 0) {
@@ -993,7 +1125,7 @@ Return JSON ONLY:
                   errorWordsList.push({
                     word: err.word,
                     correction: err.correction || '',
-                    reason: err.reason || 'Lỗi cấu trúc hoặc thì ngữ cảnh.'
+                    reason: err.reason || 'Lỗi cấu trúc ngữ pháp hoặc phát âm âm cuối.'
                   });
                 }
               });
@@ -1005,50 +1137,61 @@ Return JSON ONLY:
           }
         }
       } catch (llmErr) {
-        console.warn("LLM API call bypassed, using dynamic fallback:", llmErr);
+        console.warn("LLM API call bypassed, using local grammar scanner:", llmErr);
       }
 
-      // 5. TÍNH ĐIỂM TỔNG HỢP CÔNG BẰNG & THỰC CHẤT
-      const penalty = errorWordsList.length * 8;
+      // 5. TÍNH ĐIỂM TỔNG HỢP CÔNG BẰNG & TRỪ ĐIỂM RÕ RÀNG KHI SAI NGỮ PHÁP / PHÁT ÂM
+      const penalty = errorWordsList.length * 10;
+      const cappedGrammar = errorWordsList.length > 0
+        ? Math.min(grammarScore, Math.max(30, 82 - errorWordsList.length * 14))
+        : grammarScore;
+      const cappedPronunciation = errorWordsList.length > 0
+        ? Math.min(pronunciationScore, Math.max(35, 84 - errorWordsList.length * 10))
+        : pronunciationScore;
+
       calculatedScore = Math.max(
         25,
         Math.min(
           98,
           Math.round(
-            (pronunciationScore * 0.25 +
+            (cappedPronunciation * 0.25 +
              vocabScore * 0.2 +
-             grammarScore * 0.25 +
+             cappedGrammar * 0.25 +
              contentScore * 0.2 +
-             fluencyScore * 0.1) - penalty
+             fluencyScore * 0.1) - Math.round(penalty * 0.4)
           )
         )
       );
 
       if (isCompletelyOffTopic) {
         calculatedScore = Math.min(50, calculatedScore);
-      } else if (isIncompleteSentence || wordCount < 10) {
+      } else if (isIncompleteSentence || wordCount < 8) {
         calculatedScore = Math.min(60, calculatedScore);
       }
 
-      // 6. NHẬN XÉT SƯ PHẠM CỤ THỂ
+      // 6. NHẬN XÉT SƯ PHẠM CỤ THỂ (GHI NHẬN CẤU TRÚC NÂNG CAO & CHỈ RÕ TỪ TÔ ĐỎ)
       if (!dynamicFeedback) {
+        const advNote = advancedStructuresUsed.length > 0
+          ? ` Điểm cộng cho việc vận dụng cấu trúc nâng cao (${advancedStructuresUsed.join(', ')}).`
+          : '';
+
         if (isCompletelyOffTopic) {
           dynamicFeedback = `⚠️ Bài nói bị lạc đề! Bạn cần chú ý đọc kỹ yêu cầu của chủ đề để trả lời đúng trọng tâm.`;
-        } else if (isIncompleteSentence) {
-          dynamicFeedback = `⚠️ Câu nói bị ngắt cụt ở cuối ("${lastWord}"). Hãy hoàn thành trọn vẹn ý của câu để AI chấm điểm chính xác hơn nhé!`;
-        } else if (isHabitualPrompt && spokenWords.some(w => ['cooked', 'made', 'yesterday'].includes(w))) {
-          dynamicFeedback = `⚠️ Sai thì ngữ cảnh: Đề bài hỏi về việc bạn thường giúp bố mẹ thế nào ("how you help"), bạn nên dùng thì Hiện tại đơn (Present Simple: "I usually cook/help...") thay vì kể chuyện quá khứ ("yesterday, cooked").`;
-        } else if (wordCount < 12) {
-          dynamicFeedback = `💡 Bài nói hơi ngắn (${wordCount} từ). Hãy mở rộng thêm các hành động cụ thể để câu trả lời thuyết phục hơn.`;
         } else if (errorWordsList.length > 0) {
           const firstErr = errorWordsList[0];
-          dynamicFeedback = `Phát âm rõ ràng, tuy nhiên cần lưu ý sửa từ "${firstErr.word}" ➔ "${firstErr.correction}". ${firstErr.reason}`;
+          dynamicFeedback = `⚠️ Phát hiện ${errorWordsList.length} lỗi ngữ pháp/phát âm (đã tô đỏ): cần sửa "${firstErr.word}" ➔ "${firstErr.correction}". ${firstErr.reason}${advNote}`;
+        } else if (isIncompleteSentence) {
+          dynamicFeedback = `⚠️ Câu nói bị ngắt cụt ở cuối ("${lastWord}"). Hãy hoàn thành trọn vẹn ý của câu để AI chấm điểm chính xác hơn nhé!`;
+        } else if (wordCount < 10) {
+          dynamicFeedback = `💡 Bài nói hơi ngắn (${wordCount} từ). Hãy mở rộng thêm các hành động cụ thể để câu trả lời thuyết phục hơn.`;
         } else if (calculatedScore >= 85) {
-          dynamicFeedback = `🌟 Xuất sắc! Bạn diễn đạt rất tự nhiên, phát âm chuẩn xác, các cấu trúc ngữ pháp và thì được dùng rất chuẩn ngữ cảnh đề bài.`;
+          dynamicFeedback = `🌟 Xuất sắc! Bạn diễn đạt rất tự nhiên, phát âm chuẩn xác và chia thì đúng ngữ cảnh.${advNote}`;
         } else {
-          dynamicFeedback = `👍 Bài nói mạch lạc và đúng trọng tâm. Hãy tiếp tục phát huy vốn từ vựng và ngữ pháp phong phú hơn nhé!`;
+          dynamicFeedback = `👍 Bài nói mạch lạc và đúng trọng tâm.${advNote} Hãy tiếp tục phát huy nhé!`;
         }
       }
+
+      const wordAnalysis = buildWordAnalysisArray(transcript, errorWordsList);
 
       return new Response(
         JSON.stringify({
@@ -1057,10 +1200,12 @@ Return JSON ONLY:
           feedback: dynamicFeedback,
           isWin: calculatedScore >= 70,
           errorWords: errorWordsList,
+          wordAnalysis: wordAnalysis,
+          advancedStructures: advancedStructuresUsed,
           criteria: {
-            pronunciation: pronunciationScore,
+            pronunciation: cappedPronunciation,
             vocabulary: vocabScore,
-            grammar: grammarScore,
+            grammar: cappedGrammar,
             fluency: fluencyScore,
             content: contentScore
           }
