@@ -15,7 +15,6 @@ export interface PhoneticTrapRule {
 }
 
 export const PHONETIC_TRAPS: PhoneticTrapRule[] = [
-  // 1. leave / live (/iː/ vs /ɪ/) - Bẫy đọc nhầm thành /laɪv/
   {
     id: 'leave_live_laiv',
     pair: ['leave', 'live'],
@@ -23,7 +22,6 @@ export const PHONETIC_TRAPS: PhoneticTrapRule[] = [
     scoreCap: 65,
     feedbackVi: '⚠️ Chú ý: Từ "live" trong bài tập này là động từ, phát âm âm ngắn là /lɪv/ (như "lip"), không phát âm là /laɪv/ (như trong "livestream"). Hãy thử lại!',
   },
-  // 2. vine / fine - Bẫy rút ngắn /aɪ/ thành /ɪ/ ("vin fin")
   {
     id: 'vine_fine_short_vowel',
     pair: ['vine', 'fine'],
@@ -31,7 +29,6 @@ export const PHONETIC_TRAPS: PhoneticTrapRule[] = [
     scoreCap: 65,
     feedbackVi: '⚠️ Chú ý: Cặp từ "vine - fine" có nguyên âm đôi /aɪ/ (đọc là /vaɪn/ và /faɪn/). Bạn vừa phát âm thành âm ngắn /vɪn/ - /fɪn/ ("vin fin"). Hãy mở rộng khẩu hình và kéo dài âm /aɪ/ nhé!',
   },
-  // 3. vine / fine - Bẫy đọc thừa âm đuôi kiểu Pháp/Latinh ("vi-nê / phi-nê")
   {
     id: 'vine_fine_french_suffix',
     pair: ['vine', 'fine'],
@@ -42,7 +39,6 @@ export const PHONETIC_TRAPS: PhoneticTrapRule[] = [
     scoreCap: 60,
     feedbackVi: '⚠️ Chú ý: Đuôi "-e" trong "vine" và "fine" là âm câm! Từ này chỉ có 1 âm tiết, phát âm là /vaɪn/ và /faɪn/ (không đọc tách thành 2 âm tiết "vi-nê / phi-nê"). Hãy ngắt dứt khoát ở âm cuối /n/ nhé!',
   },
-  // 4. sheep / ship (/iː/ vs /ɪ/)
   {
     id: 'sheep_ship_confusion',
     pair: ['sheep', 'ship'],
@@ -50,7 +46,6 @@ export const PHONETIC_TRAPS: PhoneticTrapRule[] = [
     scoreCap: 65,
     feedbackVi: '⚠️ Chú ý: Phân biệt rõ âm /iː/ kéo dài môi dẹt trong "sheep" và âm /ɪ/ ngắn dứt khoát trong "ship".',
   },
-  // 5. bed / bad (/e/ vs /æ/)
   {
     id: 'bed_bad_confusion',
     pair: ['bed', 'bad'],
@@ -58,7 +53,6 @@ export const PHONETIC_TRAPS: PhoneticTrapRule[] = [
     scoreCap: 65,
     feedbackVi: '⚠️ Chú ý: "bed" có nguyên âm /e/ mở vừa phải, còn "bad" có nguyên âm bẹt /æ/ hạ cằm sâu.',
   },
-  // 6. think / sink (/θ/ vs /s/)
   {
     id: 'think_sink_dental',
     pair: ['think', 'sink'],
@@ -66,7 +60,6 @@ export const PHONETIC_TRAPS: PhoneticTrapRule[] = [
     scoreCap: 65,
     feedbackVi: '⚠️ Chú ý: Âm /θ/ trong "think" cần đặt đầu lưỡi giữa hai hàm răng và thổi hơi, tránh phát âm thành /s/ ("sink") hoặc /t/ ("tin").',
   },
-  // 7. lead / read (/liːd/ vs /riːd/) - Bẫy đọc thành /led/ và /rɪd/ ("led rid")
   {
     id: 'lead_read_confusion',
     pair: ['lead', 'read'],
@@ -77,7 +70,6 @@ export const PHONETIC_TRAPS: PhoneticTrapRule[] = [
     scoreCap: 65,
     feedbackVi: '⚠️ Chú ý: Cả "lead" và "read" ở thì hiện tại đều có nguyên âm dài /iː/ (đọc là /liːd/ và /riːd/). Bạn vừa phát âm thành âm ngắn /led/ (như "led/chì") hoặc /rɪd/ ("rid"). Hãy căng môi cười và kéo dài âm /iː/ nhé!',
   },
-  // 8. men / man (/e/ vs /æ/)
   {
     id: 'men_man_confusion',
     pair: ['men', 'man'],
@@ -87,7 +79,6 @@ export const PHONETIC_TRAPS: PhoneticTrapRule[] = [
     scoreCap: 65,
     feedbackVi: '⚠️ Chú ý: Phân biệt rõ âm /e/ (trong "men" - mở hé miệng, kéo khóe môi) và âm /æ/ (trong "man" - hạ quai hàm sâu). AI hiện đang nghe cả hai từ thành cùng một âm!',
   },
-  // 9. cat / cut (/æ/ vs /ʌ/)
   {
     id: 'cat_cut_confusion',
     pair: ['cat', 'cut'],
@@ -97,7 +88,6 @@ export const PHONETIC_TRAPS: PhoneticTrapRule[] = [
     scoreCap: 65,
     feedbackVi: '⚠️ Chú ý: Phân biệt rõ âm /æ/ (trong "cat" - bẹt khóe môi sang hai bên) và âm /ʌ/ (trong "cut" - miệng mở tự nhiên, thả lỏng hạ hàm dưới theo chiều dọc). AI hiện đang nghe cả hai từ thành cùng một âm!',
   },
-  // 10. zoo / sue (/z/ vs /s/)
   {
     id: 'zoo_sue_voicing',
     pair: ['zoo', 'sue'],
@@ -211,8 +201,15 @@ export function evaluateProsodyScore(studentPitch: number[], referencePitch: num
 }
 
 // =========================================================================
-// 🔍 HÀM BỔ TRỢ: CHIA ĐỘNG TỪ NGÔI 3 SỐ ÍT & XÂY DỰNG MẢNG TÔ MÀU TỪNG TỪ
+// 🔍 HÀM BỔ TRỢ: CHIA ĐỘNG TỪ & XÂY DỰNG MẢNG TÔ MÀU CHÍNH XÁC TỪNG VỊ TRÍ TỪ
 // =========================================================================
+export interface DetectedGrammarError {
+  word: string;
+  correction: string;
+  reason: string;
+  wordIndex?: number; // Vị trí từ chính xác trong câu để không tô nhầm từ lặp lại (ví dụ "I" hay "am")
+}
+
 function getThirdPersonForm(verb: string): string {
   if (verb === 'have') return 'has';
   if (verb === 'do') return 'does';
@@ -224,7 +221,7 @@ function getThirdPersonForm(verb: string): string {
 
 function buildWordAnalysisArray(
   rawTranscript: string,
-  errorWordsList: { word: string; correction: string; reason: string }[]
+  errorWordsList: DetectedGrammarError[]
 ) {
   const tokens = rawTranscript
     .replace(/[.,/#!$%^&*;:{}=\-_`~()?"]/g, '')
@@ -232,21 +229,26 @@ function buildWordAnalysisArray(
     .split(/\s+/)
     .filter(Boolean);
 
-  const errMap = new Map<string, { word: string; correction: string; reason: string }>();
+  // Ưu tiên khớp theo vị trí chính xác (wordIndex) trước, sau đó mới khớp theo từ
+  const indexErrMap = new Map<number, DetectedGrammarError>();
+  const tokenErrMap = new Map<string, DetectedGrammarError>();
+
   errorWordsList.forEach((err) => {
-    if (err?.word) {
+    if (typeof err.wordIndex === 'number' && err.wordIndex >= 0 && err.wordIndex < tokens.length) {
+      indexErrMap.set(err.wordIndex, err);
+    } else if (err?.word) {
       const errTokens = err.word.toLowerCase().replace(/[^a-z0-9'\s]/g, '').split(/\s+/).filter(Boolean);
       errTokens.forEach((tok) => {
-        if (!errMap.has(tok)) {
-          errMap.set(tok, err);
+        if (!tokenErrMap.has(tok)) {
+          tokenErrMap.set(tok, err);
         }
       });
     }
   });
 
-  return tokens.map((token) => {
+  return tokens.map((token, idx) => {
     const clean = token.toLowerCase().replace(/[^a-z0-9']/g, '');
-    const matchedErr = errMap.get(clean);
+    const matchedErr = indexErrMap.get(idx) || tokenErrMap.get(clean);
     if (matchedErr) {
       return {
         word: token,
@@ -267,6 +269,184 @@ function buildWordAnalysisArray(
 }
 
 // =========================================================================
+// 🧠 BỘ QUÉT NGỮ PHÁP TOÀN DIỆN TỪ CƠ BẢN (A1) ĐẾN NÂNG CAO (C2)
+// =========================================================================
+function scanComprehensiveGrammarErrors(
+  spokenWords: string[],
+  lowerTranscript: string,
+  lowerPrompt: string,
+  isFreeSpeechMode: boolean,
+  targetCleanWords: string[]
+): DetectedGrammarError[] {
+  const errors: DetectedGrammarError[] = [];
+
+  const addError = (wordIndex: number, word: string, correction: string, reason: string) => {
+    if (!errors.some((e) => e.wordIndex === wordIndex)) {
+      errors.push({ wordIndex, word, correction, reason });
+    }
+  };
+
+  const singularThirdPersons = ['he', 'she', 'it', 'everyone', 'everybody', 'someone', 'somebody', 'nobody', 'mother', 'father', 'friend', 'teacher', 'student', 'boss', 'manager', 'customer'];
+  const adverbs = ['usually', 'always', 'often', 'never', 'sometimes', 'rarely', 'seldom', 'really', 'just', 'still'];
+  const commonBaseVerbs = [
+    'get', 'go', 'do', 'have', 'play', 'like', 'want', 'come', 'eat', 'sleep', 'make', 'take',
+    'drink', 'listen', 'see', 'watch', 'work', 'live', 'need', 'know', 'think', 'feel', 'try',
+    'use', 'find', 'give', 'tell', 'call', 'ask', 'seem', 'leave', 'put', 'mean', 'keep', 'let',
+    'begin', 'help', 'talk', 'turn', 'start', 'show', 'hear', 'run', 'move', 'believe', 'bring',
+    'happen', 'write', 'provide', 'sit', 'stand', 'lose', 'pay', 'meet', 'include', 'continue',
+    'set', 'learn', 'change', 'lead', 'understand', 'speak', 'read', 'spend', 'grow', 'open', 'walk', 'win', 'offer', 'remember', 'love', 'consider', 'appear', 'buy', 'wait', 'serve', 'die', 'send', 'expect', 'build', 'stay', 'fall', 'cut', 'reach', 'kill', 'remain', 'suggest', 'raise', 'pass', 'sell', 'require', 'report', 'decide', 'pull'
+  ];
+
+  // Nhận diện bối cảnh quá khứ / sự cố đã xảy ra
+  const hasPastTimeMarker =
+    /\b(yesterday|ago|last\s+night|last\s+week|last\s+month|last\s+year|earlier|this\s+morning|left|forgot|lost|went|came|was|were|did)\b/.test(lowerTranscript);
+
+  const isPastIncidentContext =
+    hasPastTimeMarker ||
+    lowerPrompt.includes('để quên') ||
+    lowerPrompt.includes('mất đồ') ||
+    lowerPrompt.includes('bị mất') ||
+    lowerPrompt.includes('làm rơi') ||
+    lowerPrompt.includes('trễ') ||
+    lowerPrompt.includes('tai nạn') ||
+    lowerPrompt.includes('lost') ||
+    lowerPrompt.includes('forgot') ||
+    lowerPrompt.includes('left my');
+
+  const vowels = ['a', 'e', 'i', 'o', 'u'];
+  const countNumbers = ['two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'many', 'several'];
+  const singularNouns: Record<string, string> = {
+    'friend': 'friends', 'member': 'members', 'person': 'people', 'year': 'years',
+    'day': 'days', 'book': 'books', 'child': 'children', 'student': 'students', 'hour': 'hours'
+  };
+
+  for (let i = 0; i < spokenWords.length; i++) {
+    const curr = spokenWords[i];
+    const prev = i > 0 ? spokenWords[i - 1] : '';
+    const prevTwo = i > 1 ? spokenWords[i - 2] : '';
+    const next = i < spokenWords.length - 1 ? spokenWords[i + 1] : '';
+    const nextTwo = i < spokenWords.length - 2 ? spokenWords[i + 2] : '';
+
+    // -----------------------------------------------------------------------
+    // NHÓM 1: NGỮ PHÁP CƠ BẢN (A1 – A2)
+    // -----------------------------------------------------------------------
+    // 1a. Lỗi "he/she/it don't" -> "doesn't"
+    if ((curr === "don't" || curr === 'dont') && singularThirdPersons.includes(prev)) {
+      addError(i, curr, "doesn't", `Ngôi thứ 3 số ít ("${prev}") phải dùng trợ động từ "doesn't".`);
+    }
+
+    // 1b. Lỗi động từ ngôi thứ 3 số ít không thêm -s/-es ("he go", "she usually work")
+    if (commonBaseVerbs.includes(curr)) {
+      if (singularThirdPersons.includes(prev)) {
+        const correctForm = getThirdPersonForm(curr);
+        addError(i, curr, correctForm, `Lỗi chia động từ ngôi thứ 3 số ít: Sau "${prev}", động từ "${curr}" phải thêm -s/-es thành "${correctForm}".`);
+      } else if (singularThirdPersons.includes(prevTwo) && adverbs.includes(prev)) {
+        const correctForm = getThirdPersonForm(curr);
+        addError(i, curr, correctForm, `Lỗi chia động từ ngôi thứ 3 số ít: Sau "${prevTwo} ${prev}", động từ "${curr}" phải chia thành "${correctForm}".`);
+      }
+    }
+
+    // 1c. Lỗi sau "doesn't" / "didn't" động từ vẫn chia ("doesn't goes", "didn't went")
+    if ((prev === "doesn't" || prev === 'doesnt') && (curr.endsWith('s') || curr.endsWith('es')) && curr.length > 3) {
+      addError(i, curr, curr.replace(/(es|s)$/, ''), `Sau trợ động từ "doesn't", động từ phải để nguyên mẫu.`);
+    }
+    const pastIrregulars = ['went', 'came', 'bought', 'saw', 'got', 'took', 'had', 'ate', 'made', 'left', 'lost', 'forgot'];
+    if ((prev === "didn't" || prev === 'didnt') && (curr.endsWith('ed') || pastIrregulars.includes(curr))) {
+      addError(i, curr, 'V-infinitive', `Sau trợ động từ "didn't", động từ phải để nguyên mẫu.`);
+    }
+
+    // 1d. Lỗi mạo từ a / an
+    if (curr === 'a' && next && vowels.includes(next[0]) && !['university', 'uniform', 'useful', 'user', 'european'].includes(next)) {
+      addError(i, curr, 'an', `Trước từ bắt đầu bằng nguyên âm "${next}" phải dùng mạo từ "an".`);
+    }
+    if (curr === 'an' && next && !vowels.includes(next[0]) && !['hour', 'honest', 'honor'].includes(next)) {
+      addError(i, curr, 'a', `Trước từ bắt đầu bằng phụ âm "${next}" phải dùng mạo từ "a".`);
+    }
+
+    // 1e. Lỗi danh từ số nhiều sau số đếm ("two friend" -> "friends")
+    if (countNumbers.includes(curr) && singularNouns[next]) {
+      addError(i + 1, next, singularNouns[next], `Sau "${curr}", danh từ phải chia số nhiều là "${singularNouns[next]}".`);
+    }
+
+    // 1f. Đối chiếu câu mẫu ở chế độ READ_SAMPLE
+    if (!isFreeSpeechMode && targetCleanWords.length > 0) {
+      const expected3rd = getThirdPersonForm(curr);
+      const expectedPast = curr.endsWith('e') ? `${curr}d` : `${curr}ed`;
+      if (targetCleanWords.includes(expected3rd) && !targetCleanWords.includes(curr)) {
+        addError(i, curr, expected3rd, `Phát âm thiếu âm cuối -s/-es: Câu mẫu là "${expected3rd}".`);
+      } else if (targetCleanWords.includes(expectedPast) && !targetCleanWords.includes(curr)) {
+        addError(i, curr, expectedPast, `Phát âm thiếu đuôi quá khứ -ed: Câu mẫu là "${expectedPast}".`);
+      }
+    }
+
+    // -----------------------------------------------------------------------
+    // NHÓM 2: PHỐI HỢP THÌ & MỆNH ĐỀ PHỤ (B1 – B2)
+    // -----------------------------------------------------------------------
+    // 2a. Mệnh đề thời gian bắt đầu bằng when/while/before/after KHÔNG dùng "will" ("when I will go" -> "when I went" / "when I go")
+    if (curr === 'will' && ['when', 'while', 'before', 'after', 'until'].includes(prevTwo)) {
+      const suggestedFix = isPastIncidentContext ? 'went / V2' : 'bỏ "will" (chia hiện tại đơn)';
+      addError(i, curr, suggestedFix, `Mệnh đề thời gian sau "${prevTwo}" không dùng "will".`);
+    }
+
+    // 2b. Hành động nền đang diễn ra trong quá khứ sau "while" ("while I am reading" -> "was reading")
+    if (isPastIncidentContext && ['am', 'is', 'are'].includes(curr) && ['while', 'when'].includes(prevTwo) && next.endsWith('ing')) {
+      const pastBe = curr === 'are' ? 'were' : 'was';
+      addError(i, curr, pastBe, `Hành động đang diễn ra trong quá khứ sau "${prevTwo}" phải dùng Quá khứ tiếp diễn ("${pastBe} ${next}").`);
+    }
+
+    // 2c. Suy đoán về sự việc đã xảy ra trong quá khứ ("someone may take it" -> "might have taken")
+    if (isPastIncidentContext && ['may', 'can'].includes(curr) && commonBaseVerbs.includes(next)) {
+      addError(i, curr, `might have + V3`, `Suy đoán sự việc đã xảy ra trong quá khứ không dùng "${curr} ${next}", hãy dùng "might have + V3/ed" hoặc Quá khứ đơn.`);
+    }
+
+    // 2d. Sự cố quá khứ nhưng chia hiện tại đơn ("I leave my bag" -> "left")
+    if (isPastIncidentContext && ['i', 'we', 'he', 'she', 'they'].includes(prev)) {
+      const incidentPresentToPast: Record<string, string> = {
+        'leave': 'left', 'forget': 'forgot', 'lose': 'lost',
+        'drop': 'dropped', 'miss': 'missed', 'break': 'broke'
+      };
+      if (incidentPresentToPast[curr]) {
+        addError(i, curr, incidentPresentToPast[curr], `Sự việc đã xảy ra trước đó, phải dùng thì Quá khứ đơn "${incidentPresentToPast[curr]}" thay vì "${curr}".`);
+      }
+    }
+
+    // -----------------------------------------------------------------------
+    // NHÓM 3: NGỮ PHÁP NÂNG CAO (B2 – C2: ĐIỀU KIỆN LOẠI 2/3, QUÁ KHỨ HOÀN THÀNH, ĐẢO NGỮ)
+    // -----------------------------------------------------------------------
+    // 3a. Lỗi dùng "would" ngay trong mệnh đề "If" ("If I would..." -> "If I had / V2")
+    if (curr === 'would' && ['if', 'wish'].includes(prevTwo)) {
+      addError(i, curr, 'had / V2', `Không dùng "would" ngay trong mệnh đề điều kiện "${prevTwo}"; dùng Quá khứ đơn (loại 2) hoặc Quá khứ hoàn thành "had + V3" (loại 3).`);
+    }
+
+    // 3b. Lỗi Quá khứ hoàn thành / Điều kiện loại 3 chia sai phân từ ("had went", "have went", "had saw", "had took", "had did", "had broke")
+    const wrongPastParticiples: Record<string, string> = {
+      'went': 'gone', 'saw': 'seen', 'took': 'taken', 'did': 'done',
+      'broke': 'broken', 'wrote': 'written', 'spoke': 'spoken', 'ate': 'eaten',
+      'gave': 'given', 'forgot': 'forgotten', 'chose': 'chosen', 'fell': 'fallen',
+      'knew': 'known', 'grew': 'grown', 'threw': 'thrown', 'flew': 'flown'
+    };
+    if (['had', 'have', 'has'].includes(prev) && wrongPastParticiples[curr]) {
+      addError(i, curr, wrongPastParticiples[curr], `Sau "${prev}" (thì Hoàn thành / Câu điều kiện loại 3), động từ phải dùng quá khứ phân từ V3 là "${wrongPastParticiples[curr]}".`);
+    }
+    if (['had', 'have', 'has'].includes(prevTwo) && adverbs.includes(prev) && wrongPastParticiples[curr]) {
+      addError(i, curr, wrongPastParticiples[curr], `Sau "${prevTwo} ${prev}", động từ phải dùng quá khứ phân từ V3 là "${wrongPastParticiples[curr]}".`);
+    }
+
+    // 3c. Lỗi cấu trúc "would have + V2/V1" ("would have went" -> "would have gone")
+    if (prevTwo === 'would' && prev === 'have' && wrongPastParticiples[curr]) {
+      addError(i, curr, wrongPastParticiples[curr], `Cấu trúc điều kiện loại 3 chuẩn là "would have + V3/ed" ("would have ${wrongPastParticiples[curr]}").`);
+    }
+
+    // 3d. Lỗi Đảo ngữ điều kiện loại 3 ("Had I knew" -> "Had I known")
+    if (prevTwo === 'had' && ['i', 'he', 'she', 'it', 'we', 'they', 'you'].includes(prev) && wrongPastParticiples[curr]) {
+      addError(i, curr, wrongPastParticiples[curr], `Đảo ngữ câu điều kiện loại 3 ("Had + S + V3") phải dùng phân từ "${wrongPastParticiples[curr]}".`);
+    }
+  }
+
+  return errors;
+}
+
+// =========================================================================
 // 🎓 MA TRẬN TIÊU CHÍ NGỮ PHÁP THEO CẤP ĐỘ CEFR (A1 -> C2)
 // =========================================================================
 function getCefrGrammarRubricInstruction(cefrLevel: string): string {
@@ -275,18 +455,18 @@ function getCefrGrammarRubricInstruction(cefrLevel: string): string {
     case 'A2':
       return `CEFR ${cefrLevel} (Elementary):
 - Focus on core accuracy: Present Simple (including 3rd-person singular -s/-es), Past Simple for completed past actions/incidents (e.g. "I left my bag", "I forgot", "I lost"), "going to", basic prepositions, and articles (a/an/the).
-- Reward clear, accurate simple and compound sentences (and/but/because). Do NOT penalize lack of advanced structures.`;
+- Also catch sequence-of-tense errors when telling a past story (e.g. "while I am reading" -> "was reading", "when I will go" -> "when I went").`;
     case 'B1':
     case 'B2':
       return `CEFR ${cefrLevel} (Intermediate / Upper-Intermediate):
-- Expect a mix of simple and complex structures: Past Simple vs. Past Continuous, Present Perfect, Conditional Type 1 & Type 2 ("If I were..., I would..."), Passive Voice, Relative Clauses (who/which/that), and Modal Verbs (should/could/might).
-- Recognize Conditional Type 2 and Present Perfect as VALID, advanced grammar—NEVER flag them as wrong tense in habitual/hypothetical prompts.
-- Penalize errors in conditional verb forms (e.g., "If I would go" instead of "If I went") as well as basic tense and 3rd-person -s/-es mistakes.`;
+- Evaluate both basic accuracy and intermediate structures: Past Continuous vs. Past Simple, Present Perfect, Conditional Type 1 & Type 2 ("If I were..., I would..."), Passive Voice, Relative Clauses (who/which/that), and Modal Verbs of deduction ("might have taken").
+- Recognize Conditional Type 2 and Present Perfect as VALID, advanced grammar—NEVER flag them as wrong tense.
+- Penalize errors in conditional verb forms ("If I would go" -> "If I went"), time clauses ("when I will go"), and past deduction ("may take" for past event -> "might have taken").`;
     case 'C1':
     case 'C2':
     default:
       return `CEFR ${cefrLevel} (Advanced / Proficiency):
-- Expect sophisticated syntactic range: Past Perfect ("had + V3/ed"), Conditional Type 3 & Mixed Conditionals ("If he had studied..., he would have passed..."), Inversion ("Had I known...", "Not only does..."), Participle Clauses ("Having completed..."), Subjunctive Mood ("It is vital that he be..."), and Cleft Sentences ("What matters most is...").
+- Evaluate sophisticated syntactic range: Past Perfect ("had + V3/ed"), Conditional Type 3 & Mixed Conditionals ("If he had studied..., he would have passed..."), Inversion ("Had I known...", "Not only does..."), Participle Clauses ("Having completed..."), Subjunctive Mood ("It is vital that he be..."), and Cleft Sentences ("What matters most is...").
 - Explicitly reward accurate use of these advanced structures in "advanced_structures_used" and NEVER misclassify Conditional Type 2/3 or Past Perfect as tense errors.
 - If a ${cefrLevel} speaker ONLY uses elementary simple sentences without any complex clauses, cap grammar_score at 68 and advise upgrading sentence complexity in feedback_vi.`;
   }
@@ -361,7 +541,7 @@ export default async function handler(req: Request) {
     whisperFormData.append('response_format', 'verbose_json');
     whisperFormData.append(
       'prompt',
-      'Transcribe strictly verbatim as spoken. Do NOT auto-correct grammar, wrong tenses (like "I leave my bag" instead of "left"), missing third-person singular -s/-es (e.g. "he go", "she work"), missing past tense -ed, missing past participle in conditionals/perfect tenses, plural -s, or mispronounced words.'
+      'Transcribe strictly verbatim as spoken. Do NOT auto-correct grammar, wrong tenses (like "I leave", "while I am reading", "when I will go"), missing third-person singular -s/-es (e.g. "he go", "she work"), missing past tense -ed, wrong past participles in conditionals/perfect tenses (e.g. "had went", "would have went"), plural -s, or mispronounced words.'
     );
 
     const whisperResponse = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
@@ -661,23 +841,14 @@ export default async function handler(req: Request) {
       let contentScore = 80;
       let fluencyScore = Math.min(95, Math.max(50, wordCount * 5));
       let pronunciationScore = Math.min(100, Math.max(50, 70 + acousticQualityBonus * 2));
-      let errorWordsList: { word: string; correction: string; reason: string }[] = [];
+      let errorWordsList: DetectedGrammarError[] = scanComprehensiveGrammarErrors(
+        spokenWords,
+        transcript.toLowerCase(),
+        targetPrompt.toLowerCase(),
+        true,
+        []
+      );
       let dynamicFeedback = '';
-
-      const countNums = ['two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'];
-      for (let i = 0; i < spokenWords.length - 1; i++) {
-        const curr = spokenWords[i];
-        const next = spokenWords[i + 1];
-        if (countNums.includes(curr)) {
-          if (['friend', 'day', 'hour', 'minute', 'dollar', 'person', 'member'].includes(next)) {
-            errorWordsList.push({
-              word: next,
-              correction: next === 'person' ? 'people' : `${next}s`,
-              reason: `Sau số đếm "${curr}", danh từ phải chia số nhiều.`
-            });
-          }
-        }
-      }
 
       try {
         const groqLlmResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -695,7 +866,8 @@ export default async function handler(req: Request) {
                 role: 'system',
                 content: `You are an expert Cambridge/IELTS speaking examiner evaluating a CEFR ${cefrLevel} student on a rapid response prompt.
 ${getCefrGrammarRubricInstruction(cefrLevel)}
-Strictly detect any spoken grammar or ending errors (missing 3rd-person singular -s/-es, missing plural -s, wrong verb tenses, or malformed conditional/perfect structures).
+Strictly detect any spoken grammar or ending errors (basic and advanced).
+IMPORTANT: For every mistake in "detected_errors", set "word" to the EXACT single offending verb/auxiliary from the transcript so the UI highlights it in RED.
 Return JSON ONLY:
 {
   "vocab_score": number,
@@ -703,7 +875,7 @@ Return JSON ONLY:
   "content_score": number,
   "advanced_structures_used": ["e.g. Conditional Type 2"],
   "detected_errors": [
-    { "word": "incorrect_word", "correction": "better_word", "reason": "Lý do bằng tiếng Việt chỉ rõ lỗi ngữ pháp/phát âm" }
+    { "word": "exact_single_wrong_word", "correction": "better_word", "reason": "Lý do bằng tiếng Việt chỉ rõ lỗi ngữ pháp/phát âm" }
   ],
   "feedback_vi": "Nhận xét sư phạm tiếng Việt sắc bén 1-2 câu"
 }`
@@ -727,7 +899,7 @@ Return JSON ONLY:
             if (typeof parsed.content_score === 'number') contentScore = parsed.content_score;
             if (Array.isArray(parsed.detected_errors) && parsed.detected_errors.length > 0) {
               parsed.detected_errors.forEach((err: any) => {
-                if (!errorWordsList.some(e => e.word.toLowerCase() === err.word?.toLowerCase())) {
+                if (err.word && !errorWordsList.some(e => e.word.toLowerCase() === err.word.toLowerCase())) {
                   errorWordsList.push(err);
                 }
               });
@@ -823,7 +995,6 @@ Return JSON ONLY:
       const lowerPrompt = targetPrompt.toLowerCase();
       const isFreeSpeechMode = lowerPrompt.includes('mode: free_speech');
 
-      // Chỉ tách từ mẫu tiếng Anh để đối chiếu phát âm đuôi từ khi ở chế độ Đọc mẫu (READ_SAMPLE)
       const targetCleanWords = !isFreeSpeechMode
         ? lowerPrompt.replace(/[^a-z0-9\s']/g, ' ').split(/\s+/).filter(Boolean)
         : [];
@@ -855,7 +1026,14 @@ Return JSON ONLY:
       const isFamilyHometownSpeech = lowerTranscript.includes('hometown') || lowerTranscript.includes('went home') || (lowerTranscript.includes('parents') && !lowerTranscript.includes('course'));
       const isCompletelyOffTopic = (isOnlineCoursePrompt && isFamilyHometownSpeech) || (!isFreeSpeechMode && corePromptKeywords.length >= 3 && matchedTopicKeywords === 0);
 
-      let errorWordsList: { word: string; correction: string; reason: string }[] = [];
+      // 2. 🧠 CHẠY BỘ QUÉT NGỮ PHÁP TOÀN DIỆN TẠI CHỖ (A1 -> C2)
+      let errorWordsList: DetectedGrammarError[] = scanComprehensiveGrammarErrors(
+        spokenWords,
+        lowerTranscript,
+        lowerPrompt,
+        isFreeSpeechMode,
+        targetCleanWords
+      );
       let dynamicFeedback = '';
       let advancedStructuresUsed: string[] = [];
 
@@ -867,110 +1045,7 @@ Return JSON ONLY:
         });
       }
 
-      // 2. 🛡️ BỘ QUÉT LỖI NGỮ PHÁP & PHÁT ÂM ÂM CUỐI TẠI CHỖ (LOCAL SCANNER)
-      const singularThirdPersons = ['he', 'she', 'it', 'everyone', 'everybody', 'someone', 'somebody', 'nobody', 'mother', 'father', 'friend', 'teacher', 'student', 'boss', 'manager', 'customer'];
-      const adverbs = ['usually', 'always', 'often', 'never', 'sometimes', 'rarely', 'seldom', 'really', 'just', 'still'];
-      const commonBaseVerbs = [
-        'get', 'go', 'do', 'have', 'play', 'like', 'want', 'come', 'eat', 'sleep', 'make', 'take',
-        'drink', 'listen', 'see', 'watch', 'work', 'live', 'need', 'know', 'think', 'feel', 'try',
-        'use', 'find', 'give', 'tell', 'call', 'ask', 'seem', 'leave', 'put', 'mean', 'keep', 'let',
-        'begin', 'help', 'talk', 'turn', 'start', 'show', 'hear', 'run', 'move', 'believe', 'bring',
-        'happen', 'write', 'provide', 'sit', 'stand', 'lose', 'pay', 'meet', 'include', 'continue',
-        'set', 'learn', 'change', 'lead', 'understand', 'speak', 'read', 'spend', 'grow', 'open', 'walk', 'win', 'offer', 'remember', 'love', 'consider', 'appear', 'buy', 'wait', 'serve', 'die', 'send', 'expect', 'build', 'stay', 'fall', 'cut', 'reach', 'kill', 'remain', 'suggest', 'raise', 'pass', 'sell', 'require', 'report', 'decide', 'pull'
-      ];
-
-      for (let i = 0; i < spokenWords.length; i++) {
-        const curr = spokenWords[i];
-        const prev = i > 0 ? spokenWords[i - 1] : '';
-        const prevTwo = i > 1 ? spokenWords[i - 2] : '';
-
-        // 2a. Bắt lỗi "he/she/it don't" -> "doesn't"
-        if ((curr === "don't" || curr === 'dont') && singularThirdPersons.includes(prev)) {
-          errorWordsList.push({
-            word: curr,
-            correction: "doesn't",
-            reason: `Ngôi thứ 3 số ít ("${prev}") phải dùng trợ động từ "doesn't".`
-          });
-        }
-
-        // 2b. Bắt lỗi động từ ngôi thứ 3 số ít không thêm -s/-es ("he go", "she usually work")
-        if (commonBaseVerbs.includes(curr)) {
-          if (singularThirdPersons.includes(prev)) {
-            const correctForm = getThirdPersonForm(curr);
-            errorWordsList.push({
-              word: curr,
-              correction: correctForm,
-              reason: `Lỗi chia động từ ngôi thứ 3 số ít: Sau "${prev}", động từ "${curr}" phải thêm -s/-es thành "${correctForm}".`
-            });
-          } else if (singularThirdPersons.includes(prevTwo) && adverbs.includes(prev)) {
-            const correctForm = getThirdPersonForm(curr);
-            errorWordsList.push({
-              word: curr,
-              correction: correctForm,
-              reason: `Lỗi chia động từ ngôi thứ 3 số ít: Sau "${prevTwo} ${prev}", động từ "${curr}" phải chia thành "${correctForm}".`
-            });
-          }
-        }
-
-        // 2c. Đối chiếu câu mẫu (CHỈ áp dụng ở chế độ READ_SAMPLE)
-        if (!isFreeSpeechMode && targetCleanWords.length > 0 && !errorWordsList.some(e => e.word.toLowerCase() === curr)) {
-          const expected3rd = getThirdPersonForm(curr);
-          const expectedPast = curr.endsWith('e') ? `${curr}d` : `${curr}ed`;
-          if (targetCleanWords.includes(expected3rd) && !targetCleanWords.includes(curr)) {
-            errorWordsList.push({
-              word: curr,
-              correction: expected3rd,
-              reason: `Phát âm thiếu âm cuối -s/-es: Câu mẫu là "${expected3rd}", bạn đọc thiếu đuôi thành "${curr}".`
-            });
-          } else if (targetCleanWords.includes(expectedPast) && !targetCleanWords.includes(curr)) {
-            errorWordsList.push({
-              word: curr,
-              correction: expectedPast,
-              reason: `Phát âm thiếu đuôi quá khứ -ed: Câu mẫu là "${expectedPast}".`
-            });
-          }
-        }
-      }
-
-      // 2d. Bắt lỗi sai thì quá khứ khi tường thuật sự cố đã xảy ra (mất đồ, để quên đồ, trễ xe, tai nạn...)
-      const isPastIncidentPrompt =
-        lowerPrompt.includes('để quên') ||
-        lowerPrompt.includes('mất đồ') ||
-        lowerPrompt.includes('bị mất') ||
-        lowerPrompt.includes('làm rơi') ||
-        lowerPrompt.includes('trễ') ||
-        lowerPrompt.includes('tai nạn') ||
-        lowerPrompt.includes('lost') ||
-        lowerPrompt.includes('forgot') ||
-        lowerPrompt.includes('left my');
-
-      if (isPastIncidentPrompt) {
-        const incidentPresentToPast: Record<string, string> = {
-          'leave': 'left',
-          'forget': 'forgot',
-          'lose': 'lost',
-          'drop': 'dropped',
-          'miss': 'missed',
-          'break': 'broke'
-        };
-
-        for (let i = 0; i < spokenWords.length; i++) {
-          const curr = spokenWords[i];
-          const prev = i > 0 ? spokenWords[i - 1] : '';
-          // Bắt lỗi khi chủ ngữ đứng ngay trước động từ hiện tại ("I leave my bag" -> "left")
-          if (incidentPresentToPast[curr] && ['i', 'we', 'he', 'she', 'they'].includes(prev)) {
-            if (!errorWordsList.some(e => e.word.toLowerCase() === curr)) {
-              errorWordsList.push({
-                word: curr,
-                correction: incidentPresentToPast[curr],
-                reason: `Sai thì quá khứ: Sự việc để quên/mất đồ đã xảy ra trước đó, cần chia quá khứ đơn "${incidentPresentToPast[curr]}" thay vì "${curr}".`
-              });
-            }
-          }
-        }
-      }
-
-      // 2e. Bắt lỗi sai thì ngữ cảnh thói quen (CHỈ áp dụng khi KHÔNG phải câu điều kiện giả định loại 2/3)
+      // Bắt lỗi sai thì ngữ cảnh thói quen (khi không phải câu điều kiện giả định)
       const isHabitualPrompt = 
         lowerPrompt.includes('how you help') || 
         lowerPrompt.includes('housework') || 
@@ -984,20 +1059,15 @@ Return JSON ONLY:
 
       if (isHabitualPrompt && !hasHypotheticalClause) {
         const pastVerbsMap: Record<string, string> = {
-          'cooked': 'cook / usually cook',
-          'made': 'make / prepare',
-          'cleaned': 'clean / usually clean',
-          'washed': 'wash / help wash',
-          'helped': 'help / usually help',
-          'went': 'go',
-          'did': 'do',
-          'bought': 'buy',
-          'yesterday': 'usually / every day / on weekends'
+          'cooked': 'cook / usually cook', 'made': 'make / prepare', 'cleaned': 'clean / usually clean',
+          'washed': 'wash / help wash', 'helped': 'help / usually help', 'went': 'go',
+          'did': 'do', 'bought': 'buy', 'yesterday': 'usually / every day / on weekends'
         };
 
-        spokenWords.forEach(w => {
-          if (pastVerbsMap[w] && !errorWordsList.some(e => e.word.toLowerCase() === w)) {
+        spokenWords.forEach((w, idx) => {
+          if (pastVerbsMap[w] && !errorWordsList.some(e => e.wordIndex === idx)) {
             errorWordsList.push({
+              wordIndex: idx,
               word: w,
               correction: pastVerbsMap[w],
               reason: `Sai thì ngữ cảnh: Đề bài hỏi về thói quen thường xuyên, cần dùng Hiện tại đơn ("${pastVerbsMap[w]}"), không dùng quá khứ ("${w}").`
@@ -1006,7 +1076,7 @@ Return JSON ONLY:
         });
       }
 
-      // 2f. Bắt lỗi câu ngắt cụt
+      // Bắt lỗi câu ngắt cụt
       const lastWord = spokenWords[spokenWords.length - 1]?.toLowerCase() || '';
       const incompleteEndings = [
         'my', 'your', 'his', 'her', 'their', 'our', 'the', 'a', 'an',
@@ -1015,40 +1085,16 @@ Return JSON ONLY:
       ];
       
       const isIncompleteSentence = wordCount < 15 && incompleteEndings.includes(lastWord);
-      if (isIncompleteSentence && !errorWordsList.some(e => e.word.toLowerCase() === lastWord)) {
+      if (isIncompleteSentence && !errorWordsList.some(e => e.wordIndex === spokenWords.length - 1)) {
         errorWordsList.push({
+          wordIndex: spokenWords.length - 1,
           word: lastWord,
           correction: `${lastWord} ... [cần hoàn thành vị ngữ]`,
           reason: `Câu nói bị ngắt cụt ở từ "${lastWord}". Hãy hoàn thành trọn vẹn câu!`
         });
       }
 
-      // 2g. Bắt lỗi nuốt âm số nhiều sau số đếm
-      const countNumbers = ['two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'many', 'several'];
-      for (let i = 0; i < spokenWords.length - 1; i++) {
-        const curr = spokenWords[i];
-        const next = spokenWords[i + 1];
-        if (countNumbers.includes(curr)) {
-          const singulars: Record<string, string> = {
-            'friend': 'friends',
-            'member': 'members',
-            'person': 'people',
-            'year': 'years',
-            'day': 'days',
-            'book': 'books',
-            'child': 'children'
-          };
-          if (singulars[next] && !errorWordsList.some(e => e.word.toLowerCase() === next)) {
-            errorWordsList.push({
-              word: next,
-              correction: singulars[next],
-              reason: `Danh từ số nhiều: Sau "${curr}", danh từ phải dùng dạng số nhiều "${singulars[next]}".`
-            });
-          }
-        }
-      }
-
-      // 3. 🎯 TÍNH ĐIỂM CƠ BẢN DỰA TRÊN ĐỘ HOÀN THIỆN, ĐÚNG THÌ & ĐỘ DÀI
+      // 3. 🎯 TÍNH ĐIỂM CƠ BẢN
       const hasNoErrors = errorWordsList.length === 0;
 
       let baseGrammar: number;
@@ -1063,18 +1109,18 @@ Return JSON ONLY:
         baseFluency = 60;
       } else if (isIncompleteSentence || wordCount < 12) {
         baseContent = Math.min(72, Math.max(45, wordCount * 6));
-        baseGrammar = hasNoErrors ? 80 : Math.max(40, 65 - errorWordsList.length * 12);
+        baseGrammar = hasNoErrors ? 80 : Math.max(35, 65 - errorWordsList.length * 12);
         baseVocab = Math.min(75, Math.max(50, wordCount * 6));
         baseFluency = Math.min(72, Math.max(45, wordCount * 6));
       } else if (wordCount < 20) {
         baseContent = hasNoErrors ? 82 : 70;
-        baseGrammar = hasNoErrors ? 86 : Math.max(45, 72 - errorWordsList.length * 12);
+        baseGrammar = hasNoErrors ? 86 : Math.max(35, 72 - errorWordsList.length * 12);
         baseVocab = hasNoErrors ? 82 : 72;
         baseFluency = hasNoErrors ? 80 : 70;
       } else {
         const hasConnectors = ['and', 'so', 'because', 'but', 'also', 'although', 'however', 'when', 'while', 'if', 'had'].some(c => lowerTranscript.includes(c));
         baseContent = hasNoErrors ? Math.min(95, 88 + (wordCount >= 28 ? 6 : 2)) : 76;
-        baseGrammar = hasNoErrors ? Math.min(96, 90 + (wordCount >= 28 ? 5 : 2)) : Math.max(45, 72 - errorWordsList.length * 12);
+        baseGrammar = hasNoErrors ? Math.min(96, 90 + (wordCount >= 28 ? 5 : 2)) : Math.max(35, 72 - errorWordsList.length * 12);
         baseVocab = hasNoErrors ? Math.min(94, 85 + (wordCount >= 28 ? 6 : 2)) : 72;
         baseFluency = Math.min(95, Math.max(72, 76 + (wordCount >= 28 ? 14 : 8) + (hasConnectors ? 5 : 0)));
       }
@@ -1085,9 +1131,9 @@ Return JSON ONLY:
       let fluencyScore = baseFluency;
       let pronunciationScore = hasNoErrors
         ? Math.min(100, Math.max(68, 76 + acousticQualityBonus * 1.6))
-        : Math.max(45, 74 + acousticQualityBonus - errorWordsList.length * 10);
+        : Math.max(45, 74 + acousticQualityBonus - errorWordsList.length * 8);
 
-      // 4. 🤖 GỌI GROQ LLAMA-3.3-70B PHÂN TÍCH NGỮ PHÁP CƠ BẢN ĐẾN NÂNG CAO (A1–C2)
+      // 4. 🤖 GỌI GROQ LLAMA-3.3-70B PHÂN TÍCH NGỮ PHÁP TỪ CƠ BẢN ĐẾN NÂNG CAO (A1–C2)
       try {
         const groqLlmResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
           method: 'POST',
@@ -1098,7 +1144,7 @@ Return JSON ONLY:
           body: JSON.stringify({
             model: 'llama-3.3-70b-versatile',
             temperature: 0.1,
-            max_tokens: 550,
+            max_tokens: 650,
             messages: [
               {
                 role: 'system',
@@ -1107,17 +1153,22 @@ Target Prompt/Context: "${targetPrompt}".
 
 ${getCefrGrammarRubricInstruction(cefrLevel)}
 
-CRITICAL EVALUATION RULES:
-1. NEVER auto-correct or ignore spoken grammar/ending/word-choice mistakes in the student's verbatim transcript.
-2. Detect and report EVERY grammatical, tense, or context-inappropriate word error in "detected_errors", across BOTH basic and advanced structures:
-   - Narrative Past Tense for Completed Incidents: When the scenario describes an event that ALREADY happened before speaking (e.g., losing/forgetting a bag, missing a bus, an incident), verbs describing that past action MUST be in Past Simple (e.g., "I leave my bag" -> "left", "I forget" -> "forgot", "I lose" -> "lost"). Flag base-form present verbs as errors!
-   - Context-Inappropriate Verbs/Collocations: Flag words that distort meaning in context (e.g., "try it" instead of "look for it" when searching for lost items, or "complain" instead of "report" when reporting a lost bag).
-   - Basic errors: missing 3rd-person singular "-s/-es" ("he go" -> "goes"), missing plural "-s", wrong subject-verb agreement ("he don't" -> "doesn't"), wrong articles ("a apple" -> "an apple").
-   - Advanced errors: malformed Conditionals Type 2/3/Mixed (e.g. "If I would have known, I will tell you" -> "If I had known, I would have told you"), wrong Past Perfect ("had went" -> "had gone"), passive voice errors ("was broke" -> "was broken"), or broken inversion ("Had I knew" -> "Had I known").
+CRITICAL EVALUATION RULES (BASIC TO ADVANCED A1–C2):
+1. NEVER auto-correct or overlook spoken grammar/tense/ending/word-choice mistakes in the student's verbatim transcript.
+2. Check EVERY clause systematically and report ALL errors in "detected_errors":
+   - Basic (A1–A2): 3rd-person singular "-s/-es" ("he go" -> "goes"), wrong verb tense in narrative stories ("I leave my bag yesterday" -> "left"), articles ("a/an"), plural nouns.
+   - Intermediate Sequence of Tenses (B1–B2):
+     * NEVER allow "will" inside time clauses ("when / while / before / after"): e.g., "when I will go" -> "when I went" (or "when I go").
+     * Background past actions with "while" in a past story MUST use Past Continuous: e.g., "while I am reading" -> "was".
+     * Past speculation/deduction MUST use "might have + V3/ed" or Past Simple: e.g., "someone may take it" referring to yesterday -> "might have taken".
+   - Advanced (B2–C2):
+     * Conditionals Type 2, Type 3 & Mixed Conditionals ("If I would have known" -> "had known"; "would have went" -> "gone").
+     * Past Perfect ("had + V3/ed"), Passive Voice, Relative Clauses, Inversion ("Had I known..."), and Subjunctive Mood.
 3. WHITELIST VALID ADVANCED GRAMMAR:
-   - If the student accurately uses Past Perfect ("had + V3/ed"), Conditionals Type 2/3/Mixed ("If I were...", "If they had acted..."), Subjunctive, Passive Voice, or Inversion, list them in "advanced_structures_used", reward grammar_score (88–98), and NEVER flag them as tense errors!
-4. Deduct 10–15 points from grammar_score for each genuine grammatical/tense/word-choice error.
-5. Write clear, encouraging Vietnamese pedagogical feedback ("feedback_vi") that both praises accurate advanced structures (if used) and explains any red-flagged mistakes so the student can fix them next time.
+   - If the student accurately uses Past Perfect, Conditionals Type 2/3/Mixed, Passive Voice, or Inversion, list them in "advanced_structures_used", reward grammar_score (88–98), and NEVER flag them as tense errors!
+4. IMPORTANT UI MAPPING RULE FOR "detected_errors":
+   - Set "word" to the EXACT SINGLE offending verb/auxiliary/word from the transcript (e.g., "leave", "am", "may", "will", "would", "went") so the UI highlights that exact word chip in RED!
+5. Deduct 10–15 points from grammar_score for each genuine grammatical/tense error.
 
 Return JSON ONLY:
 {
@@ -1127,9 +1178,9 @@ Return JSON ONLY:
   "is_off_topic": boolean,
   "advanced_structures_used": ["string"],
   "detected_errors": [
-    { "word": "exact_wrong_word_or_phrase_from_transcript", "correction": "correct_form", "reason": "Giải thích quy tắc ngữ pháp/thì/cách dùng từ bằng tiếng Việt ngắn gọn, rõ ràng" }
+    { "word": "exact_single_wrong_word_from_transcript", "correction": "correct_form", "reason": "Giải thích quy tắc ngữ pháp/thì bằng tiếng Việt ngắn gọn, rõ ràng" }
   ],
-  "feedback_vi": "Nhận xét tiếng Việt 1-2 câu chỉ rõ điểm làm tốt và các lỗi bị tô đỏ cần sửa"
+  "feedback_vi": "Nhận xét tiếng Việt 1-2 câu chỉ rõ cấu trúc nâng cao đã dùng tốt (nếu có) và liệt kê các lỗi ngữ pháp bị tô đỏ cần sửa"
 }`
               },
               {
@@ -1152,7 +1203,7 @@ Return JSON ONLY:
                 : parsed.content_score;
             }
             if (typeof parsed.grammar_score === 'number') {
-              grammarScore = hasNoErrors
+              grammarScore = errorWordsList.length === 0
                 ? parsed.grammar_score
                 : Math.min(parsed.grammar_score, baseGrammar);
             }
@@ -1165,12 +1216,26 @@ Return JSON ONLY:
             
             if (Array.isArray(parsed.detected_errors) && parsed.detected_errors.length > 0) {
               parsed.detected_errors.forEach((err: any) => {
-                if (err.word && !errorWordsList.some(e => e.word.toLowerCase() === err.word.toLowerCase())) {
-                  errorWordsList.push({
-                    word: err.word,
-                    correction: err.correction || '',
-                    reason: err.reason || 'Lỗi thì ngữ cảnh hoặc cách dùng từ.'
-                  });
+                if (err.word) {
+                  const singleTok = String(err.word).trim().split(/\s+/)[0].toLowerCase().replace(/[^a-z0-9']/g, '');
+                  // Tìm vị trí từ chưa bị đánh dấu lỗi trong spokenWords
+                  const foundIdx = spokenWords.findIndex(
+                    (w, idx) => w === singleTok && !errorWordsList.some((e) => e.wordIndex === idx)
+                  );
+                  if (foundIdx !== -1) {
+                    errorWordsList.push({
+                      wordIndex: foundIdx,
+                      word: spokenWords[foundIdx],
+                      correction: err.correction || '',
+                      reason: err.reason || 'Lỗi ngữ pháp / phối hợp thì.'
+                    });
+                  } else if (!errorWordsList.some((e) => e.word.toLowerCase() === singleTok)) {
+                    errorWordsList.push({
+                      word: err.word,
+                      correction: err.correction || '',
+                      reason: err.reason || 'Lỗi ngữ pháp / phối hợp thì.'
+                    });
+                  }
                 }
               });
             }
@@ -1181,16 +1246,16 @@ Return JSON ONLY:
           }
         }
       } catch (llmErr) {
-        console.warn("LLM API call bypassed, using local grammar scanner:", llmErr);
+        console.warn("LLM API call bypassed, using comprehensive local grammar scanner:", llmErr);
       }
 
-      // 5. TÍNH ĐIỂM TỔNG HỢP CÔNG BẰNG & TRỪ ĐIỂM RÕ RÀNG KHI SAI NGỮ PHÁP / THÌ / TỪ VỰNG
+      // 5. TÍNH ĐIỂM TỔNG HỢP CÔNG BẰNG & TRỪ ĐIỂM RÕ RÀNG KHI SAI NGỮ PHÁP
       const penalty = errorWordsList.length * 10;
       const cappedGrammar = errorWordsList.length > 0
-        ? Math.min(grammarScore, Math.max(30, 82 - errorWordsList.length * 14))
+        ? Math.min(grammarScore, Math.max(25, 82 - errorWordsList.length * 12))
         : grammarScore;
       const cappedPronunciation = errorWordsList.length > 0
-        ? Math.min(pronunciationScore, Math.max(35, 84 - errorWordsList.length * 10))
+        ? Math.min(pronunciationScore, Math.max(35, 84 - errorWordsList.length * 8))
         : pronunciationScore;
 
       calculatedScore = Math.max(
@@ -1222,14 +1287,17 @@ Return JSON ONLY:
         if (isCompletelyOffTopic) {
           dynamicFeedback = `⚠️ Bài nói bị lạc đề! Bạn cần chú ý đọc kỹ yêu cầu của chủ đề để trả lời đúng trọng tâm.`;
         } else if (errorWordsList.length > 0) {
-          const firstErr = errorWordsList[0];
-          dynamicFeedback = `⚠️ Phát hiện ${errorWordsList.length} lỗi ngữ pháp/từ vựng (đã tô đỏ): cần sửa "${firstErr.word}" ➔ "${firstErr.correction}". ${firstErr.reason}${advNote}`;
+          const summaryErrors = errorWordsList
+            .slice(0, 3)
+            .map((e) => `"${e.word}" ➔ "${e.correction}"`)
+            .join(', ');
+          dynamicFeedback = `⚠️ Phát hiện ${errorWordsList.length} lỗi ngữ pháp/phối hợp thì (đã tô đỏ): ${summaryErrors}. ${errorWordsList[0].reason}${advNote}`;
         } else if (isIncompleteSentence) {
           dynamicFeedback = `⚠️ Câu nói bị ngắt cụt ở cuối ("${lastWord}"). Hãy hoàn thành trọn vẹn ý của câu để AI chấm điểm chính xác hơn nhé!`;
         } else if (wordCount < 10) {
           dynamicFeedback = `💡 Bài nói hơi ngắn (${wordCount} từ). Hãy mở rộng thêm các hành động cụ thể để câu trả lời thuyết phục hơn.`;
         } else if (calculatedScore >= 85) {
-          dynamicFeedback = `🌟 Xuất sắc! Bạn diễn đạt rất tự nhiên, phát âm chuẩn xác và chia thì đúng ngữ cảnh.${advNote}`;
+          dynamicFeedback = `🌟 Xuất sắc! Bạn diễn đạt rất tự nhiên, phát âm chuẩn xác và phối hợp thì/ngữ pháp rất chuẩn.${advNote}`;
         } else {
           dynamicFeedback = `👍 Bài nói mạch lạc và đúng trọng tâm.${advNote} Hãy tiếp tục phát huy nhé!`;
         }
