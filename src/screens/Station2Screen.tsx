@@ -367,7 +367,6 @@ export default function Station2Screen({ onBack }: Props) {
         return;
       }
     }
-    // Khởi tạo ngẫu nhiên 1 trong 10 bài của cấp độ để tránh trùng đề trong lớp
     const randomStart = Math.floor(Math.random() * 10);
     const fresh = createScenarioFromBank(selectedTier, selectedLevel, randomStart);
     setCurrentChallenge(fresh);
@@ -747,9 +746,10 @@ Output ONLY raw JSON:
     let actualTranscript = liveTranscriptRef.current.trim();
     let serverEvalData: any = null;
 
+    // 🎯 Luôn gửi kèm cả bối cảnh lẫn câu mẫu tiếng Anh để AI đối chiếu thì & cách diễn đạt chuẩn
     const targetPrompt = practiceMode === 'READ_SAMPLE' 
       ? (currentChallenge?.prompt || '') 
-      : `Reflex challenge: ${currentChallenge?.contextDesc || ''}`;
+      : `Mode: FREE_SPEECH | Scenario: ${currentChallenge?.title || ''} | Context (VI): ${currentChallenge?.contextDesc || ''} | Reference English Sample: ${currentChallenge?.prompt || ''}`;
 
     const MAX_RETRIES = 2;
     let attempt = 0;
@@ -873,7 +873,7 @@ Output ONLY raw JSON:
       }
     }
 
-    // 🔍 Phân tích từng từ sinh viên nói ra: từ chuẩn -> Xanh lá, từ sai ngữ pháp / phát âm thiếu đuôi -> Đỏ
+    // 🔍 Phân tích từng từ sinh viên nói ra: từ chuẩn -> Xanh lá, từ sai ngữ pháp / phát âm / sai thì -> Đỏ
     const analyzedWords: SpokenWordAnalysis[] = serverEvalData?.wordAnalysis?.length
       ? serverEvalData.wordAnalysis
       : analyzeSpokenTranscript(
@@ -893,29 +893,45 @@ Output ONLY raw JSON:
     if (serverEvalData?.criteria?.grammar) {
       evaluated.rubrics.grammar.score = serverEvalData.criteria.grammar;
     }
+    if (serverEvalData?.criteria?.vocabulary) {
+      evaluated.rubrics.vocabulary.score = serverEvalData.criteria.vocabulary;
+    }
+    if (serverEvalData?.criteria?.content) {
+      evaluated.rubrics.content.score = serverEvalData.criteria.content;
+    }
 
-    // Trừ điểm trực tiếp vào Ngữ pháp & Phát âm nếu mắc lỗi chia động từ / thiếu đuôi -s/-es/-ed
+    // Trừ điểm trực tiếp vào Ngữ pháp & Phát âm nếu mắc lỗi chia thì / chia động từ / dùng từ sai ngữ cảnh
     if (errorWordsDetected.length > 0) {
       const grammarErrCount = analyzedWords.filter((w: SpokenWordAnalysis) => w.hasGrammarError).length;
       const pronErrCount = analyzedWords.filter((w: SpokenWordAnalysis) => w.hasPronunciationError).length;
 
       if (grammarErrCount > 0) {
-        evaluated.rubrics.grammar.score = Math.max(20, evaluated.rubrics.grammar.score - grammarErrCount * 15);
+        evaluated.rubrics.grammar.score = Math.min(
+          evaluated.rubrics.grammar.score,
+          Math.max(25, 85 - grammarErrCount * 15)
+        );
         const errDetails = analyzedWords
           .filter((w: SpokenWordAnalysis) => w.hasGrammarError)
           .map((w: SpokenWordAnalysis) => `"${w.word}"${w.correction ? ` → "${w.correction}"` : ''}`)
           .join(', ');
-        evaluated.rubrics.grammar.feedback = `Phát hiện ${grammarErrCount} lỗi chia động từ / ngữ pháp: ${errDetails}.`;
+        evaluated.rubrics.grammar.feedback = `Phát hiện ${grammarErrCount} lỗi thì / ngữ pháp: ${errDetails}.`;
       }
 
       if (pronErrCount > 0) {
-        evaluated.rubrics.pronunciation.score = Math.max(25, evaluated.rubrics.pronunciation.score - pronErrCount * 12);
+        evaluated.rubrics.pronunciation.score = Math.min(
+          evaluated.rubrics.pronunciation.score,
+          Math.max(30, 86 - pronErrCount * 10)
+        );
         const pronDetails = analyzedWords
           .filter((w: SpokenWordAnalysis) => w.hasPronunciationError)
           .map((w: SpokenWordAnalysis) => `"${w.word}"${w.correction ? ` → "${w.correction}"` : ''}`)
           .join(', ');
-        evaluated.rubrics.pronunciation.feedback = `Cần sửa phát âm / âm cuối các từ: ${pronDetails}.`;
+        evaluated.rubrics.pronunciation.feedback = `Cần điều chỉnh các từ: ${pronDetails}.`;
       }
+    }
+
+    if (serverEvalData?.detailedFeedback) {
+      evaluated.rubrics.content.feedback = serverEvalData.detailedFeedback;
     }
 
     evaluated.wordAnalysis = analyzedWords;

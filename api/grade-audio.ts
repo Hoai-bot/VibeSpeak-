@@ -274,14 +274,14 @@ function getCefrGrammarRubricInstruction(cefrLevel: string): string {
     case 'A1':
     case 'A2':
       return `CEFR ${cefrLevel} (Elementary):
-- Focus on core accuracy: Present Simple (including 3rd-person singular -s/-es), Past Simple, "going to", basic prepositions, and articles (a/an/the).
+- Focus on core accuracy: Present Simple (including 3rd-person singular -s/-es), Past Simple for completed past actions/incidents (e.g. "I left my bag", "I forgot", "I lost"), "going to", basic prepositions, and articles (a/an/the).
 - Reward clear, accurate simple and compound sentences (and/but/because). Do NOT penalize lack of advanced structures.`;
     case 'B1':
     case 'B2':
       return `CEFR ${cefrLevel} (Intermediate / Upper-Intermediate):
-- Expect a mix of simple and complex structures: Present Perfect, Conditional Type 1 & Type 2 ("If I were..., I would..."), Passive Voice, Relative Clauses (who/which/that), and Modal Verbs (should/could/might).
+- Expect a mix of simple and complex structures: Past Simple vs. Past Continuous, Present Perfect, Conditional Type 1 & Type 2 ("If I were..., I would..."), Passive Voice, Relative Clauses (who/which/that), and Modal Verbs (should/could/might).
 - Recognize Conditional Type 2 and Present Perfect as VALID, advanced grammar—NEVER flag them as wrong tense in habitual/hypothetical prompts.
-- Penalize errors in conditional verb forms (e.g., "If I would go" instead of "If I went") as well as basic 3rd-person -s/-es mistakes.`;
+- Penalize errors in conditional verb forms (e.g., "If I would go" instead of "If I went") as well as basic tense and 3rd-person -s/-es mistakes.`;
     case 'C1':
     case 'C2':
     default:
@@ -361,7 +361,7 @@ export default async function handler(req: Request) {
     whisperFormData.append('response_format', 'verbose_json');
     whisperFormData.append(
       'prompt',
-      'Transcribe strictly verbatim as spoken. Do NOT auto-correct grammar, missing third-person singular -s/-es (e.g. "he go", "she work"), missing past tense -ed, missing past participle in conditionals/perfect tenses (e.g. "had go", "would have went"), plural -s, or mispronounced words.'
+      'Transcribe strictly verbatim as spoken. Do NOT auto-correct grammar, wrong tenses (like "I leave my bag" instead of "left"), missing third-person singular -s/-es (e.g. "he go", "she work"), missing past tense -ed, missing past participle in conditionals/perfect tenses, plural -s, or mispronounced words.'
     );
 
     const whisperResponse = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
@@ -821,9 +821,13 @@ Return JSON ONLY:
 
       const lowerTranscript = transcript.toLowerCase();
       const lowerPrompt = targetPrompt.toLowerCase();
-      const targetCleanWords = lowerPrompt.replace(/[^a-z0-9\s']/g, ' ').split(/\s+/).filter(Boolean);
+      const isFreeSpeechMode = lowerPrompt.includes('mode: free_speech');
 
-      // Phát hiện thí sinh đang sử dụng câu điều kiện giả định ("If I were...", "If he had...", "wish...")
+      // Chỉ tách từ mẫu tiếng Anh để đối chiếu phát âm đuôi từ khi ở chế độ Đọc mẫu (READ_SAMPLE)
+      const targetCleanWords = !isFreeSpeechMode
+        ? lowerPrompt.replace(/[^a-z0-9\s']/g, ' ').split(/\s+/).filter(Boolean)
+        : [];
+
       const hasHypotheticalClause =
         /\bif\b/.test(lowerTranscript) ||
         /\bwish\b/.test(lowerTranscript) ||
@@ -832,7 +836,7 @@ Return JSON ONLY:
         /\bmight\s+have\b/.test(lowerTranscript);
 
       // 1. 🎯 KIỂM TRA ĐỘ BÁM SÁT CHỦ ĐỀ (OFF-TOPIC DETECTOR)
-      const stopWords = ['describe', 'talk', 'about', 'your', 'you', 'the', 'and', 'with', 'that', 'this', 'have', 'what', 'where', 'when', 'which', 'tell', 'enrolled', 'special', 'favorite', 'help', 'evaluate', 'analyze', 'extent', 'discuss', 'propose', 'deliver', 'whether', 'merely', 'particularly', 'regarding', 'reflex', 'challenge'];
+      const stopWords = ['describe', 'talk', 'about', 'your', 'you', 'the', 'and', 'with', 'that', 'this', 'have', 'what', 'where', 'when', 'which', 'tell', 'enrolled', 'special', 'favorite', 'help', 'evaluate', 'analyze', 'extent', 'discuss', 'propose', 'deliver', 'whether', 'merely', 'particularly', 'regarding', 'reflex', 'challenge', 'mode', 'free_speech', 'scenario', 'context', 'reference', 'english', 'sample'];
       const corePromptKeywords = lowerPrompt
         .replace(/[^a-z0-9\s]/g, ' ')
         .split(/\s+/)
@@ -849,7 +853,7 @@ Return JSON ONLY:
 
       const isOnlineCoursePrompt = lowerPrompt.includes('course') || lowerPrompt.includes('online') || lowerPrompt.includes('tutorial');
       const isFamilyHometownSpeech = lowerTranscript.includes('hometown') || lowerTranscript.includes('went home') || (lowerTranscript.includes('parents') && !lowerTranscript.includes('course'));
-      const isCompletelyOffTopic = (isOnlineCoursePrompt && isFamilyHometownSpeech) || (corePromptKeywords.length >= 3 && matchedTopicKeywords === 0);
+      const isCompletelyOffTopic = (isOnlineCoursePrompt && isFamilyHometownSpeech) || (!isFreeSpeechMode && corePromptKeywords.length >= 3 && matchedTopicKeywords === 0);
 
       let errorWordsList: { word: string; correction: string; reason: string }[] = [];
       let dynamicFeedback = '';
@@ -908,8 +912,8 @@ Return JSON ONLY:
           }
         }
 
-        // 2c. Đối chiếu câu mẫu (nếu câu mẫu có dạng -s/-es/-ed nhưng sinh viên đọc nuốt mất âm cuối)
-        if (targetCleanWords.length > 0 && !errorWordsList.some(e => e.word.toLowerCase() === curr)) {
+        // 2c. Đối chiếu câu mẫu (CHỈ áp dụng ở chế độ READ_SAMPLE)
+        if (!isFreeSpeechMode && targetCleanWords.length > 0 && !errorWordsList.some(e => e.word.toLowerCase() === curr)) {
           const expected3rd = getThirdPersonForm(curr);
           const expectedPast = curr.endsWith('e') ? `${curr}d` : `${curr}ed`;
           if (targetCleanWords.includes(expected3rd) && !targetCleanWords.includes(curr)) {
@@ -928,7 +932,45 @@ Return JSON ONLY:
         }
       }
 
-      // 2d. Bắt lỗi sai thì ngữ cảnh thói quen (CHỈ áp dụng khi KHÔNG phải câu điều kiện giả định loại 2/3)
+      // 2d. Bắt lỗi sai thì quá khứ khi tường thuật sự cố đã xảy ra (mất đồ, để quên đồ, trễ xe, tai nạn...)
+      const isPastIncidentPrompt =
+        lowerPrompt.includes('để quên') ||
+        lowerPrompt.includes('mất đồ') ||
+        lowerPrompt.includes('bị mất') ||
+        lowerPrompt.includes('làm rơi') ||
+        lowerPrompt.includes('trễ') ||
+        lowerPrompt.includes('tai nạn') ||
+        lowerPrompt.includes('lost') ||
+        lowerPrompt.includes('forgot') ||
+        lowerPrompt.includes('left my');
+
+      if (isPastIncidentPrompt) {
+        const incidentPresentToPast: Record<string, string> = {
+          'leave': 'left',
+          'forget': 'forgot',
+          'lose': 'lost',
+          'drop': 'dropped',
+          'miss': 'missed',
+          'break': 'broke'
+        };
+
+        for (let i = 0; i < spokenWords.length; i++) {
+          const curr = spokenWords[i];
+          const prev = i > 0 ? spokenWords[i - 1] : '';
+          // Bắt lỗi khi chủ ngữ đứng ngay trước động từ hiện tại ("I leave my bag" -> "left")
+          if (incidentPresentToPast[curr] && ['i', 'we', 'he', 'she', 'they'].includes(prev)) {
+            if (!errorWordsList.some(e => e.word.toLowerCase() === curr)) {
+              errorWordsList.push({
+                word: curr,
+                correction: incidentPresentToPast[curr],
+                reason: `Sai thì quá khứ: Sự việc để quên/mất đồ đã xảy ra trước đó, cần chia quá khứ đơn "${incidentPresentToPast[curr]}" thay vì "${curr}".`
+              });
+            }
+          }
+        }
+      }
+
+      // 2e. Bắt lỗi sai thì ngữ cảnh thói quen (CHỈ áp dụng khi KHÔNG phải câu điều kiện giả định loại 2/3)
       const isHabitualPrompt = 
         lowerPrompt.includes('how you help') || 
         lowerPrompt.includes('housework') || 
@@ -964,7 +1006,7 @@ Return JSON ONLY:
         });
       }
 
-      // 2e. Bắt lỗi câu ngắt cụt
+      // 2f. Bắt lỗi câu ngắt cụt
       const lastWord = spokenWords[spokenWords.length - 1]?.toLowerCase() || '';
       const incompleteEndings = [
         'my', 'your', 'his', 'her', 'their', 'our', 'the', 'a', 'an',
@@ -981,7 +1023,7 @@ Return JSON ONLY:
         });
       }
 
-      // 2f. Bắt lỗi nuốt âm số nhiều sau số đếm
+      // 2g. Bắt lỗi nuốt âm số nhiều sau số đếm
       const countNumbers = ['two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'many', 'several'];
       for (let i = 0; i < spokenWords.length - 1; i++) {
         const curr = spokenWords[i];
@@ -1066,13 +1108,15 @@ Target Prompt/Context: "${targetPrompt}".
 ${getCefrGrammarRubricInstruction(cefrLevel)}
 
 CRITICAL EVALUATION RULES:
-1. NEVER auto-correct or ignore spoken grammar/ending mistakes in the student's verbatim transcript.
-2. Detect and report EVERY grammatical or spoken ending error in "detected_errors", across BOTH basic and advanced structures:
-   - Basic errors: missing 3rd-person singular "-s/-es" ("he go" -> "goes"), missing plural "-s", wrong verb tenses, wrong subject-verb agreement ("he don't" -> "doesn't"), wrong articles ("a apple" -> "an apple").
+1. NEVER auto-correct or ignore spoken grammar/ending/word-choice mistakes in the student's verbatim transcript.
+2. Detect and report EVERY grammatical, tense, or context-inappropriate word error in "detected_errors", across BOTH basic and advanced structures:
+   - Narrative Past Tense for Completed Incidents: When the scenario describes an event that ALREADY happened before speaking (e.g., losing/forgetting a bag, missing a bus, an incident), verbs describing that past action MUST be in Past Simple (e.g., "I leave my bag" -> "left", "I forget" -> "forgot", "I lose" -> "lost"). Flag base-form present verbs as errors!
+   - Context-Inappropriate Verbs/Collocations: Flag words that distort meaning in context (e.g., "try it" instead of "look for it" when searching for lost items, or "complain" instead of "report" when reporting a lost bag).
+   - Basic errors: missing 3rd-person singular "-s/-es" ("he go" -> "goes"), missing plural "-s", wrong subject-verb agreement ("he don't" -> "doesn't"), wrong articles ("a apple" -> "an apple").
    - Advanced errors: malformed Conditionals Type 2/3/Mixed (e.g. "If I would have known, I will tell you" -> "If I had known, I would have told you"), wrong Past Perfect ("had went" -> "had gone"), passive voice errors ("was broke" -> "was broken"), or broken inversion ("Had I knew" -> "Had I known").
 3. WHITELIST VALID ADVANCED GRAMMAR:
    - If the student accurately uses Past Perfect ("had + V3/ed"), Conditionals Type 2/3/Mixed ("If I were...", "If they had acted..."), Subjunctive, Passive Voice, or Inversion, list them in "advanced_structures_used", reward grammar_score (88–98), and NEVER flag them as tense errors!
-4. Deduct 10–15 points from grammar_score for each genuine grammatical/ending error.
+4. Deduct 10–15 points from grammar_score for each genuine grammatical/tense/word-choice error.
 5. Write clear, encouraging Vietnamese pedagogical feedback ("feedback_vi") that both praises accurate advanced structures (if used) and explains any red-flagged mistakes so the student can fix them next time.
 
 Return JSON ONLY:
@@ -1083,14 +1127,14 @@ Return JSON ONLY:
   "is_off_topic": boolean,
   "advanced_structures_used": ["string"],
   "detected_errors": [
-    { "word": "exact_wrong_word_or_phrase_from_transcript", "correction": "correct_form", "reason": "Giải thích quy tắc ngữ pháp/phát âm bằng tiếng Việt ngắn gọn, rõ ràng" }
+    { "word": "exact_wrong_word_or_phrase_from_transcript", "correction": "correct_form", "reason": "Giải thích quy tắc ngữ pháp/thì/cách dùng từ bằng tiếng Việt ngắn gọn, rõ ràng" }
   ],
-  "feedback_vi": "Nhận xét tiếng Việt 1-2 câu chỉ rõ điểm ngữ pháp nâng cao đã dùng tốt (nếu có) và các lỗi bị tô đỏ cần sửa"
+  "feedback_vi": "Nhận xét tiếng Việt 1-2 câu chỉ rõ điểm làm tốt và các lỗi bị tô đỏ cần sửa"
 }`
               },
               {
                 role: 'user',
-                content: `CEFR Level: ${cefrLevel}\nTarget Prompt: "${targetPrompt || 'General speaking context'}"\nStudent verbatim transcript: "${transcript}"`
+                content: `CEFR Level: ${cefrLevel}\nScenario & Reference: "${targetPrompt || 'General speaking context'}"\nStudent verbatim transcript: "${transcript}"`
               }
             ]
           })
@@ -1125,7 +1169,7 @@ Return JSON ONLY:
                   errorWordsList.push({
                     word: err.word,
                     correction: err.correction || '',
-                    reason: err.reason || 'Lỗi cấu trúc ngữ pháp hoặc phát âm âm cuối.'
+                    reason: err.reason || 'Lỗi thì ngữ cảnh hoặc cách dùng từ.'
                   });
                 }
               });
@@ -1140,7 +1184,7 @@ Return JSON ONLY:
         console.warn("LLM API call bypassed, using local grammar scanner:", llmErr);
       }
 
-      // 5. TÍNH ĐIỂM TỔNG HỢP CÔNG BẰNG & TRỪ ĐIỂM RÕ RÀNG KHI SAI NGỮ PHÁP / PHÁT ÂM
+      // 5. TÍNH ĐIỂM TỔNG HỢP CÔNG BẰNG & TRỪ ĐIỂM RÕ RÀNG KHI SAI NGỮ PHÁP / THÌ / TỪ VỰNG
       const penalty = errorWordsList.length * 10;
       const cappedGrammar = errorWordsList.length > 0
         ? Math.min(grammarScore, Math.max(30, 82 - errorWordsList.length * 14))
@@ -1169,7 +1213,7 @@ Return JSON ONLY:
         calculatedScore = Math.min(60, calculatedScore);
       }
 
-      // 6. NHẬN XÉT SƯ PHẠM CỤ THỂ (GHI NHẬN CẤU TRÚC NÂNG CAO & CHỈ RÕ TỪ TÔ ĐỎ)
+      // 6. NHẬN XÉT SƯ PHẠM CỤ THỂ
       if (!dynamicFeedback) {
         const advNote = advancedStructuresUsed.length > 0
           ? ` Điểm cộng cho việc vận dụng cấu trúc nâng cao (${advancedStructuresUsed.join(', ')}).`
@@ -1179,7 +1223,7 @@ Return JSON ONLY:
           dynamicFeedback = `⚠️ Bài nói bị lạc đề! Bạn cần chú ý đọc kỹ yêu cầu của chủ đề để trả lời đúng trọng tâm.`;
         } else if (errorWordsList.length > 0) {
           const firstErr = errorWordsList[0];
-          dynamicFeedback = `⚠️ Phát hiện ${errorWordsList.length} lỗi ngữ pháp/phát âm (đã tô đỏ): cần sửa "${firstErr.word}" ➔ "${firstErr.correction}". ${firstErr.reason}${advNote}`;
+          dynamicFeedback = `⚠️ Phát hiện ${errorWordsList.length} lỗi ngữ pháp/từ vựng (đã tô đỏ): cần sửa "${firstErr.word}" ➔ "${firstErr.correction}". ${firstErr.reason}${advNote}`;
         } else if (isIncompleteSentence) {
           dynamicFeedback = `⚠️ Câu nói bị ngắt cụt ở cuối ("${lastWord}"). Hãy hoàn thành trọn vẹn ý của câu để AI chấm điểm chính xác hơn nhé!`;
         } else if (wordCount < 10) {
