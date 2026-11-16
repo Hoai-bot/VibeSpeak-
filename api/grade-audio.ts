@@ -207,7 +207,7 @@ export interface DetectedGrammarError {
   word: string;
   correction: string;
   reason: string;
-  wordIndex?: number; // Vị trí từ chính xác trong câu để không tô nhầm từ lặp lại (ví dụ "I" hay "am")
+  wordIndex?: number;
 }
 
 function getThirdPersonForm(verb: string): string {
@@ -229,7 +229,6 @@ function buildWordAnalysisArray(
     .split(/\s+/)
     .filter(Boolean);
 
-  // Ưu tiên khớp theo vị trí chính xác (wordIndex) trước, sau đó mới khớp theo từ
   const indexErrMap = new Map<number, DetectedGrammarError>();
   const tokenErrMap = new Map<string, DetectedGrammarError>();
 
@@ -269,7 +268,7 @@ function buildWordAnalysisArray(
 }
 
 // =========================================================================
-// 🧠 BỘ QUÉT NGỮ PHÁP TOÀN DIỆN TỪ CƠ BẢN (A1) ĐẾN NÂNG CAO (C2)
+// 🧠 BỘ QUÉT NGỮ PHÁP & PHÁT ÂM LỆCH NGỮ CẢNH TOÀN DIỆN (A1 -> C2)
 // =========================================================================
 function scanComprehensiveGrammarErrors(
   spokenWords: string[],
@@ -297,12 +296,13 @@ function scanComprehensiveGrammarErrors(
     'set', 'learn', 'change', 'lead', 'understand', 'speak', 'read', 'spend', 'grow', 'open', 'walk', 'win', 'offer', 'remember', 'love', 'consider', 'appear', 'buy', 'wait', 'serve', 'die', 'send', 'expect', 'build', 'stay', 'fall', 'cut', 'reach', 'kill', 'remain', 'suggest', 'raise', 'pass', 'sell', 'require', 'report', 'decide', 'pull'
   ];
 
-  // Nhận diện bối cảnh quá khứ / sự cố đã xảy ra
+  // Nhận diện dấu hiệu quá khứ trong câu nói hoặc bối cảnh đề bài
   const hasPastTimeMarker =
-    /\b(yesterday|ago|last\s+night|last\s+week|last\s+month|last\s+year|earlier|this\s+morning|left|forgot|lost|went|came|was|were|did)\b/.test(lowerTranscript);
+    /\b(yesterday|ago|last\s+night|last\s+week|last\s+month|last\s+year|earlier|this\s+morning|left|forgot|lost|went|came|was|were|did|bought)\b/.test(lowerTranscript);
 
   const isPastIncidentContext =
     hasPastTimeMarker ||
+    lowerPrompt.includes('hôm qua') ||
     lowerPrompt.includes('để quên') ||
     lowerPrompt.includes('mất đồ') ||
     lowerPrompt.includes('bị mất') ||
@@ -311,7 +311,14 @@ function scanComprehensiveGrammarErrors(
     lowerPrompt.includes('tai nạn') ||
     lowerPrompt.includes('lost') ||
     lowerPrompt.includes('forgot') ||
-    lowerPrompt.includes('left my');
+    lowerPrompt.includes('left my') ||
+    lowerPrompt.includes('bought');
+
+  const isClothingJacketContext =
+    lowerPrompt.includes('áo khoác') ||
+    lowerPrompt.includes('jacket') ||
+    lowerPrompt.includes('coat') ||
+    lowerPrompt.includes('kích cỡ');
 
   const vowels = ['a', 'e', 'i', 'o', 'u'];
   const countNumbers = ['two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'many', 'several'];
@@ -325,7 +332,18 @@ function scanComprehensiveGrammarErrors(
     const prev = i > 0 ? spokenWords[i - 1] : '';
     const prevTwo = i > 1 ? spokenWords[i - 2] : '';
     const next = i < spokenWords.length - 1 ? spokenWords[i + 1] : '';
-    const nextTwo = i < spokenWords.length - 2 ? spokenWords[i + 2] : '';
+
+    // -----------------------------------------------------------------------
+    // NHÓM 0: PHÁT ÂM NHẦM TỪ KHÓA LỆCH NGỮ CẢNH (VÍ DỤ: JACKET -> CHICKEN)
+    // -----------------------------------------------------------------------
+    if (isClothingJacketContext && ['chicken', 'chickens', 'check', 'checking'].includes(curr)) {
+      addError(
+        i,
+        curr,
+        'jacket /ˈdʒæk.ɪt/',
+        `Lỗi phát âm từ khóa: Bạn phát âm từ "jacket" (/dʒæk.ɪt/ - phụ âm hữu thanh /dʒ/ + nguyên âm bẹt /æ/) bị lệch thành "${curr}".`
+      );
+    }
 
     // -----------------------------------------------------------------------
     // NHÓM 1: NGỮ PHÁP CƠ BẢN (A1 – A2)
@@ -382,7 +400,7 @@ function scanComprehensiveGrammarErrors(
     // -----------------------------------------------------------------------
     // NHÓM 2: PHỐI HỢP THÌ & MỆNH ĐỀ PHỤ (B1 – B2)
     // -----------------------------------------------------------------------
-    // 2a. Mệnh đề thời gian bắt đầu bằng when/while/before/after KHÔNG dùng "will" ("when I will go" -> "when I went" / "when I go")
+    // 2a. Mệnh đề thời gian bắt đầu bằng when/while/before/after KHÔNG dùng "will"
     if (curr === 'will' && ['when', 'while', 'before', 'after', 'until'].includes(prevTwo)) {
       const suggestedFix = isPastIncidentContext ? 'went / V2' : 'bỏ "will" (chia hiện tại đơn)';
       addError(i, curr, suggestedFix, `Mệnh đề thời gian sau "${prevTwo}" không dùng "will".`);
@@ -399,26 +417,37 @@ function scanComprehensiveGrammarErrors(
       addError(i, curr, `might have + V3`, `Suy đoán sự việc đã xảy ra trong quá khứ không dùng "${curr} ${next}", hãy dùng "might have + V3/ed" hoặc Quá khứ đơn.`);
     }
 
-    // 2d. Sự cố quá khứ nhưng chia hiện tại đơn ("I leave my bag" -> "left")
-    if (isPastIncidentContext && ['i', 'we', 'he', 'she', 'they'].includes(prev)) {
-      const incidentPresentToPast: Record<string, string> = {
-        'leave': 'left', 'forget': 'forgot', 'lose': 'lost',
-        'drop': 'dropped', 'miss': 'missed', 'break': 'broke'
+    // 2d. Sự việc quá khứ / có dấu hiệu quá khứ (yesterday, ago, last...) nhưng chia hiện tại đơn ("I buy ... yesterday" -> "bought")
+    if (isPastIncidentContext && ['i', 'we', 'you', 'he', 'she', 'they'].includes(prev)) {
+      const presentToPastMap: Record<string, string> = {
+        'buy': 'bought', 'leave': 'left', 'forget': 'forgot', 'lose': 'lost',
+        'go': 'went', 'come': 'came', 'see': 'saw', 'take': 'took',
+        'make': 'made', 'get': 'got', 'eat': 'ate', 'drink': 'drank',
+        'give': 'gave', 'find': 'found', 'tell': 'told', 'meet': 'met',
+        'send': 'sent', 'spend': 'spent', 'wear': 'wore', 'drop': 'dropped',
+        'miss': 'missed', 'break': 'broke', 'do': 'did', 'have': 'had'
       };
-      if (incidentPresentToPast[curr]) {
-        addError(i, curr, incidentPresentToPast[curr], `Sự việc đã xảy ra trước đó, phải dùng thì Quá khứ đơn "${incidentPresentToPast[curr]}" thay vì "${curr}".`);
+      if (presentToPastMap[curr]) {
+        // Không bắt nhầm nếu động từ hiện tại đứng ở mệnh đề sau nói về trạng thái hiện tại ("now I see", "today I want")
+        const isCurrentNowClause = ['now', 'today', 'currently'].includes(prevTwo);
+        if (!isCurrentNowClause) {
+          addError(
+            i,
+            curr,
+            presentToPastMap[curr],
+            `Sự việc đã xảy ra trong quá khứ (có dấu hiệu "yesterday" / bối cảnh trước đó), động từ "${curr}" phải chia quá khứ đơn là "${presentToPastMap[curr]}".`
+          );
+        }
       }
     }
 
     // -----------------------------------------------------------------------
     // NHÓM 3: NGỮ PHÁP NÂNG CAO (B2 – C2: ĐIỀU KIỆN LOẠI 2/3, QUÁ KHỨ HOÀN THÀNH, ĐẢO NGỮ)
     // -----------------------------------------------------------------------
-    // 3a. Lỗi dùng "would" ngay trong mệnh đề "If" ("If I would..." -> "If I had / V2")
     if (curr === 'would' && ['if', 'wish'].includes(prevTwo)) {
       addError(i, curr, 'had / V2', `Không dùng "would" ngay trong mệnh đề điều kiện "${prevTwo}"; dùng Quá khứ đơn (loại 2) hoặc Quá khứ hoàn thành "had + V3" (loại 3).`);
     }
 
-    // 3b. Lỗi Quá khứ hoàn thành / Điều kiện loại 3 chia sai phân từ ("had went", "have went", "had saw", "had took", "had did", "had broke")
     const wrongPastParticiples: Record<string, string> = {
       'went': 'gone', 'saw': 'seen', 'took': 'taken', 'did': 'done',
       'broke': 'broken', 'wrote': 'written', 'spoke': 'spoken', 'ate': 'eaten',
@@ -431,13 +460,9 @@ function scanComprehensiveGrammarErrors(
     if (['had', 'have', 'has'].includes(prevTwo) && adverbs.includes(prev) && wrongPastParticiples[curr]) {
       addError(i, curr, wrongPastParticiples[curr], `Sau "${prevTwo} ${prev}", động từ phải dùng quá khứ phân từ V3 là "${wrongPastParticiples[curr]}".`);
     }
-
-    // 3c. Lỗi cấu trúc "would have + V2/V1" ("would have went" -> "would have gone")
     if (prevTwo === 'would' && prev === 'have' && wrongPastParticiples[curr]) {
       addError(i, curr, wrongPastParticiples[curr], `Cấu trúc điều kiện loại 3 chuẩn là "would have + V3/ed" ("would have ${wrongPastParticiples[curr]}").`);
     }
-
-    // 3d. Lỗi Đảo ngữ điều kiện loại 3 ("Had I knew" -> "Had I known")
     if (prevTwo === 'had' && ['i', 'he', 'she', 'it', 'we', 'they', 'you'].includes(prev) && wrongPastParticiples[curr]) {
       addError(i, curr, wrongPastParticiples[curr], `Đảo ngữ câu điều kiện loại 3 ("Had + S + V3") phải dùng phân từ "${wrongPastParticiples[curr]}".`);
     }
@@ -454,14 +479,13 @@ function getCefrGrammarRubricInstruction(cefrLevel: string): string {
     case 'A1':
     case 'A2':
       return `CEFR ${cefrLevel} (Elementary):
-- Focus on core accuracy: Present Simple (including 3rd-person singular -s/-es), Past Simple for completed past actions/incidents (e.g. "I left my bag", "I forgot", "I lost"), "going to", basic prepositions, and articles (a/an/the).
-- Also catch sequence-of-tense errors when telling a past story (e.g. "while I am reading" -> "was reading", "when I will go" -> "when I went").`;
+- Focus on core accuracy: Present Simple (including 3rd-person singular -s/-es), Past Simple for completed past actions/incidents (e.g. "I bought a jacket yesterday", "I left my bag"), "going to", basic prepositions, and articles (a/an/the).
+- Catch mispronounced target nouns that turn into unrelated words in context (e.g., "chicken" instead of "jacket").`;
     case 'B1':
     case 'B2':
       return `CEFR ${cefrLevel} (Intermediate / Upper-Intermediate):
 - Evaluate both basic accuracy and intermediate structures: Past Continuous vs. Past Simple, Present Perfect, Conditional Type 1 & Type 2 ("If I were..., I would..."), Passive Voice, Relative Clauses (who/which/that), and Modal Verbs of deduction ("might have taken").
-- Recognize Conditional Type 2 and Present Perfect as VALID, advanced grammar—NEVER flag them as wrong tense.
-- Penalize errors in conditional verb forms ("If I would go" -> "If I went"), time clauses ("when I will go"), and past deduction ("may take" for past event -> "might have taken").`;
+- Recognize Conditional Type 2 and Present Perfect as VALID, advanced grammar—NEVER flag them as wrong tense.`;
     case 'C1':
     case 'C2':
     default:
@@ -470,6 +494,48 @@ function getCefrGrammarRubricInstruction(cefrLevel: string): string {
 - Explicitly reward accurate use of these advanced structures in "advanced_structures_used" and NEVER misclassify Conditional Type 2/3 or Past Perfect as tense errors.
 - If a ${cefrLevel} speaker ONLY uses elementary simple sentences without any complex clauses, cap grammar_score at 68 and advise upgrading sentence complexity in feedback_vi.`;
   }
+}
+
+// 🤖 HÀM GỌI GROQ LLM CÓ TỰ ĐỘNG DỰ PHÒNG MODEL (70B -> 8B)
+async function callGroqEvaluatorWithFallback(
+  groqApiKey: string,
+  systemPrompt: string,
+  userPrompt: string,
+  maxTokens: number = 650
+): Promise<any | null> {
+  const models = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'];
+  for (const modelName of models) {
+    try {
+      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${groqApiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: modelName,
+          temperature: 0.1,
+          max_tokens: maxTokens,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt }
+          ]
+        })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const rawContent = data.choices?.[0]?.message?.content || '{}';
+        const jsonMatch = rawContent.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          return JSON.parse(jsonMatch[0]);
+        }
+      }
+    } catch (err) {
+      console.warn(`Groq LLM (${modelName}) fallback triggered:`, err);
+    }
+  }
+  return null;
 }
 
 export default async function handler(req: Request) {
@@ -533,7 +599,7 @@ export default async function handler(req: Request) {
       );
     }
 
-    // 🛡️ Ép Whisper ghi âm nguyên văn (verbatim), không tự sửa ngữ pháp cơ bản lẫn nâng cao
+    // 🛡️ Ép Whisper ghi âm nguyên văn (verbatim), không tự sửa ngữ pháp hay từ phát âm lệch
     const whisperFormData: any = new FormData();
     whisperFormData.append('file', audioFile);
     whisperFormData.append('model', 'whisper-large-v3');
@@ -541,7 +607,7 @@ export default async function handler(req: Request) {
     whisperFormData.append('response_format', 'verbose_json');
     whisperFormData.append(
       'prompt',
-      'Transcribe strictly verbatim as spoken. Do NOT auto-correct grammar, wrong tenses (like "I leave", "while I am reading", "when I will go"), missing third-person singular -s/-es (e.g. "he go", "she work"), missing past tense -ed, wrong past participles in conditionals/perfect tenses (e.g. "had went", "would have went"), plural -s, or mispronounced words.'
+      'Transcribe strictly verbatim as spoken. Do NOT auto-correct grammar, wrong tenses (like "I buy yesterday", "I leave", "while I am reading", "when I will go"), missing third-person singular -s/-es, missing past tense -ed, wrong past participles, plural -s, or mispronounced words.'
     );
 
     const whisperResponse = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
@@ -850,24 +916,12 @@ export default async function handler(req: Request) {
       );
       let dynamicFeedback = '';
 
-      try {
-        const groqLlmResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${groqApiKey}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            model: 'llama-3.3-70b-versatile',
-            temperature: 0.1,
-            max_tokens: 450,
-            messages: [
-              {
-                role: 'system',
-                content: `You are an expert Cambridge/IELTS speaking examiner evaluating a CEFR ${cefrLevel} student on a rapid response prompt.
+      const parsed = await callGroqEvaluatorWithFallback(
+        groqApiKey,
+        `You are an expert Cambridge/IELTS speaking examiner evaluating a CEFR ${cefrLevel} student on a rapid response prompt.
 ${getCefrGrammarRubricInstruction(cefrLevel)}
 Strictly detect any spoken grammar or ending errors (basic and advanced).
-IMPORTANT: For every mistake in "detected_errors", set "word" to the EXACT single offending verb/auxiliary from the transcript so the UI highlights it in RED.
+IMPORTANT: For every mistake in "detected_errors", set "word" to the EXACT single offending verb/auxiliary/noun from the transcript so the UI highlights it in RED.
 Return JSON ONLY:
 {
   "vocab_score": number,
@@ -878,39 +932,25 @@ Return JSON ONLY:
     { "word": "exact_single_wrong_word", "correction": "better_word", "reason": "Lý do bằng tiếng Việt chỉ rõ lỗi ngữ pháp/phát âm" }
   ],
   "feedback_vi": "Nhận xét sư phạm tiếng Việt sắc bén 1-2 câu"
-}`
-              },
-              {
-                role: 'user',
-                content: `Prompt: "${targetPrompt}"\nStudent: "${transcript}"`
-              }
-            ]
-          })
-        });
+}`,
+        `Prompt: "${targetPrompt}"\nStudent: "${transcript}"`,
+        450
+      );
 
-        if (groqLlmResponse.ok) {
-          const llmData = await groqLlmResponse.json();
-          const rawContent = llmData.choices[0]?.message?.content || '{}';
-          const jsonMatch = rawContent.match(/\{[\s\S]*\}/);
-          if (jsonMatch) {
-            const parsed = JSON.parse(jsonMatch[0]);
-            if (typeof parsed.vocab_score === 'number') vocabScore = parsed.vocab_score;
-            if (typeof parsed.grammar_score === 'number') grammarScore = parsed.grammar_score;
-            if (typeof parsed.content_score === 'number') contentScore = parsed.content_score;
-            if (Array.isArray(parsed.detected_errors) && parsed.detected_errors.length > 0) {
-              parsed.detected_errors.forEach((err: any) => {
-                if (err.word && !errorWordsList.some(e => e.word.toLowerCase() === err.word.toLowerCase())) {
-                  errorWordsList.push(err);
-                }
-              });
+      if (parsed) {
+        if (typeof parsed.vocab_score === 'number') vocabScore = parsed.vocab_score;
+        if (typeof parsed.grammar_score === 'number') grammarScore = parsed.grammar_score;
+        if (typeof parsed.content_score === 'number') contentScore = parsed.content_score;
+        if (Array.isArray(parsed.detected_errors) && parsed.detected_errors.length > 0) {
+          parsed.detected_errors.forEach((err: any) => {
+            if (err.word && !errorWordsList.some(e => e.word.toLowerCase() === err.word.toLowerCase())) {
+              errorWordsList.push(err);
             }
-            if (parsed.feedback_vi && parsed.feedback_vi.length > 10) {
-              dynamicFeedback = parsed.feedback_vi;
-            }
-          }
+          });
         }
-      } catch (llmErr) {
-        console.warn("LLM API Express bypassed:", llmErr);
+        if (parsed.feedback_vi && parsed.feedback_vi.length > 10) {
+          dynamicFeedback = parsed.feedback_vi;
+        }
       }
 
       const penalty = errorWordsList.length * 8;
@@ -1026,7 +1066,7 @@ Return JSON ONLY:
       const isFamilyHometownSpeech = lowerTranscript.includes('hometown') || lowerTranscript.includes('went home') || (lowerTranscript.includes('parents') && !lowerTranscript.includes('course'));
       const isCompletelyOffTopic = (isOnlineCoursePrompt && isFamilyHometownSpeech) || (!isFreeSpeechMode && corePromptKeywords.length >= 3 && matchedTopicKeywords === 0);
 
-      // 2. 🧠 CHẠY BỘ QUÉT NGỮ PHÁP TOÀN DIỆN TẠI CHỖ (A1 -> C2)
+      // 2. 🧠 CHẠY BỘ QUÉT NGỮ PHÁP & PHÁT ÂM LỆCH NGỮ CẢNH TẠI CHỖ (A1 -> C2)
       let errorWordsList: DetectedGrammarError[] = scanComprehensiveGrammarErrors(
         spokenWords,
         lowerTranscript,
@@ -1045,7 +1085,7 @@ Return JSON ONLY:
         });
       }
 
-      // Bắt lỗi sai thì ngữ cảnh thói quen (khi không phải câu điều kiện giả định)
+      // Bắt lỗi sai thì ngữ cảnh thói quen
       const isHabitualPrompt = 
         lowerPrompt.includes('how you help') || 
         lowerPrompt.includes('housework') || 
@@ -1133,30 +1173,19 @@ Return JSON ONLY:
         ? Math.min(100, Math.max(68, 76 + acousticQualityBonus * 1.6))
         : Math.max(45, 74 + acousticQualityBonus - errorWordsList.length * 8);
 
-      // 4. 🤖 GỌI GROQ LLAMA-3.3-70B PHÂN TÍCH NGỮ PHÁP TỪ CƠ BẢN ĐẾN NÂNG CAO (A1–C2)
-      try {
-        const groqLlmResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${groqApiKey}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            model: 'llama-3.3-70b-versatile',
-            temperature: 0.1,
-            max_tokens: 650,
-            messages: [
-              {
-                role: 'system',
-                content: `You are a strict, authoritative Cambridge & IELTS Speaking Examiner evaluating a CEFR ${cefrLevel} student.
+      // 4. 🤖 GỌI GROQ LLM (TỰ ĐỘNG FALLBACK 70B -> 8B) PHÂN TÍCH NGỮ PHÁP & PHÁT ÂM TỪ KHÓA
+      const parsed = await callGroqEvaluatorWithFallback(
+        groqApiKey,
+        `You are a strict, authoritative Cambridge & IELTS Speaking Examiner evaluating a CEFR ${cefrLevel} student.
 Target Prompt/Context: "${targetPrompt}".
 
 ${getCefrGrammarRubricInstruction(cefrLevel)}
 
 CRITICAL EVALUATION RULES (BASIC TO ADVANCED A1–C2):
-1. NEVER auto-correct or overlook spoken grammar/tense/ending/word-choice mistakes in the student's verbatim transcript.
+1. NEVER auto-correct or overlook spoken grammar/tense/ending/mispronunciation mistakes in the student's verbatim transcript.
 2. Check EVERY clause systematically and report ALL errors in "detected_errors":
-   - Basic (A1–A2): 3rd-person singular "-s/-es" ("he go" -> "goes"), wrong verb tense in narrative stories ("I leave my bag yesterday" -> "left"), articles ("a/an"), plural nouns.
+   - Mispronounced Topic Words: If a word in the transcript is clearly a speech-recognition mishearing of a target context word (e.g. saying "chicken" instead of "jacket" in a clothing store scenario), flag that exact word ("chicken") with correction ("jacket") and explain the pronunciation difference in Vietnamese!
+   - Basic (A1–A2): 3rd-person singular "-s/-es" ("he go" -> "goes"), wrong verb tense with past markers ("I buy ... yesterday" -> "bought", "I leave my bag yesterday" -> "left"), articles ("a/an"), plural nouns.
    - Intermediate Sequence of Tenses (B1–B2):
      * NEVER allow "will" inside time clauses ("when / while / before / after"): e.g., "when I will go" -> "when I went" (or "when I go").
      * Background past actions with "while" in a past story MUST use Past Continuous: e.g., "while I am reading" -> "was".
@@ -1167,8 +1196,8 @@ CRITICAL EVALUATION RULES (BASIC TO ADVANCED A1–C2):
 3. WHITELIST VALID ADVANCED GRAMMAR:
    - If the student accurately uses Past Perfect, Conditionals Type 2/3/Mixed, Passive Voice, or Inversion, list them in "advanced_structures_used", reward grammar_score (88–98), and NEVER flag them as tense errors!
 4. IMPORTANT UI MAPPING RULE FOR "detected_errors":
-   - Set "word" to the EXACT SINGLE offending verb/auxiliary/word from the transcript (e.g., "leave", "am", "may", "will", "would", "went") so the UI highlights that exact word chip in RED!
-5. Deduct 10–15 points from grammar_score for each genuine grammatical/tense error.
+   - Set "word" to the EXACT SINGLE offending word from the transcript (e.g., "buy", "chicken", "leave", "am", "may", "will") so the UI highlights that exact word chip in RED!
+5. Deduct 10–15 points from grammar_score/vocab_score for each genuine error.
 
 Return JSON ONLY:
 {
@@ -1178,78 +1207,63 @@ Return JSON ONLY:
   "is_off_topic": boolean,
   "advanced_structures_used": ["string"],
   "detected_errors": [
-    { "word": "exact_single_wrong_word_from_transcript", "correction": "correct_form", "reason": "Giải thích quy tắc ngữ pháp/thì bằng tiếng Việt ngắn gọn, rõ ràng" }
+    { "word": "exact_single_wrong_word_from_transcript", "correction": "correct_form", "reason": "Giải thích quy tắc ngữ pháp/phát âm bằng tiếng Việt ngắn gọn, rõ ràng" }
   ],
-  "feedback_vi": "Nhận xét tiếng Việt 1-2 câu chỉ rõ cấu trúc nâng cao đã dùng tốt (nếu có) và liệt kê các lỗi ngữ pháp bị tô đỏ cần sửa"
-}`
-              },
-              {
-                role: 'user',
-                content: `CEFR Level: ${cefrLevel}\nScenario & Reference: "${targetPrompt || 'General speaking context'}"\nStudent verbatim transcript: "${transcript}"`
-              }
-            ]
-          })
-        });
+  "feedback_vi": "Nhận xét tiếng Việt 1-2 câu chỉ rõ cấu trúc nâng cao đã dùng tốt (nếu có) và liệt kê các lỗi bị tô đỏ cần sửa"
+}`,
+        `CEFR Level: ${cefrLevel}\nScenario & Reference: "${targetPrompt || 'General speaking context'}"\nStudent verbatim transcript: "${transcript}"`,
+        650
+      );
 
-        if (groqLlmResponse.ok) {
-          const llmData = await groqLlmResponse.json();
-          const rawContent = llmData.choices[0]?.message?.content || '{}';
-          const jsonMatch = rawContent.match(/\{[\s\S]*\}/);
-          if (jsonMatch) {
-            const parsed = JSON.parse(jsonMatch[0]);
-            if (typeof parsed.content_score === 'number') {
-              contentScore = (parsed.is_off_topic || isCompletelyOffTopic) 
-                ? Math.min(35, parsed.content_score) 
-                : parsed.content_score;
-            }
-            if (typeof parsed.grammar_score === 'number') {
-              grammarScore = errorWordsList.length === 0
-                ? parsed.grammar_score
-                : Math.min(parsed.grammar_score, baseGrammar);
-            }
-            if (typeof parsed.vocab_score === 'number') {
-              vocabScore = parsed.vocab_score;
-            }
-            if (Array.isArray(parsed.advanced_structures_used)) {
-              advancedStructuresUsed = parsed.advanced_structures_used.filter((s: any) => typeof s === 'string' && s.trim().length > 0);
-            }
-            
-            if (Array.isArray(parsed.detected_errors) && parsed.detected_errors.length > 0) {
-              parsed.detected_errors.forEach((err: any) => {
-                if (err.word) {
-                  const singleTok = String(err.word).trim().split(/\s+/)[0].toLowerCase().replace(/[^a-z0-9']/g, '');
-                  // Tìm vị trí từ chưa bị đánh dấu lỗi trong spokenWords
-                  const foundIdx = spokenWords.findIndex(
-                    (w, idx) => w === singleTok && !errorWordsList.some((e) => e.wordIndex === idx)
-                  );
-                  if (foundIdx !== -1) {
-                    errorWordsList.push({
-                      wordIndex: foundIdx,
-                      word: spokenWords[foundIdx],
-                      correction: err.correction || '',
-                      reason: err.reason || 'Lỗi ngữ pháp / phối hợp thì.'
-                    });
-                  } else if (!errorWordsList.some((e) => e.word.toLowerCase() === singleTok)) {
-                    errorWordsList.push({
-                      word: err.word,
-                      correction: err.correction || '',
-                      reason: err.reason || 'Lỗi ngữ pháp / phối hợp thì.'
-                    });
-                  }
-                }
-              });
-            }
-
-            if (parsed.feedback_vi && parsed.feedback_vi.length > 15) {
-              dynamicFeedback = parsed.feedback_vi;
-            }
-          }
+      if (parsed) {
+        if (typeof parsed.content_score === 'number') {
+          contentScore = (parsed.is_off_topic || isCompletelyOffTopic) 
+            ? Math.min(35, parsed.content_score) 
+            : parsed.content_score;
         }
-      } catch (llmErr) {
-        console.warn("LLM API call bypassed, using comprehensive local grammar scanner:", llmErr);
+        if (typeof parsed.grammar_score === 'number') {
+          grammarScore = errorWordsList.length === 0
+            ? parsed.grammar_score
+            : Math.min(parsed.grammar_score, baseGrammar);
+        }
+        if (typeof parsed.vocab_score === 'number') {
+          vocabScore = parsed.vocab_score;
+        }
+        if (Array.isArray(parsed.advanced_structures_used)) {
+          advancedStructuresUsed = parsed.advanced_structures_used.filter((s: any) => typeof s === 'string' && s.trim().length > 0);
+        }
+        
+        if (Array.isArray(parsed.detected_errors) && parsed.detected_errors.length > 0) {
+          parsed.detected_errors.forEach((err: any) => {
+            if (err.word) {
+              const singleTok = String(err.word).trim().split(/\s+/)[0].toLowerCase().replace(/[^a-z0-9']/g, '');
+              const foundIdx = spokenWords.findIndex(
+                (w, idx) => w === singleTok && !errorWordsList.some((e) => e.wordIndex === idx)
+              );
+              if (foundIdx !== -1) {
+                errorWordsList.push({
+                  wordIndex: foundIdx,
+                  word: spokenWords[foundIdx],
+                  correction: err.correction || '',
+                  reason: err.reason || 'Lỗi ngữ pháp / phát âm từ khóa.'
+                });
+              } else if (!errorWordsList.some((e) => e.word.toLowerCase() === singleTok)) {
+                errorWordsList.push({
+                  word: err.word,
+                  correction: err.correction || '',
+                  reason: err.reason || 'Lỗi ngữ pháp / phát âm từ khóa.'
+                });
+              }
+            }
+          });
+        }
+
+        if (parsed.feedback_vi && parsed.feedback_vi.length > 15) {
+          dynamicFeedback = parsed.feedback_vi;
+        }
       }
 
-      // 5. TÍNH ĐIỂM TỔNG HỢP CÔNG BẰNG & TRỪ ĐIỂM RÕ RÀNG KHI SAI NGỮ PHÁP
+      // 5. TÍNH ĐIỂM TỔNG HỢP CÔNG BẰNG & TRỪ ĐIỂM RÕ RÀNG KHI SAI NGỮ PHÁP / PHÁT ÂM
       const penalty = errorWordsList.length * 10;
       const cappedGrammar = errorWordsList.length > 0
         ? Math.min(grammarScore, Math.max(25, 82 - errorWordsList.length * 12))
@@ -1291,7 +1305,7 @@ Return JSON ONLY:
             .slice(0, 3)
             .map((e) => `"${e.word}" ➔ "${e.correction}"`)
             .join(', ');
-          dynamicFeedback = `⚠️ Phát hiện ${errorWordsList.length} lỗi ngữ pháp/phối hợp thì (đã tô đỏ): ${summaryErrors}. ${errorWordsList[0].reason}${advNote}`;
+          dynamicFeedback = `⚠️ Phát hiện ${errorWordsList.length} lỗi ngữ pháp/phát âm (đã tô đỏ): ${summaryErrors}. ${errorWordsList[0].reason}${advNote}`;
         } else if (isIncompleteSentence) {
           dynamicFeedback = `⚠️ Câu nói bị ngắt cụt ở cuối ("${lastWord}"). Hãy hoàn thành trọn vẹn ý của câu để AI chấm điểm chính xác hơn nhé!`;
         } else if (wordCount < 10) {
