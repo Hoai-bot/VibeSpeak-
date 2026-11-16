@@ -33,10 +33,21 @@ async function saveOfflineSubmissionSafe(submission: {
   });
 }
 
+const getApiBaseUrl = (): string => {
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    return window.location.origin;
+  }
+  if (process.env.EXPO_PUBLIC_VERCEL_URL) {
+    return `https://${process.env.EXPO_PUBLIC_VERCEL_URL}`;
+  }
+  return '';
+};
+
 export interface ErrorWordItem {
   word: string;
   correction: string;
   reason: string;
+  wordIndex?: number;
 }
 
 export interface CriteriaBreakdown {
@@ -77,7 +88,7 @@ const HOMOPHONES_MAP: Record<string, string[]> = {
   'right': ['write'], 'write': ['right'],
   'buy': ['by', 'bye'], 'bye': ['buy', 'by'], 'by': ['buy', 'bye'],
   'for': ['four'], 'four': ['for'],
-  'to': ['too', 'two'], 'two': ['to', 'too'], 'too': ['to', 'two'],
+  'to': ['too', 'two'], 'two': ['to', 'too'], 'too': ['to', 'too'],
   'one': ['won'], 'won': ['one'],
   'flour': ['flower'], 'flower': ['flour'],
   'peace': ['piece'], 'piece': ['peace'],
@@ -128,15 +139,17 @@ export function analyzeSpokenTranscript(
     .filter(Boolean);
 
   const cleanWords = rawWords.map((w) => w.toLowerCase());
-  const targetCleanWords = (targetPrompt || '')
-    .replace(/[.,/#!$%^&*;:{}=\-_`~()?"]/g, "")
-    .toLowerCase()
-    .split(/\s+/)
-    .filter(Boolean);
+  const isFreeSpeech = (targetPrompt || '').toLowerCase().includes('mode: free_speech');
+  const targetCleanWords = !isFreeSpeech && targetPrompt
+    ? targetPrompt.replace(/[.,/#!$%^&*;:{}=\-_`~()?"]/g, "").toLowerCase().split(/\s+/).filter(Boolean)
+    : [];
 
+  const serverIndexMap = new Map<number, ErrorWordItem>();
   const serverErrMap = new Map<string, ErrorWordItem>();
   (serverErrorWords || []).forEach((err) => {
-    if (err?.word) {
+    if (typeof err?.wordIndex === 'number') {
+      serverIndexMap.set(err.wordIndex, err);
+    } else if (err?.word) {
       serverErrMap.set(err.word.toLowerCase().replace(/[^a-z0-9']/g, ''), err);
     }
   });
@@ -175,8 +188,9 @@ export function analyzeSpokenTranscript(
     let reason = '';
 
     // 0. Kiểm tra lỗi do Server AI (Whisper / LLM) trả về
-    const serverErr = serverErrMap.get(clean);
+    const serverErr = serverIndexMap.get(index) || serverErrMap.get(clean);
     if (serverErr) {
+      isGrammarError = true;
       isPronunciationError = true;
       correction = serverErr.correction || '';
       reason = serverErr.reason || 'Lỗi phát âm / ngữ pháp từ AI';
@@ -189,7 +203,7 @@ export function analyzeSpokenTranscript(
       reason = "Ngôi thứ 3 số ít phải dùng trợ động từ doesn't";
     }
 
-    // 2. Lỗi chia động từ ngôi thứ 3 số ít thì Hiện tại đơn: he/she/it + V nguyên mẫu (không thêm -s/-es)
+    // 2. Lỗi chia động từ ngôi thứ 3 số ít thì Hiện tại đơn: he/she/it + V nguyên mẫu
     if (!isGrammarError && commonBaseVerbs.includes(clean)) {
       if (singularThirdPersons.includes(prevWord)) {
         isGrammarError = true;
@@ -202,8 +216,8 @@ export function analyzeSpokenTranscript(
       }
     }
 
-    // 3. Đối chiếu trực tiếp với câu mẫu (targetPrompt): nếu câu mẫu có dạng chia -s/-es/-ed mà sinh viên đọc mất đuôi
-    if (!isGrammarError && !isPronunciationError && targetCleanWords.length > 0) {
+    // 3. Đối chiếu trực tiếp với câu mẫu (chỉ khi ở chế độ READ_SAMPLE)
+    if (!isFreeSpeech && !isGrammarError && !isPronunciationError && targetCleanWords.length > 0) {
       const expectedThirdPerson = getThirdPersonForm(clean);
       const expectedPastEd = clean.endsWith('e') ? `${clean}d` : `${clean}ed`;
       if (targetCleanWords.includes(expectedThirdPerson) && !targetCleanWords.includes(clean)) {
@@ -276,9 +290,9 @@ export const evaluateSpeaking = async (
 ): Promise<AssessmentResult> => {
   try {
     const currentStation = String(stationType || 'STATION_1').toUpperCase();
-    let recognizedTranscript = (capturedSpeech || '').trim();
+    let recognizedTranscript = '';
 
-    if ((!audioBlob || audioBlob.size < 1000) && !recognizedTranscript) {
+    if ((!audioBlob || audioBlob.size < 1000) && !(capturedSpeech || '').trim()) {
       return {
         score: 0,
         isWin: false,
@@ -318,6 +332,7 @@ export const evaluateSpeaking = async (
       }
 
       try {
+        const baseUrl = getApiBaseUrl();
         const formData = new FormData();
         const fileExt = audioBlob.type.includes('mp4') ? 'audio.mp4' : 'audio.webm';
         formData.append('audio', audioBlob, fileExt);
@@ -325,31 +340,27 @@ export const evaluateSpeaking = async (
         if (cefrLevel) formData.append('level', cefrLevel);
         formData.append('stationType', currentStation);
 
-        const response = await fetch('/api/grade-audio', {
+        const response = await fetch(`${baseUrl}/api/grade-audio`, {
           method: 'POST',
           body: formData,
         });
 
         if (response.ok) {
           const data = await response.json();
-          if (data?.transcript) {
-            recognizedTranscript = data.transcript.trim();
-          }
+          recognizedTranscript = (data?.transcript || '').trim();
+
           if (typeof data?.score === 'number') {
             const errorWords: ErrorWordItem[] = Array.isArray(data.errorWords) ? data.errorWords : [];
-            const wordAnalysis = analyzeSpokenTranscript(
-              recognizedTranscript || data.transcript || '',
-              targetPrompt,
-              errorWords
-            );
-            const detectedLocalErrors = wordAnalysis.filter(w => w.hasGrammarError || w.hasPronunciationError);
-            const penalty = detectedLocalErrors.length * 6;
-            const adjustedScore = Math.max(0, Math.min(100, Number(data.score) - penalty));
+            // Ưu tiên wordAnalysis đã gắn chính xác wordIndex từ server
+            const wordAnalysis: SpokenWordAnalysis[] =
+              Array.isArray(data.wordAnalysis) && data.wordAnalysis.length > 0
+                ? data.wordAnalysis
+                : analyzeSpokenTranscript(recognizedTranscript, targetPrompt, errorWords);
 
             return {
-              score: adjustedScore,
-              isWin: adjustedScore >= 70,
-              transcript: recognizedTranscript || data.transcript,
+              score: data.score,
+              isWin: typeof data.isWin === 'boolean' ? data.isWin : data.score >= 70,
+              transcript: recognizedTranscript || '(Không nhận diện được giọng nói)',
               detailedFeedback: data.feedback || `Hoàn thành bài nói cấp độ ${cefrLevel || 'B1'}!`,
               audioUrl: data.audioUrl,
               errorWords,
@@ -358,10 +369,12 @@ export const evaluateSpeaking = async (
             };
           }
         } else {
+          const errDetail = await response.text();
+          console.error(`❌ /api/grade-audio HTTP ${response.status}:`, errDetail);
           throw new Error(`Server returned ${response.status}`);
         }
       } catch (apiErr) {
-        console.warn("Lỗi kết nối /api/grade-audio, kích hoạt Fallback lưu IndexedDB:", apiErr);
+        console.warn("Lỗi kết nối /api/grade-audio:", apiErr);
         try {
           await saveOfflineSubmissionSafe({
             audioBlob,
@@ -372,128 +385,32 @@ export const evaluateSpeaking = async (
         } catch (dbErr) {
           console.error("IndexedDB fallback error:", dbErr);
         }
-      }
-    }
 
-    let calculatedScore = 75;
-    let feedbackMessage = "";
-
-    if (!recognizedTranscript) {
-      if (audioBlob && audioBlob.size >= 25000) {
-        const promptPreview = targetPrompt ? `cho chủ đề "${targetPrompt.slice(0, 30)}..."` : '';
+        // ⚠️ Tuyệt đối không dùng transcript tự sửa của trình duyệt để tô xanh và chấm điểm cao khi server lỗi
         return {
-          score: Math.floor(Math.random() * 8) + 75,
-          isWin: true,
-          transcript: `(Đã ghi nhận bài nói ${promptPreview} qua Micro thiết bị)`,
-          detailedFeedback: `✅ AI đã thu nhận bản ghi âm. Cần chú ý phát âm tròn vành rõ chữ hơn để đạt điểm tối đa!`,
+          score: 0,
+          isWin: false,
+          transcript: "(Chưa kết nối được máy chủ phân tích giọng nói AI)",
+          detailedFeedback: "⚠️ Không thể kết nối tới máy chủ chấm điểm Whisper AI (/api/grade-audio). Vui lòng kiểm tra kết nối mạng hoặc biến môi trường GROQ_API_KEY trên Vercel và bấm 'Thu âm lại'!",
           errorWords: [],
           criteria: null,
           wordAnalysis: []
         };
       }
-
-      return {
-        score: 30,
-        isWin: false,
-        transcript: "(Không phát hiện giọng nói hoặc âm thanh quá ngắn)",
-        detailedFeedback: "❌ Bài làm chưa đạt yêu cầu! Bạn chưa nói câu trả lời hoặc thời gian nói quá ngắn. Vui lòng bấm làm lại và nói to, rõ ràng!",
-        errorWords: [],
-        criteria: null,
-        wordAnalysis: []
-      };
     }
 
-    if (currentStation === 'STATION_1' && targetPrompt) {
-      const normalize = (str: string) => str.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim();
-      const targetWords = normalize(targetPrompt).split(/\s+/).filter(Boolean);
-      const spokenWords = normalize(recognizedTranscript).split(/\s+/).filter(Boolean);
-
-      let totalWordScore = 0;
-
-      targetWords.forEach(target => {
-        const homophones = HOMOPHONES_MAP[target] || [];
-        const isMatched = spokenWords.includes(target) || homophones.some(h => spokenWords.includes(h));
-
-        if (isMatched) {
-          totalWordScore += 1.0;
-        } else {
-          let bestSim = 0;
-          spokenWords.forEach(spoken => {
-            const maxLen = Math.max(target.length, spoken.length);
-            if (maxLen === 0) return;
-            let commonChars = 0;
-            const minLen = Math.min(target.length, spoken.length);
-            for (let i = 0; i < minLen; i++) {
-              if (target[i] === spoken[i]) commonChars++;
-            }
-            const sim = commonChars / maxLen;
-            if (sim > bestSim) bestSim = sim;
-          });
-
-          if (bestSim >= 0.6) {
-            totalWordScore += bestSim * 0.75;
-          }
-        }
-      });
-
-      const accuracyRatio = targetWords.length > 0 ? (totalWordScore / targetWords.length) : 0;
-      calculatedScore = Math.min(100, Math.max(40, Math.round(accuracyRatio * 60 + 40)));
-      
-      const matchedCount = targetWords.filter(w => {
-        const homophones = HOMOPHONES_MAP[w] || [];
-        return spokenWords.includes(w) || homophones.some(h => spokenWords.includes(h));
-      }).length;
-      feedbackMessage = `Phản xạ phát âm: Đã khớp chuẩn xác ${matchedCount}/${targetWords.length} từ mục tiêu.`;
-
-      return {
-        score: calculatedScore,
-        isWin: calculatedScore >= 70,
-        transcript: recognizedTranscript,
-        detailedFeedback: feedbackMessage,
-        errorWords: [],
-        criteria: null,
-        wordAnalysis: analyzeSpokenTranscript(recognizedTranscript, targetPrompt)
-      };
-    } else {
-      const analysis = analyzeSpokenTranscript(recognizedTranscript, targetPrompt);
-      const wordCount = analysis.length;
-      const grammarErrors = analysis.filter(item => item.hasGrammarError || item.hasPronunciationError).length;
-      const penalty = grammarErrors * 8;
-
-      if (wordCount >= 25) {
-        calculatedScore = Math.max(55, 95 - penalty);
-        feedbackMessage = grammarErrors > 0 
-          ? `⚠️ Bài nói trôi chảy (${wordCount} từ) nhưng mắc ${grammarErrors} lỗi chia động từ / phát âm thiếu âm cuối (đã tô đỏ).`
-          : `🌟 Bài nói tuyệt vời (${wordCount} từ)! Phản xạ tự nhiên, lưu loát và chuẩn ngữ pháp.`;
-      } else if (wordCount >= 15) {
-        calculatedScore = Math.max(50, 88 - penalty);
-        feedbackMessage = grammarErrors > 0 
-          ? `⚠️ Nắm được ý (${wordCount} từ) nhưng còn ${grammarErrors} lỗi chia động từ / phát âm (xem các từ tô đỏ).`
-          : `👍 Rất tốt! Diễn đạt mạch lạc (${wordCount} từ). Hãy mở rộng thêm các ý phụ.`;
-      } else if (wordCount >= 8) {
-        calculatedScore = Math.max(45, 78 - penalty);
-        feedbackMessage = grammarErrors > 0
-          ? `⚠️ Đạt ý cơ bản (${wordCount} từ) nhưng sai ${grammarErrors} lỗi ngữ pháp/đuôi từ (tô đỏ).`
-          : `👌 Đạt yêu cầu cơ bản (${wordCount} từ). Hãy tự tin nói dài hơn.`;
-      } else {
-        calculatedScore = Math.max(35, wordCount * 6 + 20 - penalty);
-        feedbackMessage = `⚠️ Bài nói hơi ngắn (${wordCount} từ). Cần bổ sung thêm thông tin.`;
-      }
-
-      return {
-        score: calculatedScore,
-        isWin: calculatedScore >= 70,
-        transcript: recognizedTranscript,
-        detailedFeedback: feedbackMessage,
-        errorWords: [],
-        criteria: null,
-        wordAnalysis: analysis
-      };
-    }
-
+    return {
+      score: 0,
+      isWin: false,
+      transcript: "(Không phát hiện giọng nói hoặc âm thanh quá ngắn)",
+      detailedFeedback: "❌ Bài làm chưa đạt yêu cầu! Vui lòng bấm làm lại và nói to, rõ ràng!",
+      errorWords: [],
+      criteria: null,
+      wordAnalysis: []
+    };
   } catch (err) {
     return {
-      score: 50,
+      score: 0,
       isWin: false,
       transcript: "(Lỗi xử lý bài nói)",
       detailedFeedback: "❌ Đã có lỗi xảy ra trong quá trình chấm điểm. Vui lòng thử lại!",

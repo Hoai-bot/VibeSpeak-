@@ -42,14 +42,12 @@ export interface ChallengeItem {
   prompt: string;
   hint: { vi: string };
   isTeacherAssigned?: boolean;
-  // Dữ liệu mở rộng cho Tầng 2 (Relay 2 lượt)
   turn1RoleVi?: string;
   turn1TaskVi?: string;
   turn1SampleEn?: string;
   turn2RoleVi?: string;
   turn2TaskVi?: string;
   turn2SampleEn?: string;
-  // Dữ liệu mở rộng cho Tầng 3 (Roleplay nhập vai)
   userRoleVi?: string;
   aiRoleVi?: string;
 }
@@ -62,13 +60,11 @@ const TIERS: { key: Station2Tier; label: string; icon: string; desc: string }[] 
   { key: 'ROLEPLAY', label: 'TẦNG 3: ROLEPLAY (ĐỐI THOẠI NHẬP VAI)', icon: '🎭', desc: 'Nhập vai tương tác: Giải quyết bất đồng, đàm phán và thuyết phục thực tế.' }
 ];
 
-// 🎯 LẤY TÌNH HUỐNG TỪ KHO DỮ LIỆU 180 CHỦ ĐỀ (SOLO / RELAY / ROLEPLAY)
 const createScenarioFromBank = (tier: Station2Tier, level: CefrLevel, index: number): ChallengeItem => {
   const list = getStation2ScenariosByTierAndLevel(tier, level);
   const raw: any = list[index % list.length];
   const roundNum = Math.floor(index / list.length) + 1;
 
-  // Đối với Relay, câu mẫu phát âm & đối chiếu là chuỗi nối tiếp Lượt 1 -> Lượt 2
   const effectivePrompt = tier === 'RELAY' && raw.turn1SampleEn && raw.turn2SampleEn
     ? `${raw.turn1SampleEn} ${raw.turn2SampleEn}`
     : (raw.sampleAnswerEn || raw.promptEn || '');
@@ -129,7 +125,6 @@ export default function Station2Screen({ onBack }: Props) {
   const [teacherAssignments, setTeacherAssignments] = useState<ChallengeItem[]>([]);
   const [loadingAssignments, setLoadingAssignments] = useState<boolean>(true);
 
-  // 🎓 QUẢN LÝ MÃ LỚP & ĐỊNH DANH SINH VIÊN TỰ ĐỘNG (LOCALSTORAGE)
   const [classCodeInput, setClassCodeInput] = useState<string>(() => getSavedStudentProfile().classCode);
   const [studentNameInput, setStudentNameInput] = useState<string>(() => getSavedStudentProfile().studentName);
   const [studentCodeInput, setStudentCodeInput] = useState<string>(() => getSavedStudentProfile().studentCode);
@@ -138,10 +133,8 @@ export default function Station2Screen({ onBack }: Props) {
     return !p.studentName || !p.studentCode;
   });
 
-  // 🌐 GỢI Ý THUẦN TIẾNG VIỆT
   const [showHint, setShowHint] = useState<boolean>(true);
 
-  // 🎯 QUẢN LÝ ĐỀ BÀI VÀ HÀNG ĐỢI NẠP BÙ AI NGẦM (KHỞI TẠO NGẪU NHIÊN CHỐNG TRÙNG LỚP)
   const [topicIndex, setTopicIndex] = useState<number>(() => Math.floor(Math.random() * 10));
   const [currentChallenge, setCurrentChallenge] = useState<ChallengeItem>(() => {
     const startIdx = Math.floor(Math.random() * 10);
@@ -150,7 +143,6 @@ export default function Station2Screen({ onBack }: Props) {
   const [aiQueue, setAiQueue] = useState<ChallengeItem[]>([]);
   const isFetchingAiRef = useRef<boolean>(false);
 
-  // QUẢN LÝ TTS
   const [isPlayingSample, setIsPlayingSample] = useState<boolean>(false);
   const synthRef = useRef<SpeechSynthesis | null>(null);
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
@@ -181,7 +173,6 @@ export default function Station2Screen({ onBack }: Props) {
     setIsPlayingSample(false);
   };
 
-  // 🔊 BỘ PHÁT ÂM MẪU CHUẨN IOS & DESKTOP (TRẠM 2)
   const playNaturalTTS = async (text: string) => {
     if (isPlayingSample) {
       stopSampleAudio();
@@ -284,7 +275,6 @@ export default function Station2Screen({ onBack }: Props) {
   const [detailedModalVisible, setDetailedModalVisible] = useState<boolean>(false);
   const [feedbackResult, setFeedbackResult] = useState<DetailedFeedbackData | null>(null);
 
-  // 🔄 LỌC BÀI TẬP GIẢNG VIÊN GIAO THEO MÃ LỚP (CLASS CODE)
   const fetchTeacherAssignments = async (targetClassCode?: string) => {
     setLoadingAssignments(true);
     const activeCode = (targetClassCode ?? classCodeInput).toUpperCase().trim();
@@ -374,7 +364,6 @@ export default function Station2Screen({ onBack }: Props) {
     setAiQueue([]);
   }, [selectedTier, selectedLevel, topicOrigin, teacherAssignments]);
 
-  // 🤖 BACKGROUND AI REFILL QUA SERVERLESS API BẢO MẬT
   const triggerBackgroundAiRefill = async (tier: Station2Tier, level: CefrLevel) => {
     if (isFetchingAiRef.current) return;
 
@@ -688,6 +677,8 @@ Output ONLY raw JSON:
   // 🛑 DỪNG GHI ÂM VÀ GIẢI PHÓNG TOÀN BỘ PHẦN CỨNG ÂM THANH
   const stopNormalRecording = () => {
     isRecordingNormalRef.current = false;
+    // ⚠️ Xóa transcript tạm của trình duyệt để không đè lên bản ghi nguyên văn từ Whisper Server
+    liveTranscriptRef.current = '';
 
     if (speechRecognitionRef.current) {
       try { 
@@ -743,10 +734,9 @@ Output ONLY raw JSON:
       setRecordedAudioUrl(URL.createObjectURL(audioBlob));
     }
 
-    let actualTranscript = liveTranscriptRef.current.trim();
+    let actualTranscript = '';
     let serverEvalData: any = null;
 
-    // 🎯 Luôn gửi kèm cả bối cảnh lẫn câu mẫu tiếng Anh để AI đối chiếu thì & cách diễn đạt chuẩn
     const targetPrompt = practiceMode === 'READ_SAMPLE' 
       ? (currentChallenge?.prompt || '') 
       : `Mode: FREE_SPEECH | Scenario: ${currentChallenge?.title || ''} | Context (VI): ${currentChallenge?.contextDesc || ''} | Reference English Sample: ${currentChallenge?.prompt || ''}`;
@@ -766,17 +756,21 @@ Output ONLY raw JSON:
           audioBlob,
           selectedLevel,
           'STATION_2',
-          targetPrompt,
-          undefined,
-          actualTranscript
+          targetPrompt
         );
-        if (serverEvalData) {
+        if (serverEvalData && serverEvalData.score > 0) {
           success = true;
-          if (serverEvalData.transcript && serverEvalData.transcript.trim()) {
-            actualTranscript = serverEvalData.transcript.trim();
-            setLiveTranscript(actualTranscript);
-            liveTranscriptRef.current = actualTranscript;
-          }
+          actualTranscript = (serverEvalData.transcript || '').trim();
+          setLiveTranscript(actualTranscript);
+          liveTranscriptRef.current = actualTranscript;
+        } else if (serverEvalData && serverEvalData.score === 0) {
+          setIsEvaluating(false);
+          setLiveTranscript(serverEvalData.transcript || '');
+          Alert.alert(
+            "Không thể chấm điểm",
+            serverEvalData.detailedFeedback || "Chưa nhận diện được giọng nói rõ ràng hoặc lỗi kết nối AI."
+          );
+          return;
         }
       } catch (err) {
         attempt++;
@@ -784,7 +778,7 @@ Output ONLY raw JSON:
       }
     }
 
-    if (!success && (!actualTranscript || actualTranscript.length < 3)) {
+    if (!success || !actualTranscript || actualTranscript.length < 3) {
       setIsEvaluating(false);
       Alert.alert(
         "Kết nối gián đoạn",
@@ -900,7 +894,6 @@ Output ONLY raw JSON:
       evaluated.rubrics.content.score = serverEvalData.criteria.content;
     }
 
-    // Trừ điểm trực tiếp vào Ngữ pháp & Phát âm nếu mắc lỗi chia thì / chia động từ / dùng từ sai ngữ cảnh
     if (errorWordsDetected.length > 0) {
       const grammarErrCount = analyzedWords.filter((w: SpokenWordAnalysis) => w.hasGrammarError).length;
       const pronErrCount = analyzedWords.filter((w: SpokenWordAnalysis) => w.hasPronunciationError).length;
@@ -945,7 +938,10 @@ Output ONLY raw JSON:
       (r.grammar.score * 0.15) +
       (r.content.score * 0.15)
     );
-    evaluated.totalScore = weightedTotal;
+    // 🎯 Đồng bộ điểm tổng với điểm đã trừ lỗi ngữ pháp/phát âm từ server
+    evaluated.totalScore = typeof serverEvalData?.score === 'number'
+      ? Math.min(weightedTotal, serverEvalData.score)
+      : weightedTotal;
 
     let audioUrl = '';
     try {
@@ -994,13 +990,11 @@ Output ONLY raw JSON:
 
   const currentTierInfo = TIERS.find(t => t.key === selectedTier);
 
-  // 🧩 COMPONENT HIỂN THỊ CHUỖI TIẾP SỨC 2 LƯỢT (CHO TẦNG RELAY)
   const renderRelayTurnsCard = (item: ChallengeItem) => {
     if (item.tier !== 'RELAY' || (!item.turn1TaskVi && !item.turn2TaskVi)) return null;
 
     return (
       <View style={styles.relayContainer}>
-        {/* LƯỢT 1: BẠN SỐ 1 */}
         <View style={styles.relayTurnBox1}>
           <View style={styles.relayTurnHeader}>
             <Text style={styles.relayTurn1Title}>{item.turn1RoleVi || '🏃 Bạn số 1 (Khởi động)'}</Text>
@@ -1021,7 +1015,6 @@ Output ONLY raw JSON:
 
         <Text style={styles.relayArrowText}>⬇️ CHUYỀN LƯỢT TIẾP SỨC ⬇️</Text>
 
-        {/* LƯỢT 2: BẠN SỐ 2 */}
         <View style={styles.relayTurnBox2}>
           <View style={styles.relayTurnHeader}>
             <Text style={styles.relayTurn2Title}>{item.turn2RoleVi || '🏃‍♂️ Bạn số 2 (Tiếp sức)'}</Text>
@@ -1053,7 +1046,6 @@ Output ONLY raw JSON:
       </View>
 
       <ScrollView contentContainerStyle={{ paddingBottom: 35 }}>
-        {/* 🎓 THANH ĐỊNH DANH SINH VIÊN & MÃ LỚP */}
         <View style={styles.profileBanner}>
           <View style={styles.profileSummaryRow}>
             <Text style={styles.profileSummaryText}>
@@ -1104,7 +1096,6 @@ Output ONLY raw JSON:
 
         {!isTeacherExamining && !isNormalPracticing && (
           <>
-            {/* 1. NGUỒN ĐỀ BÀI */}
             <Text style={styles.sectionHeaderLabel}>1. CHỌN NGUỒN TÌNH HUỐNG:</Text>
             <View style={styles.originTabsRow}>
               <TouchableOpacity
@@ -1157,7 +1148,6 @@ Output ONLY raw JSON:
               </View>
             )}
 
-            {/* 2. CHẾ ĐỘ PHẢN XẠ */}
             <Text style={styles.sectionHeaderLabel}>2. CHỌN CHẾ ĐỘ PHẢN XẠ:</Text>
             <View style={styles.modeTabsRow}>
               <TouchableOpacity
@@ -1179,7 +1169,6 @@ Output ONLY raw JSON:
               </TouchableOpacity>
             </View>
 
-            {/* 3. ĐỊNH DẠNG ĐỐI ĐẦU */}
             <Text style={styles.sectionHeaderLabel}>3. ĐỊNH DẠNG ĐỐI ĐẦU:</Text>
             <View style={styles.tierSelector}>
               {TIERS.map(t => {
@@ -1202,7 +1191,6 @@ Output ONLY raw JSON:
               <Text style={styles.tierInfoText}>🎯 {currentTierInfo?.desc}</Text>
             </View>
 
-            {/* 4. KHUNG NĂNG LỰC CEFR */}
             <Text style={styles.sectionHeaderLabel}>4. TRÌNH ĐỘ CEFR:</Text>
             <View style={styles.levelTabs}>
               {CEFR_LEVELS.map((lvl) => {
@@ -1221,7 +1209,6 @@ Output ONLY raw JSON:
               })}
             </View>
 
-            {/* 🎧 XEM LẠI BẢN THU ÂM */}
             {recordedAudioUrl && !isRecordingNormal && (
               <View style={styles.audioReviewBox}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1243,7 +1230,6 @@ Output ONLY raw JSON:
               </View>
             )}
 
-            {/* 5. GIAO DIỆN TẠO ĐỀ / HIỂN THỊ ĐỀ BÀI */}
             {topicOrigin === 'STUDENT_CUSTOM' ? (
               <View style={styles.customBoxWrapper}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
@@ -1289,7 +1275,6 @@ Output ONLY raw JSON:
               </View>
             ) : (
               <View style={styles.topicContainer}>
-                {/* 🎯 HÀNG NÚT THAO TÁC KÉP */}
                 <View style={styles.actionButtonRow}>
                   <TouchableOpacity 
                     style={styles.prominentSwitchBtn} 
@@ -1312,7 +1297,6 @@ Output ONLY raw JSON:
                   </TouchableOpacity>
                 </View>
 
-                {/* THẺ BÀI TẬP CHÍNH */}
                 <View style={[styles.card, currentChallenge.isTeacherAssigned && styles.teacherCard]}>
                   <View style={styles.cardHeader}>
                     <Text style={[styles.roleText, currentChallenge.isTeacherAssigned && { color: '#00FFFF' }]}>
@@ -1325,7 +1309,6 @@ Output ONLY raw JSON:
                   
                   <Text style={styles.contextText}>📌 {currentChallenge.contextDesc}</Text>
 
-                  {/* HỘP GỢI Ý THUẦN TIẾNG VIỆT */}
                   <View style={styles.hintContainer}>
                     <View style={styles.hintHeaderRow}>
                       <TouchableOpacity 
@@ -1349,7 +1332,6 @@ Output ONLY raw JSON:
                     )}
                   </View>
 
-                  {/* HIỂN THỊ CHUỖI 2 LƯỢT NẾU LÀ TẦNG RELAY */}
                   {currentChallenge.tier === 'RELAY' && currentChallenge.turn1TaskVi ? (
                     <>
                       {renderRelayTurnsCard(currentChallenge)}
@@ -1403,7 +1385,6 @@ Output ONLY raw JSON:
           </>
         )}
 
-        {/* PHÒNG THU LUYỆN TẬP */}
         {isNormalPracticing && currentChallenge && (
           <View style={styles.normalPracticeCard}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
@@ -1471,7 +1452,6 @@ Output ONLY raw JSON:
               />
             </View>
 
-            {/* 📝 SCRIPT TÔ MÀU XANH LÁ (CHUẨN) / ĐỎ (SAI PHÁT ÂM HOẶC NGỮ PHÁP) */}
             {(isRecordingNormal || liveTranscript) && (
               <View style={styles.liveSubtitleBox}>
                 <Text style={styles.liveSubtitleLabel}>
@@ -1563,7 +1543,6 @@ Output ONLY raw JSON:
           </View>
         )}
 
-        {/* PHÒNG THI CHỐNG ĐỌC */}
         {isTeacherExamining && currentChallenge && typeof AntiCheatSpeakingSession === 'function' && (
           <AntiCheatSpeakingSession
             promptText={practiceMode === 'READ_SAMPLE' ? currentChallenge.prompt : ''}
@@ -1576,7 +1555,6 @@ Output ONLY raw JSON:
         )}
       </ScrollView>
 
-      {/* 📊 BẢNG PHÂN TÍCH ĐIỂM CHI TIẾT */}
       {typeof DetailedSpeechFeedbackModal === 'function' && (
         <DetailedSpeechFeedbackModal
           visible={detailedModalVisible}
@@ -1691,7 +1669,6 @@ const styles = StyleSheet.create({
   levelBadge: { color: '#000', backgroundColor: '#39FF14', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, fontSize: 8.5, fontWeight: '900' },
   contextText: { color: '#FFF', fontSize: 11, lineHeight: 16, marginBottom: 8 },
 
-  // STYLES CHO CHUỖI RELAY 2 LƯỢT
   relayContainer: {
     marginVertical: 8,
     gap: 6,
