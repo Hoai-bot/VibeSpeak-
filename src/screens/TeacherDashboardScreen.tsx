@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { supabase } from '../utils/supabase';
 
-// 🔐 MÃ MỜI NỘI BỘ DÀNH CHO GIẢNG VIÊN (Bạn có thể đổi mã này tùy ý)
+// 🔐 MÃ MỜI NỘI BỘ DÀNH CHO GIẢNG VIÊN
 const INSTRUCTOR_INVITE_CODE = 'VIBESPEAK2026';
 
 interface Props {
@@ -42,6 +42,7 @@ interface ClassItem {
   code: string;
   name: string;
   tenant_id: string;
+  instructor_id?: string;
 }
 
 export default function TeacherDashboardScreen({ onBack }: Props) {
@@ -62,21 +63,30 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
   const [submissions, setSubmissions] = useState<SubmissionRecord[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [selectedClass, setSelectedClass] = useState<string>('ALL');
+  const [searchStudentQuery, setSearchStudentQuery] = useState<string>('');
   const [classList, setClassList] = useState<ClassItem[]>([]);
+  const [assignedClassCodes, setAssignedClassCodes] = useState<string[]>([]);
   const [currentPlayingAudio, setCurrentPlayingAudio] = useState<string | null>(null);
 
   // Quản lý Phân quyền (RBAC) & Context
   const [userRole, setUserRole] = useState<string>('INSTRUCTOR');
   const [currentInstructorId, setCurrentInstructorId] = useState<string | null>(null);
+  const [currentInstructorName, setCurrentInstructorName] = useState<string>('');
   const [currentTenantId, setCurrentTenantId] = useState<string>('11111111-1111-1111-1111-111111111111');
 
-  // 1. Quản lý Modal ghi đè điểm & nhận xét
+  // 1. Modal ghi đè điểm & xem chi tiết bài làm
   const [editingItem, setEditingItem] = useState<SubmissionRecord | null>(null);
   const [overrideScoreInput, setOverrideScoreInput] = useState<string>('');
   const [teacherCommentInput, setTeacherCommentInput] = useState<string>('');
   const [isSavingScore, setIsSavingScore] = useState<boolean>(false);
 
-  // 2. Quản lý Modal tạo bài tập mới (Kèm Mã lớp class_code)
+  // 2. Modal tạo lớp học phần riêng của Giảng viên
+  const [showCreateClassModal, setShowCreateClassModal] = useState<boolean>(false);
+  const [newClassCodeInput, setNewClassCodeInput] = useState<string>('');
+  const [newClassNameInput, setNewClassNameInput] = useState<string>('');
+  const [isCreatingClass, setIsCreatingClass] = useState<boolean>(false);
+
+  // 3. Modal tạo bài tập mới (Kèm Mã lớp class_code)
   const [showCreateAssignmentModal, setShowCreateAssignmentModal] = useState<boolean>(false);
   const [assignTitle, setAssignTitle] = useState<string>('');
   const [assignPrompt, setAssignPrompt] = useState<string>('');
@@ -84,17 +94,17 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
   const [assignStation, setAssignStation] = useState<string>('STATION_2');
   const [assignCefr, setAssignCefr] = useState<string>('B1');
   const [assignClassId, setAssignClassId] = useState<string>('');
-  const [assignClassCodeInput, setAssignClassCodeInput] = useState<string>('ENG_K24_ADV');
+  const [assignClassCodeInput, setAssignClassCodeInput] = useState<string>('');
   const [assignDeadline, setAssignDeadline] = useState<string>('2026-12-31T23:59');
   const [isSubmittingAssign, setIsSubmittingAssign] = useState<boolean>(false);
 
-  // 3. Quản lý Modal Bulk Import sinh viên
+  // 4. Modal Bulk Import sinh viên
   const [showImportModal, setShowImportModal] = useState<boolean>(false);
   const [importClassId, setImportClassId] = useState<string>('');
   const [importCsvText, setImportCsvText] = useState<string>('');
   const [isImporting, setIsImporting] = useState<boolean>(false);
 
-  // 4. Quản lý Modal Hướng dẫn Giảng viên (Teacher Guidelines)
+  // 5. Modal Hướng dẫn Giảng viên
   const [showGuideModal, setShowGuideModal] = useState<boolean>(false);
 
   // 🔍 KIỂM TRA PHIÊN ĐĂNG NHẬP & QUYỀN GIẢNG VIÊN KHI MỞ TRANG
@@ -114,7 +124,6 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
         return;
       }
 
-      // Kiểm tra role trong bảng profiles
       const { data: profile, error: profileErr } = await supabase
         .from('profiles')
         .select('role, tenant_id, full_name')
@@ -129,13 +138,14 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
       }
 
       setCurrentInstructorId(session.user.id);
+      setCurrentInstructorName(profile.full_name || session.user.email || 'Giảng viên');
       setUserRole(profile.role);
       if (profile.tenant_id) {
         setCurrentTenantId(profile.tenant_id);
       }
 
       setIsAuthenticated(true);
-      await fetchDashboardData(profile.tenant_id, profile.role);
+      await fetchDashboardData(profile.tenant_id, profile.role, session.user.id);
     } catch (err) {
       console.warn('Lỗi kiểm tra phiên đăng nhập:', err);
       setIsAuthenticated(false);
@@ -181,7 +191,7 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
     }
   };
 
-  // 📝 XỬ LÝ ĐĂNG KÝ TÀI KHOẢN GIẢNG VIÊN MỚI (CÓ MÃ MỜI NỘI BỘ)
+  // 📝 XỬ LÝ ĐĂNG KÝ TÀI KHOẢN GIẢNG VIÊN MỚI
   const handleInstructorRegister = async () => {
     setAuthErrorMsg('');
     setAuthSuccessMsg('');
@@ -228,7 +238,6 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
       if (data?.user) {
         const generatedUsername = `${cleanEmail.split('@')[0]}_${data.user.id.slice(0, 4)}`;
 
-        // Tự động ghi nhận quyền INSTRUCTOR vào bảng profiles (kèm username bắt buộc)
         const { error: profileInsertErr } = await supabase
           .from('profiles')
           .upsert([
@@ -247,12 +256,10 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
           return;
         }
 
-        // Nếu Supabase không bật Confirm Email (có session ngay), đăng nhập thẳng vào Dashboard
         if (data.session) {
           await verifyInstructorSession();
           Alert.alert('Chào mừng Giảng viên', `✅ Đăng ký thành công tài khoản ${cleanName}!`);
         } else {
-          // Trường hợp Supabase đang bật Confirm Email
           setAuthMode('LOGIN');
           setInviteCodeInput('');
           setAuthSuccessMsg('✅ Đã tạo tài khoản Giảng viên! Vui lòng kiểm tra hộp thư Email để bấm link kích hoạt rồi đăng nhập.');
@@ -273,82 +280,10 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
     setIsAuthenticated(false);
     setLoginPassword('');
     setSubmissions([]);
+    setClassList([]);
+    setAssignedClassCodes([]);
   };
 
-  const fetchDashboardData = async (overrideTenantId?: string, overrideRole?: string) => {
-    setLoading(true);
-    try {
-      if (!supabase) {
-        Alert.alert("Thông báo", "Supabase client chưa được cấu hình.");
-        setLoading(false);
-        return;
-      }
-
-      const activeTenantId = overrideTenantId || currentTenantId;
-      const activeRole = overrideRole || userRole;
-
-      // 1. Tải danh sách lớp thuộc TRƯỜNG của giảng viên
-      let classQuery = supabase.from('classes').select('id, code, name, tenant_id');
-      if (activeTenantId && activeRole !== 'SUPER_ADMIN') {
-        classQuery = classQuery.eq('tenant_id', activeTenantId);
-      }
-      const { data: classesData, error: classErr } = await classQuery.order('name', { ascending: true });
-
-      if (classErr) {
-        console.warn("Lỗi tải classes:", classErr.message);
-      }
-
-      if (classesData && classesData.length > 0) {
-        setClassList(classesData);
-        setAssignClassId(classesData[0].id);
-        setAssignClassCodeInput(classesData[0].code || 'PUBLIC');
-        setImportClassId(classesData[0].id);
-      } else {
-        const defaultClass = [
-          { id: '22222222-2222-2222-2222-222222222222', code: 'ENG_K24_ADV', name: 'Anh văn Nâng cao K24', tenant_id: activeTenantId }
-        ];
-        setClassList(defaultClass);
-        setAssignClassId(defaultClass[0].id);
-        setAssignClassCodeInput(defaultClass[0].code);
-        setImportClassId(defaultClass[0].id);
-      }
-
-      // 2. Lấy danh sách bài nộp (Submissions)
-      let subQuery = supabase.from('submissions').select('*').order('created_at', { ascending: false });
-      if (activeTenantId && activeRole !== 'SUPER_ADMIN') {
-        subQuery = subQuery.eq('tenant_id', activeTenantId);
-      }
-      const { data: subData, error: subErr } = await subQuery.limit(150);
-
-      if (subErr) {
-        console.warn("Lỗi tải submissions:", subErr.message);
-      } else if (subData) {
-        setSubmissions(subData as SubmissionRecord[]);
-      }
-    } catch (err) {
-      console.error("Lỗi khi kết nối lấy dữ liệu Dashboard:", err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Tổng hợp danh sách Mã lớp từ cả bảng classes và thực tế bài nộp sinh viên gửi lên
-  const availableFilterCodes = useMemo(() => {
-    const codeSet = new Set<string>();
-    classList.forEach(c => {
-      if (c.code) codeSet.add(c.code.toUpperCase().trim());
-    });
-    submissions.forEach(s => {
-      if (s.class_code) codeSet.add(s.class_code.toUpperCase().trim());
-      const match = (s.class_name || '').match(/^\[([A-Z0-9_-]+)\]/i);
-      if (match && match[1]) {
-        codeSet.add(match[1].toUpperCase());
-      }
-    });
-    return Array.from(codeSet);
-  }, [classList, submissions]);
-
-  // Hàm lấy mã lớp chuẩn hóa của từng bài nộp
   const extractSubmissionClassCode = (s: SubmissionRecord): string => {
     if (s.class_code && s.class_code.trim()) {
       return s.class_code.toUpperCase().trim();
@@ -360,12 +295,120 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
     return 'PUBLIC';
   };
 
-  // Lọc theo Mã lớp
-  const filteredSubmissions = selectedClass === 'ALL'
-    ? submissions
-    : submissions.filter(s => extractSubmissionClassCode(s) === selectedClass);
+  // 🔒 TẢI DỮ LIỆU TÁCH BIỆT THEO TỪNG GIẢNG VIÊN (INSTRUCTOR ISOLATION)
+  const fetchDashboardData = async (
+    overrideTenantId?: string,
+    overrideRole?: string,
+    overrideInstructorId?: string
+  ) => {
+    setLoading(true);
+    try {
+      if (!supabase) {
+        Alert.alert("Thông báo", "Supabase client chưa được cấu hình.");
+        setLoading(false);
+        return;
+      }
 
-  // Thống kê
+      const activeTenantId = overrideTenantId || currentTenantId;
+      const activeRole = overrideRole || userRole;
+      const activeInstructorId = overrideInstructorId || currentInstructorId;
+
+      // 1. Tải danh sách LỚP HỌC PHẦN thuộc quyền quản lý của Giảng viên hiện tại
+      let classQuery = supabase.from('classes').select('id, code, name, tenant_id, instructor_id');
+      if (activeRole !== 'SUPER_ADMIN' && activeInstructorId) {
+        classQuery = classQuery.eq('instructor_id', activeInstructorId);
+      } else if (activeTenantId && activeRole !== 'SUPER_ADMIN') {
+        classQuery = classQuery.eq('tenant_id', activeTenantId);
+      }
+      const { data: classesData, error: classErr } = await classQuery.order('name', { ascending: true });
+
+      if (classErr) {
+        console.warn("Lỗi tải classes:", classErr.message);
+      }
+
+      const validClasses: ClassItem[] = Array.isArray(classesData) ? classesData : [];
+      setClassList(validClasses);
+      if (validClasses.length > 0) {
+        setAssignClassId(validClasses[0].id);
+        setAssignClassCodeInput(validClasses[0].code || '');
+        setImportClassId(validClasses[0].id);
+      }
+
+      // 2. Tải danh sách BÀI TẬP (assignments) do chính Giảng viên này phát hành để đồng bộ mã lớp
+      let assignQuery = supabase.from('assignments').select('class_code, created_by');
+      if (activeRole !== 'SUPER_ADMIN' && activeInstructorId) {
+        assignQuery = assignQuery.eq('created_by', activeInstructorId);
+      }
+      const { data: assignData } = await assignQuery;
+      const instructorAssignCodes = (assignData || [])
+        .map((a: any) => (a.class_code || '').toUpperCase().trim())
+        .filter((c: string) => Boolean(c) && c !== 'PUBLIC');
+      setAssignedClassCodes(Array.from(new Set(instructorAssignCodes)));
+
+      // Tập hợp toàn bộ Mã lớp thuộc quyền Giảng viên hiện tại
+      const ownedCodesSet = new Set<string>([
+        ...validClasses.map((c) => (c.code || '').toUpperCase().trim()).filter(Boolean),
+        ...instructorAssignCodes,
+      ]);
+
+      // 3. Lấy danh sách bài nộp (Submissions) và lọc chặt theo các lớp của Giảng viên
+      const { data: subData, error: subErr } = await supabase
+        .from('submissions')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(300);
+
+      if (subErr) {
+        console.warn("Lỗi tải submissions:", subErr.message);
+      } else if (subData) {
+        const allSubs = subData as SubmissionRecord[];
+        if (activeRole === 'SUPER_ADMIN') {
+          setSubmissions(allSubs);
+        } else if (ownedCodesSet.size === 0) {
+          // Giảng viên mới chưa tạo lớp nào -> chưa hiển thị bài nộp của lớp khác
+          setSubmissions([]);
+        } else {
+          const myClassSubs = allSubs.filter((s) => ownedCodesSet.has(extractSubmissionClassCode(s)));
+          setSubmissions(myClassSubs);
+        }
+      }
+    } catch (err) {
+      console.error("Lỗi khi kết nối lấy dữ liệu Dashboard:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Danh sách các Mã lớp thuộc quyền Giảng viên để hiện trên thanh lọc
+  const availableFilterCodes = useMemo(() => {
+    const codeSet = new Set<string>();
+    classList.forEach(c => {
+      if (c.code) codeSet.add(c.code.toUpperCase().trim());
+    });
+    assignedClassCodes.forEach(c => {
+      if (c) codeSet.add(c.toUpperCase().trim());
+    });
+    submissions.forEach(s => {
+      const code = extractSubmissionClassCode(s);
+      if (code && code !== 'PUBLIC') codeSet.add(code);
+    });
+    return Array.from(codeSet);
+  }, [classList, assignedClassCodes, submissions]);
+
+  // Lọc theo Mã lớp + Tìm kiếm theo Tên / MSSV
+  const filteredSubmissions = useMemo(() => {
+    const q = searchStudentQuery.trim().toLowerCase();
+    return submissions.filter(s => {
+      const matchClass = selectedClass === 'ALL' || extractSubmissionClassCode(s) === selectedClass;
+      if (!matchClass) return false;
+      if (!q) return true;
+      const nameMatch = (s.student_name || '').toLowerCase().includes(q);
+      const codeMatch = (s.student_code || '').toLowerCase().includes(q);
+      return nameMatch || codeMatch;
+    });
+  }, [submissions, selectedClass, searchStudentQuery]);
+
+  // Thống kê theo lớp đang chọn
   const totalSubmissions = filteredSubmissions.length;
   const getFinalScore = (s: SubmissionRecord) => (s.manual_score !== null && s.manual_score !== undefined) ? Number(s.manual_score) : Number(s.score);
 
@@ -377,7 +420,60 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
     ? Math.round((filteredSubmissions.filter(s => getFinalScore(s) >= 70).length / totalSubmissions) * 100)
     : 0;
 
-  // Xử lý lưu điểm ghi đè
+  // 🏫 TẠO LỚP HỌC PHẦN RIÊNG CỦA GIẢNG VIÊN
+  const handleCreateClass = async () => {
+    const cleanCode = newClassCodeInput.toUpperCase().trim().replace(/\s+/g, '_');
+    const cleanName = newClassNameInput.trim();
+
+    if (!cleanCode || !cleanName) {
+      Alert.alert("Thiếu thông tin", "Vui lòng nhập đầy đủ Mã lớp (VD: ENG101_N01) và Tên lớp học phần!");
+      return;
+    }
+
+    if (cleanCode === 'PUBLIC') {
+      Alert.alert("Mã lớp không hợp lệ", "Vui lòng đặt mã lớp riêng thay vì 'PUBLIC' để tránh trùng lặp dữ liệu.");
+      return;
+    }
+
+    setIsCreatingClass(true);
+    try {
+      if (supabase) {
+        const { data, error } = await supabase
+          .from('classes')
+          .insert([{
+            code: cleanCode,
+            name: cleanName,
+            tenant_id: currentTenantId,
+            instructor_id: currentInstructorId,
+          }])
+          .select('id, code, name, tenant_id, instructor_id')
+          .single();
+
+        if (error) {
+          Alert.alert("Lỗi tạo lớp", error.message);
+        } else {
+          setShowCreateClassModal(false);
+          setNewClassCodeInput('');
+          setNewClassNameInput('');
+          if (data) {
+            setAssignClassId(data.id);
+            setAssignClassCodeInput(data.code);
+            setSelectedClass(data.code);
+          }
+          await fetchDashboardData();
+          Alert.alert(
+            "Tạo lớp thành công",
+            `✅ Đã tạo lớp "${cleanName}" với Mã lớp [${cleanCode}]. Sinh viên chỉ cần nhập mã [${cleanCode}] để nộp bài vào đúng lớp của bạn!`
+          );
+        }
+      }
+    } catch (err: any) {
+      Alert.alert("Lỗi", err.message || "Không thể tạo lớp mới.");
+    } finally {
+      setIsCreatingClass(false);
+    }
+  };
+
   const handleOpenOverrideModal = (item: SubmissionRecord) => {
     setEditingItem(item);
     setOverrideScoreInput(item.manual_score !== null ? String(item.manual_score) : String(item.score));
@@ -429,22 +525,32 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
     }
   };
 
-  // 📝 TÍNH NĂNG 1: GIẢNG VIÊN TỰ TẠO BÀI TẬP MỚI (ĐỒNG BỘ CLASS_CODE)
+  // 📝 GIAO BÀI TẬP MỚI (GẮN VỚI LỚP CỦA GIẢNG VIÊN)
   const handleCreateAssignment = async () => {
     if (!assignTitle.trim() || !assignPrompt.trim()) {
       Alert.alert("Lỗi", "Vui lòng nhập đầy đủ tiêu đề và nội dung câu mẫu/đề bài!");
       return;
     }
 
-    const normalizedClassCode = (assignClassCodeInput || 'PUBLIC').toUpperCase().trim();
+    const normalizedClassCode = (assignClassCodeInput || '').toUpperCase().trim().replace(/\s+/g, '_');
+    if (!normalizedClassCode || normalizedClassCode === 'PUBLIC') {
+      Alert.alert("Thiếu Mã lớp", "Vui lòng chọn lớp học phần hoặc nhập Mã lớp riêng (VD: ENG101_N01)!");
+      return;
+    }
+
+    const parsedDate = new Date(assignDeadline);
+    if (isNaN(parsedDate.getTime())) {
+      Alert.alert("Sai định dạng ngày", "Hạn chót phải theo định dạng YYYY-MM-DDTHH:mm (Ví dụ: 2026-12-31T23:59).");
+      return;
+    }
 
     setIsSubmittingAssign(true);
     try {
       if (supabase) {
-        const selectedClassObj = classList.find(c => c.id === assignClassId);
+        const selectedClassObj = classList.find(c => c.code?.toUpperCase() === normalizedClassCode || c.id === assignClassId);
         const { error } = await supabase.from('assignments').insert([{
           tenant_id: selectedClassObj?.tenant_id || currentTenantId,
-          class_id: selectedClassObj ? assignClassId : null,
+          class_id: selectedClassObj ? selectedClassObj.id : null,
           class_code: normalizedClassCode,
           created_by: currentInstructorId,
           title: assignTitle.trim(),
@@ -452,21 +558,23 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
           station_type: assignStation,
           target_prompt: assignPrompt.trim(),
           cefr_level: assignCefr.toUpperCase().trim(),
-          deadline_at: new Date(assignDeadline).toISOString(),
+          deadline_at: parsedDate.toISOString(),
           status: 'PUBLISHED'
         }]);
 
         if (error) {
           Alert.alert("Lỗi tạo bài tập", error.message);
         } else {
-          Alert.alert(
-            "Giao bài thành công",
-            `✅ Đã phát hành bài tập "${assignTitle}" cho mã lớp [${normalizedClassCode}]. Sinh viên chỉ cần nhập mã lớp này để nhận bài!`
-          );
           setShowCreateAssignmentModal(false);
           setAssignTitle('');
           setAssignPrompt('');
           setAssignDescription('');
+          setSelectedClass(normalizedClassCode);
+          await fetchDashboardData();
+          Alert.alert(
+            "Giao bài thành công",
+            `✅ Đã phát hành bài tập "${assignTitle}" cho mã lớp [${normalizedClassCode}]. Sinh viên chỉ cần nhập mã lớp này để nhận bài!`
+          );
         }
       }
     } catch (err: any) {
@@ -476,7 +584,7 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
     }
   };
 
-  // 👥 TÍNH NĂNG 2: BULK IMPORT SINH VIÊN BẰNG FILE CSV / EXCEL
+  // 👥 BULK IMPORT SINH VIÊN BẰNG FILE CSV
   const handleBulkImportStudents = async () => {
     if (!importCsvText.trim()) {
       Alert.alert("Lỗi", "Vui lòng nhập hoặc dán nội dung CSV danh sách sinh viên!");
@@ -501,7 +609,7 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
 
           studentsToInsert.push({
             tenant_id: selectedClassObj?.tenant_id || currentTenantId,
-            class_id: importClassId,
+            class_id: importClassId || null,
             student_id: studentCode,
             full_name: fullName,
             email: email,
@@ -533,32 +641,38 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
     }
   };
 
-  // Tải file mẫu CSV
   const handleDownloadSampleCsv = () => {
     const sample = "MSSV,HoVaTen,Email\nSV2026001,Nguyen Van An,an.nv@student.vibespeak.edu.vn\nSV2026002,Tran Thi Mai,mai.tt@student.vibespeak.edu.vn\nSV2026003,Le Hoang Nam,nam.lh@student.vibespeak.edu.vn";
     setImportCsvText(sample);
     Alert.alert("Đã tải mẫu", "Đã điền sẵn cấu trúc mẫu vào khung nhập liệu bên dưới.");
   };
 
-  // Xuất file CSV báo cáo điểm (Kèm cột Mã Lớp)
+  // Xuất file CSV báo cáo điểm
   const handleExportCSV = () => {
     if (filteredSubmissions.length === 0) {
       Alert.alert("Thông báo", "Không có dữ liệu bài nộp để xuất!");
       return;
     }
 
-    const headers = ["MSSV", "Ho va Ten", "Ma Lop", "Chi Tiet Tram", "Diem AI", "Diem Giang Vien", "Diem Chot", "Nhan Xet Giang Vien", "Cap Do", "Ky Nang", "Thoi Gian"];
+    const headers = [
+      "MSSV", "Ho va Ten", "Ma Lop", "Chi Tiet Tram",
+      "Diem AI", "Diem Giang Vien", "Diem Chot",
+      "Ban Ghi Am (Transcript)", "Phan Tich Chi Tiet AI", "Nhan Xet Giang Vien",
+      "Cap Do", "Ky Nang", "Thoi Gian"
+    ];
     const rows = filteredSubmissions.map(s => {
       const finalScore = getFinalScore(s);
       const code = extractSubmissionClassCode(s);
       return [
         `"${s.student_code || 'GUEST'}"`,
-        `"${s.student_name || 'N/A'}"`,
+        `"${(s.student_name || 'N/A').replace(/"/g, '""')}"`,
         `"${code}"`,
-        `"${s.class_name || 'Lop Chung'}"`,
+        `"${(s.class_name || 'Lop Chung').replace(/"/g, '""')}"`,
         s.score,
         s.manual_score !== null ? s.manual_score : 'Chua sua',
         finalScore,
+        `"${(s.transcript || '').replace(/"/g, '""')}"`,
+        `"${(s.feedback || '').replace(/"/g, '""')}"`,
         `"${(s.teacher_feedback || '').replace(/"/g, '""')}"`,
         `"${s.cefr_level || 'B1'}"`,
         `"${s.mode || 'SPEAKING'}"`,
@@ -582,9 +696,6 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
     }
   };
 
-  // =========================================================================
-  // MÀN HÌNH CHỜ KIỂM TRA QUYỀN & CỔNG ĐĂNG NHẬP / ĐĂNG KÝ GIẢNG VIÊN
-  // =========================================================================
   if (isCheckingAuth) {
     return (
       <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
@@ -615,7 +726,6 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
               Khu vực dành riêng cho Giảng viên & Cán bộ đào tạo.
             </Text>
 
-            {/* THANH CHUYỂN ĐỔI ĐĂNG NHẬP / ĐĂNG KÝ GIẢNG VIÊN */}
             <View style={styles.authTabRow}>
               <TouchableOpacity
                 style={[styles.authTabBtn, authMode === 'LOGIN' && styles.authTabBtnActive]}
@@ -739,9 +849,6 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
     );
   }
 
-  // =========================================================================
-  // GIAO DIỆN CHÍNH CỦA CỔNG GIẢNG VIÊN (SAU KHI ĐĂNG NHẬP THÀNH CÔNG)
-  // =========================================================================
   return (
     <View style={styles.container}>
       {/* Top Header */}
@@ -750,8 +857,10 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
           <Text style={styles.backBtnText}>🔙 BẢN ĐỒ</Text>
         </TouchableOpacity>
         <View style={{ flex: 1, alignItems: 'center' }}>
-          <Text style={styles.headerTitle}>🏫 CỔNG GIẢNG VIÊN & ĐÀO TẠO</Text>
-          <Text style={styles.roleBadge}>Quyền: {userRole}</Text>
+          <Text style={styles.headerTitle}>🏫 CỔNG QUẢN LÝ GIẢNG VIÊN</Text>
+          <Text style={styles.roleBadge}>
+            👤 {currentInstructorName} ({userRole})
+          </Text>
         </View>
         <View style={styles.actionBtnGroup}>
           <TouchableOpacity onPress={() => setShowGuideModal(true)} style={styles.guideBtn}>
@@ -770,21 +879,37 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
       </View>
 
       <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
-        {/* NÚT TÁC VỤ SƯ PHẠM B2B (GIAO BÀI & BULK IMPORT) */}
+        {/* NÚT TÁC VỤ SƯ PHẠM: TẠO LỚP + GIAO BÀI + IMPORT */}
         <View style={styles.managementActionRow}>
+          <TouchableOpacity 
+            style={styles.createClassBtn}
+            onPress={() => setShowCreateClassModal(true)}
+          >
+            <Text style={styles.createClassBtnText}>🏫 TẠO LỚP MỚI</Text>
+          </TouchableOpacity>
           <TouchableOpacity 
             style={styles.newAssignmentBtn}
             onPress={() => setShowCreateAssignmentModal(true)}
           >
-            <Text style={styles.newAssignmentBtnText}>➕ GIAO BÀI THEO MÃ LỚP</Text>
+            <Text style={styles.newAssignmentBtnText}>➕ GIAO BÀI TẬP</Text>
           </TouchableOpacity>
           <TouchableOpacity 
             style={styles.bulkImportBtn}
             onPress={() => setShowImportModal(true)}
           >
-            <Text style={styles.bulkImportBtnText}>👥 IMPORT SINH VIÊN (CSV)</Text>
+            <Text style={styles.bulkImportBtnText}>👥 IMPORT SV</Text>
           </TouchableOpacity>
         </View>
+
+        {/* Cảnh báo nếu Giảng viên mới chưa có lớp học phần */}
+        {availableFilterCodes.length === 0 && !loading && (
+          <View style={styles.emptyClassBanner}>
+            <Text style={styles.emptyClassBannerTitle}>👋 Chào mừng {currentInstructorName}!</Text>
+            <Text style={styles.emptyClassBannerDesc}>
+              Bạn chưa tạo lớp học phần nào. Hãy bấm nút <Text style={{ color: '#00FFFF', fontWeight: 'bold' }}>🏫 TẠO LỚP MỚI</Text> (ví dụ: ENG101_N01) để hệ thống tách biệt hoàn toàn dữ liệu bài nộp và điểm số của lớp bạn dạy!
+            </Text>
+          </View>
+        )}
 
         {/* Khối Thống Kê Tổng Quan */}
         <View style={styles.statsRow}>
@@ -806,45 +931,60 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
           </View>
         </View>
 
-        {/* Thanh lọc theo Mã lớp (Class Code) */}
+        {/* Thanh lọc theo Mã lớp của Giảng viên & Tìm kiếm sinh viên */}
         <View style={styles.filterSection}>
-          <Text style={styles.filterLabel}>📌 LỌC BÀI NỘP THEO MÃ LỚP HỌC PHẦN:</Text>
+          <Text style={styles.filterLabel}>📌 CÁC LỚP HỌC PHẦN CỦA BẠN ({availableFilterCodes.length} LỚP):</Text>
+          <TextInput
+            style={styles.searchInput}
+            placeholder="🔍 Gõ tên hoặc MSSV sinh viên để lọc nhanh..."
+            placeholderTextColor="#666688"
+            value={searchStudentQuery}
+            onChangeText={setSearchStudentQuery}
+          />
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll}>
             <TouchableOpacity 
               style={[styles.filterChip, selectedClass === 'ALL' && styles.filterChipActive]}
               onPress={() => setSelectedClass('ALL')}
             >
               <Text style={[styles.filterChipText, selectedClass === 'ALL' && styles.filterChipTextActive]}>
-                Tất Cả Lớp ({submissions.length})
+                Tất Cả Lớp Của Tôi ({submissions.length})
               </Text>
             </TouchableOpacity>
-            {availableFilterCodes.map((code) => (
-              <TouchableOpacity 
-                key={code} 
-                style={[styles.filterChip, selectedClass === code && styles.filterChipActive]}
-                onPress={() => setSelectedClass(code)}
-              >
-                <Text style={[styles.filterChipText, selectedClass === code && styles.filterChipTextActive]}>
-                  🏫 {code}
-                </Text>
-              </TouchableOpacity>
-            ))}
+            {availableFilterCodes.map((code) => {
+              const clsObj = classList.find(c => c.code?.toUpperCase() === code);
+              const countInClass = submissions.filter(s => extractSubmissionClassCode(s) === code).length;
+              return (
+                <TouchableOpacity 
+                  key={code} 
+                  style={[styles.filterChip, selectedClass === code && styles.filterChipActive]}
+                  onPress={() => setSelectedClass(code)}
+                >
+                  <Text style={[styles.filterChipText, selectedClass === code && styles.filterChipTextActive]}>
+                    🏫 {code}{clsObj?.name ? ` (${clsObj.name})` : ''} • {countInClass} bài
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
           </ScrollView>
         </View>
 
         {/* Danh sách bảng điểm sinh viên */}
         <View style={styles.tableBox}>
           <View style={styles.tableHeaderRow}>
-            <Text style={[styles.thText, { flex: 1.2 }]}>SINH VIÊN</Text>
+            <Text style={[styles.thText, { flex: 1.3 }]}>SINH VIÊN / BÀI NÓI</Text>
             <Text style={[styles.thText, { flex: 1 }]}>MÃ LỚP / TRẠM</Text>
-            <Text style={[styles.thText, { flex: 0.9, textAlign: 'center' }]}>ĐIỂM CHỐT</Text>
-            <Text style={[styles.thText, { flex: 1.2, textAlign: 'right' }]}>THAO TÁC</Text>
+            <Text style={[styles.thText, { flex: 0.85, textAlign: 'center' }]}>ĐIỂM CHỐT</Text>
+            <Text style={[styles.thText, { flex: 1.15, textAlign: 'right' }]}>THAO TÁC</Text>
           </View>
 
           {loading ? (
             <ActivityIndicator size="large" color="#00FFFF" style={{ marginVertical: 30 }} />
           ) : filteredSubmissions.length === 0 ? (
-            <Text style={styles.emptyText}>Chưa có bài nộp nào thuộc mã lớp "{selectedClass}".</Text>
+            <Text style={styles.emptyText}>
+              {availableFilterCodes.length === 0
+                ? 'Bạn chưa có lớp học phần nào. Hãy bấm "🏫 TẠO LỚP MỚI" để bắt đầu!'
+                : `Chưa có sinh viên nào nộp bài vào lớp "${selectedClass === 'ALL' ? 'của bạn' : selectedClass}".`}
+            </Text>
           ) : (
             filteredSubmissions.map((item) => {
               const finalScore = getFinalScore(item);
@@ -854,31 +994,38 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
 
               return (
                 <View key={item.id} style={styles.tableRow}>
-                  {/* Cột 1: Thông tin sinh viên */}
-                  <View style={{ flex: 1.2 }}>
+                  <View style={{ flex: 1.3, paddingRight: 6 }}>
                     <Text style={styles.studentNameText} numberOfLines={1}>
                       {item.student_name || 'Học viên VipeSpeak'}
                     </Text>
                     <Text style={styles.studentCodeText}>
                       MSSV: {item.student_code || 'GUEST'}
                     </Text>
-                    {item.teacher_feedback && (
+                    {item.transcript ? (
+                      <Text style={styles.transcriptPreviewText} numberOfLines={2}>
+                        🗣️ "{item.transcript}"
+                      </Text>
+                    ) : null}
+                    {item.teacher_feedback ? (
                       <Text style={styles.teacherNoteText} numberOfLines={2}>
                         💬 GV: {item.teacher_feedback}
                       </Text>
-                    )}
+                    ) : null}
                   </View>
 
-                  {/* Cột 2: Mã lớp & Kỹ năng */}
                   <View style={{ flex: 1 }}>
                     <View style={styles.classCodeTag}>
                       <Text style={styles.classCodeTagText}>{rowClassCode}</Text>
                     </View>
                     <Text style={styles.modeText} numberOfLines={1}>{item.mode || 'STATION_1'} • {item.cefr_level || 'B1'}</Text>
+                    {item.feedback ? (
+                      <Text style={styles.aiMetricMiniText} numberOfLines={2}>
+                        {item.feedback}
+                      </Text>
+                    ) : null}
                   </View>
 
-                  {/* Cột 3: Điểm số */}
-                  <View style={{ flex: 0.9, alignItems: 'center' }}>
+                  <View style={{ flex: 0.85, alignItems: 'center' }}>
                     <Text style={[styles.scoreBadge, { color: isPass ? '#39FF14' : '#FF0055' }]}>
                       {finalScore}đ
                     </Text>
@@ -887,13 +1034,12 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
                     </Text>
                   </View>
 
-                  {/* Cột 4: Thao tác (Chấm lại & Nghe Audio) */}
-                  <View style={{ flex: 1.2, alignItems: 'flex-end', justifyContent: 'center', gap: 4 }}>
+                  <View style={{ flex: 1.15, alignItems: 'flex-end', justifyContent: 'center', gap: 4 }}>
                     <TouchableOpacity 
                       style={styles.overrideBtn}
                       onPress={() => handleOpenOverrideModal(item)}
                     >
-                      <Text style={styles.overrideBtnText}>✏️ ĐỔI ĐIỂM</Text>
+                      <Text style={styles.overrideBtnText}>📄 CHI TIẾT / ĐIỂM</Text>
                     </TouchableOpacity>
 
                     {item.audio_url ? (
@@ -947,7 +1093,65 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
       </ScrollView>
 
       {/* ========================================================================= */}
-      {/* MODAL 1: TẠO BÀI TẬP MỚI (GẮN MÃ LỚP CLASS_CODE CHO SINH VIÊN NHẬP) */}
+      {/* MODAL 0: TẠO LỚP HỌC PHẦN MỚI CỦA GIẢNG VIÊN */}
+      {/* ========================================================================= */}
+      <Modal visible={showCreateClassModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { maxWidth: 460, borderColor: '#00FFFF' }]}>
+            <Text style={[styles.modalTitle, { color: '#00FFFF' }]}>🏫 TẠO LỚP HỌC PHẦN CỦA BẠN</Text>
+            <Text style={styles.modalSubtitle}>
+              Mỗi lớp có một Mã lớp duy nhất. Sinh viên nhập mã này sẽ tự động nộp bài vào đúng bảng điểm của bạn.
+            </Text>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Mã lớp học phần (* - Viết liền, không dấu):</Text>
+              <TextInput
+                style={[styles.textInput, { borderColor: '#00FFFF', fontWeight: 'bold' }]}
+                value={newClassCodeInput}
+                onChangeText={(val) => setNewClassCodeInput(val.toUpperCase())}
+                autoCapitalize="characters"
+                placeholder="Ví dụ: ENG101_N01 hoặc K24_AV2"
+                placeholderTextColor="#666"
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Tên lớp học phần (*):</Text>
+              <TextInput
+                style={styles.textInput}
+                value={newClassNameInput}
+                onChangeText={setNewClassNameInput}
+                placeholder="Ví dụ: Tiếng Anh Giao Tiếp 1 - Nhóm 01"
+                placeholderTextColor="#666"
+              />
+            </View>
+
+            <View style={styles.modalBtnRow}>
+              <TouchableOpacity
+                style={styles.modalCancelBtn}
+                onPress={() => setShowCreateClassModal(false)}
+                disabled={isCreatingClass}
+              >
+                <Text style={styles.modalCancelText}>HỦY BỎ</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalSaveBtn, { backgroundColor: '#00FFFF' }]}
+                onPress={handleCreateClass}
+                disabled={isCreatingClass}
+              >
+                {isCreatingClass ? (
+                  <ActivityIndicator size="small" color="#000" />
+                ) : (
+                  <Text style={styles.modalSaveText}>TẠO LỚP NGAY</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ========================================================================= */}
+      {/* MODAL 1: TẠO BÀI TẬP MỚI */}
       {/* ========================================================================= */}
       <Modal visible={showCreateAssignmentModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
@@ -955,18 +1159,18 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
             <Text style={styles.modalTitle}>📝 GIAO BÀI TẬP THEO MÃ LỚP</Text>
 
             <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Chọn nhanh lớp có sẵn (hoặc gõ mã lớp mới bên dưới):</Text>
+              <Text style={styles.inputLabel}>Chọn lớp của bạn (hoặc gõ mã lớp mới bên dưới):</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexDirection: 'row', marginBottom: 6 }}>
                 {classList.map(c => (
                   <TouchableOpacity
                     key={c.id}
-                    style={[styles.smallChip, assignClassId === c.id && styles.smallChipActive]}
+                    style={[styles.smallChip, assignClassCodeInput === c.code && styles.smallChipActive]}
                     onPress={() => {
                       setAssignClassId(c.id);
-                      setAssignClassCodeInput(c.code || 'PUBLIC');
+                      setAssignClassCodeInput(c.code || '');
                     }}
                   >
-                    <Text style={[styles.smallChipText, assignClassId === c.id && styles.smallChipTextActive]}>
+                    <Text style={[styles.smallChipText, assignClassCodeInput === c.code && styles.smallChipTextActive]}>
                       {c.code} - {c.name}
                     </Text>
                   </TouchableOpacity>
@@ -979,7 +1183,7 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
                 value={assignClassCodeInput}
                 onChangeText={(val) => setAssignClassCodeInput(val.toUpperCase())}
                 autoCapitalize="characters"
-                placeholder="Ví dụ: ENG101_K18"
+                placeholder="Ví dụ: ENG101_N01"
                 placeholderTextColor="#666"
               />
             </View>
@@ -1092,7 +1296,7 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
             <Text style={styles.modalSubtitle}>Định dạng: MSSV, Họ và Tên, Email (Mỗi sinh viên một dòng)</Text>
 
             <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Chọn lớp học để xếp sinh viên:</Text>
+              <Text style={styles.inputLabel}>Chọn lớp học của bạn để xếp sinh viên:</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexDirection: 'row' }}>
                 {classList.map(c => (
                   <TouchableOpacity
@@ -1150,42 +1354,71 @@ SV2026002, Tran Thi Mai, mai.tt@student.vibespeak.edu.vn"
       </Modal>
 
       {/* ========================================================================= */}
-      {/* MODAL 3: GHI ĐÈ ĐIỂM & NHẬN XÉT GIẢNG VIÊN (MANUAL OVERRIDE) */}
+      {/* MODAL 3: XEM CHI TIẾT BÀI NÓI & GHI ĐÈ ĐIỂM GIẢNG VIÊN */}
       {/* ========================================================================= */}
       <Modal visible={editingItem !== null} transparent animationType="fade">
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>✍️ ĐIỀU CHỈNH ĐIỂM & NHẬN XÉT</Text>
+          <View style={[styles.modalContent, { maxWidth: 520, maxHeight: '88%' }]}>
+            <Text style={styles.modalTitle}>✍️ THẨM ĐỊNH & ĐIỀU CHỈNH ĐIỂM</Text>
             <Text style={styles.modalSubtitle}>
-              Sinh viên: {editingItem?.student_name} ({editingItem?.student_code})
-            </Text>
-            <Text style={styles.modalAiScore}>
-              Điểm AI ban đầu: <Text style={{ color: '#00FFFF', fontWeight: 'bold' }}>{editingItem?.score}đ</Text>
+              Sinh viên: {editingItem?.student_name} ({editingItem?.student_code}) • {editingItem?.cefr_level}
             </Text>
 
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Điểm số mới của Giảng viên (0 - 100):</Text>
-              <TextInput 
-                style={styles.textInput}
-                keyboardType="numeric"
-                value={overrideScoreInput}
-                onChangeText={setOverrideScoreInput}
-                placeholder="Nhập điểm..."
-                placeholderTextColor="#666"
-              />
-            </View>
+            <ScrollView style={{ width: '100%' }} showsVerticalScrollIndicator={false}>
+              <View style={styles.detailAuditBox}>
+                <Text style={styles.detailAuditHeader}>🗣️ Bản ghi âm nguyên văn AI nhận diện:</Text>
+                <Text style={styles.detailAuditTranscript}>
+                  "{editingItem?.transcript || '(Không có dữ liệu văn bản)'}"
+                </Text>
 
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Nhận xét của Giảng viên gửi sinh viên:</Text>
-              <TextInput 
-                style={[styles.textInput, { height: 75, textAlignVertical: 'top' }]}
-                multiline
-                value={teacherCommentInput}
-                onChangeText={setTeacherCommentInput}
-                placeholder="Nhập lưu ý, sửa lỗi phát âm hoặc lời khen..."
-                placeholderTextColor="#666"
-              />
-            </View>
+                {editingItem?.feedback ? (
+                  <>
+                    <Text style={[styles.detailAuditHeader, { color: '#FFD700', marginTop: 8 }]}>
+                      📊 Chi tiết điểm & Lỗi AI phát hiện:
+                    </Text>
+                    <Text style={styles.detailAuditFeedback}>{editingItem.feedback}</Text>
+                  </>
+                ) : null}
+
+                {editingItem?.audio_url ? (
+                  <View style={{ marginTop: 8 }}>
+                    {React.createElement('audio', {
+                      controls: true,
+                      src: editingItem.audio_url,
+                      style: { width: '100%', height: 34 }
+                    })}
+                  </View>
+                ) : null}
+              </View>
+
+              <Text style={styles.modalAiScore}>
+                Điểm AI chấm tự động: <Text style={{ color: '#00FFFF', fontWeight: 'bold' }}>{editingItem?.score}đ</Text>
+              </Text>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Điểm số chốt của Giảng viên (0 - 100):</Text>
+                <TextInput 
+                  style={styles.textInput}
+                  keyboardType="numeric"
+                  value={overrideScoreInput}
+                  onChangeText={setOverrideScoreInput}
+                  placeholder="Nhập điểm..."
+                  placeholderTextColor="#666"
+                />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Nhận xét của Giảng viên gửi sinh viên:</Text>
+                <TextInput 
+                  style={[styles.textInput, { height: 70, textAlignVertical: 'top' }]}
+                  multiline
+                  value={teacherCommentInput}
+                  onChangeText={setTeacherCommentInput}
+                  placeholder="Nhập lưu ý, sửa lỗi phát âm hoặc lời khen..."
+                  placeholderTextColor="#666"
+                />
+              </View>
+            </ScrollView>
 
             <View style={styles.modalBtnRow}>
               <TouchableOpacity 
@@ -1193,7 +1426,7 @@ SV2026002, Tran Thi Mai, mai.tt@student.vibespeak.edu.vn"
                 onPress={() => setEditingItem(null)}
                 disabled={isSavingScore}
               >
-                <Text style={styles.modalCancelText}>HỦY BỎ</Text>
+                <Text style={styles.modalCancelText}>ĐÓNG</Text>
               </TouchableOpacity>
               <TouchableOpacity 
                 style={styles.modalSaveBtn} 
@@ -1212,47 +1445,42 @@ SV2026002, Tran Thi Mai, mai.tt@student.vibespeak.edu.vn"
       </Modal>
 
       {/* ========================================================================= */}
-      {/* MODAL 4: HƯỚNG DẪN SỬ DỤNG DÀNH CHO GIẢNG VIÊN (TEACHER GUIDELINES) */}
+      {/* MODAL 4: HƯỚNG DẪN SỬ DỤNG DÀNH CHO GIẢNG VIÊN */}
       {/* ========================================================================= */}
       <Modal visible={showGuideModal} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { maxWidth: 540, maxHeight: '85%' }]}>
             <Text style={styles.modalTitle}>📖 HƯỚNG DẪN VẬN HÀNH CỔNG GIẢNG VIÊN</Text>
-            <Text style={styles.modalSubtitle}>Quy trình 4 bước giao bài, quản lý lớp và chốt điểm trên VipeSpeak</Text>
+            <Text style={styles.modalSubtitle}>Quy trình 4 bước tạo lớp, giao bài và chốt điểm riêng biệt</Text>
 
             <ScrollView style={{ width: '100%', marginVertical: 8 }} showsVerticalScrollIndicator={false}>
               <View style={styles.guideStepBox}>
-                <Text style={styles.guideStepTitle}>1️⃣ Tạo và Giao Bài Tập Theo Mã Lớp (Class Code)</Text>
+                <Text style={styles.guideStepTitle}>1️⃣ Tạo Lớp Học Phần Riêng (Tách Biệt Dữ Liệu)</Text>
                 <Text style={styles.guideStepDesc}>
-                  • Bấm nút <Text style={{ color: '#FF007F', fontWeight: 'bold' }}>➕ GIAO BÀI THEO MÃ LỚP</Text>.{'\n'}
-                  • Nhập <Text style={{ color: '#00FFFF', fontWeight: 'bold' }}>Mã lớp</Text> riêng cho học phần của bạn (ví dụ: <Text style={{ color: '#FFD700' }}>ENG101_K18</Text>).{'\n'}
-                  • Chọn Trạm luyện tập (Trạm 1: Ngữ âm IPA, Trạm 2: Phản xạ tình huống, Trạm 3: Đọc đuổi tốc độ, Trạm 4: Độc thoại WPM), nhập đề bài tiếng Anh và bấm <Text style={{ color: '#39FF14', fontWeight: 'bold' }}>PHÁT HÀNH ĐỀ</Text>.
+                  • Bấm <Text style={{ color: '#00FFFF', fontWeight: 'bold' }}>🏫 TẠO LỚP MỚI</Text> để tạo lớp học phần của riêng bạn (ví dụ: <Text style={{ color: '#FFD700' }}>ENG101_N01</Text>).{'\n'}
+                  • Hệ thống gắn chặt lớp này với tài khoản của bạn — chỉ bạn mới thấy danh sách bài nộp và điểm số của sinh viên thuộc lớp mình dạy.
                 </Text>
               </View>
 
               <View style={styles.guideStepBox}>
-                <Text style={styles.guideStepTitle}>2️⃣ Phổ Biến Quy Trình Cho Sinh Viên</Text>
+                <Text style={styles.guideStepTitle}>2️⃣ Giao Bài Tập Theo Mã Lớp</Text>
                 <Text style={styles.guideStepDesc}>
-                  • Sinh viên không cần tạo tài khoản phức tạp. Khi vào Trạm 2 hoặc Trạm 4, sinh viên chỉ cần bấm <Text style={{ color: '#FFD700', fontWeight: 'bold' }}>✏️ Nhập Mã Lớp / Tên</Text> ở thanh trên cùng và điền: <Text style={{ color: '#FFF', fontWeight: 'bold' }}>Họ tên + MSSV + Mã lớp</Text>.{'\n'}
-                  • Hệ thống tự động lưu thông tin này trên thiết bị của sinh viên cho các lần làm bài sau.{'\n'}
-                  • Sinh viên chọn tab <Text style={{ color: '#00FFFF', fontWeight: 'bold' }}>🏫 GIẢNG VIÊN GIAO</Text> để làm đúng đề bài của lớp mình.
+                  • Bấm <Text style={{ color: '#FF007F', fontWeight: 'bold' }}>➕ GIAO BÀI TẬP</Text>, chọn lớp vừa tạo, chọn Trạm luyện tập, nhập đề bài tiếng Anh và bấm <Text style={{ color: '#39FF14', fontWeight: 'bold' }}>PHÁT HÀNH ĐỀ</Text>.
                 </Text>
               </View>
 
               <View style={styles.guideStepBox}>
-                <Text style={styles.guideStepTitle}>3️⃣ Thẩm Định Ghi Âm & Điều Chỉnh Điểm</Text>
+                <Text style={styles.guideStepTitle}>3️⃣ Sinh Viên Nhập Mã Lớp Khi Làm Bài</Text>
                 <Text style={styles.guideStepDesc}>
-                  • Trên thanh lọc phía trên bảng điểm, chọn thẻ <Text style={{ color: '#00FFFF', fontWeight: 'bold' }}>🏫 [Mã Lớp]</Text> để xem riêng bài nộp của lớp mình.{'\n'}
-                  • Bấm <Text style={{ color: '#00FFFF', fontWeight: 'bold' }}>🎧 NGHE</Text> để nghe trực tiếp file ghi âm gốc của sinh viên.{'\n'}
-                  • Nếu muốn điều chỉnh điểm AI chấm tự động hoặc ghi chú sửa lỗi phát âm, bấm <Text style={{ color: '#FF007F', fontWeight: 'bold' }}>✏️ ĐỔI ĐIỂM</Text> để nhập điểm chốt mới.
+                  • Sinh viên vào Trạm 2 hoặc Trạm 4, bấm <Text style={{ color: '#FFD700', fontWeight: 'bold' }}>✏️ Nhập Mã Lớp / Tên</Text> ở thanh trên cùng và nhập đúng <Text style={{ color: '#00FFFF', fontWeight: 'bold' }}>Mã lớp</Text> bạn cấp.{'\n'}
+                  • Mọi bài nộp của sinh viên có mã lớp này sẽ tự động chảy thẳng về bảng điểm của bạn.
                 </Text>
               </View>
 
               <View style={styles.guideStepBox}>
-                <Text style={styles.guideStepTitle}>4️⃣ Xuất Bảng Điểm Tổng Kết & Lưu Ý Thiết Bị</Text>
+                <Text style={styles.guideStepTitle}>4️⃣ Thẩm Định Ghi Âm & Xuất Excel Từng Lớp</Text>
                 <Text style={styles.guideStepDesc}>
-                  • Sau khi lọc đúng Mã lớp, bấm <Text style={{ color: '#39FF14', fontWeight: 'bold' }}>📥 EXCEL</Text> ở góc trên bên phải để tải file bảng điểm CSV đầy đủ (bao gồm MSSV, Họ tên, Điểm AI, Điểm Giảng viên chốt và Nhận xét).{'\n'}
-                  • <Text style={{ color: '#FFD700', fontWeight: 'bold' }}>Lưu ý khi sinh viên dùng iPhone/iPad:</Text> Nhắc sinh viên gạt nút chuông bên sườn máy sang chế độ bật tiếng và cấp quyền Micro cho trình duyệt Safari/Chrome.
+                  • Chọn thẻ <Text style={{ color: '#00FFFF', fontWeight: 'bold' }}>🏫 [Mã Lớp]</Text> trên thanh lọc, bấm <Text style={{ color: '#FF007F', fontWeight: 'bold' }}>📄 CHI TIẾT / ĐIỂM</Text> để xem nguyên văn bài nói, lỗi AI bắt được, nghe lại audio và bấm <Text style={{ color: '#39FF14', fontWeight: 'bold' }}>📥 EXCEL</Text> để xuất bảng điểm lớp.
                 </Text>
               </View>
             </ScrollView>
@@ -1302,120 +1530,42 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: '#00FFFF',
   },
-  loginIcon: {
-    fontSize: 34,
-    textAlign: 'center',
-    marginBottom: 6,
-  },
-  loginTitle: {
-    color: '#FFD700',
-    fontSize: 15,
-    fontWeight: '900',
-    textAlign: 'center',
-    marginBottom: 4,
-  },
-  loginSubtitle: {
-    color: '#AAAABB',
-    fontSize: 10.5,
-    textAlign: 'center',
-    lineHeight: 16,
-    marginBottom: 14,
-  },
-  authTabRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 14,
-  },
-  authTabBtn: {
-    flex: 1,
-    paddingVertical: 9,
-    borderRadius: 8,
-    backgroundColor: '#16082F',
-    borderWidth: 1.5,
-    borderColor: '#332255',
-    alignItems: 'center',
-  },
-  authTabBtnActive: {
-    backgroundColor: '#092B1E',
-    borderColor: '#39FF14',
-  },
-  authTabBtnRegisterActive: {
-    backgroundColor: '#0B192C',
-    borderColor: '#00FFFF',
-  },
-  authTabText: {
-    color: '#8888AA',
-    fontSize: 9.5,
-    fontWeight: 'bold',
-  },
-  authTabTextActive: {
-    color: '#FFF',
-    fontWeight: '900',
-  },
-  errorBanner: {
-    backgroundColor: 'rgba(255, 0, 85, 0.15)',
-    borderWidth: 1,
-    borderColor: '#FF0055',
-    padding: 10,
-    borderRadius: 8,
-    marginBottom: 12,
-  },
-  errorBannerText: {
-    color: '#FF0055',
-    fontSize: 10.5,
-    fontWeight: 'bold',
-    textAlign: 'center',
-  },
-  successBanner: {
-    backgroundColor: 'rgba(57, 255, 20, 0.15)',
-    borderWidth: 1,
-    borderColor: '#39FF14',
-    padding: 10,
-    borderRadius: 8,
-    marginBottom: 12,
-  },
-  successBannerText: {
-    color: '#39FF14',
-    fontSize: 10.5,
-    fontWeight: 'bold',
-    textAlign: 'center',
-    lineHeight: 15,
-  },
-  loginInput: {
-    backgroundColor: '#070212',
-    color: '#FFF',
-    borderRadius: 8,
-    borderWidth: 1.5,
-    borderColor: '#332255',
-    padding: 11,
-    fontSize: 12,
-  },
-  loginSubmitBtn: {
-    backgroundColor: '#39FF14',
-    paddingVertical: 13,
-    borderRadius: 10,
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  loginSubmitText: {
-    color: '#000',
-    fontSize: 11.5,
-    fontWeight: '900',
-  },
-  loginHelperNote: {
-    color: '#8888AA',
-    fontSize: 9.5,
-    textAlign: 'center',
-    marginTop: 14,
-    fontStyle: 'italic',
-    lineHeight: 14,
-  },
+  loginIcon: { fontSize: 34, textAlign: 'center', marginBottom: 6 },
+  loginTitle: { color: '#FFD700', fontSize: 15, fontWeight: '900', textAlign: 'center', marginBottom: 4 },
+  loginSubtitle: { color: '#AAAABB', fontSize: 10.5, textAlign: 'center', lineHeight: 16, marginBottom: 14 },
+  authTabRow: { flexDirection: 'row', gap: 8, marginBottom: 14 },
+  authTabBtn: { flex: 1, paddingVertical: 9, borderRadius: 8, backgroundColor: '#16082F', borderWidth: 1.5, borderColor: '#332255', alignItems: 'center' },
+  authTabBtnActive: { backgroundColor: '#092B1E', borderColor: '#39FF14' },
+  authTabBtnRegisterActive: { backgroundColor: '#0B192C', borderColor: '#00FFFF' },
+  authTabText: { color: '#8888AA', fontSize: 9.5, fontWeight: 'bold' },
+  authTabTextActive: { color: '#FFF', fontWeight: '900' },
+  errorBanner: { backgroundColor: 'rgba(255, 0, 85, 0.15)', borderWidth: 1, borderColor: '#FF0055', padding: 10, borderRadius: 8, marginBottom: 12 },
+  errorBannerText: { color: '#FF0055', fontSize: 10.5, fontWeight: 'bold', textAlign: 'center' },
+  successBanner: { backgroundColor: 'rgba(57, 255, 20, 0.15)', borderWidth: 1, borderColor: '#39FF14', padding: 10, borderRadius: 8, marginBottom: 12 },
+  successBannerText: { color: '#39FF14', fontSize: 10.5, fontWeight: 'bold', textAlign: 'center', lineHeight: 15 },
+  loginInput: { backgroundColor: '#070212', color: '#FFF', borderRadius: 8, borderWidth: 1.5, borderColor: '#332255', padding: 11, fontSize: 12 },
+  loginSubmitBtn: { backgroundColor: '#39FF14', paddingVertical: 13, borderRadius: 10, alignItems: 'center', marginTop: 8 },
+  loginSubmitText: { color: '#000', fontSize: 11.5, fontWeight: '900' },
+  loginHelperNote: { color: '#8888AA', fontSize: 9.5, textAlign: 'center', marginTop: 14, fontStyle: 'italic', lineHeight: 14 },
 
-  managementActionRow: { flexDirection: 'row', gap: 10, marginBottom: 14 },
+  managementActionRow: { flexDirection: 'row', gap: 8, marginBottom: 14 },
+  createClassBtn: { flex: 1, backgroundColor: '#0B192C', paddingVertical: 10, borderRadius: 8, alignItems: 'center', borderWidth: 1.5, borderColor: '#00FFFF' },
+  createClassBtnText: { color: '#00FFFF', fontSize: 9.5, fontWeight: '900' },
   newAssignmentBtn: { flex: 1, backgroundColor: '#FF007F', paddingVertical: 10, borderRadius: 8, alignItems: 'center' },
-  newAssignmentBtnText: { color: '#FFF', fontSize: 10, fontWeight: '900' },
+  newAssignmentBtnText: { color: '#FFF', fontSize: 9.5, fontWeight: '900' },
   bulkImportBtn: { flex: 1, backgroundColor: '#1A0B2E', paddingVertical: 10, borderRadius: 8, alignItems: 'center', borderWidth: 1.5, borderColor: '#39FF14' },
-  bulkImportBtnText: { color: '#39FF14', fontSize: 10, fontWeight: '900' },
+  bulkImportBtnText: { color: '#39FF14', fontSize: 9.5, fontWeight: '900' },
+
+  emptyClassBanner: {
+    backgroundColor: '#0B192C',
+    borderWidth: 1.5,
+    borderColor: '#00FFFF',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 14,
+  },
+  emptyClassBannerTitle: { color: '#FFD700', fontSize: 11.5, fontWeight: '900', marginBottom: 4 },
+  emptyClassBannerDesc: { color: '#E0E0F5', fontSize: 10, lineHeight: 15 },
   
   statsRow: { flexDirection: 'row', gap: 10, marginBottom: 16 },
   statCard: { flex: 1, backgroundColor: '#0D0620', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#221133', alignItems: 'center' },
@@ -1424,6 +1574,17 @@ const styles = StyleSheet.create({
 
   filterSection: { marginBottom: 14 },
   filterLabel: { color: '#00FFFF', fontSize: 9, fontWeight: '900', marginBottom: 6 },
+  searchInput: {
+    backgroundColor: '#0D0620',
+    borderWidth: 1,
+    borderColor: '#332255',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    color: '#FFF',
+    fontSize: 10.5,
+    marginBottom: 8,
+  },
   filterScroll: { flexDirection: 'row' },
   filterChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, backgroundColor: '#1A0B2E', marginRight: 8, borderWidth: 1, borderColor: '#332255' },
   filterChipActive: { backgroundColor: '#FF007F', borderColor: '#FF007F' },
@@ -1436,10 +1597,12 @@ const styles = StyleSheet.create({
   tableRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#1A0B2E' },
   studentNameText: { color: '#FFF', fontSize: 11, fontWeight: 'bold' },
   studentCodeText: { color: '#8888AA', fontSize: 9 },
+  transcriptPreviewText: { color: '#C8E6FF', fontSize: 8.5, fontStyle: 'italic', marginTop: 2 },
   teacherNoteText: { color: '#FFD700', fontSize: 8, fontStyle: 'italic', marginTop: 2 },
   classCodeTag: { alignSelf: 'flex-start', backgroundColor: '#0B192C', borderWidth: 1, borderColor: '#00FFFF', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, marginBottom: 2 },
   classCodeTagText: { color: '#00FFFF', fontSize: 8.5, fontWeight: '900' },
   modeText: { color: '#AAAABB', fontSize: 8 },
+  aiMetricMiniText: { color: '#88FFBB', fontSize: 7.5, marginTop: 2 },
   scoreBadge: { fontSize: 13, fontWeight: '900' },
   statusText: { fontSize: 7, color: '#8888AA', fontWeight: 'bold' },
   
@@ -1452,11 +1615,23 @@ const styles = StyleSheet.create({
   floatingAudioPlayer: { marginTop: 15, backgroundColor: '#070212', borderRadius: 12, borderWidth: 1.5, borderColor: '#39FF14', padding: 12 },
   floatingPlayerTitle: { color: '#39FF14', fontSize: 9, fontWeight: '900' },
 
+  detailAuditBox: {
+    backgroundColor: '#130628',
+    borderWidth: 1,
+    borderColor: '#332255',
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 10,
+  },
+  detailAuditHeader: { color: '#00FFFF', fontSize: 9.5, fontWeight: 'bold', marginBottom: 3 },
+  detailAuditTranscript: { color: '#FFFFFF', fontSize: 11, fontStyle: 'italic', lineHeight: 16 },
+  detailAuditFeedback: { color: '#E0E0F5', fontSize: 10, lineHeight: 15 },
+
   modalOverlay: { flex: 1, backgroundColor: 'rgba(5, 2, 13, 0.88)', justifyContent: 'center', alignItems: 'center', padding: 16 },
   modalContent: { backgroundColor: '#0D0620', padding: 18, borderRadius: 16, borderWidth: 2, borderColor: '#FF007F', width: '100%' },
   modalTitle: { color: '#FF007F', fontSize: 13, fontWeight: '900', textAlign: 'center', marginBottom: 4 },
-  modalSubtitle: { color: '#8888AA', fontSize: 10, textAlign: 'center', marginBottom: 12 },
-  modalAiScore: { color: '#AAAABB', fontSize: 10, textAlign: 'center', marginBottom: 12 },
+  modalSubtitle: { color: '#8888AA', fontSize: 10, textAlign: 'center', marginBottom: 10 },
+  modalAiScore: { color: '#AAAABB', fontSize: 10, textAlign: 'center', marginBottom: 10 },
   inputGroup: { marginBottom: 10 },
   inputRowGroup: { flexDirection: 'row', gap: 10, marginBottom: 10 },
   inputLabel: { color: '#00FFFF', fontSize: 9, fontWeight: 'bold', marginBottom: 4 },
@@ -1479,15 +1654,6 @@ const styles = StyleSheet.create({
     borderLeftColor: '#00FFFF',
     marginBottom: 10,
   },
-  guideStepTitle: {
-    color: '#FFD700',
-    fontSize: 11,
-    fontWeight: '900',
-    marginBottom: 4,
-  },
-  guideStepDesc: {
-    color: '#E0E0F0',
-    fontSize: 10,
-    lineHeight: 16,
-  },
+  guideStepTitle: { color: '#FFD700', fontSize: 11, fontWeight: '900', marginBottom: 4 },
+  guideStepDesc: { color: '#E0E0F0', fontSize: 10, lineHeight: 16 },
 });
