@@ -17,10 +17,14 @@ export interface UserStats {
 export interface RoleplaySubmission {
   id?: string;
   studentName: string;
+  studentCode?: string;
+  classCode?: string;
   pairName?: string;
   className?: string;
   score: number;
-  mode: string; // 'solo' | 'relay' | 'roleplay' | 'SHADOWING' | 'EXPRESS'
+  manualScore?: number | null;
+  teacherFeedback?: string | null;
+  mode: string;
   cefrLevel: string;
   transcript: string;
   audioUrl?: string;
@@ -29,8 +33,33 @@ export interface RoleplaySubmission {
   rank?: number;
 }
 
-// 🎯 LẤY THÔNG SỐ THỐNG KÊ NGƯỜI HỌC CHO PROFILE SCREEN (chấp nhận tham số uid)
-export async function getUserStats(uid?: string): Promise<UserStats> {
+// Chuẩn hóa mã lớp (xóa dấu cách, viết hoa: "tc cntt" -> "TCCNTT")
+export function normalizeClassCode(raw?: string): string {
+  const cleaned = (raw || '').toUpperCase().replace(/\s+/g, '').trim();
+  return cleaned || 'PUBLIC';
+}
+
+// 🛡️ Hàm tự động lọc bỏ cột chưa tồn tại trên Supabase để KHÔNG BAO GIỜ mất bài nộp của sinh viên
+async function safeInsertSubmissionRecord(initialPayload: Record<string, any>) {
+  if (!supabase) return { data: null, error: { message: 'Supabase chưa cấu hình' } };
+
+  const payload = { ...initialPayload };
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const res = await supabase.from('submissions').insert([payload]).select().single();
+    if (!res.error) return res;
+
+    const missingColMatch = res.error.message?.match(/Could not find the '([^']+)' column/);
+    if (missingColMatch && missingColMatch[1] && missingColMatch[1] in payload) {
+      delete payload[missingColMatch[1]];
+      continue;
+    }
+
+    return res;
+  }
+  return await supabase.from('submissions').insert([payload]).select().single();
+}
+
+export async function getUserStats(_uid?: string): Promise<UserStats> {
   if (typeof window !== 'undefined' && window.localStorage) {
     try {
       const rawProgress = localStorage.getItem('vibe_user_progress');
@@ -49,7 +78,7 @@ export async function getUserStats(uid?: string): Promise<UserStats> {
           station2Losses: 1
         };
       }
-    } catch (e) {}
+    } catch {}
   }
   return {
     displayName: 'Học viên VibeSpeak',
@@ -65,7 +94,6 @@ export async function getUserStats(uid?: string): Promise<UserStats> {
   };
 }
 
-// 🎯 LƯU LỊCH SỬ TRẬN ĐẤU (cho phép gọi dạng 1 tham số hoặc 2 tham số: userId, matchData)
 export async function saveMatchHistory(userIdOrData: any, matchData?: any): Promise<void> {
   if (typeof window !== 'undefined' && window.localStorage) {
     try {
@@ -74,83 +102,162 @@ export async function saveMatchHistory(userIdOrData: any, matchData?: any): Prom
       const list = raw ? JSON.parse(raw) : [];
       list.unshift({ ...dataToSave, timestamp: new Date().toISOString() });
       localStorage.setItem('vibe_match_history', JSON.stringify(list.slice(0, 30)));
-    } catch (e) {}
+    } catch {}
   }
 }
 
-// 🎯 LƯU THÔNG TIN NGƯỜI DÙNG (cho phép gọi dạng 1 tham số hoặc 3 tham số: uid, username, xp)
 export async function saveUserData(userIdOrData: any, username?: string, xp?: number): Promise<void> {
   if (typeof window !== 'undefined' && window.localStorage) {
     try {
       const payload = typeof userIdOrData === 'object' ? userIdOrData : { uid: userIdOrData, username, xp };
       localStorage.setItem('vibe_user_data', JSON.stringify(payload));
-    } catch (e) {}
+    } catch {}
   }
 }
 
-// 🎯 LƯU KẾT QUẢ BÀI NỘP LÊN CLOUD SUPABASE
+// 🎯 LƯU KẾT QUẢ BÀI NỘP LÊN CLOUD SUPABASE (ĐẢM BẢO ĐỒNG BỘ MÃ LỚP & MSSV)
 export async function saveSubmissionToCloud(
-  submission: Omit<RoleplaySubmission, 'id'>,
-  _audioBlob?: Blob // Tham số tương thích ngược
-): Promise<RoleplaySubmission | null> {
+  submission: Omit<RoleplaySubmission, 'id'> & Record<string, any>,
+  _audioBlob?: Blob
+): Promise<{ saved: RoleplaySubmission; syncedToCloud: boolean; errorMsg?: string }> {
+  const cleanClassCode = normalizeClassCode(submission.classCode);
+  const cleanStudentCode = (submission.studentCode || 'GUEST').toUpperCase().trim();
+  const cleanStudentName = (submission.studentName || 'Học viên Đấu Trường').trim();
+
+  // Luôn lưu bản sao vào máy sinh viên để xem lại lịch sử tức thì
+  saveToLocalFallback({
+    ...submission,
+    studentName: cleanStudentName,
+    studentCode: cleanStudentCode,
+    classCode: cleanClassCode,
+  });
+
   try {
     if (!supabase) {
-      console.warn("Chưa cấu hình Supabase Client, lưu tạm vào LocalStorage.");
-      saveToLocalFallback(submission);
-      return { ...submission, id: `local_${Date.now()}` };
+      return {
+        saved: { ...submission, id: `local_${Date.now()}`, classCode: cleanClassCode },
+        syncedToCloud: false,
+        errorMsg: 'Chưa kết nối máy chủ Supabase'
+      };
     }
 
-    const payload = {
-      student_name: submission.studentName,
-      pair_name: submission.pairName || submission.studentName,
-      class_name: submission.className || 'LỚP CHUNG',
+    const payload: Record<string, any> = {
+      student_name: cleanStudentName,
+      student_code: cleanStudentCode,
+      class_code: cleanClassCode,
+      class_name: submission.className || `[${cleanClassCode}] ${submission.mode}`,
       score: submission.score,
+      manual_score: null,
       mode: submission.mode,
       cefr_level: submission.cefrLevel,
       transcript: submission.transcript || '',
       audio_url: submission.audioUrl || '',
       feedback: submission.feedback || '',
+      spontaneity_score: submission.spontaneity_score,
+      pitch_variance: submission.pitch_variance,
+      is_script_suspected: submission.is_script_suspected,
       created_at: new Date().toISOString(),
     };
 
-    const { data, error } = await supabase
-      .from('submissions')
-      .insert([payload])
-      .select()
-      .single();
+    const { data, error } = await safeInsertSubmissionRecord(payload);
 
-    if (error) {
-      console.error("Lỗi khi insert vào bảng submissions:", error.message);
-      saveToLocalFallback(submission);
-      return { ...submission, id: `local_${Date.now()}` };
+    if (error || !data) {
+      console.error('Lỗi đồng bộ submissions:', error?.message);
+      return {
+        saved: { ...submission, id: `local_${Date.now()}`, classCode: cleanClassCode },
+        syncedToCloud: false,
+        errorMsg: error?.message || 'Không thể lưu lên bảng submissions'
+      };
     }
 
     return {
-      id: data.id,
-      studentName: data.student_name,
-      pairName: data.pair_name,
-      className: data.class_name,
-      score: data.score,
-      mode: data.mode,
-      cefrLevel: data.cefr_level,
-      transcript: data.transcript,
-      audioUrl: data.audio_url,
-      feedback: data.feedback,
-      timestamp: submission.timestamp,
+      syncedToCloud: true,
+      saved: {
+        id: data.id,
+        studentName: data.student_name,
+        studentCode: data.student_code,
+        classCode: data.class_code || cleanClassCode,
+        className: data.class_name,
+        score: data.score,
+        manualScore: data.manual_score ?? null,
+        teacherFeedback: data.teacher_feedback ?? null,
+        mode: data.mode,
+        cefrLevel: data.cefr_level,
+        transcript: data.transcript,
+        audioUrl: data.audio_url,
+        feedback: data.feedback,
+        timestamp: data.created_at || submission.timestamp,
+      }
     };
-  } catch (err) {
-    console.warn("Lỗi ngoại lệ trong saveSubmissionToCloud:", err);
-    saveToLocalFallback(submission);
-    return { ...submission, id: `local_${Date.now()}` };
+  } catch (err: any) {
+    return {
+      saved: { ...submission, id: `local_${Date.now()}`, classCode: cleanClassCode },
+      syncedToCloud: false,
+      errorMsg: err?.message || 'Lỗi mạng khi gửi bài'
+    };
   }
 }
 
-// 🎯 LẤY DANH SÁCH BÀI NỘP VỀ DASHBOARD GIÁO VIÊN
+// 📜 LẤY LỊCH SỬ BÀI NÓI CỦA SINH VIÊN THEO MSSV (KẾT HỢP CLOUD + LOCAL)
+export async function fetchStudentHistory(studentCode: string): Promise<RoleplaySubmission[]> {
+  const cleanCode = (studentCode || '').toUpperCase().trim();
+  const localItems = getLocalFallback().filter(
+    (item) => !cleanCode || (item.studentCode || '').toUpperCase().trim() === cleanCode
+  );
+
+  try {
+    if (!supabase || !cleanCode) {
+      return localItems;
+    }
+
+    const { data, error } = await supabase
+      .from('submissions')
+      .select('*')
+      .ilike('student_code', cleanCode)
+      .order('created_at', { ascending: false })
+      .limit(50);
+
+    if (error || !data) {
+      return localItems;
+    }
+
+    const cloudItems: RoleplaySubmission[] = data.map((item: any) => ({
+      id: item.id,
+      studentName: item.student_name,
+      studentCode: item.student_code,
+      classCode: item.class_code,
+      className: item.class_name,
+      score: item.score,
+      manualScore: item.manual_score ?? null,
+      teacherFeedback: item.teacher_feedback ?? null,
+      mode: item.mode,
+      cefrLevel: item.cefr_level,
+      transcript: item.transcript,
+      audioUrl: item.audio_url || '',
+      feedback: item.feedback,
+      timestamp: item.created_at,
+    }));
+
+    // Gộp thêm các bản lưu cục bộ chưa lên được cloud (nếu có)
+    const merged = [...cloudItems];
+    localItems.forEach((loc) => {
+      const isDuplicate = merged.some(
+        (c) => c.transcript === loc.transcript && Math.abs(Number(c.score) - Number(loc.score)) <= 1
+      );
+      if (!isDuplicate) {
+        merged.push(loc);
+      }
+    });
+
+    return merged;
+  } catch {
+    return localItems;
+  }
+}
+
 export async function fetchSubmissionsFromCloud(className: string = 'ALL'): Promise<RoleplaySubmission[]> {
   try {
-    if (!supabase) {
-      return getLocalFallback();
-    }
+    if (!supabase) return getLocalFallback();
 
     let query = supabase
       .from('submissions')
@@ -163,20 +270,18 @@ export async function fetchSubmissionsFromCloud(className: string = 'ALL'): Prom
     }
 
     const { data, error } = await query;
-
-    if (error) {
-      console.error("Lỗi khi tải submissions từ Supabase:", error.message);
-      return getLocalFallback();
-    }
-
-    if (!data || data.length === 0) return [];
+    if (error || !data) return getLocalFallback();
 
     return data.map((item: any, index: number) => ({
       id: item.id,
       studentName: item.student_name,
+      studentCode: item.student_code,
+      classCode: item.class_code,
       pairName: item.pair_name,
       className: item.class_name,
       score: item.score,
+      manualScore: item.manual_score ?? null,
+      teacherFeedback: item.teacher_feedback ?? null,
       mode: item.mode,
       cefrLevel: item.cefr_level,
       transcript: item.transcript,
@@ -185,28 +290,24 @@ export async function fetchSubmissionsFromCloud(className: string = 'ALL'): Prom
       timestamp: item.created_at ? new Date(item.created_at).toLocaleTimeString('vi-VN') : '',
       rank: index + 1,
     }));
-  } catch (err) {
-    console.warn("Lỗi khi lấy dữ liệu bảng điểm:", err);
+  } catch {
     return getLocalFallback();
   }
 }
 
-// CẬP NHẬT TIẾN ĐỘ NGƯỜI DÙNG (EXPERIENCE & PASS)
 export function updateUserProgress(stationIndex: number, pointsEarned: number, isPassed: boolean) {
   if (typeof window === 'undefined' || !window.localStorage) return;
   try {
     const rawProgress = localStorage.getItem('vibe_user_progress');
-    let progress = rawProgress ? JSON.parse(rawProgress) : { totalScore: 0, stationsPassed: [] };
-    
+    const progress = rawProgress ? JSON.parse(rawProgress) : { totalScore: 0, stationsPassed: [] };
     progress.totalScore = (progress.totalScore || 0) + pointsEarned;
     if (isPassed && !progress.stationsPassed.includes(stationIndex)) {
       progress.stationsPassed.push(stationIndex);
     }
     localStorage.setItem('vibe_user_progress', JSON.stringify(progress));
-  } catch (e) {}
+  } catch {}
 }
 
-// HÀM DỰ PHÒNG LOCALSTORAGE KHI MẤT MẠNG
 function saveToLocalFallback(submission: Omit<RoleplaySubmission, 'id'>) {
   if (typeof window === 'undefined' || !window.localStorage) return;
   try {
@@ -214,7 +315,7 @@ function saveToLocalFallback(submission: Omit<RoleplaySubmission, 'id'>) {
     const list = raw ? JSON.parse(raw) : [];
     list.unshift({ ...submission, id: `offline_${Date.now()}` });
     localStorage.setItem('vibe_offline_submissions', JSON.stringify(list.slice(0, 50)));
-  } catch (e) {}
+  } catch {}
 }
 
 function getLocalFallback(): RoleplaySubmission[] {
@@ -222,7 +323,7 @@ function getLocalFallback(): RoleplaySubmission[] {
   try {
     const raw = localStorage.getItem('vibe_offline_submissions');
     return raw ? JSON.parse(raw) : [];
-  } catch (e) {
+  } catch {
     return [];
   }
 }

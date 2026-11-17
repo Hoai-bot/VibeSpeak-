@@ -5,11 +5,11 @@ import * as AntiCheatModule from '../components/AntiCheatSpeakingSession';
 import * as DetailedModalModule from '../components/DetailedSpeechFeedbackModal';
 import { evaluateSpeechSubmission } from '../utils/speechEvaluator';
 import { evaluateSpeaking, analyzeSpokenTranscript, SpokenWordAnalysis } from '../services/arena/assessmentService';
+import { saveSubmissionToCloud, fetchStudentHistory, normalizeClassCode, RoleplaySubmission } from '../services/userService';
 import { supabase } from '../utils/supabase';
 import { getSavedStudentProfile, saveStudentProfile } from '../utils/studentSession';
 import { getStation2ScenariosByTierAndLevel } from '../data/station2';
 
-// 🛡️ TỰ ĐỘNG BÓC TÁCH COMPONENT CHUẨN XÁC CHỐNG LỖI REACT #130
 const AntiCheatSpeakingSession: React.ComponentType<any> = 
   (AntiCheatModule as any).default || 
   (AntiCheatModule as any).AntiCheatSpeakingSession || 
@@ -120,12 +120,12 @@ const getSupportedAudioMimeType = (): { mimeType: string; extension: string } =>
 };
 
 export default function Station2Screen({ onBack }: Props) {
-  const [selectedTier, setSelectedTier] = useState<Station2Tier>('ROLEPLAY');
+  const [selectedTier, setSelectedTier] = useState<Station2Tier>('SOLO');
   const [selectedLevel, setSelectedLevel] = useState<CefrLevel>('B1');
   const [teacherAssignments, setTeacherAssignments] = useState<ChallengeItem[]>([]);
   const [loadingAssignments, setLoadingAssignments] = useState<boolean>(true);
 
-  const [classCodeInput, setClassCodeInput] = useState<string>(() => getSavedStudentProfile().classCode);
+  const [classCodeInput, setClassCodeInput] = useState<string>(() => normalizeClassCode(getSavedStudentProfile().classCode) === 'PUBLIC' ? '' : normalizeClassCode(getSavedStudentProfile().classCode));
   const [studentNameInput, setStudentNameInput] = useState<string>(() => getSavedStudentProfile().studentName);
   const [studentCodeInput, setStudentCodeInput] = useState<string>(() => getSavedStudentProfile().studentCode);
   const [showProfileBar, setShowProfileBar] = useState<boolean>(() => {
@@ -133,12 +133,21 @@ export default function Station2Screen({ onBack }: Props) {
     return !p.studentName || !p.studentCode;
   });
 
+  // 📜 LỊCH SỬ BÀI NÓI CỦA SINH VIÊN
+  const [showHistoryDrawer, setShowHistoryDrawer] = useState<boolean>(false);
+  const [studentHistory, setStudentHistory] = useState<RoleplaySubmission[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState<boolean>(false);
+
+  // Thông báo trạng thái đồng bộ lên bảng điểm Giảng viên
+  const [syncStatusBanner, setSyncStatusBanner] = useState<{ ok: boolean; text: string } | null>(null);
+
   const [showHint, setShowHint] = useState<boolean>(true);
+  const [showReferenceScriptInFreeMode, setShowReferenceScriptInFreeMode] = useState<boolean>(false);
 
   const [topicIndex, setTopicIndex] = useState<number>(() => Math.floor(Math.random() * 10));
   const [currentChallenge, setCurrentChallenge] = useState<ChallengeItem>(() => {
     const startIdx = Math.floor(Math.random() * 10);
-    return createScenarioFromBank('ROLEPLAY', 'B1', startIdx);
+    return createScenarioFromBank('SOLO', 'B1', startIdx);
   });
   const [aiQueue, setAiQueue] = useState<ChallengeItem[]>([]);
   const isFetchingAiRef = useRef<boolean>(false);
@@ -164,7 +173,7 @@ export default function Station2Screen({ onBack }: Props) {
       try {
         audioPlayerRef.current.pause();
         audioPlayerRef.current.currentTime = 0;
-      } catch (e) {}
+      } catch {}
       audioPlayerRef.current = null;
     }
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
@@ -212,7 +221,7 @@ export default function Station2Screen({ onBack }: Props) {
       if (playPromise !== undefined) {
         await playPromise;
       }
-    } catch (e) {
+    } catch {
       setIsPlayingSample(false);
       audioPlayerRef.current = null;
       fallbackIOSSpeech(cleanText);
@@ -263,6 +272,7 @@ export default function Station2Screen({ onBack }: Props) {
   const activeMimeTypeRef = useRef<{ mimeType: string; extension: string }>({ mimeType: '', extension: 'webm' });
 
   const [liveTranscript, setLiveTranscript] = useState<string>('');
+  const [finalTranscriptScript, setFinalTranscriptScript] = useState<string>('');
   const [wordAnalysisList, setWordAnalysisList] = useState<SpokenWordAnalysis[]>([]);
   const liveTranscriptRef = useRef<string>('');
   const speechRecognitionRef = useRef<any>(null);
@@ -277,7 +287,7 @@ export default function Station2Screen({ onBack }: Props) {
 
   const fetchTeacherAssignments = async (targetClassCode?: string) => {
     setLoadingAssignments(true);
-    const activeCode = (targetClassCode ?? classCodeInput).toUpperCase().trim();
+    const activeCode = normalizeClassCode(targetClassCode ?? classCodeInput);
     try {
       if (supabase) {
         let query = supabase
@@ -286,30 +296,30 @@ export default function Station2Screen({ onBack }: Props) {
           .ilike('station_type', '%STATION_2%')
           .order('created_at', { ascending: false });
 
-        if (activeCode) {
-          query = query.eq('class_code', activeCode);
+        if (activeCode && activeCode !== 'PUBLIC') {
+          query = query.ilike('class_code', activeCode);
         }
 
         const { data: assignments, error } = await query;
 
         if (!error && assignments && assignments.length > 0) {
           const teacherItems: ChallengeItem[] = assignments.map((item: any) => {
-            let detectedTier: Station2Tier = 'ROLEPLAY';
+            let detectedTier: Station2Tier = 'SOLO';
             const titleUpper = (item.title || '').toUpperCase();
-            if (titleUpper.includes('SOLO')) detectedTier = 'SOLO';
+            if (titleUpper.includes('ROLEPLAY')) detectedTier = 'ROLEPLAY';
             else if (titleUpper.includes('RELAY')) detectedTier = 'RELAY';
 
             return {
               id: `teacher_${item.id}`,
               tier: detectedTier,
-              level: (item.cefr_level || 'B2').toUpperCase() as CefrLevel,
+              level: (item.cefr_level || 'B1').toUpperCase() as CefrLevel,
               title: item.title || 'Nhiệm vụ giảng viên giao',
-              place: `Lớp ${item.class_code || 'PUBLIC'}`,
+              place: `Lớp ${normalizeClassCode(item.class_code)}`,
               task: 'Hoàn thành thử thách phản xạ được chỉ định',
-              contextDesc: item.description || `🏫 Bối cảnh phản xạ được giao (${detectedTier}):`,
+              contextDesc: item.description || `🏫 Đề bài giảng viên giao cho lớp ${normalizeClassCode(item.class_code)}:`,
               prompt: item.target_prompt || '',
               hint: {
-                vi: item.description || "Bài tập do giảng viên giao trực tiếp."
+                vi: item.description || item.target_prompt || "Bài tập do giảng viên giao trực tiếp."
               },
               isTeacherAssigned: true
             };
@@ -327,18 +337,37 @@ export default function Station2Screen({ onBack }: Props) {
     }
   };
 
+  const handleOpenHistory = async () => {
+    const code = studentCodeInput.trim();
+    if (!code) {
+      setShowProfileBar(true);
+      Alert.alert("Cần nhập Mã SV", "Vui lòng nhập Mã số sinh viên (MSSV) ở thanh trên cùng và bấm Lưu thông tin để tra cứu lịch sử bài nói!");
+      return;
+    }
+    setShowHistoryDrawer(true);
+    setLoadingHistory(true);
+    const items = await fetchStudentHistory(code);
+    setStudentHistory(items);
+    setLoadingHistory(false);
+  };
+
   const handleSaveStudentSession = () => {
+    const normalizedCode = normalizeClassCode(classCodeInput);
+    const displayClass = normalizedCode === 'PUBLIC' ? '' : normalizedCode;
     const updated = saveStudentProfile({
-      studentName: studentNameInput,
-      studentCode: studentCodeInput,
-      classCode: classCodeInput,
+      studentName: studentNameInput.trim(),
+      studentCode: studentCodeInput.trim().toUpperCase(),
+      classCode: displayClass,
     });
     setStudentNameInput(updated.studentName);
     setStudentCodeInput(updated.studentCode);
     setClassCodeInput(updated.classCode);
     setShowProfileBar(false);
     fetchTeacherAssignments(updated.classCode);
-    Alert.alert("Đã lưu thông tin", `✅ Đã ghi nhớ: ${updated.studentName || 'Học viên'} (${updated.studentCode || 'Chưa có MSSV'}) - Mã lớp: ${updated.classCode || 'Tự do'}`);
+    setSyncStatusBanner({
+      ok: true,
+      text: `✅ Đã lưu hồ sơ: ${updated.studentName} (${updated.studentCode}) • Lớp: ${updated.classCode || 'TỰ DO'}`
+    });
   };
 
   useEffect(() => {
@@ -438,6 +467,7 @@ Output ONLY raw JSON:
     setTopicIndex(nextIdx);
     setWordAnalysisList([]);
     setLiveTranscript('');
+    setFinalTranscriptScript('');
     liveTranscriptRef.current = '';
 
     if (topicOrigin === 'TEACHER_DASHBOARD' && teacherAssignments.length > 0) {
@@ -482,6 +512,7 @@ Output ONLY raw JSON:
 
     setCurrentChallenge(customItem);
     setWordAnalysisList([]);
+    setFinalTranscriptScript('');
     setIsNormalPracticing(true);
     setIsTeacherExamining(false);
     setNormalTimer(0);
@@ -492,15 +523,13 @@ Output ONLY raw JSON:
     stopSampleAudio();
     setCurrentChallenge(item);
     setWordAnalysisList([]);
-    if (item.isTeacherAssigned) {
-      setIsTeacherExamining(true);
-      setIsNormalPracticing(false);
-    } else {
-      setIsNormalPracticing(true);
-      setIsTeacherExamining(false);
-      setNormalTimer(0);
-      setIsRecordingNormal(false);
-    }
+    setFinalTranscriptScript('');
+    setLiveTranscript('');
+    // Mở trực tiếp phòng thu để đảm bảo script & nút nộp bài lên lớp hoạt động đồng nhất trên mọi thiết bị
+    setIsNormalPracticing(true);
+    setIsTeacherExamining(false);
+    setNormalTimer(0);
+    setIsRecordingNormal(false);
   };
 
   // 🎙️ KHỞI ĐỘNG GHI ÂM VÀ NHẬN DIỆN GIỌNG NÓI THỜI GIAN THỰC
@@ -508,7 +537,7 @@ Output ONLY raw JSON:
     stopSampleAudio();
 
     if (speechRecognitionRef.current) {
-      try { speechRecognitionRef.current.abort(); } catch (e) {}
+      try { speechRecognitionRef.current.abort(); } catch {}
       speechRecognitionRef.current = null;
     }
     if (normalStreamRef.current) {
@@ -516,7 +545,7 @@ Output ONLY raw JSON:
       normalStreamRef.current = null;
     }
     if (normalAudioContextRef.current && normalAudioContextRef.current.state !== 'closed') {
-      try { normalAudioContextRef.current.close(); } catch (e) {}
+      try { normalAudioContextRef.current.close(); } catch {}
       normalAudioContextRef.current = null;
     }
 
@@ -525,6 +554,7 @@ Output ONLY raw JSON:
       normalPitchHistoryRef.current = [];
       setNormalTimer(0);
       setLiveTranscript('');
+      setFinalTranscriptScript('');
       setWordAnalysisList([]);
       liveTranscriptRef.current = '';
 
@@ -596,7 +626,7 @@ Output ONLY raw JSON:
             if (isRecordingNormalRef.current) {
               try {
                 recognition.start();
-              } catch (err) {}
+              } catch {}
             }
           };
 
@@ -645,7 +675,7 @@ Output ONLY raw JSON:
         normalAnimFrameRef.current = requestAnimationFrame(track);
       };
       track();
-    } catch (err) {
+    } catch {
       setIsRecordingNormal(false);
       isRecordingNormalRef.current = false;
       Alert.alert("Lỗi Microphone", "Không thể truy cập microphone. Vui lòng cấp quyền micro trong trình duyệt của bạn.");
@@ -677,13 +707,12 @@ Output ONLY raw JSON:
   // 🛑 DỪNG GHI ÂM VÀ GIẢI PHÓNG TOÀN BỘ PHẦN CỨNG ÂM THANH
   const stopNormalRecording = () => {
     isRecordingNormalRef.current = false;
-    // ⚠️ Xóa transcript tạm của trình duyệt để không đè lên bản ghi nguyên văn từ Whisper Server
     liveTranscriptRef.current = '';
 
     if (speechRecognitionRef.current) {
       try { 
         speechRecognitionRef.current.stop(); 
-      } catch (e) {}
+      } catch {}
       speechRecognitionRef.current = null;
     }
 
@@ -693,7 +722,7 @@ Output ONLY raw JSON:
     }
 
     if (normalAudioContextRef.current && normalAudioContextRef.current.state !== 'closed') {
-      try { normalAudioContextRef.current.close(); } catch (e) {}
+      try { normalAudioContextRef.current.close(); } catch {}
       normalAudioContextRef.current = null;
     }
 
@@ -723,7 +752,7 @@ Output ONLY raw JSON:
     return () => { if (timer) clearInterval(timer); };
   }, [isRecordingNormal]);
 
-  // 📊 XỬ LÝ CHẤM ĐIỂM VÀ ĐỒNG BỘ TAPESCRIPT WHISPER + SOI LỖI PHÁT ÂM / NGỮ PHÁP
+  // 📊 XỬ LÝ CHẤM ĐIỂM, XUẤT BẢN GHI SCRIPT & ĐỒNG BỘ LÊN BẢNG ĐIỂM GIẢNG VIÊN
   const finishSubmissionAndEvaluate = async (audioBlob: Blob, pitchHistory: number[], localAudioUrl?: string) => {
     setIsEvaluating(true);
     setEvaluatingStatus('⚡ AI ĐANG PHÂN TÍCH ÂM HỌC & XUẤT BẢN GHI SCRIPT...');
@@ -762,10 +791,12 @@ Output ONLY raw JSON:
           success = true;
           actualTranscript = (serverEvalData.transcript || '').trim();
           setLiveTranscript(actualTranscript);
+          setFinalTranscriptScript(actualTranscript);
           liveTranscriptRef.current = actualTranscript;
         } else if (serverEvalData && serverEvalData.score === 0) {
           setIsEvaluating(false);
           setLiveTranscript(serverEvalData.transcript || '');
+          setFinalTranscriptScript(serverEvalData.transcript || '');
           Alert.alert(
             "Không thể chấm điểm",
             serverEvalData.detailedFeedback || "Chưa nhận diện được giọng nói rõ ràng hoặc lỗi kết nối AI."
@@ -833,14 +864,10 @@ Output ONLY raw JSON:
 
       setFeedbackResult(zeroEvaluation);
       setDetailedModalVisible(true);
-      Alert.alert(
-        "Không phát hiện giọng nói",
-        "Hệ thống không ghi nhận giọng nói tiếng Anh rõ ràng trong thử thách này. Kết quả: 0 Điểm. Hãy phát âm rõ ràng vào micro!"
-      );
       return;
     }
 
-    setEvaluatingStatus('📊 Đang tổng hợp phiếu điểm đa chiều...');
+    setEvaluatingStatus('📊 Đang tổng hợp phiếu điểm & đồng bộ lên lớp...');
     const duration = Math.max(normalTimer, 2);
     let evaluated: any;
 
@@ -867,7 +894,6 @@ Output ONLY raw JSON:
       }
     }
 
-    // 🔍 Phân tích từng từ sinh viên nói ra: từ chuẩn -> Xanh lá, từ sai ngữ pháp / phát âm / sai thì -> Đỏ
     const analyzedWords: SpokenWordAnalysis[] = serverEvalData?.wordAnalysis?.length
       ? serverEvalData.wordAnalysis
       : analyzeSpokenTranscript(
@@ -883,6 +909,9 @@ Output ONLY raw JSON:
 
     if (serverEvalData?.criteria?.pronunciation) {
       evaluated.rubrics.pronunciation.score = serverEvalData.criteria.pronunciation;
+    }
+    if (serverEvalData?.criteria?.intonation) {
+      evaluated.rubrics.intonation.score = serverEvalData.criteria.intonation;
     }
     if (serverEvalData?.criteria?.grammar) {
       evaluated.rubrics.grammar.score = serverEvalData.criteria.grammar;
@@ -938,11 +967,11 @@ Output ONLY raw JSON:
       (r.grammar.score * 0.15) +
       (r.content.score * 0.15)
     );
-    // 🎯 Đồng bộ điểm tổng với điểm đã trừ lỗi ngữ pháp/phát âm từ server
     evaluated.totalScore = typeof serverEvalData?.score === 'number'
       ? Math.min(weightedTotal, serverEvalData.score)
       : weightedTotal;
 
+    // 📤 TẢI AUDIO LÊN STORAGE & ĐỒNG BỘ BÀI NỘP LÊN BẢNG ĐIỂM GIẢNG VIÊN QUA saveSubmissionToCloud
     let audioUrl = '';
     try {
       if (supabase) {
@@ -958,28 +987,43 @@ Output ONLY raw JSON:
           const { data: urlData } = supabase.storage.from('submissions').getPublicUrl(fileName);
           audioUrl = urlData?.publicUrl || '';
         }
-
-        const profile = getSavedStudentProfile();
-        const { data: authUser } = await supabase.auth.getUser();
-        await supabase.from('submissions').insert([{
-          student_name: profile.studentName || authUser?.user?.user_metadata?.full_name || 'Học viên Đấu Trường',
-          student_code: profile.studentCode || authUser?.user?.email?.split('@')[0] || 'STU_S2',
-          class_code: profile.classCode || 'PUBLIC',
-          class_name: `[${profile.classCode || 'PUBLIC'}] Trạm 2: ${selectedTier} (${selectedLevel}) [${practiceMode === 'READ_SAMPLE' ? 'Đọc Mẫu' : 'Phản Xạ Tự Nhiên'}]`,
-          mode: `STATION_2_${selectedTier}`,
-          cefr_level: currentChallenge?.level || selectedLevel,
-          score: evaluated.totalScore,
-          manual_score: null,
-          spontaneity_score: evaluated.spontaneityScore,
-          pitch_variance: evaluated.rubrics.intonation.score,
-          is_script_suspected: evaluated.isScriptSuspected,
-          audio_url: audioUrl,
-          transcript: actualTranscript || '(Không ghi nhận được âm thanh)',
-          feedback: `[Phát âm: ${evaluated.rubrics.pronunciation.score} | Ngữ điệu: ${evaluated.rubrics.intonation.score} | Ngữ pháp: ${evaluated.rubrics.grammar.score} | Lưu loát: ${evaluated.rubrics.fluency.score}]`
-        }]);
       }
-    } catch (err) {
-      console.warn("Submission sync error:", err);
+    } catch (uploadCatch) {
+      console.warn("Storage upload bypassed:", uploadCatch);
+    }
+
+    const latestProfile = getSavedStudentProfile();
+    const activeStudentName = (studentNameInput || latestProfile.studentName || 'Học viên Đấu Trường').trim();
+    const activeStudentCode = (studentCodeInput || latestProfile.studentCode || 'GUEST').toUpperCase().trim();
+    const activeClassCode = normalizeClassCode(classCodeInput || latestProfile.classCode);
+
+    const syncRes = await saveSubmissionToCloud({
+      studentName: activeStudentName,
+      studentCode: activeStudentCode,
+      classCode: activeClassCode,
+      className: `[${activeClassCode}] Trạm 2: ${selectedTier} (${selectedLevel}) [${practiceMode === 'READ_SAMPLE' ? 'Đọc Mẫu' : 'Phản Xạ Tự Nhiên'}]`,
+      mode: `STATION_2_${selectedTier}`,
+      cefrLevel: currentChallenge?.level || selectedLevel,
+      score: evaluated.totalScore,
+      spontaneity_score: evaluated.spontaneityScore,
+      pitch_variance: evaluated.rubrics.intonation.score,
+      is_script_suspected: evaluated.isScriptSuspected,
+      audioUrl: audioUrl,
+      transcript: actualTranscript || '(Không ghi nhận được âm thanh)',
+      feedback: `[Phát âm: ${evaluated.rubrics.pronunciation.score} | Ngữ điệu: ${evaluated.rubrics.intonation.score} | Ngữ pháp: ${evaluated.rubrics.grammar.score} | Nội dung: ${evaluated.rubrics.content.score}] ${serverEvalData?.detailedFeedback || ''}`,
+      timestamp: new Date().toISOString(),
+    });
+
+    if (syncRes.syncedToCloud) {
+      setSyncStatusBanner({
+        ok: true,
+        text: `✅ Đã nộp bài thành công lên Bảng điểm lớp [${activeClassCode}] cho ${activeStudentName} (${activeStudentCode})!`
+      });
+    } else {
+      setSyncStatusBanner({
+        ok: false,
+        text: `⚠️ Đã lưu bài trên máy nhưng chưa đẩy lên Cloud (${syncRes.errorMsg || 'Lỗi mạng'}).`
+      });
     }
 
     setIsEvaluating(false);
@@ -1046,17 +1090,26 @@ Output ONLY raw JSON:
       </View>
 
       <ScrollView contentContainerStyle={{ paddingBottom: 35 }}>
+        {/* THANH ĐỊNH DANH SINH VIÊN + NÚT XEM LỊCH SỬ BÀI NÓI */}
         <View style={styles.profileBanner}>
           <View style={styles.profileSummaryRow}>
-            <Text style={styles.profileSummaryText}>
-              👤 {studentNameInput || 'Chưa nhập tên'} {studentCodeInput ? `(${studentCodeInput})` : ''} | 🏫 Lớp: <Text style={{ color: '#00FFFF' }}>{classCodeInput || 'TỰ DO'}</Text>
+            <Text style={styles.profileSummaryText} numberOfLines={1}>
+              👤 {studentNameInput || 'Chưa nhập tên'} {studentCodeInput ? `(${studentCodeInput})` : ''} | 🏫 Lớp: <Text style={{ color: '#00FFFF' }}>{normalizeClassCode(classCodeInput) === 'PUBLIC' ? 'TỰ DO' : normalizeClassCode(classCodeInput)}</Text>
             </Text>
-            <TouchableOpacity 
-              style={styles.editProfileBtn} 
-              onPress={() => setShowProfileBar(prev => !prev)}
-            >
-              <Text style={styles.editProfileBtnText}>{showProfileBar ? '▲ Đóng' : '✏️ Nhập Mã Lớp / Tên'}</Text>
-            </TouchableOpacity>
+            <View style={{ flexDirection: 'row', gap: 6 }}>
+              <TouchableOpacity 
+                style={styles.historyOpenBtn} 
+                onPress={handleOpenHistory}
+              >
+                <Text style={styles.historyOpenBtnText}>📜 LỊCH SỬ</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={styles.editProfileBtn} 
+                onPress={() => setShowProfileBar(prev => !prev)}
+              >
+                <Text style={styles.editProfileBtnText}>{showProfileBar ? '▲ Đóng' : '✏️ Nhập Mã Lớp / Tên'}</Text>
+              </TouchableOpacity>
+            </View>
           </View>
 
           {showProfileBar && (
@@ -1080,11 +1133,11 @@ Output ONLY raw JSON:
               <View style={styles.profileInputRow}>
                 <TextInput
                   style={[styles.profileInput, { flex: 1.4 }]}
-                  placeholder="Mã lớp (VD: ENG101_K18)"
+                  placeholder="Mã lớp (VD: CDCNTT hoặc TCCNTT)"
                   placeholderTextColor="#666688"
                   autoCapitalize="characters"
                   value={classCodeInput}
-                  onChangeText={(val) => setClassCodeInput(val.toUpperCase())}
+                  onChangeText={(val) => setClassCodeInput(val.toUpperCase().replace(/\s+/g, ''))}
                 />
                 <TouchableOpacity style={styles.saveProfileBtn} onPress={handleSaveStudentSession}>
                   <Text style={styles.saveProfileBtnText}>💾 LƯU THÔNG TIN</Text>
@@ -1093,6 +1146,15 @@ Output ONLY raw JSON:
             </View>
           )}
         </View>
+
+        {/* BANNER XÁC NHẬN ĐỒNG BỘ BÀI NỘP LÊN LỚP */}
+        {syncStatusBanner && (
+          <View style={syncStatusBanner.ok ? styles.syncSuccessBanner : styles.syncErrorBanner}>
+            <Text style={syncStatusBanner.ok ? styles.syncSuccessText : styles.syncErrorText}>
+              {syncStatusBanner.text}
+            </Text>
+          </View>
+        )}
 
         {!isTeacherExamining && !isNormalPracticing && (
           <>
@@ -1135,14 +1197,14 @@ Output ONLY raw JSON:
             {topicOrigin === 'TEACHER_DASHBOARD' && (
               <View style={styles.teacherFilterNotice}>
                 {loadingAssignments ? (
-                  <Text style={styles.teacherFilterText}>⏳ Đang tải danh sách bài tập của lớp {classCodeInput || 'PUBLIC'}...</Text>
+                  <Text style={styles.teacherFilterText}>⏳ Đang tải danh sách bài tập của lớp {normalizeClassCode(classCodeInput)}...</Text>
                 ) : teacherAssignments.length === 0 ? (
                   <Text style={styles.teacherFilterText}>
-                    ⚠️ Chưa tìm thấy bài tập Trạm 2 nào cho mã lớp "{classCodeInput || 'PUBLIC'}". Hãy nhập đúng Mã lớp ở thanh phía trên hoặc luyện tập với Hệ thống mẫu!
+                    ⚠️ Chưa tìm thấy bài tập Trạm 2 nào cho mã lớp "{normalizeClassCode(classCodeInput)}". Hãy nhập đúng Mã lớp ở thanh phía trên hoặc luyện tập với Hệ thống mẫu!
                   </Text>
                 ) : (
                   <Text style={[styles.teacherFilterText, { color: '#39FF14' }]}>
-                    ✅ Đã tải {teacherAssignments.length} bài tập được giao cho lớp {classCodeInput || 'PUBLIC'}.
+                    ✅ Đã tải {teacherAssignments.length} bài tập được giao cho lớp {normalizeClassCode(classCodeInput)}.
                   </Text>
                 )}
               </View>
@@ -1222,6 +1284,9 @@ Output ONLY raw JSON:
                     </TouchableOpacity>
                   )}
                 </View>
+                {finalTranscriptScript ? (
+                  <Text style={styles.scriptSummaryText}>📝 Script: "{finalTranscriptScript}"</Text>
+                ) : null}
                 {React.createElement('audio', {
                   controls: true,
                   src: recordedAudioUrl,
@@ -1349,7 +1414,7 @@ Output ONLY raw JSON:
                   ) : practiceMode === 'READ_SAMPLE' ? (
                     <View style={styles.previewPromptBox}>
                       <View style={styles.sampleHeaderRow}>
-                        <Text style={styles.previewPromptLabel}>📖 Câu mẫu bản xứ mục tiêu:</Text>
+                        <Text style={styles.previewPromptLabel}>📖 Script / Câu mẫu bản xứ mục tiêu:</Text>
                         <TouchableOpacity 
                           style={[styles.ttsMiniBtn, isPlayingSample && styles.ttsMiniBtnActive]} 
                           activeOpacity={0.7}
@@ -1364,10 +1429,27 @@ Output ONLY raw JSON:
                     </View>
                   ) : (
                     <View style={styles.freeSpeechHintBox}>
-                      <Text style={styles.freeSpeechHintLabel}>⚡ YÊU CẦU PHẢN XẠ TỰ DO:</Text>
+                      <View style={styles.sampleHeaderRow}>
+                        <Text style={styles.freeSpeechHintLabel}>⚡ YÊU CẦU PHẢN XẠ TỰ DO:</Text>
+                        {currentChallenge.prompt ? (
+                          <TouchableOpacity
+                            style={styles.ttsMiniBtn}
+                            onPress={() => setShowReferenceScriptInFreeMode(prev => !prev)}
+                          >
+                            <Text style={styles.ttsMiniBtnText}>
+                              {showReferenceScriptInFreeMode ? '🙈 ẨN SCRIPT GỢI Ý' : '👁️ XEM SCRIPT GỢI Ý'}
+                            </Text>
+                          </TouchableOpacity>
+                        ) : null}
+                      </View>
                       <Text style={styles.freeSpeechHintText}>
                         Đọc kỹ bối cảnh phía trên và tự phát biểu câu phản xạ tiếng Anh tự nhiên của bạn!
                       </Text>
+                      {showReferenceScriptInFreeMode && currentChallenge.prompt ? (
+                        <Text style={[styles.previewPromptText, { marginTop: 6, color: '#00FFFF' }]}>
+                          💡 Gợi ý: "{currentChallenge.prompt}"
+                        </Text>
+                      ) : null}
                     </View>
                   )}
 
@@ -1416,7 +1498,7 @@ Output ONLY raw JSON:
             ) : practiceMode === 'READ_SAMPLE' ? (
               <View style={styles.promptDisplayBox}>
                 <View style={styles.sampleHeaderRow}>
-                  <Text style={styles.promptModeNotice}>📖 CÂU TIẾNG ANH MỤC TIÊU CẦN ĐỌC:</Text>
+                  <Text style={styles.promptModeNotice}>📖 SCRIPT / CÂU TIẾNG ANH MỤC TIÊU:</Text>
                   <TouchableOpacity 
                     style={[styles.ttsPlayBtn, isPlayingSample && styles.ttsPlayBtnActive]} 
                     activeOpacity={0.7}
@@ -1431,12 +1513,29 @@ Output ONLY raw JSON:
               </View>
             ) : (
               <View style={[styles.promptDisplayBox, { borderColor: '#39FF14', backgroundColor: '#07180D' }]}>
-                <Text style={[styles.promptModeNotice, { color: '#39FF14' }]}>
-                  ⚡ CHẾ ĐỘ PHẢN XẠ TỰ DO ĐANG BẬT:
-                </Text>
+                <View style={styles.sampleHeaderRow}>
+                  <Text style={[styles.promptModeNotice, { color: '#39FF14' }]}>
+                    ⚡ CHẾ ĐỘ PHẢN XẠ TỰ DO ĐANG BẬT:
+                  </Text>
+                  {currentChallenge.prompt ? (
+                    <TouchableOpacity
+                      style={styles.ttsMiniBtn}
+                      onPress={() => setShowReferenceScriptInFreeMode(prev => !prev)}
+                    >
+                      <Text style={styles.ttsMiniBtnText}>
+                        {showReferenceScriptInFreeMode ? '🙈 ẨN GỢI Ý' : '👁️ XEM SCRIPT GỢI Ý'}
+                      </Text>
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
                 <Text style={[styles.promptDisplayText, { fontSize: 13, color: '#88FFBB', fontWeight: 'bold' }]}>
                   Nhấn nút ghi âm và tự phát biểu câu trả lời tự nhiên của bạn theo bối cảnh bên trên!
                 </Text>
+                {showReferenceScriptInFreeMode && currentChallenge.prompt ? (
+                  <Text style={[styles.promptDisplayText, { fontSize: 12, color: '#00FFFF', marginTop: 8, fontStyle: 'italic' }]}>
+                    💡 Script gợi ý: "{currentChallenge.prompt}"
+                  </Text>
+                ) : null}
               </View>
             )}
 
@@ -1452,13 +1551,20 @@ Output ONLY raw JSON:
               />
             </View>
 
-            {(isRecordingNormal || liveTranscript) && (
+            {/* 📜 KHUNG HIỂN THỊ SCRIPT NGUYÊN VĂN & SOI LỖI TỪNG TỪ */}
+            {(isRecordingNormal || liveTranscript || finalTranscriptScript) && (
               <View style={styles.liveSubtitleBox}>
                 <Text style={styles.liveSubtitleLabel}>
                   {isRecordingNormal
                     ? '🎙️ Đang nhận diện giọng bạn theo thời gian thực:'
-                    : '📝 Bản ghi âm & Soi lỗi từng từ (🟢 Chuẩn | 🔴 Sai phát âm / Ngữ pháp):'}
+                    : '📜 SCRIPT NGUYÊN VĂN AI GHI NHẬN & SOI LỖI (🟢 Chuẩn | 🔴 Sai phát âm / Ngữ pháp):'}
                 </Text>
+
+                {!isRecordingNormal && finalTranscriptScript ? (
+                  <View style={styles.fullScriptBox}>
+                    <Text style={styles.fullScriptText}>"{finalTranscriptScript}"</Text>
+                  </View>
+                ) : null}
 
                 {!isRecordingNormal && wordAnalysisList.length > 0 ? (
                   <View style={styles.wordChipsRow}>
@@ -1479,11 +1585,11 @@ Output ONLY raw JSON:
                       );
                     })}
                   </View>
-                ) : (
+                ) : isRecordingNormal ? (
                   <Text style={styles.liveSubtitleText}>
                     {liveTranscript || '... (hãy nói tiếng Anh to, rõ ràng)'}
                   </Text>
-                )}
+                ) : null}
               </View>
             )}
 
@@ -1555,6 +1661,70 @@ Output ONLY raw JSON:
         )}
       </ScrollView>
 
+      {/* 📜 MODAL LỊCH SỬ BÀI NÓI CỦA SINH VIÊN */}
+      {showHistoryDrawer && (
+        <View style={[styles.historyOverlay, { position: 'fixed' as any, top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999 }]}>
+          <View style={styles.historyModalBox}>
+            <View style={styles.historyHeaderRow}>
+              <Text style={styles.historyTitle}>
+                📜 LỊCH SỬ BÀI NÓI • {studentNameInput} ({studentCodeInput})
+              </Text>
+              <TouchableOpacity onPress={() => setShowHistoryDrawer(false)}>
+                <Text style={{ color: '#FF0055', fontWeight: 'bold', fontSize: 12 }}>✕ ĐÓNG</Text>
+              </TouchableOpacity>
+            </View>
+
+            {loadingHistory ? (
+              <ActivityIndicator size="large" color="#00FFFF" style={{ marginVertical: 25 }} />
+            ) : studentHistory.length === 0 ? (
+              <Text style={styles.historyEmptyText}>
+                Chưa có bản thu âm nào được lưu cho MSSV "{studentCodeInput}". Hãy hoàn thành một bài nói để lưu vào lịch sử!
+              </Text>
+            ) : (
+              <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator={false}>
+                {studentHistory.map((item, idx) => {
+                  const finalScore = item.manualScore !== null && item.manualScore !== undefined ? item.manualScore : item.score;
+                  return (
+                    <View key={item.id || idx} style={styles.historyCardItem}>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
+                        <Text style={styles.historyClassTag}>
+                          🏫 {item.classCode || 'PUBLIC'} • {item.cefrLevel || 'B1'}
+                        </Text>
+                        <Text style={[styles.historyScoreBadge, { color: Number(finalScore) >= 70 ? '#39FF14' : '#FF0055' }]}>
+                          {finalScore}/100đ {item.manualScore !== null && item.manualScore !== undefined ? '(GV chốt)' : '(AI)'}
+                        </Text>
+                      </View>
+
+                      <Text style={styles.historyTranscriptText}>
+                        🗣️ Script: "{item.transcript}"
+                      </Text>
+
+                      {item.feedback ? (
+                        <Text style={styles.historyFeedbackText}>📊 {item.feedback}</Text>
+                      ) : null}
+
+                      {item.teacherFeedback ? (
+                        <Text style={styles.historyTeacherNote}>💬 Nhận xét Giảng viên: {item.teacherFeedback}</Text>
+                      ) : null}
+
+                      {item.audioUrl ? (
+                        <View style={{ marginTop: 6 }}>
+                          {React.createElement('audio', {
+                            controls: true,
+                            src: item.audioUrl,
+                            style: { width: '100%', height: '32px' }
+                          })}
+                        </View>
+                      ) : null}
+                    </View>
+                  );
+                })}
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      )}
+
       {typeof DetailedSpeechFeedbackModal === 'function' && (
         <DetailedSpeechFeedbackModal
           visible={detailedModalVisible}
@@ -1575,8 +1745,10 @@ const styles = StyleSheet.create({
   title: { color: '#FF007F', fontSize: 11.5, fontWeight: '900', flexShrink: 1 },
 
   profileBanner: { backgroundColor: '#0D0620', padding: 10, borderRadius: 10, borderWidth: 1, borderColor: '#00FFFF', marginBottom: 10 },
-  profileSummaryRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  profileSummaryRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 6 },
   profileSummaryText: { color: '#FFF', fontSize: 10, fontWeight: 'bold', flex: 1 },
+  historyOpenBtn: { backgroundColor: '#0B192C', paddingVertical: 4, paddingHorizontal: 8, borderRadius: 6, borderWidth: 1, borderColor: '#00FFFF' },
+  historyOpenBtnText: { color: '#00FFFF', fontSize: 9, fontWeight: '900' },
   editProfileBtn: { backgroundColor: '#1A0B2E', paddingVertical: 4, paddingHorizontal: 8, borderRadius: 6, borderWidth: 1, borderColor: '#FFD700' },
   editProfileBtnText: { color: '#FFD700', fontSize: 9, fontWeight: 'bold' },
   profileFormBox: { marginTop: 8, borderTopWidth: 1, borderTopColor: '#221144', paddingTop: 8, gap: 6 },
@@ -1584,6 +1756,11 @@ const styles = StyleSheet.create({
   profileInput: { backgroundColor: '#070212', borderWidth: 1, borderColor: '#332255', borderRadius: 6, padding: 6, color: '#FFF', fontSize: 10.5 },
   saveProfileBtn: { flex: 1, backgroundColor: '#39FF14', borderRadius: 6, justifyContent: 'center', alignItems: 'center', paddingVertical: 6 },
   saveProfileBtnText: { color: '#000', fontSize: 9.5, fontWeight: '900' },
+
+  syncSuccessBanner: { backgroundColor: 'rgba(57, 255, 20, 0.14)', borderWidth: 1, borderColor: '#39FF14', padding: 8, borderRadius: 8, marginBottom: 10 },
+  syncSuccessText: { color: '#39FF14', fontSize: 9.5, fontWeight: 'bold', textAlign: 'center' },
+  syncErrorBanner: { backgroundColor: 'rgba(255, 0, 85, 0.14)', borderWidth: 1, borderColor: '#FF0055', padding: 8, borderRadius: 8, marginBottom: 10 },
+  syncErrorText: { color: '#FF0055', fontSize: 9.5, fontWeight: 'bold', textAlign: 'center' },
 
   teacherFilterNotice: { backgroundColor: '#0B192C', padding: 8, borderRadius: 8, borderWidth: 1, borderColor: '#00FFFF', marginBottom: 8 },
   teacherFilterText: { color: '#FFD700', fontSize: 9.5, lineHeight: 14 },
@@ -1669,102 +1846,24 @@ const styles = StyleSheet.create({
   levelBadge: { color: '#000', backgroundColor: '#39FF14', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, fontSize: 8.5, fontWeight: '900' },
   contextText: { color: '#FFF', fontSize: 11, lineHeight: 16, marginBottom: 8 },
 
-  relayContainer: {
-    marginVertical: 8,
-    gap: 6,
-  },
-  relayTurnBox1: {
-    backgroundColor: '#081826',
-    borderLeftWidth: 3,
-    borderLeftColor: '#00FFFF',
-    padding: 10,
-    borderRadius: 8,
-  },
-  relayTurnBox2: {
-    backgroundColor: '#092216',
-    borderLeftWidth: 3,
-    borderLeftColor: '#39FF14',
-    padding: 10,
-    borderRadius: 8,
-  },
-  relayTurnHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  relayTurn1Title: {
-    color: '#00FFFF',
-    fontSize: 10,
-    fontWeight: '900',
-  },
-  relayTurn2Title: {
-    color: '#39FF14',
-    fontSize: 10,
-    fontWeight: '900',
-  },
-  relayTaskText: {
-    color: '#E0E0F5',
-    fontSize: 10,
-    lineHeight: 15,
-    marginBottom: 4,
-  },
-  relaySampleText: {
-    color: '#FFF',
-    fontSize: 11,
-    fontStyle: 'italic',
-    marginTop: 2,
-  },
-  relayArrowText: {
-    color: '#FFD700',
-    fontSize: 9,
-    fontWeight: '900',
-    textAlign: 'center',
-  },
+  relayContainer: { marginVertical: 8, gap: 6 },
+  relayTurnBox1: { backgroundColor: '#081826', borderLeftWidth: 3, borderLeftColor: '#00FFFF', padding: 10, borderRadius: 8 },
+  relayTurnBox2: { backgroundColor: '#092216', borderLeftWidth: 3, borderLeftColor: '#39FF14', padding: 10, borderRadius: 8 },
+  relayTurnHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
+  relayTurn1Title: { color: '#00FFFF', fontSize: 10, fontWeight: '900' },
+  relayTurn2Title: { color: '#39FF14', fontSize: 10, fontWeight: '900' },
+  relayTaskText: { color: '#E0E0F5', fontSize: 10, lineHeight: 15, marginBottom: 4 },
+  relaySampleText: { color: '#FFF', fontSize: 11, fontStyle: 'italic', marginTop: 2 },
+  relayArrowText: { color: '#FFD700', fontSize: 9, fontWeight: '900', textAlign: 'center' },
 
-  hintContainer: {
-    marginVertical: 6,
-    width: '100%',
-  },
-  hintHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  hintToggleBtn: {
-    backgroundColor: '#16082F',
-    borderWidth: 1.5,
-    borderColor: '#FFD700',
-    paddingVertical: 5,
-    paddingHorizontal: 12,
-    borderRadius: 7,
-  },
-  hintToggleBtnActive: {
-    backgroundColor: '#FFD700',
-  },
-  hintToggleText: {
-    fontSize: 9,
-    fontWeight: '900',
-  },
-  hintContentBox: {
-    backgroundColor: '#07180D',
-    borderLeftWidth: 3,
-    borderLeftColor: '#39FF14',
-    padding: 8,
-    borderRadius: 8,
-    marginTop: 6,
-  },
-  scaffoldingMetaRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    flexWrap: 'wrap',
-    gap: 6,
-  },
-  scaffoldingMetaText: {
-    color: '#DDD',
-    fontSize: 9.5,
-    fontWeight: 'bold',
-  },
+  hintContainer: { marginVertical: 6, width: '100%' },
+  hintHeaderRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center' },
+  hintToggleBtn: { backgroundColor: '#16082F', borderWidth: 1.5, borderColor: '#FFD700', paddingVertical: 5, paddingHorizontal: 12, borderRadius: 7 },
+  hintToggleBtnActive: { backgroundColor: '#FFD700' },
+  hintToggleText: { fontSize: 9, fontWeight: '900' },
+  hintContentBox: { backgroundColor: '#07180D', borderLeftWidth: 3, borderLeftColor: '#39FF14', padding: 8, borderRadius: 8, marginTop: 6 },
+  scaffoldingMetaRow: { flexDirection: 'row', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 },
+  scaffoldingMetaText: { color: '#DDD', fontSize: 9.5, fontWeight: 'bold' },
 
   previewPromptBox: { backgroundColor: '#070212', padding: 10, borderRadius: 8, marginBottom: 12, borderWidth: 1, borderColor: '#221144' },
   sampleHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
@@ -1793,6 +1892,7 @@ const styles = StyleSheet.create({
 
   audioReviewBox: { backgroundColor: '#130628', padding: 12, borderRadius: 10, borderWidth: 1.5, borderColor: '#39FF14', marginVertical: 10 },
   audioReviewTitle: { color: '#39FF14', fontSize: 10, fontWeight: '900' },
+  scriptSummaryText: { color: '#FFFFFF', fontSize: 10.5, fontStyle: 'italic', marginTop: 6, lineHeight: 16 },
   viewScoreBtn: { backgroundColor: '#0A2518', paddingVertical: 4, paddingHorizontal: 8, borderRadius: 6, borderWidth: 1, borderColor: '#39FF14' },
   viewScoreBtnText: { color: '#39FF14', fontSize: 9, fontWeight: 'bold' },
 
@@ -1812,6 +1912,8 @@ const styles = StyleSheet.create({
   liveSubtitleBox: { backgroundColor: '#0D0A24', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#5533AA', marginBottom: 12 },
   liveSubtitleLabel: { color: '#FFD700', fontSize: 9, fontWeight: 'bold', marginBottom: 6 },
   liveSubtitleText: { color: '#00FFFF', fontSize: 12, fontStyle: 'italic', lineHeight: 18 },
+  fullScriptBox: { backgroundColor: '#070314', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#00FFFF', marginBottom: 8 },
+  fullScriptText: { color: '#FFFFFF', fontSize: 12, fontStyle: 'italic', lineHeight: 18 },
   wordChipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 4 },
   wordChip: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, borderWidth: 1 },
   wordChipOk: { backgroundColor: 'rgba(57, 255, 20, 0.12)', borderColor: '#39FF14' },
@@ -1828,5 +1930,17 @@ const styles = StyleSheet.create({
   reopenModalBtn: { flex: 1, backgroundColor: '#0D0620', borderWidth: 1.5, borderColor: '#00FFFF', paddingVertical: 12, borderRadius: 10, alignItems: 'center' },
   reopenModalBtnText: { color: '#00FFFF', fontSize: 11, fontWeight: '900' },
   stopRecordBtn: { backgroundColor: '#39FF14', paddingVertical: 12, borderRadius: 10, alignItems: 'center' },
-  stopRecordBtnText: { color: '#000', fontSize: 11.5, fontWeight: '900' }
+  stopRecordBtnText: { color: '#000', fontSize: 11.5, fontWeight: '900' },
+
+  historyOverlay: { backgroundColor: 'rgba(5, 2, 13, 0.9)', justifyContent: 'center', alignItems: 'center', padding: 16 },
+  historyModalBox: { backgroundColor: '#0D0620', padding: 16, borderRadius: 14, borderWidth: 2, borderColor: '#00FFFF', width: '100%', maxWidth: 520 },
+  historyHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, borderBottomWidth: 1, borderBottomColor: '#221144', paddingBottom: 8 },
+  historyTitle: { color: '#00FFFF', fontSize: 11, fontWeight: '900', flex: 1 },
+  historyEmptyText: { color: '#AAAABB', fontSize: 10.5, textAlign: 'center', marginVertical: 20 },
+  historyCardItem: { backgroundColor: '#130628', padding: 10, borderRadius: 10, borderWidth: 1, borderColor: '#332255', marginBottom: 8 },
+  historyClassTag: { color: '#FFD700', fontSize: 9.5, fontWeight: 'bold' },
+  historyScoreBadge: { fontSize: 11, fontWeight: '900' },
+  historyTranscriptText: { color: '#FFF', fontSize: 10.5, fontStyle: 'italic', marginTop: 4, lineHeight: 15 },
+  historyFeedbackText: { color: '#88FFBB', fontSize: 9, marginTop: 4 },
+  historyTeacherNote: { color: '#00FFFF', fontSize: 9.5, fontWeight: 'bold', marginTop: 4 }
 });
