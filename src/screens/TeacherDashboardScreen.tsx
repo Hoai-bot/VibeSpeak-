@@ -327,11 +327,11 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
 
   const extractSubmissionClassCode = (s: SubmissionRecord): string => {
     if (s.class_code && s.class_code.trim()) {
-      return s.class_code.toUpperCase().trim();
+      return s.class_code.toUpperCase().replace(/\s+/g, '');
     }
-    const match = (s.class_name || '').match(/^\[([A-Z0-9_-]+)\]/i);
+    const match = (s.class_name || '').match(/^\[([^\]]+)\]/i);
     if (match && match[1]) {
-      return match[1].toUpperCase();
+      return match[1].toUpperCase().replace(/\s+/g, '');
     }
     return 'PUBLIC';
   };
@@ -404,34 +404,41 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
       }
       const { data: assignData } = await assignQuery;
       const instructorAssignCodes = (assignData || [])
-        .map((a: any) => (a.class_code || '').toUpperCase().trim())
+        .map((a: any) => (a.class_code || '').toUpperCase().replace(/\s+/g, ''))
         .filter((c: string) => Boolean(c) && c !== 'PUBLIC');
       setAssignedClassCodes(Array.from(new Set(instructorAssignCodes)));
 
       // Tập hợp toàn bộ Mã lớp thuộc quyền Giảng viên hiện tại
       const ownedCodesSet = new Set<string>([
-        ...validClasses.map((c) => (c.code || '').toUpperCase().trim()).filter(Boolean),
+        ...validClasses.map((c) => (c.code || '').toUpperCase().replace(/\s+/g, '')).filter(Boolean),
         ...instructorAssignCodes,
       ]);
 
-      // 3. Lấy danh sách bài nộp (Submissions) và lọc chặt theo các lớp của Giảng viên
-      const { data: subData, error: subErr } = await supabase
-        .from('submissions')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(300);
+      // 3. Lấy danh sách bài nộp (Submissions) lọc trực tiếp theo các mã lớp của Giảng viên trên Supabase
+      const ownedCodesList = Array.from(ownedCodesSet);
 
-      if (subErr) {
-        console.warn("Lỗi tải submissions:", subErr.message);
-      } else if (subData) {
-        const allSubs = subData as SubmissionRecord[];
-        if (activeRole === 'SUPER_ADMIN') {
-          setSubmissions(allSubs);
-        } else if (ownedCodesSet.size === 0) {
-          setSubmissions([]);
-        } else {
-          const myClassSubs = allSubs.filter((s) => ownedCodesSet.has(extractSubmissionClassCode(s)));
-          setSubmissions(myClassSubs);
+      if (activeRole !== 'SUPER_ADMIN' && ownedCodesList.length === 0) {
+        setSubmissions([]);
+      } else {
+        let subQuery = supabase
+          .from('submissions')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(500);
+
+        if (activeRole !== 'SUPER_ADMIN' && ownedCodesList.length > 0) {
+          const orFilters = ownedCodesList
+            .flatMap((code) => [`class_code.ilike.${code}`, `class_name.ilike.%[${code}]%`])
+            .join(',');
+          subQuery = subQuery.or(orFilters);
+        }
+
+        const { data: subData, error: subErr } = await subQuery;
+
+        if (subErr) {
+          console.warn("Lỗi tải submissions:", subErr.message);
+        } else if (subData) {
+          setSubmissions(subData as SubmissionRecord[]);
         }
       }
     } catch (err) {
@@ -445,10 +452,10 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
   const availableFilterCodes = useMemo(() => {
     const codeSet = new Set<string>();
     classList.forEach(c => {
-      if (c.code) codeSet.add(c.code.toUpperCase().trim());
+      if (c.code) codeSet.add(c.code.toUpperCase().replace(/\s+/g, ''));
     });
     assignedClassCodes.forEach(c => {
-      if (c) codeSet.add(c.toUpperCase().trim());
+      if (c) codeSet.add(c.toUpperCase().replace(/\s+/g, ''));
     });
     submissions.forEach(s => {
       const code = extractSubmissionClassCode(s);
@@ -485,7 +492,7 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
   // 🏫 TẠO LỚP HỌC PHẦN RIÊNG CỦA GIẢNG VIÊN (TỰ ĐỘNG LỌC BỎ CỘT THIẾU NẾU CÓ)
   const handleCreateClass = async () => {
     setCreateClassError('');
-    const cleanCode = newClassCodeInput.toUpperCase().trim().replace(/\s+/g, '_');
+    const cleanCode = newClassCodeInput.toUpperCase().trim().replace(/\s+/g, '');
     const cleanName = newClassNameInput.trim();
 
     if (!cleanCode || !cleanName) {
@@ -602,7 +609,7 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
       return;
     }
 
-    const normalizedClassCode = (assignClassCodeInput || '').toUpperCase().trim().replace(/\s+/g, '_');
+    const normalizedClassCode = (assignClassCodeInput || '').toUpperCase().trim().replace(/\s+/g, '');
     if (!normalizedClassCode || normalizedClassCode === 'PUBLIC') {
       setCreateAssignError('⚠️ Vui lòng chọn lớp học phần hoặc nhập Mã lớp riêng (VD: TCCNTT)!');
       return;
