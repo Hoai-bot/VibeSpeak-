@@ -45,6 +45,32 @@ interface ClassItem {
   instructor_id?: string;
 }
 
+// 🛡️ Hàm tự động lọc bỏ các cột chưa tồn tại trong schema cache của Supabase để tránh lỗi PGRST204
+async function safeSupabaseInsert(table: string, initialPayload: Record<string, any>) {
+  if (!supabase) return { data: null, error: { message: 'Supabase client chưa được khởi tạo.' } };
+
+  const currentPayload = { ...initialPayload };
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const res = await supabase.from(table).insert([currentPayload]).select().single();
+    if (!res.error) return res;
+
+    const missingColMatch = res.error.message?.match(/Could not find the '([^']+)' column/);
+    if (missingColMatch && missingColMatch[1] && missingColMatch[1] in currentPayload) {
+      delete currentPayload[missingColMatch[1]];
+      continue;
+    }
+
+    if (res.error.message?.includes('foreign key') && 'class_id' in currentPayload) {
+      delete currentPayload.class_id;
+      continue;
+    }
+
+    return res;
+  }
+
+  return await supabase.from(table).insert([currentPayload]).select().single();
+}
+
 export default function TeacherDashboardScreen({ onBack }: Props) {
   // 🔐 TRẠNG THÁI XÁC THỰC GIẢNG VIÊN (AUTH GUARD)
   const [isCheckingAuth, setIsCheckingAuth] = useState<boolean>(true);
@@ -339,7 +365,6 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
         if (!resByInstructor.error) {
           classesData = resByInstructor.data;
         } else {
-          // Dự phòng nếu bảng classes chưa có cột instructor_id
           const resFallback = await supabase
             .from('classes')
             .select('id, code, name, tenant_id')
@@ -357,7 +382,6 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
 
       const validClasses: ClassItem[] = Array.isArray(classesData) ? classesData : [];
       setClassList((prev) => {
-        // Giữ lại cả lớp vừa tạo cục bộ nếu Supabase chưa kịp đồng bộ
         const merged = [...validClasses];
         prev.forEach((p) => {
           if (p.id.startsWith('local_') && !merged.some((m) => m.code === p.code)) {
@@ -458,7 +482,7 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
     ? Math.round((filteredSubmissions.filter(s => getFinalScore(s) >= 70).length / totalSubmissions) * 100)
     : 0;
 
-  // 🏫 TẠO LỚP HỌC PHẦN RIÊNG CỦA GIẢNG VIÊN (CÓ FALLBACK & THÔNG BÁO TRỰC QUAN TRÊN WEB)
+  // 🏫 TẠO LỚP HỌC PHẦN RIÊNG CỦA GIẢNG VIÊN (TỰ ĐỘNG LỌC BỎ CỘT THIẾU NẾU CÓ)
   const handleCreateClass = async () => {
     setCreateClassError('');
     const cleanCode = newClassCodeInput.toUpperCase().trim().replace(/\s+/g, '_');
@@ -476,58 +500,19 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
 
     setIsCreatingClass(true);
     try {
-      if (!supabase) {
-        setCreateClassError('❌ Lỗi kết nối máy chủ Supabase.');
-        return;
-      }
-
-      // Lần 1: Thử lưu đầy đủ kèm instructor_id
-      let { data, error } = await supabase
-        .from('classes')
-        .insert([{
-          code: cleanCode,
-          name: cleanName,
-          tenant_id: currentTenantId,
-          instructor_id: currentInstructorId,
-        }])
-        .select('id, code, name, tenant_id')
-        .single();
-
-      // Lần 2 (Dự phòng): Nếu bảng classes chưa có cột instructor_id
-      if (error && error.message?.includes('instructor_id')) {
-        const retryWithoutInstructor = await supabase
-          .from('classes')
-          .insert([{
-            code: cleanCode,
-            name: cleanName,
-            tenant_id: currentTenantId,
-          }])
-          .select('id, code, name, tenant_id')
-          .single();
-        data = retryWithoutInstructor.data;
-        error = retryWithoutInstructor.error;
-      }
-
-      // Lần 3 (Dự phòng): Nếu bảng classes chỉ có cột code & name (không có tenant_id hoặc lỗi FK)
-      if (error && (error.message?.includes('tenant_id') || error.message?.includes('foreign key'))) {
-        const retryMinimal = await supabase
-          .from('classes')
-          .insert([{
-            code: cleanCode,
-            name: cleanName,
-          }])
-          .select('id, code, name')
-          .single();
-        data = retryMinimal.data as any;
-        error = retryMinimal.error;
-      }
+      const { data, error } = await safeSupabaseInsert('classes', {
+        code: cleanCode,
+        name: cleanName,
+        tenant_id: currentTenantId,
+        instructor_id: currentInstructorId,
+      });
 
       if (error) {
         setCreateClassError(`❌ Supabase từ chối lưu lớp: ${error.message}`);
         return;
       }
 
-      const createdItem: ClassItem = data || {
+      const createdItem: ClassItem = (data as any) || {
         id: `local_${Date.now()}`,
         code: cleanCode,
         name: cleanName,
@@ -609,7 +594,7 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
     }
   };
 
-  // 📝 GIAO BÀI TẬP MỚI (GẮN VỚI LỚP CỦA GIẢNG VIÊN)
+  // 📝 GIAO BÀI TẬP MỚI (TỰ ĐỘNG BỎ QUA CỘT DESCRIPTION HOẶC CỘT PHỤ NẾU CHƯA CÓ TRONG SUPABASE)
   const handleCreateAssignment = async () => {
     setCreateAssignError('');
     if (!assignTitle.trim() || !assignPrompt.trim()) {
@@ -631,39 +616,37 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
 
     setIsSubmittingAssign(true);
     try {
-      if (supabase) {
-        const selectedClassObj = classList.find(c => c.code?.toUpperCase() === normalizedClassCode || c.id === assignClassId);
-        const validClassId = selectedClassObj && !selectedClassObj.id.startsWith('local_') ? selectedClassObj.id : null;
+      const selectedClassObj = classList.find(c => c.code?.toUpperCase() === normalizedClassCode || c.id === assignClassId);
+      const validClassId = selectedClassObj && !selectedClassObj.id.startsWith('local_') ? selectedClassObj.id : null;
 
-        const { error } = await supabase.from('assignments').insert([{
-          tenant_id: selectedClassObj?.tenant_id || currentTenantId,
-          class_id: validClassId,
-          class_code: normalizedClassCode,
-          created_by: currentInstructorId,
-          title: assignTitle.trim(),
-          description: assignDescription.trim() || `Bài tập giao cho lớp ${normalizedClassCode}`,
-          station_type: assignStation,
-          target_prompt: assignPrompt.trim(),
-          cefr_level: assignCefr.toUpperCase().trim(),
-          deadline_at: parsedDate.toISOString(),
-          status: 'PUBLISHED'
-        }]);
+      const { error } = await safeSupabaseInsert('assignments', {
+        tenant_id: selectedClassObj?.tenant_id || currentTenantId,
+        class_id: validClassId,
+        class_code: normalizedClassCode,
+        created_by: currentInstructorId,
+        title: assignTitle.trim(),
+        description: assignDescription.trim() || `Bài tập giao cho lớp ${normalizedClassCode}`,
+        station_type: assignStation,
+        target_prompt: assignPrompt.trim(),
+        cefr_level: assignCefr.toUpperCase().trim(),
+        deadline_at: parsedDate.toISOString(),
+        status: 'PUBLISHED'
+      });
 
-        if (error) {
-          setCreateAssignError(`❌ Lỗi phát hành đề: ${error.message}`);
-        } else {
-          setShowCreateAssignmentModal(false);
-          setAssignTitle('');
-          setAssignPrompt('');
-          setAssignDescription('');
-          setCreateAssignError('');
-          setSelectedClass(normalizedClassCode);
-          await fetchDashboardData();
-          notifyUser(
-            'success',
-            `✅ Đã phát hành đề "${assignTitle}" cho mã lớp [${normalizedClassCode}]. Sinh viên chỉ cần nhập mã lớp này để nhận bài!`
-          );
-        }
+      if (error) {
+        setCreateAssignError(`❌ Lỗi phát hành đề: ${error.message}`);
+      } else {
+        setShowCreateAssignmentModal(false);
+        setAssignTitle('');
+        setAssignPrompt('');
+        setAssignDescription('');
+        setCreateAssignError('');
+        setSelectedClass(normalizedClassCode);
+        await fetchDashboardData();
+        notifyUser(
+          'success',
+          `✅ Đã phát hành đề "${assignTitle}" cho mã lớp [${normalizedClassCode}]. Sinh viên chỉ cần nhập mã lớp này để nhận bài!`
+        );
       }
     } catch (err: any) {
       setCreateAssignError(`❌ Lỗi hệ thống: ${err.message || 'Không thể tạo bài tập.'}`);
@@ -1330,7 +1313,7 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
                   style={styles.textInput}
                   value={assignTitle}
                   onChangeText={setAssignTitle}
-                  placeholder="Ví dụ: [SOLO] Discussing the impact of AI on software development"
+                  placeholder="Ví dụ: [SOLO] Talk about the advantages and disadvantages of computerised database"
                   placeholderTextColor="#666"
                 />
               </View>
@@ -1353,7 +1336,7 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
                   multiline
                   value={assignPrompt}
                   onChangeText={setAssignPrompt}
-                  placeholder="Ví dụ: Artificial intelligence significantly accelerates software development..."
+                  placeholder="Ví dụ: What are the advantages and disadvantages of computerised database?"
                   placeholderTextColor="#666"
                 />
               </View>
