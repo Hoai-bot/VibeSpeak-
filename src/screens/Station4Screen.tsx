@@ -1,7 +1,7 @@
 // src/screens/Station4Screen.tsx
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, TextInput, Modal, Alert } from 'react-native';
-import { evaluateSpeaking, AssessmentResult } from '../services/arena/assessmentService';
+import { evaluateSpeaking, AssessmentResult, SpokenWordAnalysis } from '../services/arena/assessmentService';
 import { updateUserProgress, saveSubmissionToCloud } from '../services/userService';
 import { SPEAKING_EXPRESS_DATA, ExpressExerciseItem } from '../data/station4/speakingExpress';
 import { getSavedStudentProfile, saveStudentProfile } from '../utils/studentSession';
@@ -140,7 +140,6 @@ export default function Station4Screen({ onBack }: Props) {
     stopPromptAudio();
     setIsPlayingPromptAudio(true);
 
-    // 1. Tạo đối tượng audio đồng bộ ngay lập tức (bảo lưu User Gesture trên Safari iOS)
     const audio = new Audio();
     audioPlayerRef.current = audio;
 
@@ -150,7 +149,6 @@ export default function Station4Screen({ onBack }: Props) {
 
     const ttsUrl = `/api/tts?voice=nova&text=${encodeURIComponent(cleanText)}`;
 
-    // 2. Lắng nghe trạng thái hoàn thành & lỗi
     audio.onended = () => {
       setIsPlayingPromptAudio(false);
       audioPlayerRef.current = null;
@@ -223,6 +221,7 @@ export default function Station4Screen({ onBack }: Props) {
   // Kết quả đánh giá
   const [result, setResult] = useState<AssessmentResult | null>(null);
   const [calculatedWpm, setCalculatedWpm] = useState<number>(0);
+  const [rawWpm, setRawWpm] = useState<number>(0);
 
   // Modal nộp bài
   const [showIdentityModal, setShowIdentityModal] = useState<boolean>(false);
@@ -303,6 +302,7 @@ export default function Station4Screen({ onBack }: Props) {
     setHasRecorded(false);
     setResult(null);
     setCalculatedWpm(0);
+    setRawWpm(0);
     audioChunksRef.current = [];
   };
 
@@ -467,18 +467,34 @@ Output ONLY raw JSON (no markdown):
 
     setIsAnalyzing(true);
     try {
-      const targetPrompt = `Express Prompt: ${activeTopic.challengeQuestion} - Level: ${cefrLevel}`;
-      const evalData = await evaluateSpeaking(recordedBlob, cefrLevel, '4', targetPrompt);
+      const targetPrompt = `Mode: FREE_SPEECH | Express Prompt: ${activeTopic.challengeQuestion}${activeTopic.guideVi ? ` | Context (VI): ${activeTopic.guideVi}` : ''} | Level: ${cefrLevel}`;
+      const evalData = await evaluateSpeaking(recordedBlob, cefrLevel, 'STATION_4', targetPrompt);
       
-      const wordsCount = (evalData.transcript || '').trim().split(/\s+/).filter(Boolean).length;
-      const actualMinutes = Math.max(0.2, recordedDuration / 60);
-      const wpm = Math.round(wordsCount / actualMinutes);
+      if (!evalData || evalData.score === 0) {
+        Alert.alert(
+          "Thông báo chấm điểm",
+          evalData?.detailedFeedback || "⚠️ Không nhận diện được giọng nói rõ ràng hoặc lỗi kết nối máy chủ chấm điểm. Vui lòng thử lại!"
+        );
+        setIsAnalyzing(false);
+        return;
+      }
 
-      setCalculatedWpm(wpm);
+      const totalWordsCount = (evalData.transcript || '').trim().split(/\s+/).filter(Boolean).length;
+      // 🎯 Chỉ tính WPM thực chất trên các từ đúng ngữ pháp & phát âm chuẩn (màu xanh lá)
+      const validWordsCount = Array.isArray(evalData.wordAnalysis) && evalData.wordAnalysis.length > 0
+        ? evalData.wordAnalysis.filter((w: SpokenWordAnalysis) => !w.hasGrammarError && !w.hasPronunciationError && w.isConfident).length
+        : totalWordsCount;
 
-      // ⚡ TÍNH ĐIỂM TỐC ĐỘ WPM
+      const actualMinutes = Math.max(0.15, recordedDuration / 60);
+      const effectiveWpm = Math.round(validWordsCount / actualMinutes);
+      const spokenRawWpm = Math.round(totalWordsCount / actualMinutes);
+
+      setCalculatedWpm(effectiveWpm);
+      setRawWpm(spokenRawWpm);
+
+      // ⚡ TÍNH ĐIỂM TỐC ĐỘ PHẢN XẠ WPM THEO KHUNG CEFR
       const targetMinWpm = activeTopic.minWpm || 100;
-      const wpmRatio = wpm / targetMinWpm;
+      const wpmRatio = effectiveWpm / targetMinWpm;
       
       let wpmScore = 0;
       if (wpmRatio >= 1.15) {
@@ -491,23 +507,36 @@ Output ONLY raw JSON (no markdown):
         wpmScore = Math.max(30, Math.round(wpmRatio * 100));
       }
 
-      const baseAiScore = evalData.score || 85;
+      const serverCriteria = evalData.criteria || {};
+      const pronScore = typeof serverCriteria.pronunciation === 'number' ? serverCriteria.pronunciation : 80;
+      const grammarScore = typeof serverCriteria.grammar === 'number' ? serverCriteria.grammar : 80;
+      const vocabScore = typeof serverCriteria.vocabulary === 'number' ? serverCriteria.vocabulary : 80;
+      const contentScore = typeof serverCriteria.content === 'number' ? serverCriteria.content : evalData.score;
+
+      // Cân bằng 50% Tốc độ phản xạ WPM thực chất + 50% Chất lượng ngôn ngữ (Ngữ pháp A1-C2, Phát âm, Từ vựng, Nội dung)
+      const baseAiScore = evalData.score;
       const dynamicTotalScore = Math.round((baseAiScore * 0.5) + (wpmScore * 0.5));
+
+      const wpmDetailNote = spokenRawWpm > effectiveWpm
+        ? `Tốc độ chuẩn xác: ${effectiveWpm} WPM (Tốc độ thô: ${spokenRawWpm} WPM, chuẩn CEFR: ${targetMinWpm} WPM)`
+        : `Tốc độ phản xạ: ${effectiveWpm} WPM (Chuẩn CEFR: ${targetMinWpm} WPM)`;
 
       const calibratedEvalData: AssessmentResult = {
         ...evalData,
         score: dynamicTotalScore,
-        isWin: dynamicTotalScore >= 65,
+        isWin: dynamicTotalScore >= 70,
         criteria: {
-          pronunciation: (evalData as any).pronunciation || 85,
+          pronunciation: pronScore,
+          grammar: grammarScore,
+          vocabulary: vocabScore,
           fluency: wpmScore,
-          content: (evalData as any).content || baseAiScore
-        } as any,
-        detailedFeedback: `Tốc độ phản xạ: ${wpm} WPM (Chuẩn: ${targetMinWpm} WPM) | Chỉ số lưu loát: ${wpmScore} điểm. ${evalData.detailedFeedback || ''}`
+          content: contentScore
+        },
+        detailedFeedback: `${wpmDetailNote} | Điểm lưu loát WPM: ${wpmScore}/100. ${evalData.detailedFeedback || ''}`
       };
 
       setResult(calibratedEvalData);
-      updateUserProgress(4, dynamicTotalScore, dynamicTotalScore >= 65);
+      updateUserProgress(4, dynamicTotalScore, dynamicTotalScore >= 70);
 
       // Nạp lại thông tin mới nhất từ localStorage trước khi mở Modal nộp bài
       const latest = getSavedStudentProfile();
@@ -532,7 +561,6 @@ Output ONLY raw JSON (no markdown):
 
     if (!result) return;
 
-    // Lưu tự động vào localStorage để đồng bộ giữa tất cả các trạm
     const updatedProfile = saveStudentProfile({
       studentName: studentNameInput,
       studentCode: studentCodeInput,
@@ -554,7 +582,7 @@ Output ONLY raw JSON (no markdown):
       score: result.score || 85,
       transcript: result.transcript || '',
       audioUrl: base64Audio || audioUrl || undefined,
-      feedback: `Lớp: ${activeClassTag} | Tốc độ phản xạ: ${calculatedWpm} WPM | ${result.detailedFeedback || 'Đạt ngưỡng lưu loát.'}`,
+      feedback: `Lớp: ${activeClassTag} | WPM chuẩn: ${calculatedWpm} WPM | Ngữ pháp: ${result.criteria?.grammar ?? '-'}/100 | Phát âm: ${result.criteria?.pronunciation ?? '-'}/100 | ${result.detailedFeedback || 'Đạt ngưỡng lưu loát.'}`,
       timestamp: new Date().toISOString()
     });
 
@@ -721,7 +749,7 @@ Output ONLY raw JSON (no markdown):
 
                 <Text style={styles.promptEn}>"{activeTopic.challengeQuestion}"</Text>
 
-                {/* 🇻🇳 HỘP GỢI Ý THUẦN TIẾNG VIỆT (ĐÃ LƯỢC BỎ THANH CHỌN CỜ) */}
+                {/* 🇻🇳 HỘP GỢI Ý THUẦN TIẾNG VIỆT */}
                 <View style={styles.hintContainer}>
                   <View style={styles.hintHeaderRow}>
                     <TouchableOpacity 
@@ -819,7 +847,7 @@ Output ONLY raw JSON (no markdown):
             <View style={{ alignItems: 'center', marginVertical: 10 }}>
               <ActivityIndicator size="large" color="#39FF14" />
               <Text style={{ color: '#39FF14', fontSize: 11, fontWeight: 'bold', marginTop: 6 }}>
-                ⚡ GROQ AI ĐANG TÍNH TOÁN TỐC ĐỘ WPM VÀ CHỈ SỐ LƯU LOÁT...
+                ⚡ GROQ AI ĐANG PHÂN TÍCH TỐC ĐỘ WPM, NGỮ PHÁP (A1–C2) & PHÁT ÂM...
               </Text>
             </View>
           ) : (
@@ -837,15 +865,18 @@ Output ONLY raw JSON (no markdown):
         {result && (
           <View style={styles.resultCard}>
             <Text style={[styles.resultTitle, { color: result.isWin ? '#39FF14' : '#FF0055' }]}>
-              {result.isWin ? '🎉 PHẢN XẠ ĐỘC THOẠI XUẤT SẮC!' : '💡 CẦN NÂNG CAO TỐC ĐỘ NÓI VÀ TÍNH LIÊN TỤC'}
+              {result.isWin ? '🎉 PHẢN XẠ ĐỘC THOẠI XUẤT SẮC!' : '💡 CẦN NÂNG CAO TỐC ĐỘ WPM & ĐỘ CHÍNH XÁC NGỮ PHÁP'}
             </Text>
 
             <View style={styles.wpmBanner}>
-              <Text style={styles.wpmTitle}>⚡ TỐC ĐỘ NÓI THỰC TẾ: {calculatedWpm} WPM</Text>
+              <Text style={styles.wpmTitle}>
+                ⚡ TỐC ĐỘ WPM CHUẨN XÁC: {calculatedWpm} WPM
+                {rawWpm > calculatedWpm ? ` (Thô: ${rawWpm} WPM)` : ''}
+              </Text>
               <Text style={styles.wpmSub}>
                 {calculatedWpm >= activeTopic.minWpm 
-                  ? '✅ Tốc độ nói đạt chuẩn lưu loát theo khung CEFR!' 
-                  : `⚠️ Tốc độ nói hiện đang dưới chuẩn đề xuất (${activeTopic.minWpm} WPM). Hãy giảm các khoảng dừng ngập ngừng để tăng điểm lưu loát.`}
+                  ? '✅ Tốc độ từ chuẩn đạt chuẩn lưu loát theo khung CEFR!' 
+                  : `⚠️ Tốc độ từ chuẩn hiện đang dưới chuẩn đề xuất (${activeTopic.minWpm} WPM). Hãy giảm ngập ngừng và hạn chế lỗi ngữ pháp để tăng WPM thực chất.`}
               </Text>
             </View>
 
@@ -860,23 +891,58 @@ Output ONLY raw JSON (no markdown):
               </View>
             )}
 
+            {/* 📝 BẢN GHI ÂM & SOI LỖI TỪNG TỪ (🟢 CHUẨN | 🔴 SAI NGỮ PHÁP / PHÁT ÂM) */}
             <View style={styles.transcriptBox}>
-              <Text style={styles.transcriptHeader}>🎙️ VĂN BẢN AI NGHE VÀ GHI NHẬN ĐƯỢC:</Text>
-              <Text style={styles.transcriptBody}>"{result.transcript}"</Text>
+              <Text style={styles.transcriptHeader}>
+                🎙️ VĂN BẢN AI GHI NHẬN & SOI LỖI TỪNG TỪ (🟢 Chuẩn | 🔴 Sai ngữ pháp / Phát âm):
+              </Text>
+              {result.wordAnalysis && result.wordAnalysis.length > 0 ? (
+                <View style={styles.wordChipsRow}>
+                  {result.wordAnalysis.map((item: SpokenWordAnalysis, idx: number) => {
+                    const isError = item.hasGrammarError || item.hasPronunciationError || !item.isConfident;
+                    return (
+                      <View
+                        key={`${item.word}_${idx}`}
+                        style={[styles.wordChip, isError ? styles.wordChipError : styles.wordChipOk]}
+                      >
+                        <Text style={isError ? styles.wordChipTextError : styles.wordChipTextOk}>
+                          {item.word}
+                        </Text>
+                        {isError && item.correction ? (
+                          <Text style={styles.wordCorrectionText}>→ {item.correction}</Text>
+                        ) : null}
+                      </View>
+                    );
+                  })}
+                </View>
+              ) : (
+                <Text style={styles.transcriptBody}>"{result.transcript}"</Text>
+              )}
             </View>
 
+            {/* 📊 BẢNG ĐIỂM 5 TIÊU CHÍ CHI TIẾT */}
             <View style={styles.breakdownRow}>
               <View style={styles.breakdownItem}>
-                <Text style={styles.breakdownLabel}>Điểm tổng hợp:</Text>
-                <Text style={styles.breakdownValue}>{result.score}/100</Text>
+                <Text style={styles.breakdownLabel}>Tổng điểm:</Text>
+                <Text style={[styles.breakdownValue, { color: result.isWin ? '#39FF14' : '#FF0055' }]}>
+                  {result.score}/100
+                </Text>
+              </View>
+              <View style={styles.breakdownItem}>
+                <Text style={styles.breakdownLabel}>Tốc độ WPM:</Text>
+                <Text style={styles.breakdownValue}>{result.criteria?.fluency ?? 80}/100</Text>
               </View>
               <View style={styles.breakdownItem}>
                 <Text style={styles.breakdownLabel}>Phát âm:</Text>
-                <Text style={styles.breakdownValue}>{(result as any).pronunciation || 85}/100</Text>
+                <Text style={styles.breakdownValue}>{result.criteria?.pronunciation ?? 80}/100</Text>
               </View>
               <View style={styles.breakdownItem}>
-                <Text style={styles.breakdownLabel}>Lưu loát:</Text>
-                <Text style={styles.breakdownValue}>{(result as any).criteria?.fluency || (result as any).content || 80}/100</Text>
+                <Text style={styles.breakdownLabel}>Ngữ pháp:</Text>
+                <Text style={styles.breakdownValue}>{result.criteria?.grammar ?? 80}/100</Text>
+              </View>
+              <View style={styles.breakdownItem}>
+                <Text style={styles.breakdownLabel}>Từ vựng:</Text>
+                <Text style={styles.breakdownValue}>{result.criteria?.vocabulary ?? 80}/100</Text>
               </View>
             </View>
 
@@ -1065,12 +1131,19 @@ const styles = StyleSheet.create({
   wpmSub: { color: '#FFF', fontSize: 9.5, textAlign: 'center' },
 
   transcriptBox: { width: '100%', backgroundColor: '#120826', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#332255', marginBottom: 10 },
-  transcriptHeader: { color: '#00FFFF', fontSize: 9.5, fontWeight: 'bold', marginBottom: 4 },
+  transcriptHeader: { color: '#00FFFF', fontSize: 9.5, fontWeight: 'bold', marginBottom: 6 },
   transcriptBody: { color: '#FFF', fontSize: 10.5, lineHeight: 16 },
+  wordChipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 4 },
+  wordChip: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, borderWidth: 1 },
+  wordChipOk: { backgroundColor: 'rgba(57, 255, 20, 0.12)', borderColor: '#39FF14' },
+  wordChipError: { backgroundColor: 'rgba(255, 0, 85, 0.2)', borderColor: '#FF0055' },
+  wordChipTextOk: { color: '#39FF14', fontSize: 12, fontWeight: 'bold' },
+  wordChipTextError: { color: '#FF0055', fontSize: 12, fontWeight: '900', textDecorationLine: 'underline' },
+  wordCorrectionText: { color: '#FFD700', fontSize: 9, fontWeight: 'bold', marginTop: 1 },
 
-  breakdownRow: { flexDirection: 'row', justifyContent: 'space-around', width: '100%', marginBottom: 10, backgroundColor: '#130A2A', padding: 8, borderRadius: 8 },
-  breakdownItem: { alignItems: 'center' },
-  breakdownLabel: { color: '#AAAABB', fontSize: 9 },
+  breakdownRow: { flexDirection: 'row', justifyContent: 'space-around', flexWrap: 'wrap', gap: 6, width: '100%', marginBottom: 10, backgroundColor: '#130A2A', padding: 8, borderRadius: 8 },
+  breakdownItem: { alignItems: 'center', minWidth: 55 },
+  breakdownLabel: { color: '#AAAABB', fontSize: 8.5 },
   breakdownValue: { color: '#39FF14', fontSize: 11, fontWeight: 'bold' },
 
   feedbackText: { color: '#FFF', fontSize: 10, textAlign: 'center', lineHeight: 15 },
