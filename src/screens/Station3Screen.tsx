@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, Alert } from 'react-native';
 import { BOSS_SCENARIOS_DATA, BossScenarioItem } from '../data/station3/bossScenarios';
 import { updateUserProgress } from '../services/userService';
-import { evaluateSpeaking, AssessmentResult, generateWordDiff } from '../services/arena/assessmentService';
+import { evaluateSpeaking, generateWordDiff } from '../services/arena/assessmentService';
 import AudioWaveVisualizer from '../components/AudioWaveVisualizer';
 import IntonationCanvas from '../components/IntonationCanvas';
 
@@ -204,7 +204,6 @@ export default function Station3Screen({ onBack }: Props) {
     stopAllAudio();
     setIsPlayingAudio(true);
 
-    // 1. Tạo audio đồng bộ ngay lập tức (bảo lưu User Gesture trên Safari iOS)
     const audio = new Audio();
     audioPlayerRef.current = audio;
 
@@ -251,13 +250,12 @@ export default function Station3Screen({ onBack }: Props) {
 
     const utterance = new SpeechSynthesisUtterance(cleanText);
     const voices = synth.getVoices();
-    // Ưu tiên giọng nam trầm
     const maleVoice = voices.find(v => v.lang.startsWith('en') && (v.name.includes('David') || v.name.includes('Guy') || v.name.includes('Aaron') || v.name.includes('Mark')));
     if (maleVoice) utterance.voice = maleVoice;
 
     utterance.lang = 'en-US';
     utterance.rate = 0.85;
-    utterance.pitch = 0.8; // Hạ tone giọng trầm
+    utterance.pitch = 0.8;
 
     utterance.onstart = () => setIsPlayingAudio(true);
     utterance.onend = () => setIsPlayingAudio(false);
@@ -504,8 +502,13 @@ Output JSON ONLY:
     setLastFeedback('');
 
     try {
-      const targetPrompt = `Shadowing phrase: ${bossData.bossChallengeEn}`;
-      const evalResult = await evaluateSpeaking(audioBlob, cefrLevel, '3', targetPrompt);
+      // 🎯 Định tuyến chuẩn vào nhánh STATION_3 và truyền nguyên câu mẫu mục tiêu để đối chiếu Shadowing
+      const evalResult = await evaluateSpeaking(
+        audioBlob,
+        cefrLevel,
+        'STATION_3',
+        bossData.bossChallengeEn
+      );
       setTranscriptResult(evalResult.transcript || '');
 
       const baseScore = evalResult.score;
@@ -513,7 +516,7 @@ Output JSON ONLY:
 
       if (baseScore < 30) {
         setLastDamage(0);
-        setLastFeedback("❌ Phát âm chưa đạt ngưỡng yêu cầu! Đòn tấn công bị bật ngược.");
+        setLastFeedback(evalResult.detailedFeedback || "❌ Phát âm chưa đạt ngưỡng yêu cầu! Đòn tấn công bị bật ngược.");
       } else {
         const maxLimit = bossData.timeLimitSeconds || 12;
         const ratio = speechDuration / maxLimit;
@@ -608,7 +611,7 @@ Output JSON ONLY:
         <View style={styles.phraseCard}>
           <Text style={styles.phraseText}>"{bossData.bossChallengeEn}"</Text>
 
-          {/* 🇻🇳 HỘP GỢI Ý THUẦN TIẾNG VIỆT (ĐÃ LƯỢC BỎ THANH CHỌN CỜ) */}
+          {/* 🇻🇳 HỘP GỢI Ý THUẦN TIẾNG VIỆT */}
           <View style={styles.hintContainer}>
             <View style={styles.hintHeaderRow}>
               <TouchableOpacity 
