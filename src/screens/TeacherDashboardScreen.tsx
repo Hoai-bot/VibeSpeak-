@@ -1481,23 +1481,31 @@ SV2026002, Tran Thi Mai, mai.tt@student.vibespeak.edu.vn"
                   "{editingItem?.transcript || '(Không có dữ liệu văn bản)'}"
                 </Text>
 
+                <Text style={[styles.detailAuditHeader, { color: '#39FF14', marginTop: 10 }]}>
+                  🎧 Bản thu âm giọng nói của sinh viên:
+                </Text>
+                {editingItem?.audio_url && editingItem.audio_url.trim() !== '' ? (
+                  <View style={{ marginTop: 6, backgroundColor: '#070212', padding: 6, borderRadius: 8, borderWidth: 1, borderColor: '#39FF14' }}>
+                    {React.createElement('audio', {
+                      controls: true,
+                      preload: 'metadata',
+                      src: editingItem.audio_url,
+                      style: { width: '100%', height: 38, display: 'block' }
+                    })}
+                  </View>
+                ) : (
+                  <Text style={{ color: '#8888AA', fontSize: 10, fontStyle: 'italic', marginTop: 4 }}>
+                    ⚠️ Bài nộp này chưa đính kèm file âm thanh trên máy chủ (do thu trước khi mở quyền Storage). Các lượt nộp mới sẽ tự động hiện thanh phát nhạc tại đây.
+                  </Text>
+                )}
+
                 {editingItem?.feedback ? (
                   <>
-                    <Text style={[styles.detailAuditHeader, { color: '#FFD700', marginTop: 8 }]}>
+                    <Text style={[styles.detailAuditHeader, { color: '#FFD700', marginTop: 10 }]}>
                       📊 Chi tiết điểm & Lỗi AI phát hiện:
                     </Text>
                     <Text style={styles.detailAuditFeedback}>{editingItem.feedback}</Text>
                   </>
-                ) : null}
-
-                {editingItem?.audio_url ? (
-                  <View style={{ marginTop: 8 }}>
-                    {React.createElement('audio', {
-                      controls: true,
-                      src: editingItem.audio_url,
-                      style: { width: '100%', height: 34 }
-                    })}
-                  </View>
                 ) : null}
               </View>
 
