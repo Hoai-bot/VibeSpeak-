@@ -201,7 +201,7 @@ export function evaluateProsodyScore(studentPitch: number[], referencePitch: num
 }
 
 // =========================================================================
-// 🎯 BỘ KIỂM ĐỊNH ĐỘ KHỚP CHỦ ĐỀ TỔNG QUÁT (CHỐNG LẠC ĐỀ / HỌC VẸT BÀI KHÁC)
+// 🎯 BỘ KIỂM ĐỊNH ĐỘ KHỚP CHỦ ĐỀ LINH HOẠT (TÁCH BÀI MẪU & CHẤP NHẬN DIỄN ĐẠT TỰ DO)
 // =========================================================================
 export interface TopicRelevanceResult {
   isOffTopic: boolean;
@@ -223,10 +223,12 @@ function evaluateTopicRelevance(transcript: string, targetPrompt: string): Topic
     // Các động từ/danh từ chỉ dẫn thuyết trình & thảo luận nhóm để tránh phạt oan khi dùng từ đồng nghĩa
     'present', 'presentation', 'recommend', 'recommendations', 'suggest', 'suggestions',
     'solution', 'solutions', 'another', 'group', 'groups', 'partner', 'classmates', 'team',
-    'share', 'propose', 'ideas', 'ways', 'improve', 'improvement', 'problem', 'problems'
+    'share', 'propose', 'ideas', 'ways', 'improve', 'improvement', 'problem', 'problems', 'habits', 'habit'
   ]);
 
+  // 🛡️ Cắt bỏ phần bài mẫu tham khảo (Reference English Sample) để KHÔNG ép sinh viên nói tự do phải lặp lại ví dụ của mẫu
   const englishPromptOnly = targetPrompt
+    .replace(/Reference\s+English\s+Sample\s*:[\s\S]*/gi, ' ')
     .replace(/Context\s*\(VI\)\s*:[^|]*/gi, ' ')
     .replace(/Mode\s*:\s*FREE_SPEECH/gi, ' ')
     .replace(/Level\s*:\s*[A-C][1-2]/gi, ' ');
@@ -246,7 +248,7 @@ function evaluateTopicRelevance(transcript: string, targetPrompt: string): Topic
   if (promptKeywords.length === 0) {
     return {
       isOffTopic: false,
-      relevanceScore: 88,
+      relevanceScore: 86,
       matchedKeywords: [],
       missingKeywords: [],
       feedbackNote: '',
@@ -279,8 +281,8 @@ function evaluateTopicRelevance(transcript: string, targetPrompt: string): Topic
     !englishPromptOnly.toLowerCase().includes('hometown');
 
   const isOffTopic =
-    (studentKeywords.length >= 8 && matchRatio < 0.25) ||
-    (isPersonalMajorStory && matchRatio < 0.4);
+    (studentKeywords.length >= 10 && matchRatio < 0.2) ||
+    (isPersonalMajorStory && matchRatio < 0.35);
 
   if (isOffTopic) {
     const expectedList = promptKeywords.slice(0, 4).join(', ');
@@ -289,11 +291,11 @@ function evaluateTopicRelevance(transcript: string, targetPrompt: string): Topic
       relevanceScore: 15,
       matchedKeywords,
       missingKeywords,
-      feedbackNote: `⚠️ SAI LỆCH CHỦ ĐỀ: Nội dung bài nói không khớp với yêu cầu đề bài (thiếu các từ khóa trọng tâm: ${expectedList}). Điểm Phát âm và Ngữ điệu vẫn được ghi nhận, nhưng điểm Nội dung & Từ vựng bị trừ nặng.`,
+      feedbackNote: `⚠️ SAI LỆCH CHỦ ĐỀ: Nội dung bài nói chưa bám sát yêu cầu đề bài (thiếu trọng tâm: ${expectedList}). Điểm Phát âm và Ngữ điệu vẫn được ghi nhận, nhưng điểm Nội dung & Từ vựng bị trừ nặng.`,
     };
   }
 
-  const computedScore = Math.min(100, Math.max(55, Math.round(50 + matchRatio * 50)));
+  const computedScore = Math.min(100, Math.max(62, Math.round(58 + matchRatio * 42)));
   return {
     isOffTopic: false,
     relevanceScore: computedScore,
@@ -323,12 +325,12 @@ function hasSentenceMainVerb(spokenWords: string[]): boolean {
     'improve', 'improves', 'improved', 'reduce', 'reduces', 'reduced', 'provide', 'provides',
     'process', 'processes', 'manage', 'manages', 'find', 'finds', 'found', 'give', 'gives',
     'take', 'takes', 'took', 'get', 'gets', 'got', 'go', 'goes', 'went', 'come', 'comes', 'came',
-    'say', 'says', 'said', 'know', 'knows', 'knew', 'see', 'sees', 'saw', 'like', 'likes', 'love', 'loves'
+    'say', 'says', 'said', 'know', 'knows', 'knew', 'see', 'sees', 'saw', 'like', 'likes', 'love', 'loves',
+    'buy', 'buys', 'bought', 'spend', 'spends', 'spent', 'order', 'orders', 'ordered', 'pay', 'pays', 'paid'
   ]);
 
   return spokenWords.some((w, idx) => {
     if (commonVerbs.has(w)) return true;
-    // Bỏ qua tính từ đuôi -ed đứng ngay trước danh từ (ví dụ "computerised database")
     if (w.endsWith('ed') && w.length > 4 && idx < spokenWords.length - 1) {
       return false;
     }
@@ -1033,7 +1035,7 @@ export default async function handler(req: Request) {
         `You are an expert Cambridge/IELTS speaking examiner evaluating a CEFR ${cefrLevel} student on a speaking prompt.
 ${getCefrGrammarRubricInstruction(cefrLevel)}
 CRITICAL CHECKS:
-1. Check whether the student's response semantically addresses the prompt topic or business/case-study scenario ("${targetPrompt}"), including synonyms (e.g. proposing "solutions" when asked for "recommendations"). Only set "is_off_topic": true if the student speaks about a completely unrelated topic.
+1. Evaluate semantic relevance against the prompt topic/scenario ("${targetPrompt}"), accepting personal examples, paraphrases, and synonyms. NEVER penalize the student for using different examples from any Reference English Sample. Only set "is_off_topic": true if the student speaks about a completely unrelated subject.
 2. If the response is only a short fragment without a main verb or under 8 words, keep "content_score" <= 35 and "grammar_score" <= 50.
 3. For every mistake in "detected_errors", set "word" to the EXACT single offending word from the transcript.
 Return JSON ONLY:
@@ -1192,7 +1194,7 @@ Return JSON ONLY:
         /\bcould\s+have\b/.test(lowerTranscript) ||
         /\bmight\s+have\b/.test(lowerTranscript);
 
-      // 1. 🎯 KIỂM TRA ĐỘ BÁM SÁT CHỦ ĐỀ TỔNG QUÁT (OFF-TOPIC DETECTOR)
+      // 1. 🎯 KIỂM TRA ĐỘ BÁM SÁT CHỦ ĐỀ TỔNG QUÁT (ĐÃ TÁCH BÀI MẪU THAM KHẢO)
       const topicCheck = evaluateTopicRelevance(transcript, targetPrompt);
       const prosodyEval = evaluateProsodyScore(studentPitchData, referencePitchData);
 
@@ -1269,7 +1271,6 @@ Return JSON ONLY:
       // 3. 🎯 TÍNH ĐIỂM ĐỘC LẬP CHO TỪNG TIÊU CHÍ (PHÁT ÂM, NGỮ ĐIỆU, TRÔI CHẢY, TỪ VỰNG, NGỮ PHÁP, NỘI DUNG)
       const hasNoErrors = errorWordsList.length === 0;
 
-      // Điểm Phát âm & Ngữ điệu phản ánh trung thực chất lượng âm học của thí sinh (kể cả khi lạc đề hoặc nói ngắn)
       let pronunciationScore = hasNoErrors
         ? Math.min(100, Math.max(72, 76 + acousticQualityBonus * 1.5))
         : Math.max(45, 74 + acousticQualityBonus - errorWordsList.length * 8);
@@ -1286,13 +1287,11 @@ Return JSON ONLY:
         baseGrammar = hasNoErrors ? 90 : Math.max(45, 78 - errorWordsList.length * 10);
         baseFluency = Math.min(90, Math.max(70, 72 + Math.min(15, Math.floor(wordCount / 3))));
       } else if (wordCount < 8 || isIncompleteSentence || !hasMainVerb) {
-        // ❌ Nói quá ngắn (4 - 7 từ), câu ngắt cụt hoặc cụm từ không có động từ chính
         baseContent = Math.min(28, wordCount * 4);
         baseVocab = Math.min(35, wordCount * 5);
         baseFluency = Math.min(30, wordCount * 4);
         baseGrammar = !hasMainVerb ? 45 : (hasNoErrors ? 60 : Math.max(25, 50 - errorWordsList.length * 12));
       } else if (wordCount < 14) {
-        // ⚠️ Nói hơi ngắn (8 - 13 từ): Chưa đủ triển khai ý
         baseContent = Math.min(55, wordCount * 4);
         baseVocab = Math.min(60, wordCount * 4 + 6);
         baseFluency = Math.min(58, wordCount * 4 + 4);
@@ -1323,11 +1322,13 @@ Target Prompt/Context: "${targetPrompt}".
 
 ${getCefrGrammarRubricInstruction(cefrLevel)}
 
-CRITICAL EVALUATION RULES (BASIC TO ADVANCED A1–C2 + TOPIC RELEVANCE + LENGTH PENALTY):
-1. TOPIC RELEVANCE CHECK (FIRST PRIORITY):
-   - Evaluate semantic relevance against the assigned prompt/case-study ("${targetPrompt}").
-   - Accept synonyms and natural paraphrases (e.g., proposing "solutions" or "improvements" for a business case study when the prompt says "Present your recommendations to another group" is ON-TOPIC -> set "is_off_topic": false!).
-   - ONLY set "is_off_topic": true, "content_score": 15, and "vocab_score": 20 if the student recites a completely unrelated memorized speech (e.g., talking about choosing a college major/hometown when asked about a business database or bookstore case study).
+CRITICAL EVALUATION RULES (BASIC TO ADVANCED A1–C2 + FLEXIBLE SEMANTIC TOPIC RELEVANCE + LENGTH PENALTY):
+1. TOPIC RELEVANCE CHECK (FLEXIBLE & REALISTIC):
+   - Evaluate semantic relevance against the main Scenario/Topic ONLY.
+   - If Mode is FREE_SPEECH, NEVER penalize the student for using different personal examples than the "Reference English Sample" (e.g. if the sample mentions buying "music and clothes online", and the student talks about buying "tech products and PC parts" or shopping habits, that IS relevant -> set "is_off_topic": false!).
+   - If the student addresses shopping/buying habits in general (e.g. "I spend money on tech products and PC parts") without explicitly mentioning "online" or websites, keep "is_off_topic": false and give a moderate "content_score" around 68–76 while advising in "feedback_vi" to mention online platforms/websites.
+   - Accept synonyms and natural paraphrases (e.g., proposing "solutions" for a business case study when asked for "recommendations" -> "is_off_topic": false).
+   - ONLY set "is_off_topic": true, "content_score": 15, and "vocab_score": 20 if the student recites a completely unrelated memorized speech (e.g., talking about their hometown or choosing a college major when asked about online shopping or a business database).
 2. SHORT / FRAGMENT PENALTY:
    - If the student speaks fewer than 8 words or utters a sentence fragment without a subject/main verb (e.g., "Fast and accurate computing but expensive"), keep "content_score" <= 30, "vocab_score" <= 35, and "grammar_score" <= 50!
 3. NEVER auto-correct or overlook spoken grammar/tense/ending/mispronunciation mistakes in the student's verbatim transcript.
@@ -1352,7 +1353,7 @@ Return JSON ONLY:
   "detected_errors": [
     { "word": "exact_single_wrong_word_from_transcript", "correction": "correct_form", "reason": "Giải thích quy tắc ngữ pháp/phát âm bằng tiếng Việt ngắn gọn, rõ ràng" }
   ],
-  "feedback_vi": "Nhận xét tiếng Việt 1-2 câu chỉ rõ độ khớp chủ đề, độ dài câu, cấu trúc dùng tốt và các lỗi bị tô đỏ cần sửa"
+  "feedback_vi": "Nhận xét tiếng Việt 1-2 câu chỉ rõ độ khớp chủ đề, gợi ý mở rộng thực tế và các lỗi bị tô đỏ cần sửa"
 }`,
         `CEFR Level: ${cefrLevel}\nScenario & Reference: "${targetPrompt || 'General speaking context'}"\nStudent verbatim transcript (${wordCount} words): "${transcript}"`,
         650
