@@ -220,13 +220,11 @@ function evaluateTopicRelevance(transcript: string, targetPrompt: string): Topic
     'challenge', 'reflex', 'custom', 'deliver', 'whether', 'merely', 'particularly', 'regarding',
     'please', 'answer', 'following', 'topic', 'based', 'classroom', 'point', 'view', 'give', 'tell',
     'how', 'why', 'when', 'where', 'who', 'does', 'did', 'will', 'would', 'should', 'could',
-    // Các động từ/danh từ chỉ dẫn thuyết trình & thảo luận nhóm để tránh phạt oan khi dùng từ đồng nghĩa
     'present', 'presentation', 'recommend', 'recommendations', 'suggest', 'suggestions',
     'solution', 'solutions', 'another', 'group', 'groups', 'partner', 'classmates', 'team',
     'share', 'propose', 'ideas', 'ways', 'improve', 'improvement', 'problem', 'problems', 'habits', 'habit'
   ]);
 
-  // 🛡️ Cắt bỏ phần bài mẫu tham khảo (Reference English Sample) để KHÔNG ép sinh viên nói tự do phải lặp lại ví dụ của mẫu
   const englishPromptOnly = targetPrompt
     .replace(/Reference\s+English\s+Sample\s*:[\s\S]*/gi, ' ')
     .replace(/Context\s*\(VI\)\s*:[^|]*/gi, ' ')
@@ -397,7 +395,7 @@ function buildWordAnalysisArray(
 }
 
 // =========================================================================
-// 🧠 BỘ QUÉT NGỮ PHÁP & PHÁT ÂM LỆCH NGỮ CẢNH TOÀN DIỆN (A1 -> C2)
+// 🧠 BỘ QUÉT 10 NHÓM LỖI NỀN TẢNG (A1–B2) & 8 NHÓM NÂNG CAO (C1–C2) TOÀN DIỆN
 // =========================================================================
 function scanComprehensiveGrammarErrors(
   spokenWords: string[],
@@ -415,7 +413,7 @@ function scanComprehensiveGrammarErrors(
   };
 
   const singularThirdPersons = ['he', 'she', 'it', 'everyone', 'everybody', 'someone', 'somebody', 'nobody', 'mother', 'father', 'friend', 'teacher', 'student', 'boss', 'manager', 'customer'];
-  const adverbs = ['usually', 'always', 'often', 'never', 'sometimes', 'rarely', 'seldom', 'really', 'just', 'still'];
+  const adverbs = ['usually', 'always', 'often', 'never', 'sometimes', 'rarely', 'seldom', 'really', 'just', 'still', 'very', 'so', 'quite', 'extremely'];
   const commonBaseVerbs = [
     'get', 'go', 'do', 'have', 'play', 'like', 'want', 'come', 'eat', 'sleep', 'make', 'take',
     'drink', 'listen', 'see', 'watch', 'work', 'live', 'need', 'know', 'think', 'feel', 'try',
@@ -450,10 +448,48 @@ function scanComprehensiveGrammarErrors(
 
   const vowels = ['a', 'e', 'i', 'o', 'u'];
   const countNumbers = ['two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'many', 'several'];
-  const singularNouns: Record<string, string> = {
+  const irregularPluralMap: Record<string, string> = {
     'friend': 'friends', 'member': 'members', 'person': 'people', 'year': 'years',
-    'day': 'days', 'book': 'books', 'child': 'children', 'student': 'students', 'hour': 'hours'
+    'day': 'days', 'book': 'books', 'child': 'children', 'student': 'students',
+    'hour': 'hours', 'woman': 'women', 'man': 'men', 'computer': 'computers',
+    'product': 'products', 'device': 'devices', 'solution': 'solutions', 'problem': 'problems'
   };
+
+  // 1. Danh từ không đếm được bị thêm -s/-es sai quy tắc
+  const uncountablePluralsMap: Record<string, { fix: string; note: string }> = {
+    'informations': { fix: 'information', note: '"Information" là danh từ không đếm được, không thêm -s.' },
+    'equipments': { fix: 'equipment', note: '"Equipment" là danh từ không đếm được, không thêm -s.' },
+    'advices': { fix: 'advice', note: '"Advice" là danh từ không đếm được, không thêm -s.' },
+    'homeworks': { fix: 'homework', note: '"Homework" là danh từ không đếm được, không thêm -s.' },
+    'softwares': { fix: 'software', note: '"Software" là danh từ không đếm được, không thêm -s.' },
+    'hardwares': { fix: 'hardware', note: '"Hardware" là danh từ không đếm được, không thêm -s.' },
+    'staffs': { fix: 'staff', note: '"Staff" (đội ngũ nhân viên) là danh từ tập hợp không thêm -s.' },
+    'furnitures': { fix: 'furniture', note: '"Furniture" là danh từ không đếm được, không thêm -s.' },
+    'knowledges': { fix: 'knowledge', note: '"Knowledge" là danh từ không đếm được, không thêm -s.' },
+    'traffics': { fix: 'traffic', note: '"Traffic" là danh từ không đếm được, không thêm -s.' },
+    'moneys': { fix: 'money', note: '"Money" là danh từ không đếm được, không thêm -s.' },
+    'datas': { fix: 'data', note: '"Data" đã ở dạng số nhiều / không đếm được, không thêm -s.' },
+  };
+
+  // 3. Tính từ phổ biến hay bị nói thiếu động từ to-be (VD: "It very expensive")
+  const standaloneAdjectives = new Set([
+    'expensive', 'cheap', 'good', 'bad', 'busy', 'happy', 'sad', 'tired', 'difficult',
+    'easy', 'important', 'useful', 'helpful', 'convenient', 'fast', 'slow', 'accurate',
+    'crowded', 'noisy', 'quiet', 'dangerous', 'safe', 'hungry', 'thirsty', 'angry', 'late', 'early'
+  ]);
+
+  // 5. Động từ quá khứ dùng sai sau had/have/has/would have
+  const wrongPastParticiples: Record<string, string> = {
+    'went': 'gone', 'saw': 'seen', 'took': 'taken', 'did': 'done',
+    'broke': 'broken', 'wrote': 'written', 'spoke': 'spoken', 'ate': 'eaten',
+    'gave': 'given', 'forgot': 'forgotten', 'chose': 'chosen', 'fell': 'fallen',
+    'knew': 'known', 'grew': 'grown', 'threw': 'thrown', 'flew': 'flown',
+    'store': 'stored', 'solve': 'solved', 'update': 'updated', 'check': 'checked'
+  };
+
+  // 9. Kiểm tra lặp cặp liên từ (Although ... but / Because ... so)
+  const hasAlthough = spokenWords.includes('although') || spokenWords.includes('though');
+  const hasBecause = spokenWords.includes('because');
 
   for (let i = 0; i < spokenWords.length; i++) {
     const curr = spokenWords[i];
@@ -461,6 +497,64 @@ function scanComprehensiveGrammarErrors(
     const prevTwo = i > 1 ? spokenWords[i - 2] : '';
     const next = i < spokenWords.length - 1 ? spokenWords[i + 1] : '';
 
+    // [Nhóm 1] Danh từ không đếm được
+    if (uncountablePluralsMap[curr]) {
+      addError(i, curr, uncountablePluralsMap[curr].fix, `Lỗi danh từ không đếm được: ${uncountablePluralsMap[curr].note}`);
+    }
+    if (curr === 'works' && ['are', 'is', 'for'].includes(prev)) {
+      addError(i, curr, 'for work', 'Lỗi danh từ không đếm được: Khi chỉ mục đích công việc, dùng "for work" (không chia "are works").');
+    }
+    if (curr === 'uses' && prev === 'personal') {
+      addError(i, curr, 'use', 'Lỗi danh từ không đếm được: Cụm cố định là "for personal use" (không thêm -s).');
+    }
+
+    // [Nhóm 3] Thiếu động từ to-be trước tính từ ("It very expensive" / "Products cheap")
+    if (standaloneAdjectives.has(curr) && ['i', 'he', 'she', 'it', 'we', 'you', 'they', 'this', 'that'].includes(prev)) {
+      const beFix = prev === 'i' ? 'am' : (['he', 'she', 'it', 'this', 'that'].includes(prev) ? 'is' : 'are');
+      addError(i, curr, `${beFix} ${curr}`, `Thiếu động từ to-be: Sau "${prev}" cần thêm "${beFix}" trước tính từ "${curr}".`);
+    }
+    if (standaloneAdjectives.has(curr) && ['very', 'so', 'really', 'too', 'quite', 'extremely'].includes(prev) && ['i', 'he', 'she', 'it', 'we', 'you', 'they', 'this', 'that'].includes(prevTwo)) {
+      const beFix = prevTwo === 'i' ? 'am' : (['he', 'she', 'it', 'this', 'that'].includes(prevTwo) ? 'is' : 'are');
+      addError(i - 1, prev, `${beFix} ${prev}`, `Thiếu động từ to-be: Sau "${prevTwo}" cần thêm "${beFix}" ("${prevTwo} ${beFix} ${prev} ${curr}").`);
+    }
+
+    // [Nhóm 6] Sai cấu trúc Giới từ & Động từ theo sau
+    if (curr === 'to' && ['money', 'time'].includes(prev) && ['spend', 'spends', 'spent', 'spending'].includes(prevTwo)) {
+      addError(i, curr, 'on', 'Cấu trúc chuẩn là "spend money/time ON something" (không dùng "to").');
+    }
+    if (['in', 'of'].includes(curr) && ['depend', 'depends', 'depended', 'depending'].includes(prev)) {
+      addError(i, curr, 'on', 'Động từ "depend" đi với giới từ "on" ("depend on").');
+    }
+    if (curr === 'about' && prev === 'interested') {
+      addError(i, curr, 'in', 'Cấu trúc chuẩn là "interested IN something" (không dùng "about").');
+    }
+    if (curr === 'in' && prev === 'good' && next && !['the', 'a', 'my', 'morning', 'afternoon', 'evening'].includes(next)) {
+      addError(i, curr, 'at', 'Khi nói giỏi về kỹ năng/lĩnh vực nào đó, dùng "good AT" (không dùng "good in").');
+    }
+    if (curr === 'about' && ['discuss', 'discusses', 'discussed', 'discussing'].includes(prev)) {
+      addError(i, curr, '(bỏ "about")', 'Ngoại động từ "discuss" đi trực tiếp với tân ngữ, không dùng giới từ "about".');
+    }
+    if (curr === 'to' && ['enjoy', 'enjoys', 'enjoyed', 'avoid', 'avoids', 'suggest', 'suggests', 'recommend', 'recommends', 'finish', 'finished', 'mind'].includes(prev)) {
+      addError(i, curr, 'V-ing', `Sau động từ "${prev}" phải dùng danh động từ V-ing (không dùng "to V").`);
+    }
+
+    // [Nhóm 7] Lẫn lộn tính từ -ed và -ing
+    if (curr === 'boring' && ['am', 'is', 'are', 'was', 'were', 'feel', 'felt'].includes(prev) && ['i', 'he', 'she', 'we', 'they', 'you', 'students', 'customers'].includes(prevTwo)) {
+      addError(i, curr, 'bored', 'Diễn tả cảm xúc của người phải dùng tính từ đuôi -ed ("bored"), "boring" dùng cho vật/sự việc.');
+    }
+    if (curr === 'interested' && ['is', 'was', 'seems', 'looks'].includes(prev) && ['it', 'this', 'that', 'movie', 'book', 'website', 'app', 'product', 'game', 'job'].includes(prevTwo)) {
+      addError(i, curr, 'interesting', 'Miêu tả tính chất của sự vật/sự việc phải dùng tính từ đuôi -ing ("interesting").');
+    }
+
+    // [Nhóm 9] Lặp cặp liên từ (Although ... but / Because ... so)
+    if (hasAlthough && curr === 'but') {
+      addError(i, curr, '(bỏ "but")', 'Lỗi lặp liên từ: Đã dùng "Although/Though" ở đầu câu thì không dùng "but" ở mệnh đề sau.');
+    }
+    if (hasBecause && curr === 'so' && next && !['much', 'many', 'far', 'good', 'bad', 'fast', 'expensive', 'cheap'].includes(next)) {
+      addError(i, curr, '(bỏ "so")', 'Lỗi lặp liên từ: Đã dùng "Because" thì không dùng "so" ở mệnh đề kết quả.');
+    }
+
+    // [Nhóm 10] Lỗi phát âm từ khóa lệch nghĩa trong ngữ cảnh
     if (isClothingJacketContext && ['chicken', 'chickens', 'check', 'checking'].includes(curr)) {
       addError(
         i,
@@ -469,7 +563,11 @@ function scanComprehensiveGrammarErrors(
         `Lỗi phát âm từ khóa: Bạn phát âm từ "jacket" (/dʒæk.ɪt/ - phụ âm hữu thanh /dʒ/ + nguyên âm bẹt /æ/) bị lệch thành "${curr}".`
       );
     }
+    if (curr === 'stuff' && ['change', 'train', 'hire', 'manage'].includes(prev) && (lowerPrompt.includes('store') || lowerPrompt.includes('shop') || lowerPrompt.includes('bookstore') || lowerPrompt.includes('recommend'))) {
+      addError(i, curr, 'staff /stɑːf/', 'Lỗi phát âm phân biệt: "staff" (/stɑːf/ - nhân viên) khác với "stuff" (/stʌf/ - đồ đạc).');
+    }
 
+    // [Nhóm 4] Chia động từ ngôi thứ 3 số ít & Trợ động từ
     if ((curr === "don't" || curr === 'dont') && singularThirdPersons.includes(prev)) {
       addError(i, curr, "doesn't", `Ngôi thứ 3 số ít ("${prev}") phải dùng trợ động từ "doesn't".`);
     }
@@ -492,6 +590,7 @@ function scanComprehensiveGrammarErrors(
       addError(i, curr, 'V-infinitive', `Sau trợ động từ "didn't", động từ phải để nguyên mẫu.`);
     }
 
+    // [Nhóm 8] Mạo từ a/an & Danh từ số nhiều
     if (curr === 'a' && next && vowels.includes(next[0]) && !['university', 'uniform', 'useful', 'user', 'european'].includes(next)) {
       addError(i, curr, 'an', `Trước từ bắt đầu bằng nguyên âm "${next}" phải dùng mạo từ "an".`);
     }
@@ -499,8 +598,8 @@ function scanComprehensiveGrammarErrors(
       addError(i, curr, 'a', `Trước từ bắt đầu bằng phụ âm "${next}" phải dùng mạo từ "a".`);
     }
 
-    if (countNumbers.includes(curr) && singularNouns[next]) {
-      addError(i + 1, next, singularNouns[next], `Sau "${curr}", danh từ phải chia số nhiều là "${singularNouns[next]}".`);
+    if (countNumbers.includes(curr) && irregularPluralMap[next]) {
+      addError(i + 1, next, irregularPluralMap[next], `Sau "${curr}", danh từ phải chia số nhiều là "${irregularPluralMap[next]}".`);
     }
 
     if (!isFreeSpeechMode && targetCleanWords.length > 0) {
@@ -513,6 +612,7 @@ function scanComprehensiveGrammarErrors(
       }
     }
 
+    // [Nhóm 5 & C1-C2] Mệnh đề thời gian, Quá khứ & Điều kiện nâng cao
     if (curr === 'will' && ['when', 'while', 'before', 'after', 'until'].includes(prevTwo)) {
       const suggestedFix = isPastIncidentContext ? 'went / V2' : 'bỏ "will" (chia hiện tại đơn)';
       addError(i, curr, suggestedFix, `Mệnh đề thời gian sau "${prevTwo}" không dùng "will".`);
@@ -549,16 +649,10 @@ function scanComprehensiveGrammarErrors(
       }
     }
 
+    // [C1-C2] Câu điều kiện loại 2, 3, Bị động nâng cao & Past Modals
     if (curr === 'would' && ['if', 'wish'].includes(prevTwo)) {
       addError(i, curr, 'had / V2', `Không dùng "would" ngay trong mệnh đề điều kiện "${prevTwo}"; dùng Quá khứ đơn (loại 2) hoặc Quá khứ hoàn thành "had + V3" (loại 3).`);
     }
-
-    const wrongPastParticiples: Record<string, string> = {
-      'went': 'gone', 'saw': 'seen', 'took': 'taken', 'did': 'done',
-      'broke': 'broken', 'wrote': 'written', 'spoke': 'spoken', 'ate': 'eaten',
-      'gave': 'given', 'forgot': 'forgotten', 'chose': 'chosen', 'fell': 'fallen',
-      'knew': 'known', 'grew': 'grown', 'threw': 'thrown', 'flew': 'flown'
-    };
     if (['had', 'have', 'has'].includes(prev) && wrongPastParticiples[curr]) {
       addError(i, curr, wrongPastParticiples[curr], `Sau "${prev}" (thì Hoàn thành / Câu điều kiện loại 3), động từ phải dùng quá khứ phân từ V3 là "${wrongPastParticiples[curr]}".`);
     }
@@ -570,6 +664,12 @@ function scanComprehensiveGrammarErrors(
     }
     if (prevTwo === 'had' && ['i', 'he', 'she', 'it', 'we', 'they', 'you'].includes(prev) && wrongPastParticiples[curr]) {
       addError(i, curr, wrongPastParticiples[curr], `Đảo ngữ câu điều kiện loại 3 ("Had + S + V3") phải dùng phân từ "${wrongPastParticiples[curr]}".`);
+    }
+    if (prev === 'be' && ['can', 'could', 'should', 'must', 'will', 'would', 'may', 'might'].includes(prevTwo) && wrongPastParticiples[curr]) {
+      addError(i, curr, wrongPastParticiples[curr], `Cấu trúc bị động với động từ khuyết thiếu phải dùng phân từ V3 ("${prevTwo} be ${wrongPastParticiples[curr]}").`);
+    }
+    if (['must', 'should', 'might', 'could'].includes(prev) && pastIrregulars.includes(curr)) {
+      addError(i, curr, `have + V3`, `Suy đoán/phê bình quá khứ sau "${prev}" phải dùng "have + V3/ed" (không dùng trực tiếp quá khứ đơn "${curr}").`);
     }
   }
 
@@ -584,19 +684,27 @@ function getCefrGrammarRubricInstruction(cefrLevel: string): string {
     case 'A1':
     case 'A2':
       return `CEFR ${cefrLevel} (Elementary):
-- Focus on core accuracy: Present Simple (including 3rd-person singular -s/-es), Past Simple for completed past actions/incidents (e.g. "I bought a jacket yesterday", "I left my bag"), "going to", basic prepositions, and articles (a/an/the).
+- Focus on core accuracy: Present Simple (including 3rd-person singular -s/-es), Past Simple for completed past actions/incidents (e.g. "I bought a jacket yesterday", "I left my bag"), verb "to be" before adjectives, basic prepositions ("spend money on", "interested in"), and articles (a/an/the).
 - Catch mispronounced target nouns that turn into unrelated words in context (e.g., "chicken" instead of "jacket").`;
     case 'B1':
     case 'B2':
       return `CEFR ${cefrLevel} (Intermediate / Upper-Intermediate):
-- Evaluate both basic accuracy and intermediate structures: Past Continuous vs. Past Simple, Present Perfect, Conditional Type 1 & Type 2 ("If I were..., I would..."), Passive Voice, Relative Clauses (who/which/that), and Modal Verbs of deduction ("might have taken").
+- Evaluate both foundational accuracy (uncountable nouns like "information", "equipment", "for work", "personal use"; no double conjunctions like "although...but" or "because...so"; -ed vs -ing adjectives) AND intermediate structures: Past Continuous vs. Past Simple, Present Perfect, Conditional Type 1 & Type 2 ("If I were..., I would..."), Passive Voice, Relative Clauses (who/which/that), and Modal Verbs of deduction ("might have taken").
 - Recognize Conditional Type 2 and Present Perfect as VALID, advanced grammar—NEVER flag them as wrong tense.`;
     case 'C1':
     case 'C2':
     default:
       return `CEFR ${cefrLevel} (Advanced / Proficiency):
-- Evaluate sophisticated syntactic range: Past Perfect ("had + V3/ed"), Conditional Type 3 & Mixed Conditionals ("If he had studied..., he would have passed..."), Inversion ("Had I known...", "Not only does..."), Participle Clauses ("Having completed..."), Subjunctive Mood ("It is vital that he be..."), and Cleft Sentences ("What matters most is...").
-- Explicitly reward accurate use of these advanced structures in "advanced_structures_used" and NEVER misclassify Conditional Type 2/3 or Past Perfect as tense errors.
+- Evaluate sophisticated syntactic range across 8 advanced pillars:
+  1. Conditional Type 3 & Mixed Conditionals ("If he had studied..., he would have passed...").
+  2. Negative & Conditional Inversion ("Not only does it save...", "Had I known...", "Were we to implement...").
+  3. Advanced Passive Voice ("It is widely believed that...", "could have been avoided").
+  4. Non-defining & Prepositional Relative Clauses ("in which", ", which...").
+  5. Participle Clauses & Parallelism ("Having upgraded...", consistent parallel verb forms).
+  6. Subjunctive Mood ("It is vital/essential that S + bare infinitive").
+  7. Cleft Sentences & Noun Clauses ("What matters most is...", "It is ... that...").
+  8. Past Modals of Deduction ("must have + V3", "should have + V3").
+- Explicitly reward accurate use of these advanced structures in "advanced_structures_used" and NEVER misclassify Conditional Type 2/3, Inversion, Subjunctive, or Past Perfect as errors.
 - If a ${cefrLevel} speaker ONLY uses elementary simple sentences without any complex clauses, cap grammar_score at 68 and advise upgrading sentence complexity in feedback_vi.`;
   }
 }
@@ -712,7 +820,7 @@ export default async function handler(req: Request) {
     whisperFormData.append('response_format', 'verbose_json');
     whisperFormData.append(
       'prompt',
-      'Transcribe strictly verbatim as spoken. Do NOT auto-correct grammar, wrong tenses (like "I buy yesterday", "I leave", "while I am reading", "when I will go"), missing third-person singular -s/-es, missing past tense -ed, wrong past participles, plural -s, or mispronounced words.'
+      'Transcribe strictly verbatim as spoken. Do NOT auto-correct grammar, wrong tenses (like "I buy yesterday", "I leave", "while I am reading", "when I will go"), uncountable plurals ("are works", "personal uses", "informations"), missing third-person singular -s/-es, missing past tense -ed, wrong past participles, or mispronounced words.'
     );
 
     const whisperResponse = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
@@ -1036,8 +1144,9 @@ export default async function handler(req: Request) {
 ${getCefrGrammarRubricInstruction(cefrLevel)}
 CRITICAL CHECKS:
 1. Evaluate semantic relevance against the prompt topic/scenario ("${targetPrompt}"), accepting personal examples, paraphrases, and synonyms. NEVER penalize the student for using different examples from any Reference English Sample. Only set "is_off_topic": true if the student speaks about a completely unrelated subject.
-2. If the response is only a short fragment without a main verb or under 8 words, keep "content_score" <= 35 and "grammar_score" <= 50.
-3. For every mistake in "detected_errors", set "word" to the EXACT single offending word from the transcript.
+2. Catch ALL spoken errors (uncountable plurals like "are works"/"personal uses", missing "to be", wrong prepositions, double conjunctions, wrong tenses, and C1-C2 advanced structure errors).
+3. If the response is only a short fragment without a main verb or under 8 words, keep "content_score" <= 35 and "grammar_score" <= 50.
+4. For every mistake in "detected_errors", set "word" to the EXACT single offending word from the transcript.
 Return JSON ONLY:
 {
   "vocab_score": number,
@@ -1322,24 +1431,26 @@ Target Prompt/Context: "${targetPrompt}".
 
 ${getCefrGrammarRubricInstruction(cefrLevel)}
 
-CRITICAL EVALUATION RULES (BASIC TO ADVANCED A1–C2 + FLEXIBLE SEMANTIC TOPIC RELEVANCE + LENGTH PENALTY):
+CRITICAL EVALUATION RULES (10 FOUNDATIONAL PILLARS A1–B2 + 8 ADVANCED PILLARS C1–C2 + FLEXIBLE TOPIC RELEVANCE):
 1. TOPIC RELEVANCE CHECK (FLEXIBLE & REALISTIC):
    - Evaluate semantic relevance against the main Scenario/Topic ONLY.
    - If Mode is FREE_SPEECH, NEVER penalize the student for using different personal examples than the "Reference English Sample" (e.g. if the sample mentions buying "music and clothes online", and the student talks about buying "tech products and PC parts" or shopping habits, that IS relevant -> set "is_off_topic": false!).
-   - If the student addresses shopping/buying habits in general (e.g. "I spend money on tech products and PC parts") without explicitly mentioning "online" or websites, keep "is_off_topic": false and give a moderate "content_score" around 68–76 while advising in "feedback_vi" to mention online platforms/websites.
+   - If the student addresses shopping/buying habits in general without explicitly mentioning "online" or websites, keep "is_off_topic": false and give a moderate "content_score" around 68–76 while advising in "feedback_vi" to mention online platforms/websites.
    - Accept synonyms and natural paraphrases (e.g., proposing "solutions" for a business case study when asked for "recommendations" -> "is_off_topic": false).
-   - ONLY set "is_off_topic": true, "content_score": 15, and "vocab_score": 20 if the student recites a completely unrelated memorized speech (e.g., talking about their hometown or choosing a college major when asked about online shopping or a business database).
+   - ONLY set "is_off_topic": true, "content_score": 15, and "vocab_score": 20 if the student recites a completely unrelated memorized speech.
 2. SHORT / FRAGMENT PENALTY:
-   - If the student speaks fewer than 8 words or utters a sentence fragment without a subject/main verb (e.g., "Fast and accurate computing but expensive"), keep "content_score" <= 30, "vocab_score" <= 35, and "grammar_score" <= 50!
+   - If the student speaks fewer than 8 words or utters a sentence fragment without a subject/main verb, keep "content_score" <= 30, "vocab_score" <= 35, and "grammar_score" <= 50!
 3. NEVER auto-correct or overlook spoken grammar/tense/ending/mispronunciation mistakes in the student's verbatim transcript.
-4. Check EVERY clause systematically and report ALL errors in "detected_errors":
-   - Mispronounced Topic Words: If a word in the transcript is clearly a speech-recognition mishearing of a target context word (e.g. saying "chicken" instead of "jacket" in a clothing store scenario), flag that exact word ("chicken") with correction ("jacket") and explain the pronunciation difference in Vietnamese!
-   - Basic (A1–A2): 3rd-person singular "-s/-es" ("he go" -> "goes"), wrong verb tense with past markers ("I buy ... yesterday" -> "bought", "I leave my bag yesterday" -> "left"), articles ("a/an"), plural nouns.
-   - Intermediate Sequence of Tenses (B1–B2):
-     * NEVER allow "will" inside time clauses ("when / while / before / after").
-     * Background past actions with "while" in a past story MUST use Past Continuous ("while I am reading" -> "was").
-     * Past speculation/deduction MUST use "might have + V3/ed" or Past Simple.
-   - Advanced (B2–C2): Conditionals Type 2, Type 3 & Mixed Conditionals, Past Perfect, Passive Voice, Relative Clauses, Inversion.
+4. Check EVERY clause systematically across ALL 10 foundational & 8 advanced rules and report ALL errors in "detected_errors":
+   - Uncountable nouns wrongly pluralized ("are works" -> "are for work", "personal uses" -> "personal use", "informations", "equipments", "advices", "softwares").
+   - Missing "to be" before adjectives ("It very expensive" -> "It is very expensive").
+   - Wrong prepositions & verb patterns ("spend money to" -> "on", "depend in/of" -> "on", "interested about" -> "in", "good in" -> "at", "discuss about" -> "discuss", "enjoy/suggest to V" -> "V-ing").
+   - -ed vs -ing adjectives ("I am boring with" -> "bored", "website is interested" -> "interesting").
+   - Double conjunctions ("Although ... but", "Because ... so").
+   - Contextual mispronunciations ("chicken" instead of "jacket", "change stuff" instead of "train staff").
+   - Basic (A1–A2): 3rd-person singular "-s/-es", wrong verb tense with past markers, articles ("a/an"), plural nouns.
+   - Intermediate (B1–B2): No "will" inside time clauses, Past Continuous with "while" in past stories, "might have + V3/ed" for past speculation.
+   - Advanced (C1–C2): Conditionals Type 3 & Mixed, Negative/Conditional Inversion ("Not only does...", "Had I known..."), Advanced Passive Voice, Prepositional/Reduced Relative Clauses, Participle Clauses & Parallelism, Subjunctive Mood ("vital that S + bare V"), Cleft Sentences, Past Modals ("must/should have + V3").
 5. IMPORTANT UI MAPPING RULE FOR "detected_errors":
    - Set "word" to the EXACT SINGLE offending word from the transcript so the UI highlights that exact word chip in RED!
 
@@ -1419,7 +1530,7 @@ Return JSON ONLY:
 
       // 5. TÍNH ĐIỂM TỔNG HỢP THEO ĐÚNG TRỌNG SỐ 6 TIÊU CHÍ (PHÁT ÂM 20%, NGỮ ĐIỆU 20%, TRÔI CHẢY 15%, TỪ VỰNG 15%, NGỮ PHÁP 15%, NỘI DUNG 15%)
       const cappedGrammar = errorWordsList.length > 0
-        ? Math.min(grammarScore, Math.max(25, 82 - errorWordsList.length * 12))
+        ? Math.min(grammarScore, Math.max(25, 84 - errorWordsList.length * 10))
         : grammarScore;
       const cappedPronunciation = errorWordsList.length > 0
         ? Math.min(pronunciationScore, Math.max(40, 84 - errorWordsList.length * 8))
@@ -1464,7 +1575,7 @@ Return JSON ONLY:
             .slice(0, 3)
             .map((e) => `"${e.word}" ➔ "${e.correction}"`)
             .join(', ');
-          dynamicFeedback = `⚠️ Phát hiện ${errorWordsList.length} lỗi ngữ pháp/phát âm (đã tô đỏ): ${summaryErrors}. ${errorWordsList[0].reason}${advNote}`;
+          dynamicFeedback = `⚠️ Phát hiện ${errorWordsList.length} lỗi ngữ pháp/dùng từ (đã tô đỏ): ${summaryErrors}. ${errorWordsList[0].reason}${advNote}`;
         } else if (isIncompleteSentence) {
           dynamicFeedback = `⚠️ Câu nói bị ngắt cụt ở cuối ("${lastWord}"). Hãy hoàn thành trọn vẹn ý của câu để AI chấm điểm chính xác hơn nhé!`;
         } else if (wordCount < 14) {
