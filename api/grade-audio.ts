@@ -219,10 +219,13 @@ function evaluateTopicRelevance(transcript: string, targetPrompt: string): Topic
     'level', 'scenario', 'context', 'reference', 'english', 'sample', 'express', 'prompt', 'question',
     'challenge', 'reflex', 'custom', 'deliver', 'whether', 'merely', 'particularly', 'regarding',
     'please', 'answer', 'following', 'topic', 'based', 'classroom', 'point', 'view', 'give', 'tell',
-    'how', 'why', 'when', 'where', 'who', 'does', 'did', 'will', 'would', 'should', 'could'
+    'how', 'why', 'when', 'where', 'who', 'does', 'did', 'will', 'would', 'should', 'could',
+    // Các động từ/danh từ chỉ dẫn thuyết trình & thảo luận nhóm để tránh phạt oan khi dùng từ đồng nghĩa
+    'present', 'presentation', 'recommend', 'recommendations', 'suggest', 'suggestions',
+    'solution', 'solutions', 'another', 'group', 'groups', 'partner', 'classmates', 'team',
+    'share', 'propose', 'ideas', 'ways', 'improve', 'improvement', 'problem', 'problems'
   ]);
 
-  // Tách riêng phần tiếng Anh của đề bài (loại bỏ ghi chú tiếng Việt sau "Context (VI):" nếu có)
   const englishPromptOnly = targetPrompt
     .replace(/Context\s*\(VI\)\s*:[^|]*/gi, ' ')
     .replace(/Mode\s*:\s*FREE_SPEECH/gi, ' ')
@@ -268,7 +271,6 @@ function evaluateTopicRelevance(transcript: string, targetPrompt: string): Topic
 
   const matchRatio = matchedKeywords.length / promptKeywords.length;
 
-  // Nhận diện thêm mẫu câu lệch chủ đề điển hình (ví dụ: kể chuyện học ngành/trường/quê hương thay vì trả lời câu hỏi chuyên đề)
   const lowerTranscript = transcript.toLowerCase();
   const isPersonalMajorStory =
     /\b(chose|decided to study|favorite classes|college program|my hometown|went home)\b/.test(lowerTranscript) &&
@@ -302,13 +304,37 @@ function evaluateTopicRelevance(transcript: string, targetPrompt: string): Topic
 }
 
 // =========================================================================
-// 🔍 HÀM BỔ TRỢ: CHIA ĐỘNG TỪ & XÂY DỰNG MẢNG TÔ MÀU CHÍNH XÁC TỪNG VỊ TRÍ TỪ
+// 🔍 HÀM BỔ TRỢ: KIỂM TRA ĐỘNG TỪ CHÍNH, CHIA ĐỘNG TỪ & TÔ MÀU TỪNG TỪ
 // =========================================================================
 export interface DetectedGrammarError {
   word: string;
   correction: string;
   reason: string;
   wordIndex?: number;
+}
+
+function hasSentenceMainVerb(spokenWords: string[]): boolean {
+  const commonVerbs = new Set([
+    'is', 'am', 'are', 'was', 'were', 'be', 'been', 'have', 'has', 'had', 'do', 'does', 'did',
+    'can', 'could', 'will', 'would', 'should', 'may', 'might', 'must', 'make', 'makes', 'made',
+    'help', 'helps', 'helped', 'save', 'saves', 'saved', 'store', 'stores', 'stored',
+    'allow', 'allows', 'allowed', 'cost', 'costs', 'need', 'needs', 'needed', 'want', 'wants',
+    'think', 'thinks', 'thought', 'believe', 'believes', 'use', 'uses', 'used', 'work', 'works',
+    'improve', 'improves', 'improved', 'reduce', 'reduces', 'reduced', 'provide', 'provides',
+    'process', 'processes', 'manage', 'manages', 'find', 'finds', 'found', 'give', 'gives',
+    'take', 'takes', 'took', 'get', 'gets', 'got', 'go', 'goes', 'went', 'come', 'comes', 'came',
+    'say', 'says', 'said', 'know', 'knows', 'knew', 'see', 'sees', 'saw', 'like', 'likes', 'love', 'loves'
+  ]);
+
+  return spokenWords.some((w, idx) => {
+    if (commonVerbs.has(w)) return true;
+    // Bỏ qua tính từ đuôi -ed đứng ngay trước danh từ (ví dụ "computerised database")
+    if (w.endsWith('ed') && w.length > 4 && idx < spokenWords.length - 1) {
+      return false;
+    }
+    if (w.endsWith('ed') && w.length > 4) return true;
+    return false;
+  });
 }
 
 function getThirdPersonForm(verb: string): string {
@@ -983,11 +1009,12 @@ export default async function handler(req: Request) {
 
       const topicCheck = evaluateTopicRelevance(transcript, targetPrompt);
       const prosodyEval = evaluateProsodyScore(studentPitchData, referencePitchData);
+      const hasMainVerbS4 = hasSentenceMainVerb(spokenWords);
 
-      let grammarScore = 82;
-      let vocabScore = 82;
-      let contentScore = topicCheck.relevanceScore;
-      let fluencyScore = Math.min(95, Math.max(55, wordCount * 4));
+      let grammarScore = hasMainVerbS4 ? 82 : 48;
+      let vocabScore = wordCount < 8 ? Math.min(40, wordCount * 5) : 82;
+      let contentScore = wordCount < 8 ? Math.min(35, wordCount * 4) : topicCheck.relevanceScore;
+      let fluencyScore = Math.min(95, Math.max(30, wordCount * 4));
       let pronunciationScore = Math.min(100, Math.max(65, 76 + acousticQualityBonus * 1.5));
       let intonationScore = prosodyEval.score;
 
@@ -1006,8 +1033,8 @@ export default async function handler(req: Request) {
         `You are an expert Cambridge/IELTS speaking examiner evaluating a CEFR ${cefrLevel} student on a speaking prompt.
 ${getCefrGrammarRubricInstruction(cefrLevel)}
 CRITICAL CHECKS:
-1. Check whether the student's response actually answers the prompt topic ("${targetPrompt}"). If the student recites an unrelated memorized speech (e.g. talking about choosing a college major when asked about a specific tech topic), set "is_off_topic": true and set "content_score": 15, "vocab_score": 20.
-2. Evaluate pronunciation clarity and grammar independently—do NOT inflate content_score just because grammar is good.
+1. Check whether the student's response semantically addresses the prompt topic or business/case-study scenario ("${targetPrompt}"), including synonyms (e.g. proposing "solutions" when asked for "recommendations"). Only set "is_off_topic": true if the student speaks about a completely unrelated topic.
+2. If the response is only a short fragment without a main verb or under 8 words, keep "content_score" <= 35 and "grammar_score" <= 50.
 3. For every mistake in "detected_errors", set "word" to the EXACT single offending word from the transcript.
 Return JSON ONLY:
 {
@@ -1026,8 +1053,8 @@ Return JSON ONLY:
       );
 
       if (parsed) {
-        if (typeof parsed.is_off_topic === 'boolean' && parsed.is_off_topic) {
-          isOffTopicFinal = true;
+        if (typeof parsed.is_off_topic === 'boolean') {
+          isOffTopicFinal = parsed.is_off_topic;
         }
         if (typeof parsed.vocab_score === 'number') {
           vocabScore = isOffTopicFinal ? Math.min(25, parsed.vocab_score) : parsed.vocab_score;
@@ -1059,7 +1086,6 @@ Return JSON ONLY:
         : pronunciationScore;
       const finalGrammar = Math.max(30, grammarScore - penalty);
 
-      // Công thức 6 tiêu chí độc lập: Phát âm (20%) + Ngữ điệu (20%) + Trôi chảy (15%) + Từ vựng (15%) + Ngữ pháp (15%) + Nội dung (15%)
       calculatedScore = Math.max(
         20,
         Math.min(
@@ -1077,11 +1103,17 @@ Return JSON ONLY:
 
       if (isOffTopicFinal) {
         calculatedScore = Math.min(42, calculatedScore);
+      } else if (wordCount < 8 || !hasMainVerbS4) {
+        calculatedScore = Math.min(38, calculatedScore);
+      } else if (wordCount < 14) {
+        calculatedScore = Math.min(55, calculatedScore);
       }
 
       if (!dynamicFeedback) {
         if (isOffTopicFinal) {
           dynamicFeedback = topicCheck.feedbackNote || '⚠️ SAI LỆCH CHỦ ĐỀ: Nội dung nói không khớp với đề bài yêu cầu. Điểm Phát âm và Ngữ điệu vẫn được ghi nhận nhưng điểm Nội dung & Từ vựng bị trừ nặng.';
+        } else if (wordCount < 8 || !hasMainVerbS4) {
+          dynamicFeedback = `⚠️ Câu trả lời quá ngắn (${wordCount} từ) hoặc chưa có động từ chính hoàn chỉnh. Hãy nói thành câu đầy đủ chủ - vị và triển khai thêm ý nhé!`;
         } else if (errorWordsList.length > 0) {
           const firstErr = errorWordsList[0];
           dynamicFeedback = `Phản xạ tốt, tuy nhiên cần chú ý sửa "${firstErr.word}" ➔ "${firstErr.correction}" để câu trả lời chuẩn ngữ pháp hơn!`;
@@ -1121,7 +1153,7 @@ Return JSON ONLY:
       );
 
     // =========================================================================
-    // 🎭 NHÁNH 4: TRẠM 2 - VOCABULARY & REFLEX ARENA (PHÂN TẦNG A1–C2 + PHÁT ÂM + NGỮ ĐIỆU + CHẶN LẠC ĐỀ)
+    // 🎭 NHÁNH 4: TRẠM 2 - VOCABULARY & REFLEX ARENA (PHÂN TẦNG A1–C2 + PHÁT ÂM + NGỮ ĐIỆU + CHẶN LẠC ĐỀ & CÂU NGẮN)
     // =========================================================================
     } else {
       const wordCount = spokenWords.length;
@@ -1207,7 +1239,7 @@ Return JSON ONLY:
         });
       }
 
-      // Bắt lỗi câu ngắt cụt
+      // Bắt lỗi câu ngắt cụt hoặc cụm từ thiếu động từ chính (Sentence Fragment)
       const lastWord = spokenWords[spokenWords.length - 1]?.toLowerCase() || '';
       const incompleteEndings = [
         'my', 'your', 'his', 'her', 'their', 'our', 'the', 'a', 'an',
@@ -1216,6 +1248,8 @@ Return JSON ONLY:
       ];
       
       const isIncompleteSentence = wordCount < 15 && incompleteEndings.includes(lastWord);
+      const hasMainVerb = hasSentenceMainVerb(spokenWords);
+
       if (isIncompleteSentence && !errorWordsList.some(e => e.wordIndex === spokenWords.length - 1)) {
         errorWordsList.push({
           wordIndex: spokenWords.length - 1,
@@ -1223,12 +1257,19 @@ Return JSON ONLY:
           correction: `${lastWord} ... [cần hoàn thành vị ngữ]`,
           reason: `Câu nói bị ngắt cụt ở từ "${lastWord}". Hãy hoàn thành trọn vẹn câu!`
         });
+      } else if (wordCount < 10 && !hasMainVerb && !errorWordsList.some(e => e.wordIndex === spokenWords.length - 1)) {
+        errorWordsList.push({
+          wordIndex: spokenWords.length - 1,
+          word: lastWord,
+          correction: `${lastWord} [thiếu chủ ngữ & động từ]`,
+          reason: `Câu nói chỉ là cụm từ rời rạc (${wordCount} từ), chưa có động từ chính để tạo thành câu hoàn chỉnh.`
+        });
       }
 
       // 3. 🎯 TÍNH ĐIỂM ĐỘC LẬP CHO TỪNG TIÊU CHÍ (PHÁT ÂM, NGỮ ĐIỆU, TRÔI CHẢY, TỪ VỰNG, NGỮ PHÁP, NỘI DUNG)
       const hasNoErrors = errorWordsList.length === 0;
 
-      // Điểm Phát âm & Ngữ điệu phản ánh trung thực chất lượng âm học của thí sinh (kể cả khi lạc đề)
+      // Điểm Phát âm & Ngữ điệu phản ánh trung thực chất lượng âm học của thí sinh (kể cả khi lạc đề hoặc nói ngắn)
       let pronunciationScore = hasNoErrors
         ? Math.min(100, Math.max(72, 76 + acousticQualityBonus * 1.5))
         : Math.max(45, 74 + acousticQualityBonus - errorWordsList.length * 8);
@@ -1244,11 +1285,18 @@ Return JSON ONLY:
         baseVocab = 20;
         baseGrammar = hasNoErrors ? 90 : Math.max(45, 78 - errorWordsList.length * 10);
         baseFluency = Math.min(90, Math.max(70, 72 + Math.min(15, Math.floor(wordCount / 3))));
-      } else if (isIncompleteSentence || wordCount < 12) {
-        baseContent = Math.min(72, Math.max(45, wordCount * 6));
-        baseGrammar = hasNoErrors ? 80 : Math.max(35, 65 - errorWordsList.length * 12);
-        baseVocab = Math.min(75, Math.max(50, wordCount * 6));
-        baseFluency = Math.min(72, Math.max(45, wordCount * 6));
+      } else if (wordCount < 8 || isIncompleteSentence || !hasMainVerb) {
+        // ❌ Nói quá ngắn (4 - 7 từ), câu ngắt cụt hoặc cụm từ không có động từ chính
+        baseContent = Math.min(28, wordCount * 4);
+        baseVocab = Math.min(35, wordCount * 5);
+        baseFluency = Math.min(30, wordCount * 4);
+        baseGrammar = !hasMainVerb ? 45 : (hasNoErrors ? 60 : Math.max(25, 50 - errorWordsList.length * 12));
+      } else if (wordCount < 14) {
+        // ⚠️ Nói hơi ngắn (8 - 13 từ): Chưa đủ triển khai ý
+        baseContent = Math.min(55, wordCount * 4);
+        baseVocab = Math.min(60, wordCount * 4 + 6);
+        baseFluency = Math.min(58, wordCount * 4 + 4);
+        baseGrammar = hasNoErrors ? 78 : Math.max(30, 68 - errorWordsList.length * 12);
       } else if (wordCount < 20) {
         baseContent = hasNoErrors ? topicCheck.relevanceScore : Math.min(72, topicCheck.relevanceScore);
         baseGrammar = hasNoErrors ? 86 : Math.max(35, 72 - errorWordsList.length * 12);
@@ -1275,13 +1323,15 @@ Target Prompt/Context: "${targetPrompt}".
 
 ${getCefrGrammarRubricInstruction(cefrLevel)}
 
-CRITICAL EVALUATION RULES (BASIC TO ADVANCED A1–C2 + TOPIC RELEVANCE):
+CRITICAL EVALUATION RULES (BASIC TO ADVANCED A1–C2 + TOPIC RELEVANCE + LENGTH PENALTY):
 1. TOPIC RELEVANCE CHECK (FIRST PRIORITY):
-   - Compare the student's transcript against the assigned prompt topic ("${targetPrompt}").
-   - If the student talks about a completely different subject (for example: reciting a memorized story about choosing a college major/IT career when the prompt asks about "advantages and disadvantages of a computerised database"), you MUST set "is_off_topic": true, "content_score": 15, and "vocab_score": 20!
-   - Even when "is_off_topic" is true, evaluate "grammar_score" fairly based on the sentences actually spoken.
-2. NEVER auto-correct or overlook spoken grammar/tense/ending/mispronunciation mistakes in the student's verbatim transcript.
-3. Check EVERY clause systematically and report ALL errors in "detected_errors":
+   - Evaluate semantic relevance against the assigned prompt/case-study ("${targetPrompt}").
+   - Accept synonyms and natural paraphrases (e.g., proposing "solutions" or "improvements" for a business case study when the prompt says "Present your recommendations to another group" is ON-TOPIC -> set "is_off_topic": false!).
+   - ONLY set "is_off_topic": true, "content_score": 15, and "vocab_score": 20 if the student recites a completely unrelated memorized speech (e.g., talking about choosing a college major/hometown when asked about a business database or bookstore case study).
+2. SHORT / FRAGMENT PENALTY:
+   - If the student speaks fewer than 8 words or utters a sentence fragment without a subject/main verb (e.g., "Fast and accurate computing but expensive"), keep "content_score" <= 30, "vocab_score" <= 35, and "grammar_score" <= 50!
+3. NEVER auto-correct or overlook spoken grammar/tense/ending/mispronunciation mistakes in the student's verbatim transcript.
+4. Check EVERY clause systematically and report ALL errors in "detected_errors":
    - Mispronounced Topic Words: If a word in the transcript is clearly a speech-recognition mishearing of a target context word (e.g. saying "chicken" instead of "jacket" in a clothing store scenario), flag that exact word ("chicken") with correction ("jacket") and explain the pronunciation difference in Vietnamese!
    - Basic (A1–A2): 3rd-person singular "-s/-es" ("he go" -> "goes"), wrong verb tense with past markers ("I buy ... yesterday" -> "bought", "I leave my bag yesterday" -> "left"), articles ("a/an"), plural nouns.
    - Intermediate Sequence of Tenses (B1–B2):
@@ -1289,7 +1339,7 @@ CRITICAL EVALUATION RULES (BASIC TO ADVANCED A1–C2 + TOPIC RELEVANCE):
      * Background past actions with "while" in a past story MUST use Past Continuous ("while I am reading" -> "was").
      * Past speculation/deduction MUST use "might have + V3/ed" or Past Simple.
    - Advanced (B2–C2): Conditionals Type 2, Type 3 & Mixed Conditionals, Past Perfect, Passive Voice, Relative Clauses, Inversion.
-4. IMPORTANT UI MAPPING RULE FOR "detected_errors":
+5. IMPORTANT UI MAPPING RULE FOR "detected_errors":
    - Set "word" to the EXACT SINGLE offending word from the transcript so the UI highlights that exact word chip in RED!
 
 Return JSON ONLY:
@@ -1302,30 +1352,30 @@ Return JSON ONLY:
   "detected_errors": [
     { "word": "exact_single_wrong_word_from_transcript", "correction": "correct_form", "reason": "Giải thích quy tắc ngữ pháp/phát âm bằng tiếng Việt ngắn gọn, rõ ràng" }
   ],
-  "feedback_vi": "Nhận xét tiếng Việt 1-2 câu chỉ rõ độ khớp chủ đề, cấu trúc dùng tốt và các lỗi bị tô đỏ cần sửa"
+  "feedback_vi": "Nhận xét tiếng Việt 1-2 câu chỉ rõ độ khớp chủ đề, độ dài câu, cấu trúc dùng tốt và các lỗi bị tô đỏ cần sửa"
 }`,
-        `CEFR Level: ${cefrLevel}\nScenario & Reference: "${targetPrompt || 'General speaking context'}"\nStudent verbatim transcript: "${transcript}"`,
+        `CEFR Level: ${cefrLevel}\nScenario & Reference: "${targetPrompt || 'General speaking context'}"\nStudent verbatim transcript (${wordCount} words): "${transcript}"`,
         650
       );
 
       if (parsed) {
-        if (typeof parsed.is_off_topic === 'boolean' && parsed.is_off_topic) {
-          isCompletelyOffTopic = true;
+        if (typeof parsed.is_off_topic === 'boolean') {
+          isCompletelyOffTopic = parsed.is_off_topic;
         }
         if (typeof parsed.content_score === 'number') {
           contentScore = isCompletelyOffTopic
             ? Math.min(15, parsed.content_score)
-            : parsed.content_score;
+            : Math.min(parsed.content_score, wordCount < 8 ? 30 : 100);
         }
         if (typeof parsed.grammar_score === 'number') {
-          grammarScore = errorWordsList.length === 0
+          grammarScore = (errorWordsList.length === 0 && hasMainVerb && wordCount >= 8)
             ? parsed.grammar_score
             : Math.min(parsed.grammar_score, baseGrammar);
         }
         if (typeof parsed.vocab_score === 'number') {
           vocabScore = isCompletelyOffTopic
             ? Math.min(20, parsed.vocab_score)
-            : parsed.vocab_score;
+            : Math.min(parsed.vocab_score, wordCount < 8 ? 35 : 100);
         }
         if (Array.isArray(parsed.advanced_structures_used)) {
           advancedStructuresUsed = parsed.advanced_structures_used.filter((s: any) => typeof s === 'string' && s.trim().length > 0);
@@ -1389,11 +1439,13 @@ Return JSON ONLY:
         )
       );
 
-      // Khóa trần tổng điểm khi lạc đề hoàn toàn để không bao giờ đạt ngưỡng qua môn (70đ)
+      // Khóa trần tổng điểm khi lạc đề, câu quá ngắn hoặc thiếu chủ-vị
       if (isCompletelyOffTopic) {
         calculatedScore = Math.min(42, calculatedScore);
-      } else if (isIncompleteSentence || wordCount < 8) {
-        calculatedScore = Math.min(60, calculatedScore);
+      } else if (wordCount < 8 || isIncompleteSentence || !hasMainVerb) {
+        calculatedScore = Math.min(38, calculatedScore);
+      } else if (wordCount < 14) {
+        calculatedScore = Math.min(55, calculatedScore);
       }
 
       // 6. NHẬN XÉT SƯ PHẠM CỤ THỂ
@@ -1404,6 +1456,8 @@ Return JSON ONLY:
 
         if (isCompletelyOffTopic) {
           dynamicFeedback = topicCheck.feedbackNote || `⚠️ SAI LỆCH CHỦ ĐỀ: Nội dung bài nói không khớp với yêu cầu đề bài. Điểm Phát âm (${cappedPronunciation}/100) và Ngữ điệu (${intonationScore}/100) vẫn được ghi nhận, nhưng điểm Nội dung & Từ vựng bị trừ nặng.`;
+        } else if (!hasMainVerb && wordCount < 10) {
+          dynamicFeedback = `⚠️ Bài nói quá ngắn (${wordCount} từ) và mới chỉ là cụm từ rời rạc chưa có chủ ngữ – động từ chính. Hãy nói thành câu hoàn chỉnh và nêu rõ ví dụ cụ thể!`;
         } else if (errorWordsList.length > 0) {
           const summaryErrors = errorWordsList
             .slice(0, 3)
@@ -1412,8 +1466,8 @@ Return JSON ONLY:
           dynamicFeedback = `⚠️ Phát hiện ${errorWordsList.length} lỗi ngữ pháp/phát âm (đã tô đỏ): ${summaryErrors}. ${errorWordsList[0].reason}${advNote}`;
         } else if (isIncompleteSentence) {
           dynamicFeedback = `⚠️ Câu nói bị ngắt cụt ở cuối ("${lastWord}"). Hãy hoàn thành trọn vẹn ý của câu để AI chấm điểm chính xác hơn nhé!`;
-        } else if (wordCount < 10) {
-          dynamicFeedback = `💡 Bài nói hơi ngắn (${wordCount} từ). Hãy mở rộng thêm các hành động cụ thể để câu trả lời thuyết phục hơn.`;
+        } else if (wordCount < 14) {
+          dynamicFeedback = `💡 Bài nói hơi ngắn (${wordCount} từ). Hãy mở rộng thêm ý và dẫn chứng cụ thể để đạt chuẩn nhé!`;
         } else if (calculatedScore >= 85) {
           dynamicFeedback = `🌟 Xuất sắc! Bạn diễn đạt rất tự nhiên, phát âm chuẩn xác, ngữ điệu tự nhiên và bám sát chủ đề.${advNote}`;
         } else {
