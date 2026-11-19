@@ -172,7 +172,6 @@ function getGroqKeyPool(): string[] {
     .filter(Boolean);
 
   const uniqueKeys = Array.from(new Set([...multiKeys, ...singleKeys]));
-  // Xáo trộn nhẹ thứ tự key để phân tải đều khi 300 sinh viên gửi bài cùng giây
   for (let i = uniqueKeys.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [uniqueKeys[i], uniqueKeys[j]] = [uniqueKeys[j], uniqueKeys[i]];
@@ -191,18 +190,27 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
   return btoa(binary);
 }
 
-// 🎙️ TẦNG 1: GỠ BĂNG ÂM THANH ĐA NHÀ CUNG CẤP (XOAY VÒNG GROQ WHISPER -> FALLBACK GEMINI AUDIO)
+interface TranscriptionMetadata {
+  transcript: string;
+  avgLogprob: number;
+  durationSec: number;
+  maxPauseSec: number;
+  noSpeechProb: number;
+  compressionRatio: number;
+  providerUsed: string;
+}
+
+// 🎙️ TẦNG 1: GỠ BĂNG ÂM THANH ĐA NHÀ CUNG CẤP + TRÍCH XUẤT CHỈ SỐ ÂM HỌC & THỜI GIAN
 async function transcribeAudioWithFallback(
   audioFile: any,
   groqKeys: string[],
   geminiApiKey: string
-): Promise<{ transcript: string; avgLogprob: number; providerUsed: string }> {
+): Promise<TranscriptionMetadata> {
   const verbatimPrompt =
-    'Transcribe strictly verbatim as spoken. Do NOT auto-correct grammar, wrong tenses (like "I buy yesterday", "I leave", "while I am reading", "when I will go"), uncountable plurals ("are works", "personal uses", "informations"), missing third-person singular -s/-es, missing past tense -ed, wrong past participles, or mispronounced words.';
+    'Transcribe strictly verbatim as spoken including filler words (uh, um, er, ah) and stutters. Do NOT auto-correct grammar, wrong tenses (like "I buy yesterday", "I leave", "while I am reading", "when I will go"), uncountable plurals ("are works", "personal uses", "informations"), missing third-person singular -s/-es, missing past tense -ed, wrong past participles, or mispronounced words.';
 
   let lastGroqError = '';
 
-  // 1. Thử lần lượt tất cả các API Key Groq trong pool
   for (let idx = 0; idx < groqKeys.length; idx++) {
     const apiKey = groqKeys[idx];
     try {
@@ -222,18 +230,52 @@ async function transcribeAudioWithFallback(
       if (whisperResponse.ok) {
         const whisperData = await whisperResponse.json();
         const transcript = (whisperData.text || '').trim();
-        const segments = whisperData.segments || [];
+        const segments = Array.isArray(whisperData.segments) ? whisperData.segments : [];
+
         let avgLogprob = -0.35;
-        if (segments.length > 0 && typeof segments[0].avg_logprob === 'number') {
+        let maxNoSpeechProb = 0;
+        let maxCompressionRatio = 1.2;
+        let maxPauseSec = 0;
+
+        if (segments.length > 0) {
           const sumLogprob = segments.reduce((acc: number, s: any) => acc + (s.avg_logprob || 0), 0);
           avgLogprob = sumLogprob / segments.length;
+
+          for (let i = 0; i < segments.length; i++) {
+            const seg = segments[i];
+            if (typeof seg.no_speech_prob === 'number' && seg.no_speech_prob > maxNoSpeechProb) {
+              maxNoSpeechProb = seg.no_speech_prob;
+            }
+            if (typeof seg.compression_ratio === 'number' && seg.compression_ratio > maxCompressionRatio) {
+              maxCompressionRatio = seg.compression_ratio;
+            }
+            if (i > 0 && typeof seg.start === 'number' && typeof segments[i - 1].end === 'number') {
+              const gap = seg.start - segments[i - 1].end;
+              if (gap > maxPauseSec) maxPauseSec = gap;
+            }
+          }
         }
-        return { transcript, avgLogprob, providerUsed: `groq-whisper-key-${idx + 1}` };
+
+        const lastSegEnd = segments.length > 0 && typeof segments[segments.length - 1].end === 'number'
+          ? segments[segments.length - 1].end
+          : 0;
+        const durationSec = typeof whisperData.duration === 'number' && whisperData.duration > 0
+          ? whisperData.duration
+          : lastSegEnd;
+
+        return {
+          transcript,
+          avgLogprob,
+          durationSec,
+          maxPauseSec,
+          noSpeechProb: maxNoSpeechProb,
+          compressionRatio: maxCompressionRatio,
+          providerUsed: `groq-whisper-key-${idx + 1}`,
+        };
       }
 
       const status = whisperResponse.status;
       lastGroqError = await whisperResponse.text();
-      // Nếu lỗi 429 (Rate Limit) hoặc 503/502/500 (Overload), lập tức xoay sang Key tiếp theo
       if (status === 429 || status >= 500) {
         console.warn(`Groq Whisper key #${idx + 1} hit HTTP ${status}, rotating to next key...`);
         continue;
@@ -244,7 +286,7 @@ async function transcribeAudioWithFallback(
     }
   }
 
-  // 2. Fallback tự động sang Google Gemini API (Multimodal Audio Transcription) khi toàn bộ Groq quá tải
+  // Fallback sang Google Gemini API (Multimodal Audio)
   if (geminiApiKey) {
     try {
       const arrayBuf = await audioFile.arrayBuffer();
@@ -263,7 +305,7 @@ async function transcribeAudioWithFallback(
                 {
                   parts: [
                     {
-                      text: `Listen to this student's English speech recording and transcribe it STRICTLY VERBATIM word-for-word. Do NOT fix grammar errors, missing verb endings (-s, -ed), wrong tenses, or mispronounced words. If there is no intelligible speech, return empty text. Return JSON ONLY: {"transcript": "exact verbatim text", "clarity_confidence": 0.0_to_1.0}`
+                      text: `Listen to this student's English speech recording and transcribe it STRICTLY VERBATIM word-for-word (including filler words like uh, um, er, and stutters). Do NOT fix grammar errors, missing verb endings (-s, -ed), wrong tenses, or mispronounced words. Estimate total spoken duration in seconds and longest mid-speech pause in seconds. Return JSON ONLY: {"transcript": "exact verbatim text", "clarity_confidence": 0.0_to_1.0, "duration_sec": number, "max_pause_sec": number}`
                     },
                     {
                       inline_data: {
@@ -289,7 +331,15 @@ async function transcribeAudioWithFallback(
           const transcript = String(parsedG.transcript || '').trim();
           const conf = typeof parsedG.clarity_confidence === 'number' ? parsedG.clarity_confidence : 0.85;
           const mappedLogprob = -1.0 + Math.max(0, Math.min(1, conf)) * 0.9;
-          return { transcript, avgLogprob: mappedLogprob, providerUsed: `gemini-fallback-${gModel}` };
+          return {
+            transcript,
+            avgLogprob: mappedLogprob,
+            durationSec: typeof parsedG.duration_sec === 'number' ? parsedG.duration_sec : 0,
+            maxPauseSec: typeof parsedG.max_pause_sec === 'number' ? parsedG.max_pause_sec : 0,
+            noSpeechProb: conf < 0.35 ? 0.7 : 0.05,
+            compressionRatio: 1.2,
+            providerUsed: `gemini-fallback-${gModel}`,
+          };
         }
       }
     } catch (geminiErr: any) {
@@ -298,6 +348,150 @@ async function transcribeAudioWithFallback(
   }
 
   throw new Error(`Tất cả máy chủ nhận diện giọng nói đang quá tải (${lastGroqError || '429/503'}). Vui lòng thử lại sau vài giây.`);
+}
+
+// =========================================================================
+// 📊 BỘ PHÂN TÍCH 5 CHỈ SỐ NÂNG CAO: WPM, TỪ ĐỆM UH/UM, PARROTING, TTR, NHIỄU ÂM
+// =========================================================================
+interface AdvancedSpeechDiagnostics {
+  effectiveWords: string[];
+  effectiveWordCount: number;
+  fillerCount: number;
+  stutterCount: number;
+  disfluencyRatio: number;
+  wpm: number | null;
+  isTooSlow: boolean;
+  hasLongPause: boolean;
+  isParroting: boolean;
+  parrotingRatio: number;
+  ttrScore: number;
+  academicConnectorCount: number;
+  isMumbledOrNoisy: boolean;
+  diagnosticNotes: string[];
+}
+
+function analyzeSpeechDiagnostics(
+  spokenWords: string[],
+  targetPrompt: string,
+  meta: TranscriptionMetadata
+): AdvancedSpeechDiagnostics {
+  const fillerSet = new Set(['uh', 'um', 'er', 'ah', 'erm', 'hmm', 'uhm']);
+  let fillerCount = 0;
+  let stutterCount = 0;
+  const effectiveWords: string[] = [];
+
+  for (let i = 0; i < spokenWords.length; i++) {
+    const w = spokenWords[i];
+    if (fillerSet.has(w)) {
+      fillerCount++;
+      continue;
+    }
+    if (i > 0 && w === spokenWords[i - 1] && w.length >= 2) {
+      stutterCount++;
+      continue;
+    }
+    effectiveWords.push(w);
+  }
+
+  const effectiveWordCount = effectiveWords.length;
+  const totalRaw = Math.max(1, spokenWords.length);
+  const disfluencyRatio = (fillerCount + stutterCount) / totalRaw;
+
+  // 1. Đo tốc độ nói WPM (Words Per Minute)
+  let wpm: number | null = null;
+  if (meta.durationSec >= 2.0 && effectiveWordCount > 0) {
+    wpm = Math.round((effectiveWordCount / meta.durationSec) * 60);
+  }
+  const isTooSlow = wpm !== null && wpm < 75 && effectiveWordCount >= 6;
+  const hasLongPause = meta.maxPauseSec > 2.6;
+
+  // 2. Chống đọc lặp nguyên văn đề bài (Prompt Parroting Detector - N-gram 3 từ)
+  const cleanScenarioPrompt = targetPrompt
+    .replace(/Reference\s+English\s+Sample\s*:[\s\S]*/gi, ' ')
+    .replace(/Context\s*\(VI\)\s*:[^|]*/gi, ' ')
+    .replace(/Mode\s*:\s*FREE_SPEECH/gi, ' ')
+    .replace(/Level\s*:\s*[A-C][1-2]/gi, ' ')
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean);
+
+  let parrotingRatio = 0;
+  if (cleanScenarioPrompt.length >= 4 && effectiveWords.length >= 5) {
+    const promptTrigrams = new Set<string>();
+    for (let i = 0; i <= cleanScenarioPrompt.length - 3; i++) {
+      promptTrigrams.add(`${cleanScenarioPrompt[i]} ${cleanScenarioPrompt[i + 1]} ${cleanScenarioPrompt[i + 2]}`);
+    }
+    let matchedTrigrams = 0;
+    const totalStudentTrigrams = Math.max(1, effectiveWords.length - 2);
+    for (let i = 0; i <= effectiveWords.length - 3; i++) {
+      const tri = `${effectiveWords[i]} ${effectiveWords[i + 1]} ${effectiveWords[i + 2]}`;
+      if (promptTrigrams.has(tri)) {
+        matchedTrigrams++;
+      }
+    }
+    parrotingRatio = matchedTrigrams / totalStudentTrigrams;
+  }
+  const isParroting = parrotingRatio >= 0.55;
+
+  // 3. Đo độ đa dạng từ vựng thực chất (TTR - Type-Token Ratio) & Academic Connectors
+  const stopWords = new Set(['the', 'a', 'an', 'is', 'are', 'was', 'were', 'to', 'of', 'in', 'on', 'at', 'for', 'and', 'it', 'i', 'we', 'my', 'our']);
+  const contentTokens = effectiveWords.filter((w) => !stopWords.has(w) && w.length >= 3);
+  const uniqueContentTokens = new Set(contentTokens);
+  const ttrRatio = contentTokens.length > 0 ? uniqueContentTokens.size / contentTokens.length : 1;
+  const ttrScore = Math.min(100, Math.max(40, Math.round(ttrRatio * 100)));
+
+  const academicConnectors = new Set([
+    'furthermore', 'moreover', 'consequently', 'therefore', 'however', 'nevertheless',
+    'although', 'whereas', 'despite', 'additionally', 'specifically', 'significantly',
+    'efficient', 'efficiency', 'accurate', 'accuracy', 'convenient', 'implement',
+    'streamline', 'mitigate', 'enhance', 'substantial', 'recommend', 'solution'
+  ]);
+  let academicConnectorCount = 0;
+  uniqueContentTokens.forEach((tok) => {
+    if (academicConnectors.has(tok)) academicConnectorCount++;
+  });
+
+  // 4. Kiểm tra nhiễu âm thanh / nói lầm bầm (Mumbled speech / Whisper hallucination signal)
+  const isMumbledOrNoisy = meta.noSpeechProb > 0.6 || meta.compressionRatio > 2.45 || meta.avgLogprob < -0.88;
+
+  // Tổng hợp ghi chú chẩn đoán sư phạm
+  const diagnosticNotes: string[] = [];
+  if (isParroting) {
+    diagnosticNotes.push('⚠️ Bạn đang đọc lặp lại nguyên văn câu hỏi đề bài; hãy diễn đạt bằng ý tưởng và câu văn của riêng mình.');
+  }
+  if (disfluencyRatio > 0.12 && (fillerCount + stutterCount) >= 2) {
+    diagnosticNotes.push(`Có ${fillerCount + stutterCount} lần dùng từ đệm ("uh/um") hoặc lặp từ vấp, làm giảm độ trôi chảy.`);
+  }
+  if (isTooSlow && wpm !== null) {
+    diagnosticNotes.push(`Tốc độ nói còn chậm (${wpm} từ/phút, chuẩn tự nhiên 110–150 từ/phút).`);
+  }
+  if (hasLongPause) {
+    diagnosticNotes.push(`Có khoảng ngập ngừng dài (${meta.maxPauseSec.toFixed(1)}s) giữa câu.`);
+  }
+  if (contentTokens.length >= 8 && ttrRatio < 0.45) {
+    diagnosticNotes.push('Từ vựng còn lặp lại nhiều từ đơn giản, nên dùng thêm từ đồng nghĩa.');
+  }
+  if (isMumbledOrNoisy) {
+    diagnosticNotes.push('Âm thanh thu được hơi nhỏ/lầm bầm hoặc có tạp âm, cần phát âm tròn vành rõ chữ hơn.');
+  }
+
+  return {
+    effectiveWords,
+    effectiveWordCount,
+    fillerCount,
+    stutterCount,
+    disfluencyRatio,
+    wpm,
+    isTooSlow,
+    hasLongPause,
+    isParroting,
+    parrotingRatio,
+    ttrScore,
+    academicConnectorCount,
+    isMumbledOrNoisy,
+    diagnosticNotes,
+  };
 }
 
 // =========================================================================
@@ -846,7 +1040,6 @@ async function callMultiProviderEvaluator(
   userPrompt: string,
   maxTokens: number = 650
 ): Promise<any | null> {
-  // 1. Thử xoay vòng qua các API Key Groq + các model (70B -> 8B)
   const groqModels = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'];
   for (const apiKey of groqKeys) {
     for (const modelName of groqModels) {
@@ -879,7 +1072,7 @@ async function callMultiProviderEvaluator(
 
         if (res.status === 429 || res.status >= 500) {
           console.warn(`Groq LLM (${modelName}) hit HTTP ${res.status}, switching key/model...`);
-          break; // Nhảy ngay sang API Key Groq tiếp theo
+          break;
         }
       } catch (err) {
         console.warn(`Groq LLM (${modelName}) exception, switching...`, err);
@@ -888,7 +1081,6 @@ async function callMultiProviderEvaluator(
     }
   }
 
-  // 2. Fallback tự động sang Google Gemini API khi toàn bộ key Groq chạm trần 429/503
   if (geminiApiKey) {
     const geminiModels = ['gemini-2.5-flash', 'gemini-2.0-flash'];
     for (const gModel of geminiModels) {
@@ -996,12 +1188,9 @@ export default async function handler(req: Request) {
       );
     }
 
-    // 🎙️ Gỡ băng nguyên văn với cơ chế xoay vòng nhiều Key Groq + dự phòng Gemini
-    const { transcript, avgLogprob, providerUsed } = await transcribeAudioWithFallback(
-      audioFile,
-      groqKeys,
-      geminiApiKey
-    );
+    // 🎙️ Gỡ băng nguyên văn + trích xuất dữ liệu thời gian & độ tin cậy âm học
+    const sttMeta = await transcribeAudioWithFallback(audioFile, groqKeys, geminiApiKey);
+    const { transcript, avgLogprob, providerUsed } = sttMeta;
 
     if (!transcript) {
       return new Response(
@@ -1250,16 +1439,17 @@ export default async function handler(req: Request) {
       );
 
     // =========================================================================
-    // ⚡ NHÁNH 3: TRẠM 4 - SPEAKING EXPRESS (PHẢN XẠ ĐỘC THOẠI + KIỂM ĐỊNH CHỦ ĐỀ)
+    // ⚡ NHÁNH 3: TRẠM 4 - SPEAKING EXPRESS (PHẢN XẠ ĐỘC THOẠI + 5 CHỈ SỐ NÂNG CAO)
     // =========================================================================
     } else if (stationType === 'STATION_4') {
-      const wordCount = spokenWords.length;
+      const diagnostics = analyzeSpeechDiagnostics(spokenWords, targetPrompt, sttMeta);
+      const wordCount = diagnostics.effectiveWordCount;
       const hallucinationPhrases = ['thank you', 'thanks for watching', 'subtitles by', 'bye', 'goodbye'];
       const isHallucination = wordCount <= 2 && hallucinationPhrases.some(h => transcript.toLowerCase().includes(h));
 
       if (isHallucination || wordCount < 3) {
         calculatedScore = Math.max(20, wordCount * 8);
-        feedback = `⚠️ Phản hồi quá ngắn (${wordCount} từ). Hãy đưa ra câu trả lời trực diện cho tình huống!`;
+        feedback = `⚠️ Phản hồi quá ngắn (${wordCount} từ thực nghĩa). Hãy đưa ra câu trả lời trực diện cho tình huống!`;
         return new Response(
           JSON.stringify({
             score: calculatedScore,
@@ -1277,13 +1467,29 @@ export default async function handler(req: Request) {
 
       const topicCheck = evaluateTopicRelevance(transcript, targetPrompt);
       const prosodyEval = evaluateProsodyScore(studentPitchData, referencePitchData);
-      const hasMainVerbS4 = hasSentenceMainVerb(spokenWords);
+      const hasMainVerbS4 = hasSentenceMainVerb(diagnostics.effectiveWords);
+
+      // Tính điểm từng tiêu chí tích hợp WPM, Từ đệm, TTR, Parroting và Nhiễu âm
+      let baseFluency = Math.min(95, Math.max(30, wordCount * 4));
+      if (diagnostics.wpm !== null) {
+        if (diagnostics.wpm >= 110 && diagnostics.wpm <= 165) baseFluency = Math.min(96, baseFluency + 6);
+        else if (diagnostics.isTooSlow) baseFluency = Math.max(35, baseFluency - 14);
+      }
+      if (diagnostics.hasLongPause) baseFluency = Math.max(35, baseFluency - 10);
+      if (diagnostics.disfluencyRatio > 0.12) {
+        baseFluency = Math.max(32, baseFluency - Math.round(diagnostics.disfluencyRatio * 60));
+      }
+
+      let basePronunciation = Math.min(100, Math.max(65, 76 + acousticQualityBonus * 1.5));
+      if (diagnostics.isMumbledOrNoisy) {
+        basePronunciation = Math.min(48, basePronunciation);
+      }
 
       let grammarScore = hasMainVerbS4 ? 82 : 48;
-      let vocabScore = wordCount < 8 ? Math.min(40, wordCount * 5) : 82;
+      let vocabScore = wordCount < 8
+        ? Math.min(40, wordCount * 5)
+        : Math.min(95, Math.round(diagnostics.ttrScore * 0.88 + diagnostics.academicConnectorCount * 4));
       let contentScore = wordCount < 8 ? Math.min(35, wordCount * 4) : topicCheck.relevanceScore;
-      let fluencyScore = Math.min(95, Math.max(30, wordCount * 4));
-      let pronunciationScore = Math.min(100, Math.max(65, 76 + acousticQualityBonus * 1.5));
       let intonationScore = prosodyEval.score;
 
       let errorWordsList: DetectedGrammarError[] = scanComprehensiveGrammarErrors(
@@ -1318,7 +1524,7 @@ Return JSON ONLY:
   ],
   "feedback_vi": "Nhận xét sư phạm tiếng Việt sắc bén 1-2 câu"
 }`,
-        `Prompt: "${targetPrompt}"\nStudent: "${transcript}"`,
+        `Prompt: "${targetPrompt}"\nStudent (${wordCount} effective words, WPM: ${diagnostics.wpm ?? 'N/A'}, fillers: ${diagnostics.fillerCount}): "${transcript}"`,
         480
       );
 
@@ -1327,7 +1533,7 @@ Return JSON ONLY:
           isOffTopicFinal = parsed.is_off_topic;
         }
         if (typeof parsed.vocab_score === 'number') {
-          vocabScore = isOffTopicFinal ? Math.min(25, parsed.vocab_score) : parsed.vocab_score;
+          vocabScore = isOffTopicFinal ? Math.min(25, parsed.vocab_score) : Math.round((parsed.vocab_score + vocabScore) / 2);
         }
         if (typeof parsed.grammar_score === 'number') grammarScore = parsed.grammar_score;
         if (typeof parsed.content_score === 'number') {
@@ -1345,15 +1551,15 @@ Return JSON ONLY:
         }
       }
 
-      if (isOffTopicFinal) {
-        vocabScore = Math.min(20, vocabScore);
-        contentScore = Math.min(15, contentScore);
+      if (isOffTopicFinal || diagnostics.isParroting) {
+        vocabScore = Math.min(25, vocabScore);
+        contentScore = Math.min(20, contentScore);
       }
 
       const penalty = errorWordsList.length * 8;
       const finalPronunciation = errorWordsList.length > 0
-        ? Math.max(40, pronunciationScore - errorWordsList.length * 6)
-        : pronunciationScore;
+        ? Math.max(40, basePronunciation - errorWordsList.length * 6)
+        : basePronunciation;
       const finalGrammar = Math.max(30, grammarScore - penalty);
 
       calculatedScore = Math.max(
@@ -1363,7 +1569,7 @@ Return JSON ONLY:
           Math.round(
             finalPronunciation * 0.20 +
             intonationScore * 0.20 +
-            fluencyScore * 0.15 +
+            baseFluency * 0.15 +
             vocabScore * 0.15 +
             finalGrammar * 0.15 +
             contentScore * 0.15
@@ -1373,6 +1579,8 @@ Return JSON ONLY:
 
       if (isOffTopicFinal) {
         calculatedScore = Math.min(42, calculatedScore);
+      } else if (diagnostics.isParroting) {
+        calculatedScore = Math.min(45, calculatedScore);
       } else if (wordCount < 8 || !hasMainVerbS4) {
         calculatedScore = Math.min(38, calculatedScore);
       } else if (wordCount < 14) {
@@ -1380,10 +1588,12 @@ Return JSON ONLY:
       }
 
       if (!dynamicFeedback) {
-        if (isOffTopicFinal) {
+        if (diagnostics.isParroting) {
+          dynamicFeedback = diagnostics.diagnosticNotes[0];
+        } else if (isOffTopicFinal) {
           dynamicFeedback = topicCheck.feedbackNote || '⚠️ SAI LỆCH CHỦ ĐỀ: Nội dung nói không khớp với đề bài yêu cầu. Điểm Phát âm và Ngữ điệu vẫn được ghi nhận nhưng điểm Nội dung & Từ vựng bị trừ nặng.';
         } else if (wordCount < 8 || !hasMainVerbS4) {
-          dynamicFeedback = `⚠️ Câu trả lời quá ngắn (${wordCount} từ) hoặc chưa có động từ chính hoàn chỉnh. Hãy nói thành câu đầy đủ chủ - vị và triển khai thêm ý nhé!`;
+          dynamicFeedback = `⚠️ Câu trả lời quá ngắn (${wordCount} từ thực nghĩa) hoặc chưa có động từ chính hoàn chỉnh. Hãy nói thành câu đầy đủ chủ - vị và triển khai thêm ý nhé!`;
         } else if (errorWordsList.length > 0) {
           const firstErr = errorWordsList[0];
           dynamicFeedback = `Phản xạ tốt, tuy nhiên cần chú ý sửa "${firstErr.word}" ➔ "${firstErr.correction}" để câu trả lời chuẩn ngữ pháp hơn!`;
@@ -1394,13 +1604,24 @@ Return JSON ONLY:
         }
       }
 
+      if (diagnostics.diagnosticNotes.length > 0 && !diagnostics.isParroting) {
+        dynamicFeedback = `${dynamicFeedback} (${diagnostics.diagnosticNotes.slice(0, 2).join(' ')})`;
+      }
+
       return new Response(
         JSON.stringify({
           score: calculatedScore,
           transcript: transcript,
           feedback: dynamicFeedback,
-          isWin: calculatedScore >= 70 && !isOffTopicFinal,
+          isWin: calculatedScore >= 70 && !isOffTopicFinal && !diagnostics.isParroting,
           isOffTopic: isOffTopicFinal,
+          isParroting: diagnostics.isParroting,
+          speechMetrics: {
+            wpm: diagnostics.wpm,
+            effectiveWordCount: wordCount,
+            fillerCount: diagnostics.fillerCount,
+            ttrScore: diagnostics.ttrScore,
+          },
           errorWords: errorWordsList,
           wordAnalysis: buildWordAnalysisArray(transcript, errorWordsList),
           provider: providerUsed,
@@ -1409,7 +1630,7 @@ Return JSON ONLY:
             intonation: intonationScore,
             vocabulary: vocabScore,
             grammar: finalGrammar,
-            fluency: fluencyScore,
+            fluency: baseFluency,
             content: contentScore
           }
         }),
@@ -1424,16 +1645,17 @@ Return JSON ONLY:
       );
 
     // =========================================================================
-    // 🎭 NHÁNH 4: TRẠM 2 - VOCABULARY & REFLEX ARENA
+    // 🎭 NHÁNH 4: TRẠM 2 - VOCABULARY & REFLEX ARENA (TÍCH HỢP TRỌN BỘ 5 CHỈ SỐ NÂNG CAO)
     // =========================================================================
     } else {
-      const wordCount = spokenWords.length;
+      const diagnostics = analyzeSpeechDiagnostics(spokenWords, targetPrompt, sttMeta);
+      const wordCount = diagnostics.effectiveWordCount;
       const hallucinationPhrases = ['thank you', 'thanks for watching', 'subtitles by', 'bye', 'goodbye'];
       const isHallucination = wordCount <= 3 && hallucinationPhrases.some(h => transcript.toLowerCase().includes(h));
 
       if (isHallucination || wordCount < 4) {
         calculatedScore = Math.max(15, wordCount * 6);
-        feedback = `⚠️ Bài nói quá ngắn (${wordCount} từ). Hãy đối thoại hoàn chỉnh câu để AI có thể đánh giá!`;
+        feedback = `⚠️ Bài nói quá ngắn (${wordCount} từ thực nghĩa${diagnostics.fillerCount > 0 ? `, loại trừ ${diagnostics.fillerCount} từ đệm uh/um` : ''}). Hãy đối thoại hoàn chỉnh câu để AI có thể đánh giá!`;
         return new Response(
           JSON.stringify({
             score: calculatedScore,
@@ -1508,7 +1730,7 @@ Return JSON ONLY:
         });
       }
 
-      const lastWord = spokenWords[spokenWords.length - 1]?.toLowerCase() || '';
+      const lastWord = diagnostics.effectiveWords[diagnostics.effectiveWords.length - 1]?.toLowerCase() || '';
       const incompleteEndings = [
         'my', 'your', 'his', 'her', 'their', 'our', 'the', 'a', 'an',
         'parents', 'mother', 'father', 'brother', 'sister', 'friend',
@@ -1516,7 +1738,7 @@ Return JSON ONLY:
       ];
       
       const isIncompleteSentence = wordCount < 15 && incompleteEndings.includes(lastWord);
-      const hasMainVerb = hasSentenceMainVerb(spokenWords);
+      const hasMainVerb = hasSentenceMainVerb(diagnostics.effectiveWords);
 
       if (isIncompleteSentence && !errorWordsList.some(e => e.wordIndex === spokenWords.length - 1)) {
         errorWordsList.push({
@@ -1536,9 +1758,14 @@ Return JSON ONLY:
 
       const hasNoErrors = errorWordsList.length === 0;
 
+      // 3. 🎯 TÍNH ĐIỂM ĐỘC LẬP TÍCH HỢP WPM, TỪ ĐỆM, TTR, PARROTING VÀ NHIỄU ÂM
       let pronunciationScore = hasNoErrors
         ? Math.min(100, Math.max(72, 76 + acousticQualityBonus * 1.5))
         : Math.max(45, 74 + acousticQualityBonus - errorWordsList.length * 8);
+      if (diagnostics.isMumbledOrNoisy) {
+        pronunciationScore = Math.min(48, pronunciationScore);
+      }
+
       let intonationScore = prosodyEval.score;
 
       let baseGrammar: number;
@@ -1546,7 +1773,7 @@ Return JSON ONLY:
       let baseContent: number;
       let baseFluency: number;
 
-      if (isCompletelyOffTopic) {
+      if (isCompletelyOffTopic || diagnostics.isParroting) {
         baseContent = 15;
         baseVocab = 20;
         baseGrammar = hasNoErrors ? 90 : Math.max(45, 78 - errorWordsList.length * 10);
@@ -1558,20 +1785,35 @@ Return JSON ONLY:
         baseGrammar = !hasMainVerb ? 45 : (hasNoErrors ? 60 : Math.max(25, 50 - errorWordsList.length * 12));
       } else if (wordCount < 14) {
         baseContent = Math.min(55, wordCount * 4);
-        baseVocab = Math.min(60, wordCount * 4 + 6);
+        baseVocab = Math.min(62, Math.round(diagnostics.ttrScore * 0.65));
         baseFluency = Math.min(58, wordCount * 4 + 4);
         baseGrammar = hasNoErrors ? 78 : Math.max(30, 68 - errorWordsList.length * 12);
       } else if (wordCount < 20) {
         baseContent = hasNoErrors ? topicCheck.relevanceScore : Math.min(72, topicCheck.relevanceScore);
         baseGrammar = hasNoErrors ? 86 : Math.max(35, 72 - errorWordsList.length * 12);
-        baseVocab = hasNoErrors ? 82 : 72;
+        baseVocab = Math.min(90, Math.max(60, Math.round(diagnostics.ttrScore * 0.85 + diagnostics.academicConnectorCount * 3)));
         baseFluency = hasNoErrors ? 80 : 70;
       } else {
         const hasConnectors = ['and', 'so', 'because', 'but', 'also', 'although', 'however', 'when', 'while', 'if', 'had'].some(c => lowerTranscript.includes(c));
         baseContent = hasNoErrors ? Math.min(96, Math.max(topicCheck.relevanceScore, 86 + (wordCount >= 28 ? 6 : 2))) : 76;
         baseGrammar = hasNoErrors ? Math.min(96, 90 + (wordCount >= 28 ? 5 : 2)) : Math.max(35, 72 - errorWordsList.length * 12);
-        baseVocab = hasNoErrors ? Math.min(94, 85 + (wordCount >= 28 ? 6 : 2)) : 72;
+        baseVocab = Math.min(96, Math.max(65, Math.round(diagnostics.ttrScore * 0.90 + diagnostics.academicConnectorCount * 4)));
         baseFluency = Math.min(95, Math.max(72, 76 + (wordCount >= 28 ? 14 : 8) + (hasConnectors ? 5 : 0)));
+      }
+
+      // Áp dụng điều chỉnh Fluency theo WPM thực tế, khoảng lặng và mật độ từ đệm uh/um
+      if (diagnostics.wpm !== null) {
+        if (diagnostics.wpm >= 110 && diagnostics.wpm <= 165 && wordCount >= 12) {
+          baseFluency = Math.min(98, baseFluency + 5);
+        } else if (diagnostics.isTooSlow) {
+          baseFluency = Math.max(32, baseFluency - 14);
+        }
+      }
+      if (diagnostics.hasLongPause) {
+        baseFluency = Math.max(32, baseFluency - 10);
+      }
+      if (diagnostics.disfluencyRatio > 0.12) {
+        baseFluency = Math.max(30, baseFluency - Math.round(diagnostics.disfluencyRatio * 65));
       }
 
       let grammarScore = baseGrammar;
@@ -1593,9 +1835,9 @@ CRITICAL EVALUATION RULES (10 FOUNDATIONAL PILLARS A1–B2 + 8 ADVANCED PILLARS 
    - If Mode is FREE_SPEECH, NEVER penalize the student for using different personal examples than the "Reference English Sample" (e.g. if the sample mentions buying "music and clothes online", and the student talks about buying "tech products and PC parts" or shopping habits, that IS relevant -> set "is_off_topic": false!).
    - If the student addresses shopping/buying habits in general without explicitly mentioning "online" or websites, keep "is_off_topic": false and give a moderate "content_score" around 68–76 while advising in "feedback_vi" to mention online platforms/websites.
    - Accept synonyms and natural paraphrases (e.g., proposing "solutions" for a business case study when asked for "recommendations" -> "is_off_topic": false).
-   - ONLY set "is_off_topic": true, "content_score": 15, and "vocab_score": 20 if the student recites a completely unrelated memorized speech.
+   - ONLY set "is_off_topic": true, "content_score": 15, and "vocab_score": 20 if the student recites a completely unrelated memorized speech OR merely parrots/repeats the prompt question word-for-word.
 2. SHORT / FRAGMENT PENALTY:
-   - If the student speaks fewer than 8 words or utters a sentence fragment without a subject/main verb, keep "content_score" <= 30, "vocab_score" <= 35, and "grammar_score" <= 50!
+   - If the student speaks fewer than 8 effective words or utters a sentence fragment without a subject/main verb, keep "content_score" <= 30, "vocab_score" <= 35, and "grammar_score" <= 50!
 3. NEVER auto-correct or overlook spoken grammar/tense/ending/mispronunciation mistakes in the student's verbatim transcript.
 4. Check EVERY clause systematically across ALL 10 foundational & 8 advanced rules and report ALL errors in "detected_errors":
    - Uncountable nouns wrongly pluralized ("are works" -> "are for work", "personal uses" -> "personal use", "informations", "equipments", "advices", "softwares").
@@ -1622,7 +1864,7 @@ Return JSON ONLY:
   ],
   "feedback_vi": "Nhận xét tiếng Việt 1-2 câu chỉ rõ độ khớp chủ đề, gợi ý mở rộng thực tế và các lỗi bị tô đỏ cần sửa"
 }`,
-        `CEFR Level: ${cefrLevel}\nScenario & Reference: "${targetPrompt || 'General speaking context'}"\nStudent verbatim transcript (${wordCount} words): "${transcript}"`,
+        `CEFR Level: ${cefrLevel}\nScenario & Reference: "${targetPrompt || 'General speaking context'}"\nStudent verbatim transcript (${wordCount} effective words, WPM: ${diagnostics.wpm ?? 'N/A'}, fillers: ${diagnostics.fillerCount}, TTR: ${diagnostics.ttrScore}%): "${transcript}"`,
         650
       );
 
@@ -1631,8 +1873,8 @@ Return JSON ONLY:
           isCompletelyOffTopic = parsed.is_off_topic;
         }
         if (typeof parsed.content_score === 'number') {
-          contentScore = isCompletelyOffTopic
-            ? Math.min(15, parsed.content_score)
+          contentScore = (isCompletelyOffTopic || diagnostics.isParroting)
+            ? Math.min(18, parsed.content_score)
             : Math.min(parsed.content_score, wordCount < 8 ? 30 : 100);
         }
         if (typeof parsed.grammar_score === 'number') {
@@ -1641,9 +1883,9 @@ Return JSON ONLY:
             : Math.min(parsed.grammar_score, baseGrammar);
         }
         if (typeof parsed.vocab_score === 'number') {
-          vocabScore = isCompletelyOffTopic
-            ? Math.min(20, parsed.vocab_score)
-            : Math.min(parsed.vocab_score, wordCount < 8 ? 35 : 100);
+          vocabScore = (isCompletelyOffTopic || diagnostics.isParroting)
+            ? Math.min(22, parsed.vocab_score)
+            : Math.min(Math.round((parsed.vocab_score + baseVocab) / 2), wordCount < 8 ? 35 : 100);
         }
         if (Array.isArray(parsed.advanced_structures_used)) {
           advancedStructuresUsed = parsed.advanced_structures_used.filter((s: any) => typeof s === 'string' && s.trim().length > 0);
@@ -1679,9 +1921,9 @@ Return JSON ONLY:
         }
       }
 
-      if (isCompletelyOffTopic) {
-        contentScore = Math.min(15, contentScore);
-        vocabScore = Math.min(20, vocabScore);
+      if (isCompletelyOffTopic || diagnostics.isParroting) {
+        contentScore = Math.min(18, contentScore);
+        vocabScore = Math.min(22, vocabScore);
       }
 
       const cappedGrammar = errorWordsList.length > 0
@@ -1708,6 +1950,8 @@ Return JSON ONLY:
 
       if (isCompletelyOffTopic) {
         calculatedScore = Math.min(42, calculatedScore);
+      } else if (diagnostics.isParroting) {
+        calculatedScore = Math.min(45, calculatedScore);
       } else if (wordCount < 8 || isIncompleteSentence || !hasMainVerb) {
         calculatedScore = Math.min(38, calculatedScore);
       } else if (wordCount < 14) {
@@ -1719,10 +1963,12 @@ Return JSON ONLY:
           ? ` Điểm cộng cho việc vận dụng cấu trúc nâng cao (${advancedStructuresUsed.join(', ')}).`
           : '';
 
-        if (isCompletelyOffTopic) {
+        if (diagnostics.isParroting) {
+          dynamicFeedback = diagnostics.diagnosticNotes[0];
+        } else if (isCompletelyOffTopic) {
           dynamicFeedback = topicCheck.feedbackNote || `⚠️ SAI LỆCH CHỦ ĐỀ: Nội dung bài nói không khớp với yêu cầu đề bài. Điểm Phát âm (${cappedPronunciation}/100) và Ngữ điệu (${intonationScore}/100) vẫn được ghi nhận, nhưng điểm Nội dung & Từ vựng bị trừ nặng.`;
         } else if (!hasMainVerb && wordCount < 10) {
-          dynamicFeedback = `⚠️ Bài nói quá ngắn (${wordCount} từ) và mới chỉ là cụm từ rời rạc chưa có chủ ngữ – động từ chính. Hãy nói thành câu hoàn chỉnh và nêu rõ ví dụ cụ thể!`;
+          dynamicFeedback = `⚠️ Bài nói quá ngắn (${wordCount} từ thực nghĩa) và mới chỉ là cụm từ rời rạc chưa có chủ ngữ – động từ chính. Hãy nói thành câu hoàn chỉnh và nêu rõ ví dụ cụ thể!`;
         } else if (errorWordsList.length > 0) {
           const summaryErrors = errorWordsList
             .slice(0, 3)
@@ -1732,12 +1978,16 @@ Return JSON ONLY:
         } else if (isIncompleteSentence) {
           dynamicFeedback = `⚠️ Câu nói bị ngắt cụt ở cuối ("${lastWord}"). Hãy hoàn thành trọn vẹn ý của câu để AI chấm điểm chính xác hơn nhé!`;
         } else if (wordCount < 14) {
-          dynamicFeedback = `💡 Bài nói hơi ngắn (${wordCount} từ). Hãy mở rộng thêm ý và dẫn chứng cụ thể để đạt chuẩn nhé!`;
+          dynamicFeedback = `💡 Bài nói hơi ngắn (${wordCount} từ thực nghĩa). Hãy mở rộng thêm ý và dẫn chứng cụ thể để đạt chuẩn nhé!`;
         } else if (calculatedScore >= 85) {
           dynamicFeedback = `🌟 Xuất sắc! Bạn diễn đạt rất tự nhiên, phát âm chuẩn xác, ngữ điệu tự nhiên và bám sát chủ đề.${advNote}`;
         } else {
           dynamicFeedback = `👍 Bài nói mạch lạc và đúng trọng tâm.${advNote} Hãy tiếp tục phát huy nhé!`;
         }
+      }
+
+      if (diagnostics.diagnosticNotes.length > 0 && !diagnostics.isParroting) {
+        dynamicFeedback = `${dynamicFeedback} (${diagnostics.diagnosticNotes.slice(0, 2).join(' ')})`;
       }
 
       const wordAnalysis = buildWordAnalysisArray(transcript, errorWordsList);
@@ -1747,8 +1997,15 @@ Return JSON ONLY:
           score: calculatedScore,
           transcript: transcript,
           feedback: dynamicFeedback,
-          isWin: calculatedScore >= 70 && !isCompletelyOffTopic,
+          isWin: calculatedScore >= 70 && !isCompletelyOffTopic && !diagnostics.isParroting,
           isOffTopic: isCompletelyOffTopic,
+          isParroting: diagnostics.isParroting,
+          speechMetrics: {
+            wpm: diagnostics.wpm,
+            effectiveWordCount: wordCount,
+            fillerCount: diagnostics.fillerCount,
+            ttrScore: diagnostics.ttrScore,
+          },
           errorWords: errorWordsList,
           wordAnalysis: wordAnalysis,
           advancedStructures: advancedStructuresUsed,
