@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, Alert, TextInput } from 'react-native';
 import * as AntiCheatModule from '../components/AntiCheatSpeakingSession';
 import * as DetailedModalModule from '../components/DetailedSpeechFeedbackModal';
+import VoiceConsentModal, { hasUserAcceptedVoiceConsent } from '../components/VoiceConsentModal';
 import { evaluateSpeechSubmission } from '../utils/speechEvaluator';
 import { evaluateSpeaking, analyzeSpokenTranscript, SpokenWordAnalysis } from '../services/arena/assessmentService';
 import { saveSubmissionToCloud, fetchStudentHistory, normalizeClassCode, RoleplaySubmission } from '../services/userService';
@@ -132,6 +133,9 @@ export default function Station2Screen({ onBack }: Props) {
     const p = getSavedStudentProfile();
     return !p.studentName || !p.studentCode;
   });
+
+  // 🛡️ TRẠNG THÁI CHẤP THUẬN THU THẬP DỮ LIỆU GIỌNG NÓI (VOICE DATA CONSENT)
+  const [showVoiceConsent, setShowVoiceConsent] = useState<boolean>(false);
 
   // 📜 LỊCH SỬ BÀI NÓI CỦA SINH VIÊN
   const [showHistoryDrawer, setShowHistoryDrawer] = useState<boolean>(false);
@@ -533,9 +537,16 @@ Output ONLY raw JSON:
     setIsRecordingNormal(false);
   };
 
-  // 🎙️ KHỞI ĐỘNG GHI ÂM VÀ NHẬN DIỆN GIỌNG NÓI THỜI GIAN THỰC
+  // 🎙️ KHỞI ĐỘNG GHI ÂM VÀ NHẬN DIỆN GIỌNG NÓI THỜI GIAN THỰC (CÓ KIỂM TRA CHẤP THUẬN DỮ LIỆU GIỌNG NÓI)
   const startNormalRecording = async () => {
     if (isSubmittingRef.current || isEvaluating) return;
+
+    // 🛡️ Hiển thị màn hình chấp thuận thu thập dữ liệu giọng nói trong lần đầu bật micro
+    if (!hasUserAcceptedVoiceConsent()) {
+      setShowVoiceConsent(true);
+      return;
+    }
+
     stopSampleAudio();
 
     if (speechRecognitionRef.current) {
@@ -1760,6 +1771,16 @@ Output ONLY raw JSON:
           </View>
         </View>
       )}
+
+      {/* 🛡️ MÀN HÌNH CHẤP THUẬN THU THẬP DỮ LIỆU GIỌNG NÓI (VOICE DATA CONSENT) */}
+      <VoiceConsentModal
+        visible={showVoiceConsent}
+        onAccept={() => {
+          setShowVoiceConsent(false);
+          startNormalRecording();
+        }}
+        onDecline={() => setShowVoiceConsent(false)}
+      />
 
       {typeof DetailedSpeechFeedbackModal === 'function' && (
         <DetailedSpeechFeedbackModal
