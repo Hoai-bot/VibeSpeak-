@@ -13,9 +13,6 @@ import {
 } from 'react-native';
 import { supabase } from '../utils/supabase';
 
-// 🔐 MÃ MỜI NỘI BỘ DÀNH CHO GIẢNG VIÊN
-const INSTRUCTOR_INVITE_CODE = 'VIBESPEAK2026';
-
 interface Props {
   onBack: () => void;
 }
@@ -232,7 +229,7 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
     }
   };
 
-  // 📝 XỬ LÝ ĐĂNG KÝ TÀI KHOẢN GIẢNG VIÊN MỚI
+  // 📝 XỬ LÝ ĐĂNG KÝ TÀI KHOẢN GIẢNG VIÊN MỚI (XÁC THỰC MÃ MỜI QUA SUPABASE RPC)
   const handleInstructorRegister = async () => {
     setAuthErrorMsg('');
     setAuthSuccessMsg('');
@@ -247,18 +244,32 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
       return;
     }
 
-    if (inviteCodeInput.trim().toUpperCase() !== INSTRUCTOR_INVITE_CODE) {
-      setAuthErrorMsg('⛔ Mã mời Giảng viên không chính xác! Vui lòng liên hệ Quản trị viên bộ môn.');
-      return;
-    }
-
     setIsLoggingIn(true);
     try {
       if (!supabase) return;
 
+      // 🛡️ Bước 1: Kiểm tra mã mời trên bảng invite_codes qua RPC bảo mật (check hạn dùng + số lượt)
+      const { data: inviteCheck, error: rpcErr } = await supabase.rpc('verify_and_consume_invite_code', {
+        input_code: inviteCodeInput.trim().toUpperCase(),
+      });
+
+      if (rpcErr) {
+        setAuthErrorMsg(`❌ Không thể xác thực mã mời trên máy chủ: ${rpcErr.message}`);
+        return;
+      }
+
+      if (!inviteCheck || !inviteCheck.valid) {
+        setAuthErrorMsg(inviteCheck?.message || '⛔ Mã mời Giảng viên không hợp lệ hoặc đã hết lượt!');
+        return;
+      }
+
+      const assignedTenantId = inviteCheck.tenant_id || currentTenantId;
+      const departmentLabel = inviteCheck.department_name || 'Bộ môn';
+
       const cleanEmail = loginEmail.trim().toLowerCase();
       const cleanName = fullNameInput.trim();
 
+      // Bước 2: Tạo tài khoản Supabase Auth
       const { data, error } = await supabase.auth.signUp({
         email: cleanEmail,
         password: loginPassword,
@@ -266,6 +277,7 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
           data: {
             full_name: cleanName,
             role: 'INSTRUCTOR',
+            tenant_id: assignedTenantId,
           },
         },
       });
@@ -288,7 +300,7 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
               email: cleanEmail,
               full_name: cleanName,
               role: 'INSTRUCTOR',
-              tenant_id: currentTenantId,
+              tenant_id: assignedTenantId,
             },
           ], { onConflict: 'id' });
 
@@ -299,11 +311,11 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
 
         if (data.session) {
           await verifyInstructorSession();
-          notifyUser('success', `✅ Đăng ký thành công tài khoản ${cleanName}!`);
+          notifyUser('success', `✅ Đăng ký thành công tài khoản ${cleanName} (${departmentLabel})!`);
         } else {
           setAuthMode('LOGIN');
           setInviteCodeInput('');
-          setAuthSuccessMsg('✅ Đã tạo tài khoản Giảng viên! Vui lòng kiểm tra hộp thư Email để bấm link kích hoạt rồi đăng nhập.');
+          setAuthSuccessMsg(`✅ Đã tạo tài khoản Giảng viên (${departmentLabel})! Vui lòng kiểm tra Email để kích hoạt rồi đăng nhập.`);
         }
       }
     } catch (err: any) {
@@ -353,7 +365,6 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
       const activeRole = overrideRole || userRole;
       const activeInstructorId = overrideInstructorId || currentInstructorId;
 
-      // 1. Tải danh sách LỚP HỌC PHẦN thuộc quyền quản lý của Giảng viên hiện tại
       let classesData: any[] | null = null;
       if (activeRole !== 'SUPER_ADMIN' && activeInstructorId) {
         const resByInstructor = await supabase
@@ -397,7 +408,6 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
         setImportClassId(validClasses[0].id);
       }
 
-      // 2. Tải danh sách BÀI TẬP (assignments) do chính Giảng viên này phát hành để đồng bộ mã lớp
       let assignQuery = supabase.from('assignments').select('class_code, created_by');
       if (activeRole !== 'SUPER_ADMIN' && activeInstructorId) {
         assignQuery = assignQuery.eq('created_by', activeInstructorId);
@@ -408,13 +418,11 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
         .filter((c: string) => Boolean(c) && c !== 'PUBLIC');
       setAssignedClassCodes(Array.from(new Set(instructorAssignCodes)));
 
-      // Tập hợp toàn bộ Mã lớp thuộc quyền Giảng viên hiện tại
       const ownedCodesSet = new Set<string>([
         ...validClasses.map((c) => (c.code || '').toUpperCase().replace(/\s+/g, '')).filter(Boolean),
         ...instructorAssignCodes,
       ]);
 
-      // 3. Lấy danh sách bài nộp (Submissions) lọc trực tiếp theo các mã lớp của Giảng viên trên Supabase
       const ownedCodesList = Array.from(ownedCodesSet);
 
       if (activeRole !== 'SUPER_ADMIN' && ownedCodesList.length === 0) {
@@ -448,7 +456,6 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
     }
   };
 
-  // Danh sách các Mã lớp thuộc quyền Giảng viên để hiện trên thanh lọc
   const availableFilterCodes = useMemo(() => {
     const codeSet = new Set<string>();
     classList.forEach(c => {
@@ -464,7 +471,6 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
     return Array.from(codeSet);
   }, [classList, assignedClassCodes, submissions]);
 
-  // Lọc theo Mã lớp + Tìm kiếm theo Tên / MSSV
   const filteredSubmissions = useMemo(() => {
     const q = searchStudentQuery.trim().toLowerCase();
     return submissions.filter(s => {
@@ -477,7 +483,6 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
     });
   }, [submissions, selectedClass, searchStudentQuery]);
 
-  // Thống kê theo lớp đang chọn
   const totalSubmissions = filteredSubmissions.length;
   const getFinalScore = (s: SubmissionRecord) => (s.manual_score !== null && s.manual_score !== undefined) ? Number(s.manual_score) : Number(s.score);
 
@@ -489,7 +494,6 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
     ? Math.round((filteredSubmissions.filter(s => getFinalScore(s) >= 70).length / totalSubmissions) * 100)
     : 0;
 
-  // 🏫 TẠO LỚP HỌC PHẦN RIÊNG CỦA GIẢNG VIÊN (TỰ ĐỘNG LỌC BỎ CỘT THIẾU NẾU CÓ)
   const handleCreateClass = async () => {
     setCreateClassError('');
     const cleanCode = newClassCodeInput.toUpperCase().trim().replace(/\s+/g, '');
@@ -601,7 +605,6 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
     }
   };
 
-  // 📝 GIAO BÀI TẬP MỚI (TỰ ĐỘNG BỎ QUA CỘT DESCRIPTION HOẶC CỘT PHỤ NẾU CHƯA CÓ TRONG SUPABASE)
   const handleCreateAssignment = async () => {
     setCreateAssignError('');
     if (!assignTitle.trim() || !assignPrompt.trim()) {
@@ -662,7 +665,6 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
     }
   };
 
-  // 👥 BULK IMPORT SINH VIÊN BẰNG FILE CSV
   const handleBulkImportStudents = async () => {
     if (!importCsvText.trim()) {
       notifyUser('error', 'Vui lòng nhập hoặc dán nội dung CSV danh sách sinh viên!');
@@ -724,7 +726,6 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
     setImportCsvText(sample);
   };
 
-  // Xuất file CSV báo cáo điểm
   const handleExportCSV = () => {
     if (filteredSubmissions.length === 0) {
       notifyUser('error', 'Không có dữ liệu bài nộp để xuất!');
@@ -881,10 +882,10 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
 
             {authMode === 'REGISTER' && (
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Mã mời Giảng viên nội bộ (*):</Text>
+                <Text style={styles.inputLabel}>Mã mời Giảng viên của Trường / Bộ môn (*):</Text>
                 <TextInput
                   style={[styles.loginInput, { borderColor: '#FFD700' }]}
-                  placeholder="Nhập mã mời của bộ môn..."
+                  placeholder="Nhập mã mời được cấp..."
                   placeholderTextColor="#666688"
                   autoCapitalize="characters"
                   value={inviteCodeInput}
@@ -916,7 +917,7 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
             <Text style={styles.loginHelperNote}>
               {authMode === 'LOGIN'
                 ? '💡 Giảng viên mới? Chọn tab "📝 ĐĂNG KÝ GIẢNG VIÊN" phía trên để tự tạo tài khoản bằng Mã mời.'
-                : '🔒 Mã mời giúp bảo vệ quyền quản trị lớp học, tránh sinh viên đăng ký nhầm vai trò.'}
+                : '🔒 Mã mời được quản lý trên máy chủ theo từng trường/bộ môn và giới hạn số lượt kích hoạt.'}
             </Text>
           </View>
         </ScrollView>
@@ -994,7 +995,6 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
           </TouchableOpacity>
         </View>
 
-        {/* Cảnh báo nếu Giảng viên mới chưa có lớp học phần */}
         {availableFilterCodes.length === 0 && !loading && (
           <View style={styles.emptyClassBanner}>
             <Text style={styles.emptyClassBannerTitle}>👋 Chào mừng {currentInstructorName}!</Text>
@@ -1004,7 +1004,6 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
           </View>
         )}
 
-        {/* Khối Thống Kê Tổng Quan */}
         <View style={styles.statsRow}>
           <View style={styles.statCard}>
             <Text style={styles.statLabel}>SỐ BÀI NỘP</Text>
@@ -1024,7 +1023,6 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
           </View>
         </View>
 
-        {/* Thanh lọc theo Mã lớp của Giảng viên & Tìm kiếm sinh viên */}
         <View style={styles.filterSection}>
           <Text style={styles.filterLabel}>📌 CÁC LỚP HỌC PHẦN CỦA BẠN ({availableFilterCodes.length} LỚP):</Text>
           <TextInput
@@ -1061,7 +1059,6 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
           </ScrollView>
         </View>
 
-        {/* Danh sách bảng điểm sinh viên */}
         <View style={styles.tableBox}>
           <View style={styles.tableHeaderRow}>
             <Text style={[styles.thText, { flex: 1.3 }]}>SINH VIÊN / BÀI NÓI</Text>
@@ -1156,7 +1153,6 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
           )}
         </View>
 
-        {/* Khung Audio Player nổi */}
         {currentPlayingAudio && (
           <View style={styles.floatingAudioPlayer}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
@@ -1185,9 +1181,7 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
         )}
       </ScrollView>
 
-      {/* ========================================================================= */}
-      {/* KHUNG NỔI 0: TẠO LỚP HỌC PHẦN MỚI CỦA GIẢNG VIÊN (CHỐNG KẸT MODAL WEB) */}
-      {/* ========================================================================= */}
+      {/* KHUNG NỔI 0: TẠO LỚP HỌC PHẦN MỚI */}
       {showCreateClassModal && (
         <View style={[styles.modalOverlay, { position: 'fixed' as any, top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999 }]}>
           <View style={[styles.modalContent, { maxWidth: 460, borderColor: '#00FFFF' }]}>
@@ -1252,9 +1246,7 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
         </View>
       )}
 
-      {/* ========================================================================= */}
-      {/* KHUNG NỔI 1: TẠO BÀI TẬP MỚI (CHỐNG KẸT MODAL WEB) */}
-      {/* ========================================================================= */}
+      {/* KHUNG NỔI 1: TẠO BÀI TẬP MỚI */}
       {showCreateAssignmentModal && (
         <View style={[styles.modalOverlay, { position: 'fixed' as any, top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999 }]}>
           <View style={[styles.modalContent, { maxWidth: 500, maxHeight: '92%' }]}>
@@ -1396,9 +1388,7 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
         </View>
       )}
 
-      {/* ========================================================================= */}
-      {/* MODAL 2: BULK IMPORT SINH VIÊN QUA FILE CSV / EXCEL */}
-      {/* ========================================================================= */}
+      {/* MODAL 2: BULK IMPORT SINH VIÊN */}
       <Modal visible={showImportModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { maxWidth: 520 }]}>
@@ -1463,9 +1453,7 @@ SV2026002, Tran Thi Mai, mai.tt@student.vibespeak.edu.vn"
         </View>
       </Modal>
 
-      {/* ========================================================================= */}
       {/* MODAL 3: XEM CHI TIẾT BÀI NÓI & GHI ĐÈ ĐIỂM GIẢNG VIÊN */}
-      {/* ========================================================================= */}
       <Modal visible={editingItem !== null} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { maxWidth: 520, maxHeight: '88%' }]}>
@@ -1495,7 +1483,7 @@ SV2026002, Tran Thi Mai, mai.tt@student.vibespeak.edu.vn"
                   </View>
                 ) : (
                   <Text style={{ color: '#8888AA', fontSize: 10, fontStyle: 'italic', marginTop: 4 }}>
-                    ⚠️ Bài nộp này chưa đính kèm file âm thanh trên máy chủ (do thu trước khi mở quyền Storage). Các lượt nộp mới sẽ tự động hiện thanh phát nhạc tại đây.
+                    ⚠️ Bài nộp này chưa đính kèm file âm thanh trên máy chủ. Các lượt nộp mới sẽ tự động hiện thanh phát nhạc tại đây.
                   </Text>
                 )}
 
@@ -1562,9 +1550,7 @@ SV2026002, Tran Thi Mai, mai.tt@student.vibespeak.edu.vn"
         </View>
       </Modal>
 
-      {/* ========================================================================= */}
-      {/* MODAL 4: HƯỚNG DẪN SỬ DỤNG DÀNH CHO GIẢNG VIÊN */}
-      {/* ========================================================================= */}
+      {/* MODAL 4: HƯỚNG DẪN SỬ DỤNG */}
       <Modal visible={showGuideModal} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { maxWidth: 540, maxHeight: '85%' }]}>
