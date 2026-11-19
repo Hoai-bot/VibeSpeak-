@@ -262,6 +262,8 @@ export default function Station2Screen({ onBack }: Props) {
   const [isNormalPracticing, setIsNormalPracticing] = useState<boolean>(false);
   const [isRecordingNormal, setIsRecordingNormal] = useState<boolean>(false);
   const [isEvaluating, setIsEvaluating] = useState<boolean>(false);
+  // 🔒 Khóa nộp bài đồng bộ bằng Ref để chặn double-click/gửi trùng tuyệt đối
+  const isSubmittingRef = useRef<boolean>(false);
   const [evaluatingStatus, setEvaluatingStatus] = useState<string>('⚡ ĐANG PHÂN TÍCH ÂM HỌC VÀ CHẤM ĐIỂM BÀI NỘP...');
   const [normalTimer, setNormalTimer] = useState<number>(0);
   const normalMediaRecorderRef = useRef<any>(null);
@@ -525,7 +527,6 @@ Output ONLY raw JSON:
     setWordAnalysisList([]);
     setFinalTranscriptScript('');
     setLiveTranscript('');
-    // Mở trực tiếp phòng thu để đảm bảo script & nút nộp bài lên lớp hoạt động đồng nhất trên mọi thiết bị
     setIsNormalPracticing(true);
     setIsTeacherExamining(false);
     setNormalTimer(0);
@@ -534,6 +535,7 @@ Output ONLY raw JSON:
 
   // 🎙️ KHỞI ĐỘNG GHI ÂM VÀ NHẬN DIỆN GIỌNG NÓI THỜI GIAN THỰC
   const startNormalRecording = async () => {
+    if (isSubmittingRef.current || isEvaluating) return;
     stopSampleAudio();
 
     if (speechRecognitionRef.current) {
@@ -704,9 +706,15 @@ Output ONLY raw JSON:
     ctx.stroke();
   };
 
-  // 🛑 DỪNG GHI ÂM VÀ GIẢI PHÓNG TOÀN BỘ PHẦN CỨNG ÂM THANH
+  // 🛑 DỪNG GHI ÂM VÀ KHÓA NÚT NỘP NGAY LẬP TỨC CHỐNG BẤM ĐÚP
   const stopNormalRecording = () => {
+    if (!isRecordingNormalRef.current || isSubmittingRef.current) return;
+
     isRecordingNormalRef.current = false;
+    isSubmittingRef.current = true;
+    setIsRecordingNormal(false);
+    setIsEvaluating(true);
+    setEvaluatingStatus('⏳ Đang đóng gói bản thu âm...');
     liveTranscriptRef.current = '';
 
     if (speechRecognitionRef.current) {
@@ -732,16 +740,18 @@ Output ONLY raw JSON:
     }
 
     if (normalMediaRecorderRef.current && normalMediaRecorderRef.current.state !== 'inactive') {
-      normalMediaRecorderRef.current.stop();
       normalMediaRecorderRef.current.onstop = () => {
         const { mimeType } = activeMimeTypeRef.current;
         const audioBlob = new Blob(normalAudioChunksRef.current, mimeType ? { type: mimeType } : undefined);
         const localUrl = URL.createObjectURL(audioBlob);
         setRecordedAudioUrl(localUrl);
-        finishSubmissionAndEvaluate(audioBlob, normalPitchHistoryRef.current, localUrl);
+        finishSubmissionAndEvaluate(audioBlob, normalPitchHistoryRef.current, localUrl, true);
       };
+      normalMediaRecorderRef.current.stop();
+    } else {
+      isSubmittingRef.current = false;
+      setIsEvaluating(false);
     }
-    setIsRecordingNormal(false);
   };
 
   useEffect(() => {
@@ -752,8 +762,18 @@ Output ONLY raw JSON:
     return () => { if (timer) clearInterval(timer); };
   }, [isRecordingNormal]);
 
-  // 📊 XỬ LÝ CHẤM ĐIỂM, XUẤT BẢN GHI SCRIPT & ĐỒNG BỘ LÊN BẢNG ĐIỂM GIẢNG VIÊN
-  const finishSubmissionAndEvaluate = async (audioBlob: Blob, pitchHistory: number[], localAudioUrl?: string) => {
+  // 📊 XỬ LÝ CHẤM ĐIỂM, XUẤT BẢN GHI SCRIPT & ĐỒNG BỘ LÊN BẢNG ĐIỂM GIẢNG VIÊN (CÓ IDEMPOTENCY KEY)
+  const finishSubmissionAndEvaluate = async (
+    audioBlob: Blob,
+    pitchHistory: number[],
+    localAudioUrl?: string,
+    alreadyLocked: boolean = false
+  ) => {
+    if (!alreadyLocked) {
+      if (isSubmittingRef.current) return;
+      isSubmittingRef.current = true;
+    }
+
     setIsEvaluating(true);
     setEvaluatingStatus('⚡ AI ĐANG PHÂN TÍCH ÂM HỌC & XUẤT BẢN GHI SCRIPT...');
 
@@ -763,273 +783,282 @@ Output ONLY raw JSON:
       setRecordedAudioUrl(URL.createObjectURL(audioBlob));
     }
 
-    let actualTranscript = '';
-    let serverEvalData: any = null;
+    // 🛡️ Tạo khóa định danh duy nhất cho phiên nộp bài này để chống ghi trùng trong bảng submissions
+    const latestProfileForId = getSavedStudentProfile();
+    const idPrefix = (studentCodeInput || latestProfileForId.studentCode || 'GUEST').toUpperCase().trim();
+    const clientSubmissionId = `${idPrefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
-    const targetPrompt = practiceMode === 'READ_SAMPLE' 
-      ? (currentChallenge?.prompt || '') 
-      : `Mode: FREE_SPEECH | Scenario: ${currentChallenge?.title || ''} | Context (VI): ${currentChallenge?.contextDesc || ''} | Reference English Sample: ${currentChallenge?.prompt || ''}`;
-
-    const MAX_RETRIES = 2;
-    let attempt = 0;
-    let success = false;
-
-    while (attempt <= MAX_RETRIES && !success) {
-      try {
-        if (attempt > 0) {
-          setEvaluatingStatus(`🔄 Đang kết nối lại máy chủ đánh giá (${attempt}/${MAX_RETRIES})...`);
-          await new Promise(r => setTimeout(r, 1200));
-        }
-
-        serverEvalData = await evaluateSpeaking(
-          audioBlob,
-          selectedLevel,
-          'STATION_2',
-          targetPrompt
-        );
-        if (serverEvalData && serverEvalData.score > 0) {
-          success = true;
-          actualTranscript = (serverEvalData.transcript || '').trim();
-          setLiveTranscript(actualTranscript);
-          setFinalTranscriptScript(actualTranscript);
-          liveTranscriptRef.current = actualTranscript;
-        } else if (serverEvalData && serverEvalData.score === 0) {
-          setIsEvaluating(false);
-          setLiveTranscript(serverEvalData.transcript || '');
-          setFinalTranscriptScript(serverEvalData.transcript || '');
-          Alert.alert(
-            "Không thể chấm điểm",
-            serverEvalData.detailedFeedback || "Chưa nhận diện được giọng nói rõ ràng hoặc lỗi kết nối AI."
-          );
-          return;
-        }
-      } catch (err) {
-        attempt++;
-        console.warn(`Evaluation attempt ${attempt} failed:`, err);
-      }
-    }
-
-    if (!success || !actualTranscript || actualTranscript.length < 3) {
-      setIsEvaluating(false);
-      Alert.alert(
-        "Kết nối gián đoạn",
-        "Độ trễ mạng khiến AI chưa chấm được điểm. Bản thu đã được lưu an toàn; vui lòng kiểm tra kết nối và bấm 'Chấm điểm lại'.",
-        [
-          { text: "Đóng", style: "cancel" },
-          { text: "🔄 Chấm điểm lại", onPress: () => finishSubmissionAndEvaluate(audioBlob, pitchHistory, localAudioUrl) }
-        ]
-      );
-      return;
-    }
-
-    const WHISPER_HALLUCINATIONS = [
-      'thank you', 'thank you.', 'thank you very much', 'thank you for watching',
-      'thanks for watching', 'you', 'bye', 'bye.', 'subtitles', 'subscribe', 'the end'
-    ];
-
-    const cleanLowerTranscript = actualTranscript.toLowerCase().replace(/[^a-z0-9 ]/g, '').trim();
-    const isHallucination = WHISPER_HALLUCINATIONS.some(h => cleanLowerTranscript === h);
-    const validWords = actualTranscript.replace(/[^a-zA-Z0-9]/g, '').trim();
-
-    let hasMatchingSampleWord = true;
-    if (practiceMode === 'READ_SAMPLE' && currentChallenge?.prompt) {
-      const promptWords = currentChallenge.prompt.toLowerCase().replace(/[^a-z0-9 ]/g, '').split(/\s+/).filter(w => w.length > 2);
-      const spokenWords = cleanLowerTranscript.split(/\s+/);
-      hasMatchingSampleWord = spokenWords.some(w => promptWords.includes(w));
-    }
-
-    const isSilence = 
-      !validWords || 
-      validWords.length < 3 || 
-      isHallucination || 
-      (pitchHistory && pitchHistory.length < 3) ||
-      (!hasMatchingSampleWord && practiceMode === 'READ_SAMPLE');
-
-    if (isSilence) {
-      setIsEvaluating(false);
-      setWordAnalysisList([]);
-      const zeroEvaluation = {
-        totalScore: 0,
-        spontaneityScore: 0,
-        isScriptSuspected: false,
-        rubrics: {
-          pronunciation: { score: 0, feedback: "Không phát hiện tiếng nói tiếng Anh hợp lệ." },
-          intonation: { score: 0, feedback: "Không nhận diện được đường cong ngữ điệu." },
-          fluency: { score: 0, feedback: "Đoạn thu hoàn toàn im lặng." },
-          vocabulary: { score: 0, feedback: "Không ghi nhận từ vựng mục tiêu." },
-          grammar: { score: 0, feedback: "Chưa cấu thành câu ngữ pháp hoàn chỉnh." },
-          content: { score: 0, feedback: "Chưa có nội dung phản xạ phù hợp." }
-        }
-      };
-
-      setFeedbackResult(zeroEvaluation);
-      setDetailedModalVisible(true);
-      return;
-    }
-
-    setEvaluatingStatus('📊 Đang tổng hợp phiếu điểm & đồng bộ lên lớp...');
-    const duration = Math.max(normalTimer, 2);
-    let evaluated: any;
-
-    if (practiceMode === 'READ_SAMPLE') {
-      evaluated = evaluateSpeechSubmission({
-        transcript: actualTranscript,
-        targetPrompt: currentChallenge?.prompt || '',
-        pitchHistory,
-        durationSeconds: duration,
-        cefrLevel: currentChallenge?.level || selectedLevel
-      });
-    } else {
-      evaluated = evaluateSpeechSubmission({
-        transcript: actualTranscript,
-        targetPrompt: actualTranscript || currentChallenge?.prompt || '',
-        pitchHistory,
-        durationSeconds: duration,
-        cefrLevel: currentChallenge?.level || selectedLevel
-      });
-
-      if (actualTranscript && actualTranscript.split(/\s+/).filter(Boolean).length >= 4) {
-        evaluated.spontaneityScore = Math.min(100, Math.max(evaluated.spontaneityScore, 85));
-        evaluated.rubrics.content.score = Math.min(100, Math.max(evaluated.rubrics.content.score, 88));
-      }
-    }
-
-    const analyzedWords: SpokenWordAnalysis[] = serverEvalData?.wordAnalysis?.length
-      ? serverEvalData.wordAnalysis
-      : analyzeSpokenTranscript(
-          actualTranscript,
-          practiceMode === 'READ_SAMPLE' ? (currentChallenge?.prompt || '') : '',
-          serverEvalData?.errorWords || []
-        );
-    setWordAnalysisList(analyzedWords);
-
-    const errorWordsDetected = analyzedWords.filter(
-      (w: SpokenWordAnalysis) => w.hasGrammarError || w.hasPronunciationError || !w.isConfident
-    );
-
-    if (serverEvalData?.criteria?.pronunciation) {
-      evaluated.rubrics.pronunciation.score = serverEvalData.criteria.pronunciation;
-    }
-    if (serverEvalData?.criteria?.intonation) {
-      evaluated.rubrics.intonation.score = serverEvalData.criteria.intonation;
-    }
-    if (serverEvalData?.criteria?.grammar) {
-      evaluated.rubrics.grammar.score = serverEvalData.criteria.grammar;
-    }
-    if (serverEvalData?.criteria?.vocabulary) {
-      evaluated.rubrics.vocabulary.score = serverEvalData.criteria.vocabulary;
-    }
-    if (serverEvalData?.criteria?.content) {
-      evaluated.rubrics.content.score = serverEvalData.criteria.content;
-    }
-
-    if (errorWordsDetected.length > 0) {
-      const grammarErrCount = analyzedWords.filter((w: SpokenWordAnalysis) => w.hasGrammarError).length;
-      const pronErrCount = analyzedWords.filter((w: SpokenWordAnalysis) => w.hasPronunciationError).length;
-
-      if (grammarErrCount > 0) {
-        evaluated.rubrics.grammar.score = Math.min(
-          evaluated.rubrics.grammar.score,
-          Math.max(25, 85 - grammarErrCount * 15)
-        );
-        const errDetails = analyzedWords
-          .filter((w: SpokenWordAnalysis) => w.hasGrammarError)
-          .map((w: SpokenWordAnalysis) => `"${w.word}"${w.correction ? ` → "${w.correction}"` : ''}`)
-          .join(', ');
-        evaluated.rubrics.grammar.feedback = `Phát hiện ${grammarErrCount} lỗi thì / ngữ pháp: ${errDetails}.`;
-      }
-
-      if (pronErrCount > 0) {
-        evaluated.rubrics.pronunciation.score = Math.min(
-          evaluated.rubrics.pronunciation.score,
-          Math.max(30, 86 - pronErrCount * 10)
-        );
-        const pronDetails = analyzedWords
-          .filter((w: SpokenWordAnalysis) => w.hasPronunciationError)
-          .map((w: SpokenWordAnalysis) => `"${w.word}"${w.correction ? ` → "${w.correction}"` : ''}`)
-          .join(', ');
-        evaluated.rubrics.pronunciation.feedback = `Cần điều chỉnh các từ: ${pronDetails}.`;
-      }
-    }
-
-    if (serverEvalData?.detailedFeedback) {
-      evaluated.rubrics.content.feedback = serverEvalData.detailedFeedback;
-    }
-
-    evaluated.wordAnalysis = analyzedWords;
-
-    const r = evaluated.rubrics;
-    const weightedTotal = Math.round(
-      (r.pronunciation.score * 0.20) +
-      (r.intonation.score * 0.20) +
-      (r.fluency.score * 0.15) +
-      (r.vocabulary.score * 0.15) +
-      (r.grammar.score * 0.15) +
-      (r.content.score * 0.15)
-    );
-    evaluated.totalScore = typeof serverEvalData?.score === 'number'
-      ? Math.min(weightedTotal, serverEvalData.score)
-      : weightedTotal;
-
-    // 📤 TẢI AUDIO LÊN STORAGE & ĐỒNG BỘ BÀI NỘP LÊN BẢNG ĐIỂM GIẢNG VIÊN QUA saveSubmissionToCloud
-    let audioUrl = '';
     try {
-      if (supabase) {
-        const ext = activeMimeTypeRef.current.extension || 'webm';
-        const contentType = activeMimeTypeRef.current.mimeType || (ext === 'mp4' ? 'audio/mp4' : 'audio/webm');
-        const fileName = `station2_${selectedTier.toLowerCase()}_${selectedLevel.toLowerCase()}_${Date.now()}.${ext}`;
+      let actualTranscript = '';
+      let serverEvalData: any = null;
 
-        const { data: uploadData, error: uploadErr } = await supabase.storage
-          .from('submissions')
-          .upload(fileName, audioBlob, { contentType });
+      const targetPrompt = practiceMode === 'READ_SAMPLE' 
+        ? (currentChallenge?.prompt || '') 
+        : `Mode: FREE_SPEECH | Scenario: ${currentChallenge?.title || ''} | Context (VI): ${currentChallenge?.contextDesc || ''} | Reference English Sample: ${currentChallenge?.prompt || ''}`;
 
-        if (!uploadErr && uploadData) {
-          const { data: urlData } = supabase.storage.from('submissions').getPublicUrl(fileName);
-          audioUrl = urlData?.publicUrl || '';
+      const MAX_RETRIES = 2;
+      let attempt = 0;
+      let success = false;
+
+      while (attempt <= MAX_RETRIES && !success) {
+        try {
+          if (attempt > 0) {
+            setEvaluatingStatus(`🔄 Đang kết nối lại máy chủ đánh giá (${attempt}/${MAX_RETRIES})...`);
+            await new Promise(r => setTimeout(r, 1200));
+          }
+
+          serverEvalData = await evaluateSpeaking(
+            audioBlob,
+            selectedLevel,
+            'STATION_2',
+            targetPrompt
+          );
+          if (serverEvalData && serverEvalData.score > 0) {
+            success = true;
+            actualTranscript = (serverEvalData.transcript || '').trim();
+            setLiveTranscript(actualTranscript);
+            setFinalTranscriptScript(actualTranscript);
+            liveTranscriptRef.current = actualTranscript;
+          } else if (serverEvalData && serverEvalData.score === 0) {
+            setLiveTranscript(serverEvalData.transcript || '');
+            setFinalTranscriptScript(serverEvalData.transcript || '');
+            Alert.alert(
+              "Không thể chấm điểm",
+              serverEvalData.detailedFeedback || "Chưa nhận diện được giọng nói rõ ràng hoặc lỗi kết nối AI."
+            );
+            return;
+          }
+        } catch (err) {
+          attempt++;
+          console.warn(`Evaluation attempt ${attempt} failed:`, err);
         }
       }
-    } catch (uploadCatch) {
-      console.warn("Storage upload bypassed:", uploadCatch);
+
+      if (!success || !actualTranscript || actualTranscript.length < 3) {
+        Alert.alert(
+          "Kết nối gián đoạn",
+          "Độ trễ mạng khiến AI chưa chấm được điểm. Bản thu đã được lưu an toàn; vui lòng kiểm tra kết nối và bấm 'Chấm điểm lại'.",
+          [
+            { text: "Đóng", style: "cancel" },
+            { text: "🔄 Chấm điểm lại", onPress: () => finishSubmissionAndEvaluate(audioBlob, pitchHistory, localAudioUrl, false) }
+          ]
+        );
+        return;
+      }
+
+      const WHISPER_HALLUCINATIONS = [
+        'thank you', 'thank you.', 'thank you very much', 'thank you for watching',
+        'thanks for watching', 'you', 'bye', 'bye.', 'subtitles', 'subscribe', 'the end'
+      ];
+
+      const cleanLowerTranscript = actualTranscript.toLowerCase().replace(/[^a-z0-9 ]/g, '').trim();
+      const isHallucination = WHISPER_HALLUCINATIONS.some(h => cleanLowerTranscript === h);
+      const validWords = actualTranscript.replace(/[^a-zA-Z0-9]/g, '').trim();
+
+      let hasMatchingSampleWord = true;
+      if (practiceMode === 'READ_SAMPLE' && currentChallenge?.prompt) {
+        const promptWords = currentChallenge.prompt.toLowerCase().replace(/[^a-z0-9 ]/g, '').split(/\s+/).filter(w => w.length > 2);
+        const spokenWords = cleanLowerTranscript.split(/\s+/);
+        hasMatchingSampleWord = spokenWords.some(w => promptWords.includes(w));
+      }
+
+      const isSilence = 
+        !validWords || 
+        validWords.length < 3 || 
+        isHallucination || 
+        (pitchHistory && pitchHistory.length < 3) ||
+        (!hasMatchingSampleWord && practiceMode === 'READ_SAMPLE');
+
+      if (isSilence) {
+        setWordAnalysisList([]);
+        const zeroEvaluation = {
+          totalScore: 0,
+          spontaneityScore: 0,
+          isScriptSuspected: false,
+          rubrics: {
+            pronunciation: { score: 0, feedback: "Không phát hiện tiếng nói tiếng Anh hợp lệ." },
+            intonation: { score: 0, feedback: "Không nhận diện được đường cong ngữ điệu." },
+            fluency: { score: 0, feedback: "Đoạn thu hoàn toàn im lặng." },
+            vocabulary: { score: 0, feedback: "Không ghi nhận từ vựng mục tiêu." },
+            grammar: { score: 0, feedback: "Chưa cấu thành câu ngữ pháp hoàn chỉnh." },
+            content: { score: 0, feedback: "Chưa có nội dung phản xạ phù hợp." }
+          }
+        };
+
+        setFeedbackResult(zeroEvaluation);
+        setDetailedModalVisible(true);
+        return;
+      }
+
+      setEvaluatingStatus('📊 Đang tổng hợp phiếu điểm & đồng bộ lên lớp...');
+      const duration = Math.max(normalTimer, 2);
+      let evaluated: any;
+
+      if (practiceMode === 'READ_SAMPLE') {
+        evaluated = evaluateSpeechSubmission({
+          transcript: actualTranscript,
+          targetPrompt: currentChallenge?.prompt || '',
+          pitchHistory,
+          durationSeconds: duration,
+          cefrLevel: currentChallenge?.level || selectedLevel
+        });
+      } else {
+        evaluated = evaluateSpeechSubmission({
+          transcript: actualTranscript,
+          targetPrompt: actualTranscript || currentChallenge?.prompt || '',
+          pitchHistory,
+          durationSeconds: duration,
+          cefrLevel: currentChallenge?.level || selectedLevel
+        });
+
+        if (actualTranscript && actualTranscript.split(/\s+/).filter(Boolean).length >= 4) {
+          evaluated.spontaneityScore = Math.min(100, Math.max(evaluated.spontaneityScore, 85));
+          evaluated.rubrics.content.score = Math.min(100, Math.max(evaluated.rubrics.content.score, 88));
+        }
+      }
+
+      const analyzedWords: SpokenWordAnalysis[] = serverEvalData?.wordAnalysis?.length
+        ? serverEvalData.wordAnalysis
+        : analyzeSpokenTranscript(
+            actualTranscript,
+            practiceMode === 'READ_SAMPLE' ? (currentChallenge?.prompt || '') : '',
+            serverEvalData?.errorWords || []
+          );
+      setWordAnalysisList(analyzedWords);
+
+      const errorWordsDetected = analyzedWords.filter(
+        (w: SpokenWordAnalysis) => w.hasGrammarError || w.hasPronunciationError || !w.isConfident
+      );
+
+      if (serverEvalData?.criteria?.pronunciation) {
+        evaluated.rubrics.pronunciation.score = serverEvalData.criteria.pronunciation;
+      }
+      if (serverEvalData?.criteria?.intonation) {
+        evaluated.rubrics.intonation.score = serverEvalData.criteria.intonation;
+      }
+      if (serverEvalData?.criteria?.fluency) {
+        evaluated.rubrics.fluency.score = serverEvalData.criteria.fluency;
+      }
+      if (serverEvalData?.criteria?.grammar) {
+        evaluated.rubrics.grammar.score = serverEvalData.criteria.grammar;
+      }
+      if (serverEvalData?.criteria?.vocabulary) {
+        evaluated.rubrics.vocabulary.score = serverEvalData.criteria.vocabulary;
+      }
+      if (serverEvalData?.criteria?.content) {
+        evaluated.rubrics.content.score = serverEvalData.criteria.content;
+      }
+
+      if (errorWordsDetected.length > 0) {
+        const grammarErrCount = analyzedWords.filter((w: SpokenWordAnalysis) => w.hasGrammarError).length;
+        const pronErrCount = analyzedWords.filter((w: SpokenWordAnalysis) => w.hasPronunciationError).length;
+
+        if (grammarErrCount > 0) {
+          evaluated.rubrics.grammar.score = Math.min(
+            evaluated.rubrics.grammar.score,
+            Math.max(25, 85 - grammarErrCount * 15)
+          );
+          const errDetails = analyzedWords
+            .filter((w: SpokenWordAnalysis) => w.hasGrammarError)
+            .map((w: SpokenWordAnalysis) => `"${w.word}"${w.correction ? ` → "${w.correction}"` : ''}`)
+            .join(', ');
+          evaluated.rubrics.grammar.feedback = `Phát hiện ${grammarErrCount} lỗi thì / ngữ pháp: ${errDetails}.`;
+        }
+
+        if (pronErrCount > 0) {
+          evaluated.rubrics.pronunciation.score = Math.min(
+            evaluated.rubrics.pronunciation.score,
+            Math.max(30, 86 - pronErrCount * 10)
+          );
+          const pronDetails = analyzedWords
+            .filter((w: SpokenWordAnalysis) => w.hasPronunciationError)
+            .map((w: SpokenWordAnalysis) => `"${w.word}"${w.correction ? ` → "${w.correction}"` : ''}`)
+            .join(', ');
+          evaluated.rubrics.pronunciation.feedback = `Cần điều chỉnh các từ: ${pronDetails}.`;
+        }
+      }
+
+      if (serverEvalData?.detailedFeedback) {
+        evaluated.rubrics.content.feedback = serverEvalData.detailedFeedback;
+      }
+
+      evaluated.wordAnalysis = analyzedWords;
+
+      const r = evaluated.rubrics;
+      const weightedTotal = Math.round(
+        (r.pronunciation.score * 0.20) +
+        (r.intonation.score * 0.20) +
+        (r.fluency.score * 0.15) +
+        (r.vocabulary.score * 0.15) +
+        (r.grammar.score * 0.15) +
+        (r.content.score * 0.15)
+      );
+      evaluated.totalScore = typeof serverEvalData?.score === 'number'
+        ? Math.min(weightedTotal, serverEvalData.score)
+        : weightedTotal;
+
+      // 📤 TẢI AUDIO LÊN STORAGE & ĐỒNG BỘ DUY NHẤT 1 DÒNG LÊN BẢNG ĐIỂM GIẢNG VIÊN
+      let audioUrl = '';
+      try {
+        if (supabase) {
+          const ext = activeMimeTypeRef.current.extension || 'webm';
+          const contentType = activeMimeTypeRef.current.mimeType || (ext === 'mp4' ? 'audio/mp4' : 'audio/webm');
+          const fileName = `station2_${selectedTier.toLowerCase()}_${selectedLevel.toLowerCase()}_${clientSubmissionId}.${ext}`;
+
+          const { data: uploadData, error: uploadErr } = await supabase.storage
+            .from('submissions')
+            .upload(fileName, audioBlob, { contentType });
+
+          if (!uploadErr && uploadData) {
+            const { data: urlData } = supabase.storage.from('submissions').getPublicUrl(fileName);
+            audioUrl = urlData?.publicUrl || '';
+          }
+        }
+      } catch (uploadCatch) {
+        console.warn("Storage upload bypassed:", uploadCatch);
+      }
+
+      const activeStudentName = (studentNameInput || latestProfileForId.studentName || 'Học viên Đấu Trường').trim();
+      const activeStudentCode = (studentCodeInput || latestProfileForId.studentCode || 'GUEST').toUpperCase().trim();
+      const activeClassCode = normalizeClassCode(classCodeInput || latestProfileForId.classCode);
+
+      const syncRes = await saveSubmissionToCloud({
+        clientSubmissionId,
+        studentName: activeStudentName,
+        studentCode: activeStudentCode,
+        classCode: activeClassCode,
+        className: `[${activeClassCode}] Trạm 2: ${selectedTier} (${selectedLevel}) [${practiceMode === 'READ_SAMPLE' ? 'Đọc Mẫu' : 'Phản Xạ Tự Nhiên'}]`,
+        mode: `STATION_2_${selectedTier}`,
+        cefrLevel: currentChallenge?.level || selectedLevel,
+        score: evaluated.totalScore,
+        spontaneity_score: evaluated.spontaneityScore,
+        pitch_variance: evaluated.rubrics.intonation.score,
+        is_script_suspected: evaluated.isScriptSuspected,
+        audioUrl: audioUrl,
+        transcript: actualTranscript || '(Không ghi nhận được âm thanh)',
+        feedback: `[Phát âm: ${evaluated.rubrics.pronunciation.score} | Ngữ điệu: ${evaluated.rubrics.intonation.score} | Ngữ pháp: ${evaluated.rubrics.grammar.score} | Nội dung: ${evaluated.rubrics.content.score}] ${serverEvalData?.detailedFeedback || ''}`,
+        timestamp: new Date().toISOString(),
+      } as any);
+
+      if (syncRes.syncedToCloud) {
+        setSyncStatusBanner({
+          ok: true,
+          text: `✅ Đã nộp bài thành công lên Bảng điểm lớp [${activeClassCode}] cho ${activeStudentName} (${activeStudentCode})!`
+        });
+      } else {
+        setSyncStatusBanner({
+          ok: false,
+          text: `⚠️ Đã lưu bài trên máy nhưng chưa đẩy lên Cloud (${syncRes.errorMsg || 'Lỗi mạng'}).`
+        });
+      }
+
+      setFeedbackResult(evaluated);
+      setIsTeacherExamining(false);
+      setDetailedModalVisible(true);
+    } finally {
+      isSubmittingRef.current = false;
+      setIsEvaluating(false);
     }
-
-    const latestProfile = getSavedStudentProfile();
-    const activeStudentName = (studentNameInput || latestProfile.studentName || 'Học viên Đấu Trường').trim();
-    const activeStudentCode = (studentCodeInput || latestProfile.studentCode || 'GUEST').toUpperCase().trim();
-    const activeClassCode = normalizeClassCode(classCodeInput || latestProfile.classCode);
-
-    const syncRes = await saveSubmissionToCloud({
-      studentName: activeStudentName,
-      studentCode: activeStudentCode,
-      classCode: activeClassCode,
-      className: `[${activeClassCode}] Trạm 2: ${selectedTier} (${selectedLevel}) [${practiceMode === 'READ_SAMPLE' ? 'Đọc Mẫu' : 'Phản Xạ Tự Nhiên'}]`,
-      mode: `STATION_2_${selectedTier}`,
-      cefrLevel: currentChallenge?.level || selectedLevel,
-      score: evaluated.totalScore,
-      spontaneity_score: evaluated.spontaneityScore,
-      pitch_variance: evaluated.rubrics.intonation.score,
-      is_script_suspected: evaluated.isScriptSuspected,
-      audioUrl: audioUrl,
-      transcript: actualTranscript || '(Không ghi nhận được âm thanh)',
-      feedback: `[Phát âm: ${evaluated.rubrics.pronunciation.score} | Ngữ điệu: ${evaluated.rubrics.intonation.score} | Ngữ pháp: ${evaluated.rubrics.grammar.score} | Nội dung: ${evaluated.rubrics.content.score}] ${serverEvalData?.detailedFeedback || ''}`,
-      timestamp: new Date().toISOString(),
-    });
-
-    if (syncRes.syncedToCloud) {
-      setSyncStatusBanner({
-        ok: true,
-        text: `✅ Đã nộp bài thành công lên Bảng điểm lớp [${activeClassCode}] cho ${activeStudentName} (${activeStudentCode})!`
-      });
-    } else {
-      setSyncStatusBanner({
-        ok: false,
-        text: `⚠️ Đã lưu bài trên máy nhưng chưa đẩy lên Cloud (${syncRes.errorMsg || 'Lỗi mạng'}).`
-      });
-    }
-
-    setIsEvaluating(false);
-    setFeedbackResult(evaluated);
-    setIsTeacherExamining(false);
-    setDetailedModalVisible(true);
   };
 
   const currentTierInfo = TIERS.find(t => t.key === selectedTier);
@@ -1083,7 +1112,7 @@ Output ONLY raw JSON:
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={onBack} style={styles.backBtn}>
+        <TouchableOpacity onPress={onBack} style={styles.backBtn} disabled={isEvaluating}>
           <Text style={styles.backBtnText}>🔙 BẢN ĐỒ</Text>
         </TouchableOpacity>
         <Text style={styles.title}>⚔️ TRẠM 2: ĐẤU TRƯỜNG PHẢN XẠ TÌNH HUỐNG</Text>
@@ -1479,13 +1508,14 @@ Output ONLY raw JSON:
                   <TouchableOpacity 
                     style={styles.switchTopicInRoomBtn} 
                     activeOpacity={0.7} 
+                    disabled={isEvaluating || isRecordingNormal}
                     onPress={handleNextTopic}
                   >
                     <Text style={styles.switchTopicInRoomText}>🔄 ĐỔI TÌNH HUỐNG</Text>
                   </TouchableOpacity>
                 )}
-                <TouchableOpacity onPress={() => setIsNormalPracticing(false)}>
-                  <Text style={{ color: '#FF0055', fontWeight: 'bold' }}>✕ THOÁT</Text>
+                <TouchableOpacity disabled={isEvaluating} onPress={() => setIsNormalPracticing(false)}>
+                  <Text style={{ color: isEvaluating ? '#666688' : '#FF0055', fontWeight: 'bold' }}>✕ THOÁT</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -1624,6 +1654,7 @@ Output ONLY raw JSON:
                 <TouchableOpacity 
                   style={[styles.startRecordBtn, recordedAudioUrl ? { flex: 1 } : { width: '100%' }]} 
                   activeOpacity={0.8} 
+                  disabled={isEvaluating}
                   onPress={startNormalRecording}
                 >
                   <Text style={styles.startRecordBtnText}>
@@ -1642,7 +1673,12 @@ Output ONLY raw JSON:
                 )}
               </View>
             ) : (
-              <TouchableOpacity style={styles.stopRecordBtn} activeOpacity={0.8} onPress={stopNormalRecording}>
+              <TouchableOpacity
+                style={[styles.stopRecordBtn, isEvaluating && { opacity: 0.5 }]}
+                activeOpacity={0.8}
+                disabled={isEvaluating}
+                onPress={stopNormalRecording}
+              >
                 <Text style={styles.stopRecordBtnText}>⏹ DỪNG VÀ CHẤM ĐIỂM BÀI NÓI</Text>
               </TouchableOpacity>
             )}

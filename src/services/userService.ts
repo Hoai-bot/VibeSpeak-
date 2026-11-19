@@ -16,6 +16,7 @@ export interface UserStats {
 
 export interface RoleplaySubmission {
   id?: string;
+  clientSubmissionId?: string;
   studentName: string;
   studentCode?: string;
   classCode?: string;
@@ -39,14 +40,38 @@ export function normalizeClassCode(raw?: string): string {
   return cleaned || 'PUBLIC';
 }
 
-// 🛡️ Hàm tự động lọc bỏ cột chưa tồn tại trên Supabase để KHÔNG BAO GIỜ mất bài nộp của sinh viên
+// 🛡️ Hàm tự động lọc bỏ cột chưa tồn tại trên Supabase & chống ghi trùng theo client_submission_id
 async function safeInsertSubmissionRecord(initialPayload: Record<string, any>) {
   if (!supabase) return { data: null, error: { message: 'Supabase chưa cấu hình' } };
 
   const payload = { ...initialPayload };
   for (let attempt = 0; attempt < 10; attempt++) {
-    const res = await supabase.from('submissions').insert([payload]).select().single();
-    if (!res.error) return res;
+    const hasClientSubId = typeof payload.client_submission_id === 'string' && payload.client_submission_id.trim().length > 0;
+
+    const res = hasClientSubId
+      ? await supabase
+          .from('submissions')
+          .upsert([payload], { onConflict: 'client_submission_id', ignoreDuplicates: true })
+          .select()
+          .maybeSingle()
+      : await supabase
+          .from('submissions')
+          .insert([payload])
+          .select()
+          .single();
+
+    if (!res.error) {
+      // Nếu ignoreDuplicates bỏ qua bản ghi trùng lặp, truy vấn lại bản ghi gốc đã lưu
+      if (!res.data && hasClientSubId) {
+        const existing = await supabase
+          .from('submissions')
+          .select('*')
+          .eq('client_submission_id', payload.client_submission_id)
+          .maybeSingle();
+        return existing;
+      }
+      return res;
+    }
 
     const missingColMatch = res.error.message?.match(/Could not find the '([^']+)' column/);
     if (missingColMatch && missingColMatch[1] && missingColMatch[1] in payload) {
@@ -54,8 +79,15 @@ async function safeInsertSubmissionRecord(initialPayload: Record<string, any>) {
       continue;
     }
 
+    // Nếu chưa tạo UNIQUE INDEX cho client_submission_id trên DB, hạ cấp về insert thường
+    if (res.error.message?.includes('no unique or exclusion constraint') && 'client_submission_id' in payload) {
+      delete payload.client_submission_id;
+      continue;
+    }
+
     return res;
   }
+
   return await supabase.from('submissions').insert([payload]).select().single();
 }
 
@@ -115,7 +147,7 @@ export async function saveUserData(userIdOrData: any, username?: string, xp?: nu
   }
 }
 
-// 🎯 LƯU KẾT QUẢ BÀI NỘP LÊN CLOUD SUPABASE (ĐẢM BẢO ĐỒNG BỘ MÃ LỚP & MSSV)
+// 🎯 LƯU KẾT QUẢ BÀI NỘP LÊN CLOUD SUPABASE (ĐẢM BẢO ĐỒNG BỘ MÃ LỚP, MSSV & CHỐNG TRÙNG LẶP)
 export async function saveSubmissionToCloud(
   submission: Omit<RoleplaySubmission, 'id'> & Record<string, any>,
   _audioBlob?: Blob
@@ -123,10 +155,12 @@ export async function saveSubmissionToCloud(
   const cleanClassCode = normalizeClassCode(submission.classCode);
   const cleanStudentCode = (submission.studentCode || 'GUEST').toUpperCase().trim();
   const cleanStudentName = (submission.studentName || 'Học viên Đấu Trường').trim();
+  const cleanClientSubId = (submission.clientSubmissionId || `${cleanStudentCode}_${Date.now()}`).trim();
 
   // Luôn lưu bản sao vào máy sinh viên để xem lại lịch sử tức thì
   saveToLocalFallback({
     ...submission,
+    clientSubmissionId: cleanClientSubId,
     studentName: cleanStudentName,
     studentCode: cleanStudentCode,
     classCode: cleanClassCode,
@@ -135,13 +169,14 @@ export async function saveSubmissionToCloud(
   try {
     if (!supabase) {
       return {
-        saved: { ...submission, id: `local_${Date.now()}`, classCode: cleanClassCode },
+        saved: { ...submission, id: `local_${Date.now()}`, clientSubmissionId: cleanClientSubId, classCode: cleanClassCode },
         syncedToCloud: false,
         errorMsg: 'Chưa kết nối máy chủ Supabase'
       };
     }
 
     const payload: Record<string, any> = {
+      client_submission_id: cleanClientSubId,
       student_name: cleanStudentName,
       student_code: cleanStudentCode,
       class_code: cleanClassCode,
@@ -164,7 +199,7 @@ export async function saveSubmissionToCloud(
     if (error || !data) {
       console.error('Lỗi đồng bộ submissions:', error?.message);
       return {
-        saved: { ...submission, id: `local_${Date.now()}`, classCode: cleanClassCode },
+        saved: { ...submission, id: `local_${Date.now()}`, clientSubmissionId: cleanClientSubId, classCode: cleanClassCode },
         syncedToCloud: false,
         errorMsg: error?.message || 'Không thể lưu lên bảng submissions'
       };
@@ -174,6 +209,7 @@ export async function saveSubmissionToCloud(
       syncedToCloud: true,
       saved: {
         id: data.id,
+        clientSubmissionId: data.client_submission_id || cleanClientSubId,
         studentName: data.student_name,
         studentCode: data.student_code,
         classCode: data.class_code || cleanClassCode,
@@ -191,7 +227,7 @@ export async function saveSubmissionToCloud(
     };
   } catch (err: any) {
     return {
-      saved: { ...submission, id: `local_${Date.now()}`, classCode: cleanClassCode },
+      saved: { ...submission, id: `local_${Date.now()}`, clientSubmissionId: cleanClientSubId, classCode: cleanClassCode },
       syncedToCloud: false,
       errorMsg: err?.message || 'Lỗi mạng khi gửi bài'
     };
@@ -223,6 +259,7 @@ export async function fetchStudentHistory(studentCode: string): Promise<Roleplay
 
     const cloudItems: RoleplaySubmission[] = data.map((item: any) => ({
       id: item.id,
+      clientSubmissionId: item.client_submission_id,
       studentName: item.student_name,
       studentCode: item.student_code,
       classCode: item.class_code,
@@ -242,7 +279,9 @@ export async function fetchStudentHistory(studentCode: string): Promise<Roleplay
     const merged = [...cloudItems];
     localItems.forEach((loc) => {
       const isDuplicate = merged.some(
-        (c) => c.transcript === loc.transcript && Math.abs(Number(c.score) - Number(loc.score)) <= 1
+        (c) =>
+          (loc.clientSubmissionId && c.clientSubmissionId === loc.clientSubmissionId) ||
+          (c.transcript === loc.transcript && Math.abs(Number(c.score) - Number(loc.score)) <= 1)
       );
       if (!isDuplicate) {
         merged.push(loc);
@@ -274,6 +313,7 @@ export async function fetchSubmissionsFromCloud(className: string = 'ALL'): Prom
 
     return data.map((item: any, index: number) => ({
       id: item.id,
+      clientSubmissionId: item.client_submission_id,
       studentName: item.student_name,
       studentCode: item.student_code,
       classCode: item.class_code,
@@ -312,7 +352,10 @@ function saveToLocalFallback(submission: Omit<RoleplaySubmission, 'id'>) {
   if (typeof window === 'undefined' || !window.localStorage) return;
   try {
     const raw = localStorage.getItem('vibe_offline_submissions');
-    const list = raw ? JSON.parse(raw) : [];
+    const list: RoleplaySubmission[] = raw ? JSON.parse(raw) : [];
+    if (submission.clientSubmissionId && list.some((i) => i.clientSubmissionId === submission.clientSubmissionId)) {
+      return;
+    }
     list.unshift({ ...submission, id: `offline_${Date.now()}` });
     localStorage.setItem('vibe_offline_submissions', JSON.stringify(list.slice(0, 50)));
   } catch {}
