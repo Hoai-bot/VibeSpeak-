@@ -132,7 +132,7 @@ export function detectPhoneticTrap(
 }
 
 // =========================================================================
-// 🛡️ BỘ ĐỆM RATE-LIMIT DỰA TRÊN CLIENT IP (TỐI ĐA 15 YÊU CẦU / 60 GIÂY)
+// 🛡️ BỘ ĐỆM RATE-LIMIT PHÒNG THI TẬP TRUNG (60 YÊU CẦU / 60 GIÂY / IP NAT)
 // =========================================================================
 interface RateLimitBucket {
   count: number;
@@ -140,7 +140,7 @@ interface RateLimitBucket {
 }
 const rateLimitMap = new Map<string, RateLimitBucket>();
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
-const MAX_REQUESTS_PER_WINDOW = 15;
+const MAX_REQUESTS_PER_WINDOW = 60;
 
 function checkRateLimit(clientIp: string): { allowed: boolean; remaining: number } {
   const now = Date.now();
@@ -157,6 +157,147 @@ function checkRateLimit(clientIp: string): { allowed: boolean; remaining: number
 
   bucket.count += 1;
   return { allowed: true, remaining: MAX_REQUESTS_PER_WINDOW - bucket.count };
+}
+
+// =========================================================================
+// 🔄 BỘ QUẢN LÝ XOAY VÒNG MULTI-KEY GROQ + FALLBACK GEMINI API
+// =========================================================================
+function getGroqKeyPool(): string[] {
+  const multiKeys = (process.env.GROQ_API_KEYS || '')
+    .split(',')
+    .map((k) => k.trim())
+    .filter(Boolean);
+  const singleKeys = [process.env.GROQ_API_KEY, process.env.GROQ_API_KEY_NEW]
+    .map((k) => (k || '').trim())
+    .filter(Boolean);
+
+  const uniqueKeys = Array.from(new Set([...multiKeys, ...singleKeys]));
+  // Xáo trộn nhẹ thứ tự key để phân tải đều khi 300 sinh viên gửi bài cùng giây
+  for (let i = uniqueKeys.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [uniqueKeys[i], uniqueKeys[j]] = [uniqueKeys[j], uniqueKeys[i]];
+  }
+  return uniqueKeys;
+}
+
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x8000;
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize);
+    binary += String.fromCharCode.apply(null, Array.from(chunk));
+  }
+  return btoa(binary);
+}
+
+// 🎙️ TẦNG 1: GỠ BĂNG ÂM THANH ĐA NHÀ CUNG CẤP (XOAY VÒNG GROQ WHISPER -> FALLBACK GEMINI AUDIO)
+async function transcribeAudioWithFallback(
+  audioFile: any,
+  groqKeys: string[],
+  geminiApiKey: string
+): Promise<{ transcript: string; avgLogprob: number; providerUsed: string }> {
+  const verbatimPrompt =
+    'Transcribe strictly verbatim as spoken. Do NOT auto-correct grammar, wrong tenses (like "I buy yesterday", "I leave", "while I am reading", "when I will go"), uncountable plurals ("are works", "personal uses", "informations"), missing third-person singular -s/-es, missing past tense -ed, wrong past participles, or mispronounced words.';
+
+  let lastGroqError = '';
+
+  // 1. Thử lần lượt tất cả các API Key Groq trong pool
+  for (let idx = 0; idx < groqKeys.length; idx++) {
+    const apiKey = groqKeys[idx];
+    try {
+      const whisperFormData: any = new FormData();
+      whisperFormData.append('file', audioFile);
+      whisperFormData.append('model', 'whisper-large-v3');
+      whisperFormData.append('language', 'en');
+      whisperFormData.append('response_format', 'verbose_json');
+      whisperFormData.append('prompt', verbatimPrompt);
+
+      const whisperResponse = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${apiKey}` },
+        body: whisperFormData,
+      });
+
+      if (whisperResponse.ok) {
+        const whisperData = await whisperResponse.json();
+        const transcript = (whisperData.text || '').trim();
+        const segments = whisperData.segments || [];
+        let avgLogprob = -0.35;
+        if (segments.length > 0 && typeof segments[0].avg_logprob === 'number') {
+          const sumLogprob = segments.reduce((acc: number, s: any) => acc + (s.avg_logprob || 0), 0);
+          avgLogprob = sumLogprob / segments.length;
+        }
+        return { transcript, avgLogprob, providerUsed: `groq-whisper-key-${idx + 1}` };
+      }
+
+      const status = whisperResponse.status;
+      lastGroqError = await whisperResponse.text();
+      // Nếu lỗi 429 (Rate Limit) hoặc 503/502/500 (Overload), lập tức xoay sang Key tiếp theo
+      if (status === 429 || status >= 500) {
+        console.warn(`Groq Whisper key #${idx + 1} hit HTTP ${status}, rotating to next key...`);
+        continue;
+      }
+    } catch (err: any) {
+      lastGroqError = err?.message || 'Network error on Groq Whisper';
+      console.warn(`Groq Whisper key #${idx + 1} network exception, rotating...`, err);
+    }
+  }
+
+  // 2. Fallback tự động sang Google Gemini API (Multimodal Audio Transcription) khi toàn bộ Groq quá tải
+  if (geminiApiKey) {
+    try {
+      const arrayBuf = await audioFile.arrayBuffer();
+      const base64Audio = arrayBufferToBase64(arrayBuf);
+      const mimeType = audioFile.type && audioFile.type.startsWith('audio/') ? audioFile.type : 'audio/webm';
+
+      const geminiModels = ['gemini-2.5-flash', 'gemini-2.0-flash'];
+      for (const gModel of geminiModels) {
+        const geminiRes = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${gModel}:generateContent?key=${geminiApiKey}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [
+                {
+                  parts: [
+                    {
+                      text: `Listen to this student's English speech recording and transcribe it STRICTLY VERBATIM word-for-word. Do NOT fix grammar errors, missing verb endings (-s, -ed), wrong tenses, or mispronounced words. If there is no intelligible speech, return empty text. Return JSON ONLY: {"transcript": "exact verbatim text", "clarity_confidence": 0.0_to_1.0}`
+                    },
+                    {
+                      inline_data: {
+                        mime_type: mimeType,
+                        data: base64Audio
+                      }
+                    }
+                  ]
+                }
+              ],
+              generationConfig: {
+                temperature: 0.0,
+                responseMimeType: 'application/json'
+              }
+            })
+          }
+        );
+
+        if (geminiRes.ok) {
+          const gData = await geminiRes.json();
+          const rawText = gData.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+          const parsedG = JSON.parse(rawText);
+          const transcript = String(parsedG.transcript || '').trim();
+          const conf = typeof parsedG.clarity_confidence === 'number' ? parsedG.clarity_confidence : 0.85;
+          const mappedLogprob = -1.0 + Math.max(0, Math.min(1, conf)) * 0.9;
+          return { transcript, avgLogprob: mappedLogprob, providerUsed: `gemini-fallback-${gModel}` };
+        }
+      }
+    } catch (geminiErr: any) {
+      console.error('Gemini Audio Fallback failed:', geminiErr);
+    }
+  }
+
+  throw new Error(`Tất cả máy chủ nhận diện giọng nói đang quá tải (${lastGroqError || '429/503'}). Vui lòng thử lại sau vài giây.`);
 }
 
 // =========================================================================
@@ -455,7 +596,6 @@ function scanComprehensiveGrammarErrors(
     'product': 'products', 'device': 'devices', 'solution': 'solutions', 'problem': 'problems'
   };
 
-  // 1. Danh từ không đếm được bị thêm -s/-es sai quy tắc
   const uncountablePluralsMap: Record<string, { fix: string; note: string }> = {
     'informations': { fix: 'information', note: '"Information" là danh từ không đếm được, không thêm -s.' },
     'equipments': { fix: 'equipment', note: '"Equipment" là danh từ không đếm được, không thêm -s.' },
@@ -471,14 +611,12 @@ function scanComprehensiveGrammarErrors(
     'datas': { fix: 'data', note: '"Data" đã ở dạng số nhiều / không đếm được, không thêm -s.' },
   };
 
-  // 3. Tính từ phổ biến hay bị nói thiếu động từ to-be (VD: "It very expensive")
   const standaloneAdjectives = new Set([
     'expensive', 'cheap', 'good', 'bad', 'busy', 'happy', 'sad', 'tired', 'difficult',
     'easy', 'important', 'useful', 'helpful', 'convenient', 'fast', 'slow', 'accurate',
     'crowded', 'noisy', 'quiet', 'dangerous', 'safe', 'hungry', 'thirsty', 'angry', 'late', 'early'
   ]);
 
-  // 5. Động từ quá khứ dùng sai sau had/have/has/would have
   const wrongPastParticiples: Record<string, string> = {
     'went': 'gone', 'saw': 'seen', 'took': 'taken', 'did': 'done',
     'broke': 'broken', 'wrote': 'written', 'spoke': 'spoken', 'ate': 'eaten',
@@ -487,7 +625,6 @@ function scanComprehensiveGrammarErrors(
     'store': 'stored', 'solve': 'solved', 'update': 'updated', 'check': 'checked'
   };
 
-  // 9. Kiểm tra lặp cặp liên từ (Although ... but / Because ... so)
   const hasAlthough = spokenWords.includes('although') || spokenWords.includes('though');
   const hasBecause = spokenWords.includes('because');
 
@@ -497,7 +634,6 @@ function scanComprehensiveGrammarErrors(
     const prevTwo = i > 1 ? spokenWords[i - 2] : '';
     const next = i < spokenWords.length - 1 ? spokenWords[i + 1] : '';
 
-    // [Nhóm 1] Danh từ không đếm được
     if (uncountablePluralsMap[curr]) {
       addError(i, curr, uncountablePluralsMap[curr].fix, `Lỗi danh từ không đếm được: ${uncountablePluralsMap[curr].note}`);
     }
@@ -508,7 +644,6 @@ function scanComprehensiveGrammarErrors(
       addError(i, curr, 'use', 'Lỗi danh từ không đếm được: Cụm cố định là "for personal use" (không thêm -s).');
     }
 
-    // [Nhóm 3] Thiếu động từ to-be trước tính từ ("It very expensive" / "Products cheap")
     if (standaloneAdjectives.has(curr) && ['i', 'he', 'she', 'it', 'we', 'you', 'they', 'this', 'that'].includes(prev)) {
       const beFix = prev === 'i' ? 'am' : (['he', 'she', 'it', 'this', 'that'].includes(prev) ? 'is' : 'are');
       addError(i, curr, `${beFix} ${curr}`, `Thiếu động từ to-be: Sau "${prev}" cần thêm "${beFix}" trước tính từ "${curr}".`);
@@ -518,7 +653,6 @@ function scanComprehensiveGrammarErrors(
       addError(i - 1, prev, `${beFix} ${prev}`, `Thiếu động từ to-be: Sau "${prevTwo}" cần thêm "${beFix}" ("${prevTwo} ${beFix} ${prev} ${curr}").`);
     }
 
-    // [Nhóm 6] Sai cấu trúc Giới từ & Động từ theo sau
     if (curr === 'to' && ['money', 'time'].includes(prev) && ['spend', 'spends', 'spent', 'spending'].includes(prevTwo)) {
       addError(i, curr, 'on', 'Cấu trúc chuẩn là "spend money/time ON something" (không dùng "to").');
     }
@@ -538,7 +672,6 @@ function scanComprehensiveGrammarErrors(
       addError(i, curr, 'V-ing', `Sau động từ "${prev}" phải dùng danh động từ V-ing (không dùng "to V").`);
     }
 
-    // [Nhóm 7] Lẫn lộn tính từ -ed và -ing
     if (curr === 'boring' && ['am', 'is', 'are', 'was', 'were', 'feel', 'felt'].includes(prev) && ['i', 'he', 'she', 'we', 'they', 'you', 'students', 'customers'].includes(prevTwo)) {
       addError(i, curr, 'bored', 'Diễn tả cảm xúc của người phải dùng tính từ đuôi -ed ("bored"), "boring" dùng cho vật/sự việc.');
     }
@@ -546,7 +679,6 @@ function scanComprehensiveGrammarErrors(
       addError(i, curr, 'interesting', 'Miêu tả tính chất của sự vật/sự việc phải dùng tính từ đuôi -ing ("interesting").');
     }
 
-    // [Nhóm 9] Lặp cặp liên từ (Although ... but / Because ... so)
     if (hasAlthough && curr === 'but') {
       addError(i, curr, '(bỏ "but")', 'Lỗi lặp liên từ: Đã dùng "Although/Though" ở đầu câu thì không dùng "but" ở mệnh đề sau.');
     }
@@ -554,7 +686,6 @@ function scanComprehensiveGrammarErrors(
       addError(i, curr, '(bỏ "so")', 'Lỗi lặp liên từ: Đã dùng "Because" thì không dùng "so" ở mệnh đề kết quả.');
     }
 
-    // [Nhóm 10] Lỗi phát âm từ khóa lệch nghĩa trong ngữ cảnh
     if (isClothingJacketContext && ['chicken', 'chickens', 'check', 'checking'].includes(curr)) {
       addError(
         i,
@@ -567,7 +698,6 @@ function scanComprehensiveGrammarErrors(
       addError(i, curr, 'staff /stɑːf/', 'Lỗi phát âm phân biệt: "staff" (/stɑːf/ - nhân viên) khác với "stuff" (/stʌf/ - đồ đạc).');
     }
 
-    // [Nhóm 4] Chia động từ ngôi thứ 3 số ít & Trợ động từ
     if ((curr === "don't" || curr === 'dont') && singularThirdPersons.includes(prev)) {
       addError(i, curr, "doesn't", `Ngôi thứ 3 số ít ("${prev}") phải dùng trợ động từ "doesn't".`);
     }
@@ -590,7 +720,6 @@ function scanComprehensiveGrammarErrors(
       addError(i, curr, 'V-infinitive', `Sau trợ động từ "didn't", động từ phải để nguyên mẫu.`);
     }
 
-    // [Nhóm 8] Mạo từ a/an & Danh từ số nhiều
     if (curr === 'a' && next && vowels.includes(next[0]) && !['university', 'uniform', 'useful', 'user', 'european'].includes(next)) {
       addError(i, curr, 'an', `Trước từ bắt đầu bằng nguyên âm "${next}" phải dùng mạo từ "an".`);
     }
@@ -612,7 +741,6 @@ function scanComprehensiveGrammarErrors(
       }
     }
 
-    // [Nhóm 5 & C1-C2] Mệnh đề thời gian, Quá khứ & Điều kiện nâng cao
     if (curr === 'will' && ['when', 'while', 'before', 'after', 'until'].includes(prevTwo)) {
       const suggestedFix = isPastIncidentContext ? 'went / V2' : 'bỏ "will" (chia hiện tại đơn)';
       addError(i, curr, suggestedFix, `Mệnh đề thời gian sau "${prevTwo}" không dùng "will".`);
@@ -649,7 +777,6 @@ function scanComprehensiveGrammarErrors(
       }
     }
 
-    // [C1-C2] Câu điều kiện loại 2, 3, Bị động nâng cao & Past Modals
     if (curr === 'would' && ['if', 'wish'].includes(prevTwo)) {
       addError(i, curr, 'had / V2', `Không dùng "would" ngay trong mệnh đề điều kiện "${prevTwo}"; dùng Quá khứ đơn (loại 2) hoặc Quá khứ hoàn thành "had + V3" (loại 3).`);
     }
@@ -709,45 +836,100 @@ function getCefrGrammarRubricInstruction(cefrLevel: string): string {
   }
 }
 
-// 🤖 HÀM GỌI GROQ LLM CÓ TỰ ĐỘNG DỰ PHÒNG MODEL (70B -> 8B)
-async function callGroqEvaluatorWithFallback(
-  groqApiKey: string,
+// =========================================================================
+// 🤖 TẦNG 2: GỌI LLM ĐÁNH GIÁ ĐA NHÀ CUNG CẤP (XOAY VÒNG GROQ -> GEMINI FALLBACK)
+// =========================================================================
+async function callMultiProviderEvaluator(
+  groqKeys: string[],
+  geminiApiKey: string,
   systemPrompt: string,
   userPrompt: string,
   maxTokens: number = 650
 ): Promise<any | null> {
-  const models = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'];
-  for (const modelName of models) {
-    try {
-      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${groqApiKey}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          model: modelName,
-          temperature: 0.1,
-          max_tokens: maxTokens,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt }
-          ]
-        })
-      });
+  // 1. Thử xoay vòng qua các API Key Groq + các model (70B -> 8B)
+  const groqModels = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'];
+  for (const apiKey of groqKeys) {
+    for (const modelName of groqModels) {
+      try {
+        const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            model: modelName,
+            temperature: 0.1,
+            max_tokens: maxTokens,
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: userPrompt }
+            ]
+          })
+        });
 
-      if (res.ok) {
-        const data = await res.json();
-        const rawContent = data.choices?.[0]?.message?.content || '{}';
-        const jsonMatch = rawContent.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          return JSON.parse(jsonMatch[0]);
+        if (res.ok) {
+          const data = await res.json();
+          const rawContent = data.choices?.[0]?.message?.content || '{}';
+          const jsonMatch = rawContent.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            return JSON.parse(jsonMatch[0]);
+          }
         }
+
+        if (res.status === 429 || res.status >= 500) {
+          console.warn(`Groq LLM (${modelName}) hit HTTP ${res.status}, switching key/model...`);
+          break; // Nhảy ngay sang API Key Groq tiếp theo
+        }
+      } catch (err) {
+        console.warn(`Groq LLM (${modelName}) exception, switching...`, err);
+        break;
       }
-    } catch (err) {
-      console.warn(`Groq LLM (${modelName}) fallback triggered:`, err);
     }
   }
+
+  // 2. Fallback tự động sang Google Gemini API khi toàn bộ key Groq chạm trần 429/503
+  if (geminiApiKey) {
+    const geminiModels = ['gemini-2.5-flash', 'gemini-2.0-flash'];
+    for (const gModel of geminiModels) {
+      try {
+        const gRes = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${gModel}:generateContent?key=${geminiApiKey}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              systemInstruction: {
+                parts: [{ text: systemPrompt }]
+              },
+              contents: [
+                {
+                  parts: [{ text: userPrompt }]
+                }
+              ],
+              generationConfig: {
+                temperature: 0.1,
+                maxOutputTokens: maxTokens,
+                responseMimeType: 'application/json'
+              }
+            })
+          }
+        );
+
+        if (gRes.ok) {
+          const gData = await gRes.json();
+          const rawContent = gData.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+          const jsonMatch = rawContent.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            return JSON.parse(jsonMatch[0]);
+          }
+        }
+      } catch (gErr) {
+        console.warn(`Gemini LLM (${gModel}) fallback error:`, gErr);
+      }
+    }
+  }
+
   return null;
 }
 
@@ -765,13 +947,13 @@ export default async function handler(req: Request) {
     return new Response(
       JSON.stringify({
         error: 'Too many requests',
-        message: '⚠️ Bạn đang gửi bài quá nhanh! Vui lòng chờ 1 phút trước khi thử lại để bảo vệ hệ thống.'
+        message: '⚠️ Hệ thống đang nhận quá nhiều bài nộp từ cùng một mạng. Vui lòng chờ vài giây rồi thử lại!'
       }),
       {
         status: 429,
         headers: {
           'Content-Type': 'application/json',
-          'Retry-After': '60',
+          'Retry-After': '15',
           'X-RateLimit-Limit': String(MAX_REQUESTS_PER_WINDOW),
           'X-RateLimit-Remaining': '0',
         }
@@ -780,10 +962,12 @@ export default async function handler(req: Request) {
   }
 
   try {
-    const groqApiKey = process.env.GROQ_API_KEY || process.env.GROQ_API_KEY_NEW;
-    if (!groqApiKey) {
+    const groqKeys = getGroqKeyPool();
+    const geminiApiKey = (process.env.GEMINI_API_KEY || '').trim();
+
+    if (groqKeys.length === 0 && !geminiApiKey) {
       return new Response(
-        JSON.stringify({ error: 'GROQ_API_KEY chưa được cấu hình trên Vercel' }),
+        JSON.stringify({ error: 'Chưa cấu hình GROQ_API_KEY / GROQ_API_KEYS hoặc GEMINI_API_KEY trên Vercel' }),
         { status: 500, headers: { 'Content-Type': 'application/json' } }
       );
     }
@@ -812,35 +996,12 @@ export default async function handler(req: Request) {
       );
     }
 
-    // 🛡️ Ép Whisper ghi âm nguyên văn (verbatim), không tự sửa ngữ pháp hay từ phát âm lệch
-    const whisperFormData: any = new FormData();
-    whisperFormData.append('file', audioFile);
-    whisperFormData.append('model', 'whisper-large-v3');
-    whisperFormData.append('language', 'en');
-    whisperFormData.append('response_format', 'verbose_json');
-    whisperFormData.append(
-      'prompt',
-      'Transcribe strictly verbatim as spoken. Do NOT auto-correct grammar, wrong tenses (like "I buy yesterday", "I leave", "while I am reading", "when I will go"), uncountable plurals ("are works", "personal uses", "informations"), missing third-person singular -s/-es, missing past tense -ed, wrong past participles, or mispronounced words.'
+    // 🎙️ Gỡ băng nguyên văn với cơ chế xoay vòng nhiều Key Groq + dự phòng Gemini
+    const { transcript, avgLogprob, providerUsed } = await transcribeAudioWithFallback(
+      audioFile,
+      groqKeys,
+      geminiApiKey
     );
-
-    const whisperResponse = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${groqApiKey}`,
-      },
-      body: whisperFormData,
-    });
-
-    if (!whisperResponse.ok) {
-      const errText = await whisperResponse.text();
-      return new Response(
-        JSON.stringify({ error: 'Groq Whisper thất bại', details: errText }),
-        { status: 500, headers: { 'Content-Type': 'application/json' } }
-      );
-    }
-
-    const whisperData = await whisperResponse.json();
-    const transcript = (whisperData.text || '').trim();
 
     if (!transcript) {
       return new Response(
@@ -851,17 +1012,11 @@ export default async function handler(req: Request) {
           isWin: false,
           errorWords: [],
           wordAnalysis: [],
-          criteria: null
+          criteria: null,
+          provider: providerUsed
         }),
         { status: 200, headers: { 'Content-Type': 'application/json' } }
       );
-    }
-
-    const segments = whisperData.segments || [];
-    let avgLogprob = -0.4;
-    if (segments.length > 0 && typeof segments[0].avg_logprob === 'number') {
-      const sumLogprob = segments.reduce((acc: number, s: any) => acc + (s.avg_logprob || 0), 0);
-      avgLogprob = sumLogprob / segments.length;
     }
 
     const normalizedLogprob = Math.max(-1.0, Math.min(0, avgLogprob));
@@ -1009,6 +1164,7 @@ export default async function handler(req: Request) {
           isWin: calculatedScore >= 70,
           errorWords: [],
           wordAnalysis: buildWordAnalysisArray(transcript, []),
+          provider: providerUsed,
           criteria: {
             pronunciation: calculatedScore,
             intonation: 85,
@@ -1073,6 +1229,7 @@ export default async function handler(req: Request) {
           isWin: calculatedScore >= 70,
           errorWords: [],
           wordAnalysis: buildWordAnalysisArray(transcript, []),
+          provider: providerUsed,
           criteria: {
             pronunciation: Math.min(100, Math.round(accuracyRatio * 90 + acousticQualityBonus)),
             intonation: prosodyBoost,
@@ -1111,6 +1268,7 @@ export default async function handler(req: Request) {
             isWin: false,
             errorWords: [],
             wordAnalysis: [],
+            provider: providerUsed,
             criteria: { pronunciation: 30, intonation: 30, vocabulary: 30, grammar: 30, fluency: 30, content: 20 }
           }),
           { status: 200, headers: { 'Content-Type': 'application/json' } }
@@ -1138,8 +1296,9 @@ export default async function handler(req: Request) {
       let dynamicFeedback = '';
       let isOffTopicFinal = topicCheck.isOffTopic;
 
-      const parsed = await callGroqEvaluatorWithFallback(
-        groqApiKey,
+      const parsed = await callMultiProviderEvaluator(
+        groqKeys,
+        geminiApiKey,
         `You are an expert Cambridge/IELTS speaking examiner evaluating a CEFR ${cefrLevel} student on a speaking prompt.
 ${getCefrGrammarRubricInstruction(cefrLevel)}
 CRITICAL CHECKS:
@@ -1244,6 +1403,7 @@ Return JSON ONLY:
           isOffTopic: isOffTopicFinal,
           errorWords: errorWordsList,
           wordAnalysis: buildWordAnalysisArray(transcript, errorWordsList),
+          provider: providerUsed,
           criteria: {
             pronunciation: finalPronunciation,
             intonation: intonationScore,
@@ -1264,7 +1424,7 @@ Return JSON ONLY:
       );
 
     // =========================================================================
-    // 🎭 NHÁNH 4: TRẠM 2 - VOCABULARY & REFLEX ARENA (PHÂN TẦNG A1–C2 + PHÁT ÂM + NGỮ ĐIỆU + CHẶN LẠC ĐỀ & CÂU NGẮN)
+    // 🎭 NHÁNH 4: TRẠM 2 - VOCABULARY & REFLEX ARENA
     // =========================================================================
     } else {
       const wordCount = spokenWords.length;
@@ -1282,6 +1442,7 @@ Return JSON ONLY:
             isWin: false,
             errorWords: [],
             wordAnalysis: [],
+            provider: providerUsed,
             criteria: { pronunciation: 30, intonation: 30, vocabulary: 30, grammar: 30, fluency: 30, content: 20 }
           }),
           { status: 200, headers: { 'Content-Type': 'application/json' } }
@@ -1303,11 +1464,9 @@ Return JSON ONLY:
         /\bcould\s+have\b/.test(lowerTranscript) ||
         /\bmight\s+have\b/.test(lowerTranscript);
 
-      // 1. 🎯 KIỂM TRA ĐỘ BÁM SÁT CHỦ ĐỀ TỔNG QUÁT (ĐÃ TÁCH BÀI MẪU THAM KHẢO)
       const topicCheck = evaluateTopicRelevance(transcript, targetPrompt);
       const prosodyEval = evaluateProsodyScore(studentPitchData, referencePitchData);
 
-      // 2. 🧠 CHẠY BỘ QUÉT NGỮ PHÁP & PHÁT ÂM LỆCH NGỮ CẢNH TẠI CHỖ (A1 -> C2)
       let errorWordsList: DetectedGrammarError[] = scanComprehensiveGrammarErrors(
         spokenWords,
         lowerTranscript,
@@ -1319,7 +1478,6 @@ Return JSON ONLY:
       let advancedStructuresUsed: string[] = [];
       let isCompletelyOffTopic = topicCheck.isOffTopic;
 
-      // Bắt lỗi sai thì ngữ cảnh thói quen
       const isHabitualPrompt = 
         lowerPrompt.includes('how you help') || 
         lowerPrompt.includes('housework') || 
@@ -1350,7 +1508,6 @@ Return JSON ONLY:
         });
       }
 
-      // Bắt lỗi câu ngắt cụt hoặc cụm từ thiếu động từ chính (Sentence Fragment)
       const lastWord = spokenWords[spokenWords.length - 1]?.toLowerCase() || '';
       const incompleteEndings = [
         'my', 'your', 'his', 'her', 'their', 'our', 'the', 'a', 'an',
@@ -1377,7 +1534,6 @@ Return JSON ONLY:
         });
       }
 
-      // 3. 🎯 TÍNH ĐIỂM ĐỘC LẬP CHO TỪNG TIÊU CHÍ (PHÁT ÂM, NGỮ ĐIỆU, TRÔI CHẢY, TỪ VỰNG, NGỮ PHÁP, NỘI DUNG)
       const hasNoErrors = errorWordsList.length === 0;
 
       let pronunciationScore = hasNoErrors
@@ -1423,9 +1579,9 @@ Return JSON ONLY:
       let contentScore = baseContent;
       let fluencyScore = baseFluency;
 
-      // 4. 🤖 GỌI GROQ LLM PHÂN TÍCH ĐỘ KHỚP CHỦ ĐỀ, NGỮ PHÁP & PHÁT ÂM TỪ KHÓA
-      const parsed = await callGroqEvaluatorWithFallback(
-        groqApiKey,
+      const parsed = await callMultiProviderEvaluator(
+        groqKeys,
+        geminiApiKey,
         `You are a strict, authoritative Cambridge & IELTS Speaking Examiner evaluating a CEFR ${cefrLevel} student.
 Target Prompt/Context: "${targetPrompt}".
 
@@ -1528,7 +1684,6 @@ Return JSON ONLY:
         vocabScore = Math.min(20, vocabScore);
       }
 
-      // 5. TÍNH ĐIỂM TỔNG HỢP THEO ĐÚNG TRỌNG SỐ 6 TIÊU CHÍ (PHÁT ÂM 20%, NGỮ ĐIỆU 20%, TRÔI CHẢY 15%, TỪ VỰNG 15%, NGỮ PHÁP 15%, NỘI DUNG 15%)
       const cappedGrammar = errorWordsList.length > 0
         ? Math.min(grammarScore, Math.max(25, 84 - errorWordsList.length * 10))
         : grammarScore;
@@ -1551,7 +1706,6 @@ Return JSON ONLY:
         )
       );
 
-      // Khóa trần tổng điểm khi lạc đề, câu quá ngắn hoặc thiếu chủ-vị
       if (isCompletelyOffTopic) {
         calculatedScore = Math.min(42, calculatedScore);
       } else if (wordCount < 8 || isIncompleteSentence || !hasMainVerb) {
@@ -1560,7 +1714,6 @@ Return JSON ONLY:
         calculatedScore = Math.min(55, calculatedScore);
       }
 
-      // 6. NHẬN XÉT SƯ PHẠM CỤ THỂ
       if (!dynamicFeedback) {
         const advNote = advancedStructuresUsed.length > 0
           ? ` Điểm cộng cho việc vận dụng cấu trúc nâng cao (${advancedStructuresUsed.join(', ')}).`
@@ -1599,6 +1752,7 @@ Return JSON ONLY:
           errorWords: errorWordsList,
           wordAnalysis: wordAnalysis,
           advancedStructures: advancedStructuresUsed,
+          provider: providerUsed,
           criteria: {
             pronunciation: cappedPronunciation,
             intonation: intonationScore,
@@ -1620,7 +1774,7 @@ Return JSON ONLY:
     }
   } catch (err: any) {
     return new Response(
-      JSON.stringify({ error: err.message || 'Lỗi xử lý Whisper Serverless' }),
+      JSON.stringify({ error: err.message || 'Lỗi xử lý chấm điểm Serverless' }),
       { status: 500, headers: { 'Content-Type': 'application/json' } }
     );
   }
