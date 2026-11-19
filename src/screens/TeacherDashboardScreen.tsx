@@ -1,5 +1,5 @@
 // src/screens/TeacherDashboardScreen.tsx
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   View, 
   Text, 
@@ -41,6 +41,8 @@ interface ClassItem {
   tenant_id: string;
   instructor_id?: string;
 }
+
+const PAGE_SIZE = 50;
 
 // 🛡️ Hàm tự động lọc bỏ các cột chưa tồn tại trong schema cache của Supabase để tránh lỗi PGRST204
 async function safeSupabaseInsert(table: string, initialPayload: Record<string, any>) {
@@ -88,11 +90,24 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
 
   const [submissions, setSubmissions] = useState<SubmissionRecord[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const [isExportingCsv, setIsExportingCsv] = useState<boolean>(false);
   const [selectedClass, setSelectedClass] = useState<string>('ALL');
   const [searchStudentQuery, setSearchStudentQuery] = useState<string>('');
   const [classList, setClassList] = useState<ClassItem[]>([]);
   const [assignedClassCodes, setAssignedClassCodes] = useState<string[]>([]);
   const [currentPlayingAudio, setCurrentPlayingAudio] = useState<string | null>(null);
+
+  // 📄 TRẠNG THÁI PHÂN TRANG & THỐNG KÊ TOÀN LỚP
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [totalFilteredCount, setTotalFilteredCount] = useState<number>(0);
+  const [totalOwnedSubmissionsCount, setTotalOwnedSubmissionsCount] = useState<number>(0);
+  const [classCountsMap, setClassCountsMap] = useState<Record<string, number>>({});
+  const [summaryStats, setSummaryStats] = useState<{ total: number; avg: number; passRate: number }>({
+    total: 0,
+    avg: 0,
+    passRate: 0,
+  });
+  const isInitialMountedRef = useRef<boolean>(false);
 
   // Quản lý Phân quyền (RBAC) & Context
   const [userRole, setUserRole] = useState<string>('INSTRUCTOR');
@@ -183,7 +198,8 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
       }
 
       setIsAuthenticated(true);
-      await fetchDashboardData(profile.tenant_id, profile.role, session.user.id);
+      await fetchDashboardData(profile.tenant_id, profile.role, session.user.id, 1);
+      isInitialMountedRef.current = true;
     } catch (err) {
       console.warn('Lỗi kiểm tra phiên đăng nhập:', err);
       setIsAuthenticated(false);
@@ -248,7 +264,7 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
     try {
       if (!supabase) return;
 
-      // 🛡️ Bước 1: Kiểm tra mã mời trên bảng invite_codes qua RPC bảo mật (check hạn dùng + số lượt)
+      // 🛡️ Bước 1: Kiểm tra mã mời trên bảng invite_codes qua RPC bảo mật
       const { data: inviteCheck, error: rpcErr } = await supabase.rpc('verify_and_consume_invite_code', {
         input_code: inviteCodeInput.trim().toUpperCase(),
       });
@@ -269,7 +285,6 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
       const cleanEmail = loginEmail.trim().toLowerCase();
       const cleanName = fullNameInput.trim();
 
-      // Bước 2: Tạo tài khoản Supabase Auth
       const { data, error } = await supabase.auth.signUp({
         email: cleanEmail,
         password: loginPassword,
@@ -335,6 +350,8 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
     setSubmissions([]);
     setClassList([]);
     setAssignedClassCodes([]);
+    setTotalFilteredCount(0);
+    setSummaryStats({ total: 0, avg: 0, passRate: 0 });
   };
 
   const extractSubmissionClassCode = (s: SubmissionRecord): string => {
@@ -348,11 +365,128 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
     return 'PUBLIC';
   };
 
-  // 🔒 TẢI DỮ LIỆU TÁCH BIỆT THEO TỪNG GIẢNG VIÊN (INSTRUCTOR ISOLATION)
+  const getFinalScore = (s: SubmissionRecord) =>
+    s.manual_score !== null && s.manual_score !== undefined ? Number(s.manual_score) : Number(s.score);
+
+  const ownedCodesList = useMemo(() => {
+    const codeSet = new Set<string>();
+    classList.forEach((c) => {
+      if (c.code) codeSet.add(c.code.toUpperCase().replace(/\s+/g, ''));
+    });
+    assignedClassCodes.forEach((c) => {
+      if (c) codeSet.add(c.toUpperCase().replace(/\s+/g, ''));
+    });
+    return Array.from(codeSet).filter((c) => c && c !== 'PUBLIC');
+  }, [classList, assignedClassCodes]);
+
+  // 📄 HÀM TẢI PHÂN TRANG TRỰC TIẾP TỪ SUPABASE (50 BÀI / TRANG + THỐNG KÊ TOÀN LỚP)
+  const fetchSubmissionsPage = async (
+    page: number,
+    classFilter: string,
+    searchQuery: string,
+    codesList: string[],
+    activeRole: string
+  ) => {
+    if (!supabase) return;
+
+    if (activeRole !== 'SUPER_ADMIN' && codesList.length === 0) {
+      setSubmissions([]);
+      setTotalFilteredCount(0);
+      setTotalOwnedSubmissionsCount(0);
+      setClassCountsMap({});
+      setSummaryStats({ total: 0, avg: 0, passRate: 0 });
+      return;
+    }
+
+    const from = (page - 1) * PAGE_SIZE;
+    const to = from + PAGE_SIZE - 1;
+
+    let pageQuery = supabase
+      .from('submissions')
+      .select('*', { count: 'exact' })
+      .order('created_at', { ascending: false })
+      .range(from, to);
+
+    if (activeRole !== 'SUPER_ADMIN' && codesList.length > 0) {
+      const ownerOr = codesList
+        .flatMap((code) => [`class_code.ilike.${code}`, `class_name.ilike.%[${code}]%`])
+        .join(',');
+      pageQuery = pageQuery.or(ownerOr);
+    }
+
+    if (classFilter !== 'ALL') {
+      pageQuery = pageQuery.or(`class_code.ilike.${classFilter},class_name.ilike.%[${classFilter}]%`);
+    }
+
+    const cleanSearch = searchQuery.trim();
+    if (cleanSearch) {
+      pageQuery = pageQuery.or(`student_name.ilike.%${cleanSearch}%,student_code.ilike.%${cleanSearch}%`);
+    }
+
+    const { data: pageData, count: exactFilteredCount, error: pageErr } = await pageQuery;
+    if (!pageErr && pageData) {
+      setSubmissions(pageData as SubmissionRecord[]);
+      setTotalFilteredCount(exactFilteredCount ?? pageData.length);
+    }
+
+    // Truy vấn gọn nhẹ chỉ lấy cột điểm & mã lớp trên toàn bộ bài nộp thuộc quyền giảng viên để tính KPI & đếm từng thẻ lớp chính xác
+    let statsQuery = supabase
+      .from('submissions')
+      .select('score, manual_score, class_code, class_name, student_name, student_code');
+
+    if (activeRole !== 'SUPER_ADMIN' && codesList.length > 0) {
+      const ownerOr = codesList
+        .flatMap((code) => [`class_code.ilike.${code}`, `class_name.ilike.%[${code}]%`])
+        .join(',');
+      statsQuery = statsQuery.or(ownerOr);
+    }
+
+    const { data: allOwnedRows } = await statsQuery;
+    if (allOwnedRows) {
+      setTotalOwnedSubmissionsCount(allOwnedRows.length);
+
+      const countsByClass: Record<string, number> = {};
+      let filteredTotal = 0;
+      let filteredSum = 0;
+      let filteredPassed = 0;
+      const lowerSearch = cleanSearch.toLowerCase();
+
+      allOwnedRows.forEach((row: any) => {
+        const rowCode = extractSubmissionClassCode(row as SubmissionRecord);
+        countsByClass[rowCode] = (countsByClass[rowCode] || 0) + 1;
+
+        const matchClass = classFilter === 'ALL' || rowCode === classFilter;
+        const matchSearch =
+          !lowerSearch ||
+          (row.student_name || '').toLowerCase().includes(lowerSearch) ||
+          (row.student_code || '').toLowerCase().includes(lowerSearch);
+
+        if (matchClass && matchSearch) {
+          filteredTotal++;
+          const finalSc =
+            row.manual_score !== null && row.manual_score !== undefined
+              ? Number(row.manual_score)
+              : Number(row.score || 0);
+          filteredSum += finalSc;
+          if (finalSc >= 70) filteredPassed++;
+        }
+      });
+
+      setClassCountsMap(countsByClass);
+      setSummaryStats({
+        total: filteredTotal,
+        avg: filteredTotal > 0 ? Math.round(filteredSum / filteredTotal) : 0,
+        passRate: filteredTotal > 0 ? Math.round((filteredPassed / filteredTotal) * 100) : 0,
+      });
+    }
+  };
+
+  // 🔒 TẢI DANH SÁCH LỚP & TRANG BÀI NỘP ĐẦU TIÊN
   const fetchDashboardData = async (
     overrideTenantId?: string,
     overrideRole?: string,
-    overrideInstructorId?: string
+    overrideInstructorId?: string,
+    targetPage: number = currentPage
   ) => {
     setLoading(true);
     try {
@@ -416,83 +550,44 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
       const instructorAssignCodes = (assignData || [])
         .map((a: any) => (a.class_code || '').toUpperCase().replace(/\s+/g, ''))
         .filter((c: string) => Boolean(c) && c !== 'PUBLIC');
-      setAssignedClassCodes(Array.from(new Set(instructorAssignCodes)));
+      const uniqueAssignCodes = Array.from(new Set(instructorAssignCodes));
+      setAssignedClassCodes(uniqueAssignCodes);
 
-      const ownedCodesSet = new Set<string>([
-        ...validClasses.map((c) => (c.code || '').toUpperCase().replace(/\s+/g, '')).filter(Boolean),
-        ...instructorAssignCodes,
-      ]);
+      const mergedCodes = Array.from(
+        new Set([
+          ...validClasses.map((c) => (c.code || '').toUpperCase().replace(/\s+/g, '')).filter(Boolean),
+          ...uniqueAssignCodes,
+        ])
+      ).filter((c) => c && c !== 'PUBLIC');
 
-      const ownedCodesList = Array.from(ownedCodesSet);
-
-      if (activeRole !== 'SUPER_ADMIN' && ownedCodesList.length === 0) {
-        setSubmissions([]);
-      } else {
-        let subQuery = supabase
-          .from('submissions')
-          .select('*')
-          .order('created_at', { ascending: false })
-          .limit(500);
-
-        if (activeRole !== 'SUPER_ADMIN' && ownedCodesList.length > 0) {
-          const orFilters = ownedCodesList
-            .flatMap((code) => [`class_code.ilike.${code}`, `class_name.ilike.%[${code}]%`])
-            .join(',');
-          subQuery = subQuery.or(orFilters);
-        }
-
-        const { data: subData, error: subErr } = await subQuery;
-
-        if (subErr) {
-          console.warn("Lỗi tải submissions:", subErr.message);
-        } else if (subData) {
-          setSubmissions(subData as SubmissionRecord[]);
-        }
-      }
+      await fetchSubmissionsPage(targetPage, selectedClass, searchStudentQuery, mergedCodes, activeRole);
     } catch (err) {
-      console.error("Lỗi khi kết nối lấy dữ liệu Dashboard:", err);
+      console.error('Lỗi khi kết nối lấy dữ liệu Dashboard:', err);
     } finally {
       setLoading(false);
     }
   };
 
+  // Tự động tải lại trang tương ứng khi Giảng viên đổi trang, đổi thẻ lớp hoặc gõ tìm kiếm (debounce 350ms)
+  useEffect(() => {
+    if (!isInitialMountedRef.current || !isAuthenticated) return;
+    const timer = setTimeout(async () => {
+      setLoading(true);
+      await fetchSubmissionsPage(currentPage, selectedClass, searchStudentQuery, ownedCodesList, userRole);
+      setLoading(false);
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [currentPage, selectedClass, searchStudentQuery]);
+
   const availableFilterCodes = useMemo(() => {
-    const codeSet = new Set<string>();
-    classList.forEach(c => {
-      if (c.code) codeSet.add(c.code.toUpperCase().replace(/\s+/g, ''));
-    });
-    assignedClassCodes.forEach(c => {
-      if (c) codeSet.add(c.toUpperCase().replace(/\s+/g, ''));
-    });
-    submissions.forEach(s => {
-      const code = extractSubmissionClassCode(s);
+    const codeSet = new Set<string>(ownedCodesList);
+    Object.keys(classCountsMap).forEach((code) => {
       if (code && code !== 'PUBLIC') codeSet.add(code);
     });
     return Array.from(codeSet);
-  }, [classList, assignedClassCodes, submissions]);
+  }, [ownedCodesList, classCountsMap]);
 
-  const filteredSubmissions = useMemo(() => {
-    const q = searchStudentQuery.trim().toLowerCase();
-    return submissions.filter(s => {
-      const matchClass = selectedClass === 'ALL' || extractSubmissionClassCode(s) === selectedClass;
-      if (!matchClass) return false;
-      if (!q) return true;
-      const nameMatch = (s.student_name || '').toLowerCase().includes(q);
-      const codeMatch = (s.student_code || '').toLowerCase().includes(q);
-      return nameMatch || codeMatch;
-    });
-  }, [submissions, selectedClass, searchStudentQuery]);
-
-  const totalSubmissions = filteredSubmissions.length;
-  const getFinalScore = (s: SubmissionRecord) => (s.manual_score !== null && s.manual_score !== undefined) ? Number(s.manual_score) : Number(s.score);
-
-  const avgScore = totalSubmissions > 0
-    ? Math.round(filteredSubmissions.reduce((acc, curr) => acc + getFinalScore(curr), 0) / totalSubmissions)
-    : 0;
-
-  const passRate = totalSubmissions > 0
-    ? Math.round((filteredSubmissions.filter(s => getFinalScore(s) >= 70).length / totalSubmissions) * 100)
-    : 0;
+  const totalPages = Math.max(1, Math.ceil(totalFilteredCount / PAGE_SIZE));
 
   const handleCreateClass = async () => {
     setCreateClassError('');
@@ -535,6 +630,7 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
       setAssignClassId(createdItem.id);
       setAssignClassCodeInput(cleanCode);
       setSelectedClass(cleanCode);
+      setCurrentPage(1);
 
       setShowCreateClassModal(false);
       setNewClassCodeInput('');
@@ -546,7 +642,7 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
         `✅ Đã tạo lớp "${cleanName}" với Mã lớp [${cleanCode}]. Sinh viên nhập mã [${cleanCode}] sẽ tự động nộp bài vào bảng điểm này!`
       );
 
-      await fetchDashboardData();
+      await fetchDashboardData(undefined, undefined, undefined, 1);
     } catch (err: any) {
       setCreateClassError(`❌ Lỗi hệ thống: ${err.message || 'Không thể tạo lớp mới.'}`);
     } finally {
@@ -596,6 +692,7 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
           }));
           setEditingItem(null);
           notifyUser('success', '✅ Đã cập nhật điểm và nhận xét của Giảng viên!');
+          await fetchSubmissionsPage(currentPage, selectedClass, searchStudentQuery, ownedCodesList, userRole);
         }
       }
     } catch (e: any) {
@@ -652,7 +749,8 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
         setAssignDescription('');
         setCreateAssignError('');
         setSelectedClass(normalizedClassCode);
-        await fetchDashboardData();
+        setCurrentPage(1);
+        await fetchDashboardData(undefined, undefined, undefined, 1);
         notifyUser(
           'success',
           `✅ Đã phát hành đề "${assignTitle}" cho mã lớp [${normalizedClassCode}]. Sinh viên chỉ cần nhập mã lớp này để nhận bài!`
@@ -726,49 +824,83 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
     setImportCsvText(sample);
   };
 
-  const handleExportCSV = () => {
-    if (filteredSubmissions.length === 0) {
+  // 📥 XUẤT EXCEL TOÀN BỘ DỮ LIỆU CỦA LỚP ĐANG CHỌN (KHÔNG BỊ CẮT BỞI PHÂN TRANG)
+  const handleExportCSV = async () => {
+    if (!supabase || totalFilteredCount === 0) {
       notifyUser('error', 'Không có dữ liệu bài nộp để xuất!');
       return;
     }
 
-    const headers = [
-      "MSSV", "Ho va Ten", "Ma Lop", "Chi Tiet Tram",
-      "Diem AI", "Diem Giang Vien", "Diem Chot",
-      "Ban Ghi Am (Transcript)", "Phan Tich Chi Tiet AI", "Nhan Xet Giang Vien",
-      "Cap Do", "Ky Nang", "Thoi Gian"
-    ];
-    const rows = filteredSubmissions.map(s => {
-      const finalScore = getFinalScore(s);
-      const code = extractSubmissionClassCode(s);
-      return [
-        `"${s.student_code || 'GUEST'}"`,
-        `"${(s.student_name || 'N/A').replace(/"/g, '""')}"`,
-        `"${code}"`,
-        `"${(s.class_name || 'Lop Chung').replace(/"/g, '""')}"`,
-        s.score,
-        s.manual_score !== null ? s.manual_score : 'Chua sua',
-        finalScore,
-        `"${(s.transcript || '').replace(/"/g, '""')}"`,
-        `"${(s.feedback || '').replace(/"/g, '""')}"`,
-        `"${(s.teacher_feedback || '').replace(/"/g, '""')}"`,
-        `"${s.cefr_level || 'B1'}"`,
-        `"${s.mode || 'SPEAKING'}"`,
-        `"${new Date(s.created_at).toLocaleString('vi-VN')}"`
+    setIsExportingCsv(true);
+    try {
+      let exportQuery = supabase
+        .from('submissions')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(5000);
+
+      if (userRole !== 'SUPER_ADMIN' && ownedCodesList.length > 0) {
+        const ownerOr = ownedCodesList
+          .flatMap((code) => [`class_code.ilike.${code}`, `class_name.ilike.%[${code}]%`])
+          .join(',');
+        exportQuery = exportQuery.or(ownerOr);
+      }
+
+      if (selectedClass !== 'ALL') {
+        exportQuery = exportQuery.or(`class_code.ilike.${selectedClass},class_name.ilike.%[${selectedClass}]%`);
+      }
+
+      const cleanSearch = searchStudentQuery.trim();
+      if (cleanSearch) {
+        exportQuery = exportQuery.or(`student_name.ilike.%${cleanSearch}%,student_code.ilike.%${cleanSearch}%`);
+      }
+
+      const { data: allExportRows, error } = await exportQuery;
+      if (error || !allExportRows || allExportRows.length === 0) {
+        notifyUser('error', 'Không thể tải danh sách bài nộp để xuất Excel.');
+        return;
+      }
+
+      const headers = [
+        "MSSV", "Ho va Ten", "Ma Lop", "Chi Tiet Tram",
+        "Diem AI", "Diem Giang Vien", "Diem Chot",
+        "Ban Ghi Am (Transcript)", "Phan Tich Chi Tiet AI", "Nhan Xet Giang Vien",
+        "Cap Do", "Ky Nang", "Thoi Gian"
       ];
-    });
+      const rows = (allExportRows as SubmissionRecord[]).map(s => {
+        const finalScore = getFinalScore(s);
+        const code = extractSubmissionClassCode(s);
+        return [
+          `"${s.student_code || 'GUEST'}"`,
+          `"${(s.student_name || 'N/A').replace(/"/g, '""')}"`,
+          `"${code}"`,
+          `"${(s.class_name || 'Lop Chung').replace(/"/g, '""')}"`,
+          s.score,
+          s.manual_score !== null ? s.manual_score : 'Chua sua',
+          finalScore,
+          `"${(s.transcript || '').replace(/"/g, '""')}"`,
+          `"${(s.feedback || '').replace(/"/g, '""')}"`,
+          `"${(s.teacher_feedback || '').replace(/"/g, '""')}"`,
+          `"${s.cefr_level || 'B1'}"`,
+          `"${s.mode || 'SPEAKING'}"`,
+          `"${new Date(s.created_at).toLocaleString('vi-VN')}"`
+        ];
+      });
 
-    const csvContent = "data:text/csv;charset=utf-8,\uFEFF" 
-      + [headers.join(","), ...rows.map(e => e.join(","))].join("\n");
+      const csvContent = "data:text/csv;charset=utf-8,\uFEFF" 
+        + [headers.join(","), ...rows.map(e => e.join(","))].join("\n");
 
-    if (typeof window !== 'undefined') {
-      const encodedUri = encodeURI(csvContent);
-      const link = document.createElement("a");
-      link.setAttribute("href", encodedUri);
-      link.setAttribute("download", `Bang_Diem_${selectedClass}_${Date.now()}.csv`);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      if (typeof window !== 'undefined') {
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", `Bang_Diem_${selectedClass}_${Date.now()}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
+    } finally {
+      setIsExportingCsv(false);
     }
   };
 
@@ -945,8 +1077,8 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
           <TouchableOpacity onPress={() => fetchDashboardData()} style={styles.refreshIconBtn}>
             <Text style={styles.exportBtnText}>🔄</Text>
           </TouchableOpacity>
-          <TouchableOpacity onPress={handleExportCSV} style={styles.exportBtn}>
-            <Text style={styles.exportBtnText}>📥 EXCEL</Text>
+          <TouchableOpacity onPress={handleExportCSV} style={styles.exportBtn} disabled={isExportingCsv}>
+            <Text style={styles.exportBtnText}>{isExportingCsv ? '⏳...' : '📥 EXCEL'}</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={handleInstructorLogout} style={styles.logoutBtn}>
             <Text style={styles.logoutBtnText}>🚪 THOÁT</Text>
@@ -1007,18 +1139,18 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
         <View style={styles.statsRow}>
           <View style={styles.statCard}>
             <Text style={styles.statLabel}>SỐ BÀI NỘP</Text>
-            <Text style={styles.statValue}>{totalSubmissions}</Text>
+            <Text style={styles.statValue}>{summaryStats.total}</Text>
           </View>
           <View style={styles.statCard}>
             <Text style={styles.statLabel}>ĐIỂM TRUNG BÌNH</Text>
-            <Text style={[styles.statValue, { color: avgScore >= 70 ? '#39FF14' : '#FFD700' }]}>
-              {avgScore}đ
+            <Text style={[styles.statValue, { color: summaryStats.avg >= 70 ? '#39FF14' : '#FFD700' }]}>
+              {summaryStats.avg}đ
             </Text>
           </View>
           <View style={styles.statCard}>
             <Text style={styles.statLabel}>TỶ LỆ ĐẠT CHUẨN</Text>
-            <Text style={[styles.statValue, { color: passRate >= 75 ? '#00FFFF' : '#FF0055' }]}>
-              {passRate}%
+            <Text style={[styles.statValue, { color: summaryStats.passRate >= 75 ? '#00FFFF' : '#FF0055' }]}>
+              {summaryStats.passRate}%
             </Text>
           </View>
         </View>
@@ -1030,25 +1162,34 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
             placeholder="🔍 Gõ tên hoặc MSSV sinh viên để lọc nhanh..."
             placeholderTextColor="#666688"
             value={searchStudentQuery}
-            onChangeText={setSearchStudentQuery}
+            onChangeText={(txt) => {
+              setSearchStudentQuery(txt);
+              setCurrentPage(1);
+            }}
           />
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll}>
             <TouchableOpacity 
               style={[styles.filterChip, selectedClass === 'ALL' && styles.filterChipActive]}
-              onPress={() => setSelectedClass('ALL')}
+              onPress={() => {
+                setSelectedClass('ALL');
+                setCurrentPage(1);
+              }}
             >
               <Text style={[styles.filterChipText, selectedClass === 'ALL' && styles.filterChipTextActive]}>
-                Tất Cả Lớp Của Tôi ({submissions.length})
+                Tất Cả Lớp Của Tôi ({totalOwnedSubmissionsCount})
               </Text>
             </TouchableOpacity>
             {availableFilterCodes.map((code) => {
               const clsObj = classList.find(c => c.code?.toUpperCase() === code);
-              const countInClass = submissions.filter(s => extractSubmissionClassCode(s) === code).length;
+              const countInClass = classCountsMap[code] || 0;
               return (
                 <TouchableOpacity 
                   key={code} 
                   style={[styles.filterChip, selectedClass === code && styles.filterChipActive]}
-                  onPress={() => setSelectedClass(code)}
+                  onPress={() => {
+                    setSelectedClass(code);
+                    setCurrentPage(1);
+                  }}
                 >
                   <Text style={[styles.filterChipText, selectedClass === code && styles.filterChipTextActive]}>
                     🏫 {code}{clsObj?.name ? ` (${clsObj.name})` : ''} • {countInClass} bài
@@ -1069,14 +1210,14 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
 
           {loading ? (
             <ActivityIndicator size="large" color="#00FFFF" style={{ marginVertical: 30 }} />
-          ) : filteredSubmissions.length === 0 ? (
+          ) : submissions.length === 0 ? (
             <Text style={styles.emptyText}>
               {availableFilterCodes.length === 0
                 ? 'Bạn chưa có lớp học phần nào. Hãy bấm "🏫 TẠO LỚP MỚI" để bắt đầu!'
                 : `Chưa có sinh viên nào nộp bài vào lớp "${selectedClass === 'ALL' ? 'của bạn' : selectedClass}".`}
             </Text>
           ) : (
-            filteredSubmissions.map((item) => {
+            submissions.map((item) => {
               const finalScore = getFinalScore(item);
               const isPass = finalScore >= 70;
               const hasOverride = item.manual_score !== null && item.manual_score !== undefined;
@@ -1152,6 +1293,35 @@ export default function TeacherDashboardScreen({ onBack }: Props) {
             })
           )}
         </View>
+
+        {/* 📄 THANH ĐIỀU HƯỚNG PHÂN TRANG (PAGINATION BAR - 50 BÀI/TRANG) */}
+        {totalFilteredCount > PAGE_SIZE && (
+          <View style={styles.paginationBar}>
+            <TouchableOpacity
+              disabled={currentPage <= 1 || loading}
+              onPress={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              style={[styles.pageNavBtn, (currentPage <= 1 || loading) && styles.pageNavBtnDisabled]}
+            >
+              <Text style={[styles.pageNavText, (currentPage <= 1 || loading) && styles.pageNavTextDisabled]}>
+                ◀ TRANG TRƯỚC
+              </Text>
+            </TouchableOpacity>
+
+            <Text style={styles.pageInfoText}>
+              Trang {currentPage} / {totalPages} ({totalFilteredCount} bài nộp)
+            </Text>
+
+            <TouchableOpacity
+              disabled={currentPage >= totalPages || loading}
+              onPress={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              style={[styles.pageNavBtn, (currentPage >= totalPages || loading) && styles.pageNavBtnDisabled]}
+            >
+              <Text style={[styles.pageNavText, (currentPage >= totalPages || loading) && styles.pageNavTextDisabled]}>
+                TRANG SAU ▶
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         {currentPlayingAudio && (
           <View style={styles.floatingAudioPlayer}>
@@ -1715,6 +1885,39 @@ const styles = StyleSheet.create({
   listenBtn: { backgroundColor: '#1A0B2E', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, borderWidth: 1, borderColor: '#00FFFF' },
   listenBtnText: { color: '#00FFFF', fontSize: 8, fontWeight: '900' },
   emptyText: { color: '#8888AA', fontSize: 11, textAlign: 'center', marginVertical: 20 },
+
+  paginationBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 12,
+    paddingHorizontal: 4,
+  },
+  pageNavBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: '#0B192C',
+    borderWidth: 1,
+    borderColor: '#00FFFF',
+  },
+  pageNavBtnDisabled: {
+    backgroundColor: '#1A0B2E',
+    borderColor: '#332255',
+  },
+  pageNavText: {
+    color: '#00FFFF',
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
+  pageNavTextDisabled: {
+    color: '#666688',
+  },
+  pageInfoText: {
+    color: '#FFD700',
+    fontSize: 10.5,
+    fontWeight: 'bold',
+  },
 
   floatingAudioPlayer: { marginTop: 15, backgroundColor: '#070212', borderRadius: 12, borderWidth: 1.5, borderColor: '#39FF14', padding: 12 },
   floatingPlayerTitle: { color: '#39FF14', fontSize: 9, fontWeight: '900' },
