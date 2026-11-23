@@ -520,7 +520,6 @@ function analyzeSpeechDiagnostics(
   const totalRaw = Math.max(1, spokenWords.length);
   const disfluencyRatio = (fillerCount + stutterCount) / totalRaw;
 
-  // 1. Đo tốc độ nói WPM phân tầng theo cấp độ CEFR (A1-A2 vs B1-B2 vs C1-C2)
   const wpmBenchmark = getCefrWpmBenchmark(cefrLevel);
   let wpm: number | null = null;
   if (meta.durationSec >= 2.0 && effectiveWordCount > 0) {
@@ -529,7 +528,6 @@ function analyzeSpeechDiagnostics(
   const isTooSlow = wpm !== null && wpm < wpmBenchmark.minAcceptable && effectiveWordCount >= 6;
   const hasLongPause = meta.maxPauseSec > 2.6;
 
-  // 2. Chống đọc lặp nguyên văn đề bài (Prompt Parroting Detector - N-gram 3 từ)
   const cleanScenarioPrompt = targetPrompt
     .replace(/Reference\s+English\s+Sample\s*:[\s\S]*/gi, ' ')
     .replace(/Context\s*\(VI\)\s*:[^|]*/gi, ' ')
@@ -558,7 +556,6 @@ function analyzeSpeechDiagnostics(
   }
   const isParroting = parrotingRatio >= 0.55;
 
-  // 3. Đo độ đa dạng từ vựng thực chất (TTR - Type-Token Ratio) & Academic Connectors
   const stopWords = new Set(['the', 'a', 'an', 'is', 'are', 'was', 'were', 'to', 'of', 'in', 'on', 'at', 'for', 'and', 'it', 'i', 'we', 'my', 'our']);
   const contentTokens = effectiveWords.filter((w) => !stopWords.has(w) && w.length >= 3);
   const uniqueContentTokens = new Set(contentTokens);
@@ -576,7 +573,6 @@ function analyzeSpeechDiagnostics(
     if (academicConnectors.has(tok)) academicConnectorCount++;
   });
 
-  // 4. Kiểm tra nhiễu âm thanh / nói lầm bầm
   const isMumbledOrNoisy = meta.noSpeechProb > 0.6 || meta.compressionRatio > 2.45 || meta.avgLogprob < -0.88;
 
   const diagnosticNotes: string[] = [];
@@ -956,21 +952,40 @@ function scanComprehensiveGrammarErrors(
     'restaurant', 'store', 'shop', 'product', 'item', 'book', 'movie', 'car', 'bike'
   ]);
 
-  // Các danh từ đứng sau tạo thành cụm danh từ ghép số nhiều/không đếm được (tránh bắt nhầm "buy card games", "open account settings")
   const compoundHeadNouns = new Set([
     'games', 'game', 'settings', 'details', 'information', 'data', 'history', 'services',
     'reviews', 'prices', 'options', 'features', 'items', 'products', 'tickets', 'orders',
     'cards', 'websites', 'apps', 'stores', 'shops', 'books', 'movies', 'cars', 'bikes'
   ]);
 
-  const hasAlthough = spokenWords.includes('although') || spokenWords.includes('though');
-  const hasBecause = spokenWords.includes('because');
+  // Chỉ kiểm tra lặp liên từ (Although...but / Because...so) trong CÙNG MỘT CÂU
+  const sentences = lowerTranscript.split(/[.!?]+/).map((s) => s.trim()).filter(Boolean);
+  const doubleConjunctionIndices = new Set<number>();
+  let runningIdx = 0;
+  sentences.forEach((sent) => {
+    const sWords = sent.replace(/[^a-z0-9\s']/g, ' ').split(/\s+/).filter(Boolean);
+    const hasAltInSent = sWords.includes('although') || sWords.includes('though');
+    const becausePos = sWords.indexOf('because');
+    sWords.forEach((w, idxInSent) => {
+      if (hasAltInSent && w === 'but') {
+        doubleConjunctionIndices.add(runningIdx + idxInSent);
+      }
+      if (becausePos !== -1 && idxInSent > becausePos && w === 'so') {
+        doubleConjunctionIndices.add(runningIdx + idxInSent);
+      }
+    });
+    runningIdx += sWords.length;
+  });
 
   for (let i = 0; i < spokenWords.length; i++) {
     const curr = spokenWords[i];
     const prev = i > 0 ? spokenWords[i - 1] : '';
     const prevTwo = i > 1 ? spokenWords[i - 2] : '';
     const next = i < spokenWords.length - 1 ? spokenWords[i + 1] : '';
+
+    if (curr === 'sometime' && (i === 0 || ['the', 'i', 'we', 'you', 'he', 'she', 'it', 'they', 'my'].includes(next))) {
+      addError(i, curr, 'Sometimes', 'Lỗi dùng từ: Khi mang nghĩa "thỉnh thoảng" đứng đầu mệnh đề, phải dùng "Sometimes" (có -s), không dùng "Sometime".');
+    }
 
     if (curr === 'the' && ['go', 'goes', 'went'].includes(prev)) {
       addError(i, curr, 'to the', 'Thiếu giới từ chỉ hướng: Sau động từ "go" cần dùng "go TO the..." (không nói "go the...").');
@@ -980,7 +995,6 @@ function scanComprehensiveGrammarErrors(
       addError(i, curr, `to ${curr}`, `Thiếu "to" giữa hai động từ: Sau "${prev}" phải dùng động từ nguyên mẫu có "to" ("${prev} to ${curr}").`);
     }
 
-    // Kiểm tra mạo từ trước danh từ đếm được số ít, bỏ qua nếu từ tiếp theo là danh từ chính của cụm danh từ ghép
     if (
       singularCountableNounsNeedingArticle.has(curr) &&
       ['open', 'create', 'make', 'buy', 'choose', 'use', 'visit', 'find', 'book', 'order', 'have'].includes(prev) &&
@@ -1039,11 +1053,9 @@ function scanComprehensiveGrammarErrors(
       addError(i, curr, 'interesting', 'Miêu tả tính chất của sự vật/sự việc phải dùng tính từ đuôi -ing ("interesting").');
     }
 
-    if (hasAlthough && curr === 'but') {
-      addError(i, curr, '(bỏ "but")', 'Lỗi lặp liên từ: Đã dùng "Although/Though" ở đầu câu thì không dùng "but" ở mệnh đề sau.');
-    }
-    if (hasBecause && curr === 'so' && next && !['much', 'many', 'far', 'good', 'bad', 'fast', 'expensive', 'cheap'].includes(next)) {
-      addError(i, curr, '(bỏ "so")', 'Lỗi lặp liên từ: Đã dùng "Because" thì không dùng "so" ở mệnh đề kết quả.');
+    if (doubleConjunctionIndices.has(i)) {
+      const fixLabel = curr === 'but' ? '(bỏ "but")' : '(bỏ "so")';
+      addError(i, curr, fixLabel, 'Lỗi lặp liên từ trong cùng một câu: Không dùng cặp "Although...but" hoặc "Because...so".');
     }
 
     if (isClothingJacketContext && ['chicken', 'chickens', 'check', 'checking'].includes(curr)) {
@@ -1091,7 +1103,8 @@ function scanComprehensiveGrammarErrors(
       addError(i + 1, next, irregularPluralMap[next], `Sau "${curr}", danh từ phải chia số nhiều là "${irregularPluralMap[next]}".`);
     }
 
-    if (!isFreeSpeechMode && targetCleanWords.length > 0) {
+    // Chỉ đối chiếu đuôi -s/-es câu mẫu khi chủ ngữ đứng trước KHÔNG phải ngôi số nhiều / ngôi thứ nhất (I, you, we, they)
+    if (!isFreeSpeechMode && targetCleanWords.length > 0 && !['i', 'you', 'we', 'they'].includes(prev)) {
       const expected3rd = getThirdPersonForm(curr);
       const expectedPast = curr.endsWith('e') ? `${curr}d` : `${curr}ed`;
       if (targetCleanWords.includes(expected3rd) && !targetCleanWords.includes(curr)) {
@@ -1176,7 +1189,7 @@ function getCefrGrammarRubricInstruction(cefrLevel: string): string {
     case 'B1':
     case 'B2':
       return `CEFR ${cefrLevel} (Intermediate / Upper-Intermediate):
-- Evaluate both foundational accuracy (uncountable nouns like "information", "equipment", "for work", "personal use"; missing prepositions/articles like "go the website", "open account", "want buy", "in shopping cart"; no double conjunctions like "although...but" or "because...so"; -ed vs -ing adjectives) AND intermediate structures: Past Continuous vs. Past Simple, Present Perfect, Conditional Type 1 & Type 2 ("If I were..., I would..."), Passive Voice, Relative Clauses (who/which/that), and Modal Verbs of deduction ("might have taken").
+- Evaluate both foundational accuracy (uncountable nouns like "information", "equipment", "for work", "personal use"; missing prepositions/articles like "go the website", "open account", "want buy", "in shopping cart"; no double conjunctions within the SAME clause like "although...but" or "because...so"; "Sometime" vs "Sometimes"; -ed vs -ing adjectives) AND intermediate structures: Past Continuous vs. Past Simple, Present Perfect, Conditional Type 1 & Type 2 ("If I were..., I would..."), Passive Voice, Relative Clauses (who/which/that), and Modal Verbs of deduction ("might have taken").
 - Recognize Conditional Type 2 and Present Perfect as VALID, advanced grammar—NEVER flag them as wrong tense.`;
     case 'C1':
     case 'C2':
@@ -1354,7 +1367,6 @@ export default async function handler(req: Request) {
       );
     }
 
-    // Mã hóa base64 1 lần dùng chung cho cả STT Fallback và Đánh giá âm vị IPA
     const mimeType = audioFile.type && audioFile.type.startsWith('audio/') ? audioFile.type : 'audio/webm';
     let audioBase64 = '';
     if (geminiApiKey && typeof audioFile.arrayBuffer === 'function') {
@@ -1366,7 +1378,6 @@ export default async function handler(req: Request) {
       }
     }
 
-    // 🎙️ Gỡ băng nguyên văn + trích xuất dữ liệu thời gian & độ tin cậy âm học
     const sttMeta = await transcribeAudioWithFallback(audioFile, audioBase64, mimeType, groqKeys, geminiApiKey);
     const { transcript, avgLogprob, providerUsed } = sttMeta;
 
@@ -1387,7 +1398,6 @@ export default async function handler(req: Request) {
       );
     }
 
-    // 🔬 Đánh giá chi tiết từng âm vị (Phoneme-Level IPA Audit) từ sóng âm gốc
     const phonemeAudit = await analyzePhonemeLevelFromAudio(
       audioBase64,
       mimeType,
@@ -1737,7 +1747,7 @@ export default async function handler(req: Request) {
 ${getCefrGrammarRubricInstruction(cefrLevel)}
 CRITICAL CHECKS:
 1. Evaluate semantic relevance against the prompt topic/scenario ("${targetPrompt}"), accepting personal examples, paraphrases, online ticket/service booking as valid online product purchases, and synonyms. NEVER penalize the student for using different examples from any Reference English Sample. Only set "is_off_topic": true if the student speaks about a completely unrelated subject.
-2. Catch ALL spoken errors (uncountable plurals like "are works"/"personal uses", missing "to be", wrong prepositions/articles like "go the website"/"open account"/"want buy", double conjunctions, wrong tenses, and C1-C2 advanced structure errors).
+2. Catch ALL spoken errors (uncountable plurals like "are works"/"personal uses", missing "to be", wrong prepositions/articles like "go the website"/"open account"/"want buy", double conjunctions within the SAME clause, "Sometime" instead of "Sometimes", wrong tenses, and C1-C2 advanced structure errors).
 3. Detect contextually nonsensical words caused by mispronunciation (e.g. saying "test debate" instead of "teddy bear" in a shopping story, or "taxi" instead of "taxes") and flag them in "detected_errors".
 4. If the response is only a short fragment without a main verb or under 8 words, keep "content_score" <= 35 and "grammar_score" <= 50.
 5. For every mistake in "detected_errors", set "word" to the EXACT single offending word from the transcript.
@@ -1993,7 +2003,6 @@ Return JSON ONLY:
 
       const hasNoErrors = errorWordsList.length === 0;
 
-      // 3. 🎯 TÍNH ĐIỂM ĐỘC LẬP TÍCH HỢP PHONEME IPA + WPM THEO CEFR + TTR + PARROTING
       let pronunciationScore = hasNoErrors
         ? Math.min(100, Math.max(72, 76 + acousticQualityBonus * 1.5))
         : Math.max(45, 74 + acousticQualityBonus - errorWordsList.length * 8);
@@ -2039,7 +2048,6 @@ Return JSON ONLY:
         baseFluency = Math.min(95, Math.max(72, 76 + (wordCount >= 28 ? 14 : 8) + (hasConnectors ? 5 : 0)));
       }
 
-      // Điều chỉnh Fluency theo định mức WPM của đúng cấp độ CEFR
       if (diagnostics.wpm !== null) {
         if (diagnostics.wpm >= diagnostics.wpmBenchmark.idealLow && diagnostics.wpm <= diagnostics.wpmBenchmark.idealHigh && wordCount >= 12) {
           baseFluency = Math.min(98, baseFluency + 5);
@@ -2083,9 +2091,10 @@ CRITICAL EVALUATION RULES (10 FOUNDATIONAL PILLARS A1–B2 + 8 ADVANCED PILLARS 
    - Missing "to be" before adjectives ("It very expensive" -> "It is very expensive").
    - Wrong prepositions & verb patterns ("spend money to" -> "on", "depend in/of" -> "on", "interested about" -> "in", "good in" -> "at", "discuss about" -> "discuss", "enjoy/suggest to V" -> "V-ing").
    - -ed vs -ing adjectives ("I am boring with" -> "bored", "website is interested" -> "interesting").
-   - Double conjunctions ("Although ... but", "Because ... so").
+   - Double conjunctions ONLY within the SAME sentence ("Although ... but", "Because ... so"). NEVER flag "so" starting a NEW sentence after a period!
+   - Frequency adverbs ("Sometime the delivery..." -> "Sometimes").
    - Contextual mispronunciations that produce wrong words in context ("chicken" instead of "jacket", "change stuff" instead of "train staff", "test debate" instead of "teddy bear", "taxi" instead of "taxes").
-   - Basic (A1–A2): 3rd-person singular "-s/-es", wrong verb tense with past markers, articles ("a/an"), plural nouns.
+   - Basic (A1–A2): 3rd-person singular "-s/-es", wrong verb tense with past markers, articles ("a/an"), plural nouns. NEVER flag "I have", "I go", "I do", "we have", "they go" as missing -s/-es!
    - Intermediate (B1–B2): No "will" inside time clauses, Past Continuous with "while" in past stories, "might have + V3/ed" for past speculation.
    - Advanced (C1–C2): Conditionals Type 3 & Mixed, Negative/Conditional Inversion ("Not only does...", "Had I known..."), Advanced Passive Voice, Prepositional/Reduced Relative Clauses, Participle Clauses & Parallelism, Subjunctive Mood ("vital that S + bare V"), Cleft Sentences, Past Modals ("must/should have + V3").
 5. IMPORTANT UI MAPPING RULE FOR "detected_errors":
