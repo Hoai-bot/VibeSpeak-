@@ -200,14 +200,123 @@ interface TranscriptionMetadata {
   providerUsed: string;
 }
 
+// =========================================================================
+// 🔬 TẦNG ÂM VỊ HỌC (CAMBRIDGE PHONEME-LEVEL ACOUSTIC AUDIT VIA GEMINI AUDIO)
+// =========================================================================
+export interface PhonemeErrorItem {
+  word: string;
+  expectedIpa: string;
+  actualSound: string;
+  issueType: 'FINAL_CONSONANT' | 'VOWEL_QUALITY' | 'CONSONANT_CLUSTER' | 'WORD_STRESS';
+  reasonVi: string;
+}
+
+export interface PhonemeAssessmentResult {
+  phonemeAccuracyScore: number;
+  ipaFeedbackSummary: string;
+  phonemeErrors: PhonemeErrorItem[];
+}
+
+async function analyzePhonemeLevelFromAudio(
+  audioBase64: string,
+  mimeType: string,
+  transcript: string,
+  targetPrompt: string,
+  cefrLevel: string,
+  geminiApiKey: string
+): Promise<PhonemeAssessmentResult | null> {
+  if (!geminiApiKey || !audioBase64 || !transcript) return null;
+
+  try {
+    const cleanTarget = targetPrompt
+      .replace(/Mode\s*:\s*FREE_SPEECH/gi, '')
+      .replace(/Level\s*:\s*[A-C][1-2]/gi, '')
+      .trim();
+
+    const promptText = `You are a Cambridge English Phonetics & Pronunciation Examiner assessing a CEFR ${cefrLevel} candidate.
+Listen carefully to the actual audio recording and compare the acoustic phonemes against standard English IPA for the spoken words: "${transcript}"${cleanTarget ? ` (Target reference: "${cleanTarget}")` : ''}.
+
+Inspect specifically for:
+1. FINAL_CONSONANT: Dropped or devoiced final consonants (/t/, /d/, /k/, /g/, /s/, /z/, /v/, /l/, /n/, /-ed/, /-s/).
+2. VOWEL_QUALITY: Short vs. long vowel confusion (/ɪ/ vs /iː/, /ʊ/ vs /uː/, /æ/ vs /e/, /ʌ/ vs /ɑː/) or missing diphthongs (/aɪ/, /eɪ/, /əʊ/).
+3. CONSONANT_CLUSTER: Simplified consonant clusters (/tr/, /st/, /pr/, /pl/, /ks/, /θ/, /ð/, /ʃ/, /tʃ/, /dʒ/).
+4. WORD_STRESS: Misplaced primary stress on multi-syllable words (e.g. "techNOlogy", "opporTUnity", "inTEResting").
+
+Return ONLY valid JSON:
+{
+  "phoneme_accuracy_score": number_0_to_100,
+  "ipa_feedback_summary_vi": "Nhận xét ngắn gọn 1 câu bằng tiếng Việt về độ chuẩn âm vị, âm cuối và trọng âm từ",
+  "phoneme_errors": [
+    {
+      "word": "exact_word_from_transcript",
+      "expected_ipa": "/ipa/",
+      "actual_sound": "how_student_pronounced_it",
+      "issue_type": "FINAL_CONSONANT | VOWEL_QUALITY | CONSONANT_CLUSTER | WORD_STRESS",
+      "reason_vi": "Giải thích lỗi âm vị bằng tiếng Việt kèm phiên âm IPA chuẩn"
+    }
+  ]
+}`;
+
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                { text: promptText },
+                { inline_data: { mime_type: mimeType, data: audioBase64 } }
+              ]
+            }
+          ],
+          generationConfig: {
+            temperature: 0.1,
+            maxOutputTokens: 450,
+            responseMimeType: 'application/json'
+          }
+        })
+      }
+    );
+
+    if (!res.ok) return null;
+    const data = await res.json();
+    const raw = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+    const parsed = JSON.parse(raw);
+
+    const mappedErrors: PhonemeErrorItem[] = Array.isArray(parsed.phoneme_errors)
+      ? parsed.phoneme_errors.slice(0, 5).map((item: any) => ({
+          word: String(item.word || '').trim(),
+          expectedIpa: String(item.expected_ipa || '').trim(),
+          actualSound: String(item.actual_sound || '').trim(),
+          issueType: item.issue_type || 'VOWEL_QUALITY',
+          reasonVi: String(item.reason_vi || '').trim(),
+        })).filter((e: PhonemeErrorItem) => e.word.length > 0)
+      : [];
+
+    return {
+      phonemeAccuracyScore: typeof parsed.phoneme_accuracy_score === 'number'
+        ? Math.max(25, Math.min(100, Math.round(parsed.phoneme_accuracy_score)))
+        : 82,
+      ipaFeedbackSummary: String(parsed.ipa_feedback_summary_vi || '').trim(),
+      phonemeErrors: mappedErrors,
+    };
+  } catch {
+    return null;
+  }
+}
+
 // 🎙️ TẦNG 1: GỠ BĂNG ÂM THANH ĐA NHÀ CUNG CẤP + TRÍCH XUẤT CHỈ SỐ ÂM HỌC & THỜI GIAN
 async function transcribeAudioWithFallback(
   audioFile: any,
+  audioBase64: string,
+  mimeType: string,
   groqKeys: string[],
   geminiApiKey: string
 ): Promise<TranscriptionMetadata> {
   const verbatimPrompt =
-    'Transcribe strictly verbatim as spoken including filler words (uh, um, er, ah) and stutters. Do NOT auto-correct grammar, wrong tenses (like "I buy yesterday", "I leave", "while I am reading", "when I will go"), uncountable plurals ("are works", "personal uses", "informations"), missing third-person singular -s/-es, missing past tense -ed, wrong past participles, or mispronounced words.';
+    'Transcribe strictly verbatim as spoken including filler words (uh, um, er, ah) and stutters. Do NOT auto-correct grammar, wrong tenses (like "I buy yesterday", "I leave", "while I am reading", "when I will go"), uncountable plurals ("are works", "personal uses", "informations"), missing third-person singular -s/-es, missing past tense -ed, wrong past participles, missing prepositions/articles ("go the website", "open account", "want buy"), or mispronounced words.';
 
   let lastGroqError = '';
 
@@ -287,12 +396,8 @@ async function transcribeAudioWithFallback(
   }
 
   // Fallback sang Google Gemini API (Multimodal Audio)
-  if (geminiApiKey) {
+  if (geminiApiKey && audioBase64) {
     try {
-      const arrayBuf = await audioFile.arrayBuffer();
-      const base64Audio = arrayBufferToBase64(arrayBuf);
-      const mimeType = audioFile.type && audioFile.type.startsWith('audio/') ? audioFile.type : 'audio/webm';
-
       const geminiModels = ['gemini-2.5-flash', 'gemini-2.0-flash'];
       for (const gModel of geminiModels) {
         const geminiRes = await fetch(
@@ -305,12 +410,12 @@ async function transcribeAudioWithFallback(
                 {
                   parts: [
                     {
-                      text: `Listen to this student's English speech recording and transcribe it STRICTLY VERBATIM word-for-word (including filler words like uh, um, er, and stutters). Do NOT fix grammar errors, missing verb endings (-s, -ed), wrong tenses, or mispronounced words. Estimate total spoken duration in seconds and longest mid-speech pause in seconds. Return JSON ONLY: {"transcript": "exact verbatim text", "clarity_confidence": 0.0_to_1.0, "duration_sec": number, "max_pause_sec": number}`
+                      text: `Listen to this student's English speech recording and transcribe it STRICTLY VERBATIM word-for-word (including filler words like uh, um, er, and stutters). Do NOT fix grammar errors, missing verb endings (-s, -ed), wrong tenses, missing prepositions/articles, or mispronounced words. Estimate total spoken duration in seconds and longest mid-speech pause in seconds. Return JSON ONLY: {"transcript": "exact verbatim text", "clarity_confidence": 0.0_to_1.0, "duration_sec": number, "max_pause_sec": number}`
                     },
                     {
                       inline_data: {
                         mime_type: mimeType,
-                        data: base64Audio
+                        data: audioBase64
                       }
                     }
                   ]
@@ -351,8 +456,24 @@ async function transcribeAudioWithFallback(
 }
 
 // =========================================================================
-// 📊 BỘ PHÂN TÍCH 5 CHỈ SỐ NÂNG CAO: WPM, TỪ ĐỆM UH/UM, PARROTING, TTR, NHIỄU ÂM
+// 📊 BỘ PHÂN TÍCH 5 CHỈ SỐ NÂNG CAO: WPM THEO CEFR, TỪ ĐỆM, PARROTING, TTR
 // =========================================================================
+interface CefrWpmBenchmark {
+  minAcceptable: number;
+  idealLow: number;
+  idealHigh: number;
+}
+
+function getCefrWpmBenchmark(cefrLevel: string): CefrWpmBenchmark {
+  if (cefrLevel === 'A1' || cefrLevel === 'A2') {
+    return { minAcceptable: 60, idealLow: 80, idealHigh: 120 };
+  }
+  if (cefrLevel === 'C1' || cefrLevel === 'C2') {
+    return { minAcceptable: 95, idealLow: 125, idealHigh: 165 };
+  }
+  return { minAcceptable: 78, idealLow: 105, idealHigh: 145 };
+}
+
 interface AdvancedSpeechDiagnostics {
   effectiveWords: string[];
   effectiveWordCount: number;
@@ -360,6 +481,7 @@ interface AdvancedSpeechDiagnostics {
   stutterCount: number;
   disfluencyRatio: number;
   wpm: number | null;
+  wpmBenchmark: CefrWpmBenchmark;
   isTooSlow: boolean;
   hasLongPause: boolean;
   isParroting: boolean;
@@ -373,7 +495,8 @@ interface AdvancedSpeechDiagnostics {
 function analyzeSpeechDiagnostics(
   spokenWords: string[],
   targetPrompt: string,
-  meta: TranscriptionMetadata
+  meta: TranscriptionMetadata,
+  cefrLevel: string
 ): AdvancedSpeechDiagnostics {
   const fillerSet = new Set(['uh', 'um', 'er', 'ah', 'erm', 'hmm', 'uhm']);
   let fillerCount = 0;
@@ -397,12 +520,13 @@ function analyzeSpeechDiagnostics(
   const totalRaw = Math.max(1, spokenWords.length);
   const disfluencyRatio = (fillerCount + stutterCount) / totalRaw;
 
-  // 1. Đo tốc độ nói WPM (Words Per Minute)
+  // 1. Đo tốc độ nói WPM phân tầng theo cấp độ CEFR (A1-A2 vs B1-B2 vs C1-C2)
+  const wpmBenchmark = getCefrWpmBenchmark(cefrLevel);
   let wpm: number | null = null;
   if (meta.durationSec >= 2.0 && effectiveWordCount > 0) {
     wpm = Math.round((effectiveWordCount / meta.durationSec) * 60);
   }
-  const isTooSlow = wpm !== null && wpm < 75 && effectiveWordCount >= 6;
+  const isTooSlow = wpm !== null && wpm < wpmBenchmark.minAcceptable && effectiveWordCount >= 6;
   const hasLongPause = meta.maxPauseSec > 2.6;
 
   // 2. Chống đọc lặp nguyên văn đề bài (Prompt Parroting Detector - N-gram 3 từ)
@@ -452,10 +576,9 @@ function analyzeSpeechDiagnostics(
     if (academicConnectors.has(tok)) academicConnectorCount++;
   });
 
-  // 4. Kiểm tra nhiễu âm thanh / nói lầm bầm (Mumbled speech / Whisper hallucination signal)
+  // 4. Kiểm tra nhiễu âm thanh / nói lầm bầm
   const isMumbledOrNoisy = meta.noSpeechProb > 0.6 || meta.compressionRatio > 2.45 || meta.avgLogprob < -0.88;
 
-  // Tổng hợp ghi chú chẩn đoán sư phạm
   const diagnosticNotes: string[] = [];
   if (isParroting) {
     diagnosticNotes.push('⚠️ Bạn đang đọc lặp lại nguyên văn câu hỏi đề bài; hãy diễn đạt bằng ý tưởng và câu văn của riêng mình.');
@@ -464,7 +587,7 @@ function analyzeSpeechDiagnostics(
     diagnosticNotes.push(`Có ${fillerCount + stutterCount} lần dùng từ đệm ("uh/um") hoặc lặp từ vấp, làm giảm độ trôi chảy.`);
   }
   if (isTooSlow && wpm !== null) {
-    diagnosticNotes.push(`Tốc độ nói còn chậm (${wpm} từ/phút, chuẩn tự nhiên 110–150 từ/phút).`);
+    diagnosticNotes.push(`Tốc độ nói còn chậm (${wpm} từ/phút, chuẩn ${cefrLevel} là ${wpmBenchmark.idealLow}–${wpmBenchmark.idealHigh} từ/phút).`);
   }
   if (hasLongPause) {
     diagnosticNotes.push(`Có khoảng ngập ngừng dài (${meta.maxPauseSec.toFixed(1)}s) giữa câu.`);
@@ -483,6 +606,7 @@ function analyzeSpeechDiagnostics(
     stutterCount,
     disfluencyRatio,
     wpm,
+    wpmBenchmark,
     isTooSlow,
     hasLongPause,
     isParroting,
@@ -536,7 +660,7 @@ export function evaluateProsodyScore(studentPitch: number[], referencePitch: num
 }
 
 // =========================================================================
-// 🎯 BỘ KIỂM ĐỊNH ĐỘ KHỚP CHỦ ĐỀ LINH HOẠT (TÁCH BÀI MẪU & CHẤP NHẬN DIỄN ĐẠT TỰ DO)
+// 🎯 BỘ KIỂM ĐỊNH ĐỘ KHỚP CHỦ ĐỀ LINH HOẠT
 // =========================================================================
 export interface TopicRelevanceResult {
   isOffTopic: boolean;
@@ -613,9 +737,14 @@ function evaluateTopicRelevance(transcript: string, targetPrompt: string): Topic
     !englishPromptOnly.toLowerCase().includes('study') &&
     !englishPromptOnly.toLowerCase().includes('hometown');
 
+  const isEcommerceOrBookingFlow =
+    (englishPromptOnly.toLowerCase().includes('buy') || englishPromptOnly.toLowerCase().includes('shop') || englishPromptOnly.toLowerCase().includes('product') || englishPromptOnly.toLowerCase().includes('step')) &&
+    /\b(pay|card|wallet|ticket|book|booking|order|cart|checkout|price|compare|website|app|online|download|confirmation)\b/.test(lowerTranscript);
+
   const isOffTopic =
-    (studentKeywords.length >= 10 && matchRatio < 0.2) ||
-    (isPersonalMajorStory && matchRatio < 0.35);
+    !isEcommerceOrBookingFlow &&
+    ((studentKeywords.length >= 10 && matchRatio < 0.2) ||
+      (isPersonalMajorStory && matchRatio < 0.35));
 
   if (isOffTopic) {
     const expectedList = promptKeywords.slice(0, 4).join(', ');
@@ -628,7 +757,8 @@ function evaluateTopicRelevance(transcript: string, targetPrompt: string): Topic
     };
   }
 
-  const computedScore = Math.min(100, Math.max(62, Math.round(58 + matchRatio * 42)));
+  const effectiveRatio = isEcommerceOrBookingFlow ? Math.max(matchRatio, 0.72) : matchRatio;
+  const computedScore = Math.min(100, Math.max(62, Math.round(58 + effectiveRatio * 42)));
   return {
     isOffTopic: false,
     relevanceScore: computedScore,
@@ -659,7 +789,9 @@ function hasSentenceMainVerb(spokenWords: string[]): boolean {
     'process', 'processes', 'manage', 'manages', 'find', 'finds', 'found', 'give', 'gives',
     'take', 'takes', 'took', 'get', 'gets', 'got', 'go', 'goes', 'went', 'come', 'comes', 'came',
     'say', 'says', 'said', 'know', 'knows', 'knew', 'see', 'sees', 'saw', 'like', 'likes', 'love', 'loves',
-    'buy', 'buys', 'bought', 'spend', 'spends', 'spent', 'order', 'orders', 'ordered', 'pay', 'pays', 'paid'
+    'buy', 'buys', 'bought', 'spend', 'spends', 'spent', 'order', 'orders', 'ordered', 'pay', 'pays', 'paid',
+    'pick', 'picks', 'picked', 'compare', 'compares', 'compared', 'select', 'selects', 'selected',
+    'enter', 'enters', 'entered', 'download', 'downloads', 'downloaded', 'book', 'books', 'booked'
   ]);
 
   return spokenWords.some((w, idx) => {
@@ -730,7 +862,7 @@ function buildWordAnalysisArray(
 }
 
 // =========================================================================
-// 🧠 BỘ QUÉT 10 NHÓM LỖI NỀN TẢNG (A1–B2) & 8 NHÓM NÂNG CAO (C1–C2) TOÀN DIỆN
+// 🧠 BỘ QUÉT LỖI NGỮ PHÁP & LỌC DANH TỪ GHÉP CHÍNH XÁC
 // =========================================================================
 function scanComprehensiveGrammarErrors(
   spokenWords: string[],
@@ -819,6 +951,18 @@ function scanComprehensiveGrammarErrors(
     'store': 'stored', 'solve': 'solved', 'update': 'updated', 'check': 'checked'
   };
 
+  const singularCountableNounsNeedingArticle = new Set([
+    'account', 'website', 'app', 'application', 'order', 'card', 'ticket', 'hotel',
+    'restaurant', 'store', 'shop', 'product', 'item', 'book', 'movie', 'car', 'bike'
+  ]);
+
+  // Các danh từ đứng sau tạo thành cụm danh từ ghép số nhiều/không đếm được (tránh bắt nhầm "buy card games", "open account settings")
+  const compoundHeadNouns = new Set([
+    'games', 'game', 'settings', 'details', 'information', 'data', 'history', 'services',
+    'reviews', 'prices', 'options', 'features', 'items', 'products', 'tickets', 'orders',
+    'cards', 'websites', 'apps', 'stores', 'shops', 'books', 'movies', 'cars', 'bikes'
+  ]);
+
   const hasAlthough = spokenWords.includes('although') || spokenWords.includes('though');
   const hasBecause = spokenWords.includes('because');
 
@@ -827,6 +971,28 @@ function scanComprehensiveGrammarErrors(
     const prev = i > 0 ? spokenWords[i - 1] : '';
     const prevTwo = i > 1 ? spokenWords[i - 2] : '';
     const next = i < spokenWords.length - 1 ? spokenWords[i + 1] : '';
+
+    if (curr === 'the' && ['go', 'goes', 'went'].includes(prev)) {
+      addError(i, curr, 'to the', 'Thiếu giới từ chỉ hướng: Sau động từ "go" cần dùng "go TO the..." (không nói "go the...").');
+    }
+
+    if (commonBaseVerbs.includes(curr) && ['want', 'wants', 'wanted', 'need', 'needs', 'needed', 'decide', 'decided', 'try', 'tried', 'plan', 'planned', 'hope', 'hoped'].includes(prev)) {
+      addError(i, curr, `to ${curr}`, `Thiếu "to" giữa hai động từ: Sau "${prev}" phải dùng động từ nguyên mẫu có "to" ("${prev} to ${curr}").`);
+    }
+
+    // Kiểm tra mạo từ trước danh từ đếm được số ít, bỏ qua nếu từ tiếp theo là danh từ chính của cụm danh từ ghép
+    if (
+      singularCountableNounsNeedingArticle.has(curr) &&
+      ['open', 'create', 'make', 'buy', 'choose', 'use', 'visit', 'find', 'book', 'order', 'have'].includes(prev) &&
+      !compoundHeadNouns.has(next)
+    ) {
+      const art = vowels.includes(curr[0]) ? 'an' : 'a';
+      addError(i, curr, `${art} ${curr}`, `Thiếu mạo từ: Trước danh từ đếm được số ít "${curr}" cần có mạo từ "${art}" ("${prev} ${art} ${curr}").`);
+    }
+
+    if (curr === 'shopping' && next === 'cart' && ['in', 'into'].includes(prev)) {
+      addError(i, curr, 'the shopping', 'Thiếu mạo từ: Trước cụm danh từ đếm được "shopping cart" cần dùng "in THE shopping cart" hoặc "in MY shopping cart".');
+    }
 
     if (uncountablePluralsMap[curr]) {
       addError(i, curr, uncountablePluralsMap[curr].fix, `Lỗi danh từ không đếm được: ${uncountablePluralsMap[curr].note}`);
@@ -1005,12 +1171,12 @@ function getCefrGrammarRubricInstruction(cefrLevel: string): string {
     case 'A1':
     case 'A2':
       return `CEFR ${cefrLevel} (Elementary):
-- Focus on core accuracy: Present Simple (including 3rd-person singular -s/-es), Past Simple for completed past actions/incidents (e.g. "I bought a jacket yesterday", "I left my bag"), verb "to be" before adjectives, basic prepositions ("spend money on", "interested in"), and articles (a/an/the).
-- Catch mispronounced target nouns that turn into unrelated words in context (e.g., "chicken" instead of "jacket").`;
+- Focus on core accuracy: Present Simple (including 3rd-person singular -s/-es), Past Simple for completed past actions/incidents (e.g. "I bought a jacket yesterday", "I left my bag"), verb "to be" before adjectives, basic prepositions ("go to the", "spend money on", "interested in"), infinitive "to" ("want to buy"), and articles (a/an/the).
+- Catch mispronounced target nouns that turn into unrelated words in context (e.g., "chicken" instead of "jacket", "test debate" instead of "teddy bear", "taxi" instead of "taxes").`;
     case 'B1':
     case 'B2':
       return `CEFR ${cefrLevel} (Intermediate / Upper-Intermediate):
-- Evaluate both foundational accuracy (uncountable nouns like "information", "equipment", "for work", "personal use"; no double conjunctions like "although...but" or "because...so"; -ed vs -ing adjectives) AND intermediate structures: Past Continuous vs. Past Simple, Present Perfect, Conditional Type 1 & Type 2 ("If I were..., I would..."), Passive Voice, Relative Clauses (who/which/that), and Modal Verbs of deduction ("might have taken").
+- Evaluate both foundational accuracy (uncountable nouns like "information", "equipment", "for work", "personal use"; missing prepositions/articles like "go the website", "open account", "want buy", "in shopping cart"; no double conjunctions like "although...but" or "because...so"; -ed vs -ing adjectives) AND intermediate structures: Past Continuous vs. Past Simple, Present Perfect, Conditional Type 1 & Type 2 ("If I were..., I would..."), Passive Voice, Relative Clauses (who/which/that), and Modal Verbs of deduction ("might have taken").
 - Recognize Conditional Type 2 and Present Perfect as VALID, advanced grammar—NEVER flag them as wrong tense.`;
     case 'C1':
     case 'C2':
@@ -1188,8 +1354,20 @@ export default async function handler(req: Request) {
       );
     }
 
+    // Mã hóa base64 1 lần dùng chung cho cả STT Fallback và Đánh giá âm vị IPA
+    const mimeType = audioFile.type && audioFile.type.startsWith('audio/') ? audioFile.type : 'audio/webm';
+    let audioBase64 = '';
+    if (geminiApiKey && typeof audioFile.arrayBuffer === 'function') {
+      try {
+        const buf = await audioFile.arrayBuffer();
+        audioBase64 = arrayBufferToBase64(buf);
+      } catch {
+        audioBase64 = '';
+      }
+    }
+
     // 🎙️ Gỡ băng nguyên văn + trích xuất dữ liệu thời gian & độ tin cậy âm học
-    const sttMeta = await transcribeAudioWithFallback(audioFile, groqKeys, geminiApiKey);
+    const sttMeta = await transcribeAudioWithFallback(audioFile, audioBase64, mimeType, groqKeys, geminiApiKey);
     const { transcript, avgLogprob, providerUsed } = sttMeta;
 
     if (!transcript) {
@@ -1201,12 +1379,23 @@ export default async function handler(req: Request) {
           isWin: false,
           errorWords: [],
           wordAnalysis: [],
+          phonemeAnalysis: null,
           criteria: null,
           provider: providerUsed
         }),
         { status: 200, headers: { 'Content-Type': 'application/json' } }
       );
     }
+
+    // 🔬 Đánh giá chi tiết từng âm vị (Phoneme-Level IPA Audit) từ sóng âm gốc
+    const phonemeAudit = await analyzePhonemeLevelFromAudio(
+      audioBase64,
+      mimeType,
+      transcript,
+      targetPrompt,
+      cefrLevel,
+      geminiApiKey
+    );
 
     const normalizedLogprob = Math.max(-1.0, Math.min(0, avgLogprob));
     const acousticQualityBonus = Math.max(2, Math.min(15, Math.round((normalizedLogprob + 1.0) * 15)));
@@ -1267,6 +1456,27 @@ export default async function handler(req: Request) {
       if (spokenList.includes(target)) return true;
       const equivalents = homophonesMap[target] || [];
       return equivalents.some(eq => spokenList.includes(eq));
+    };
+
+    const mergePhonemeErrorsIntoList = (baseList: DetectedGrammarError[]): DetectedGrammarError[] => {
+      const merged = [...baseList];
+      if (phonemeAudit && phonemeAudit.phonemeErrors.length > 0) {
+        phonemeAudit.phonemeErrors.forEach((pErr) => {
+          const cleanTok = pErr.word.toLowerCase().replace(/[^a-z0-9']/g, '');
+          const foundIdx = spokenWords.findIndex(
+            (w, idx) => w === cleanTok && !merged.some((e) => e.wordIndex === idx)
+          );
+          if (foundIdx !== -1) {
+            merged.push({
+              wordIndex: foundIdx,
+              word: spokenWords[foundIdx],
+              correction: `${pErr.word} ${pErr.expectedIpa}`,
+              reason: `Lỗi âm vị (${pErr.issueType}): ${pErr.reasonVi}`
+            });
+          }
+        });
+      }
+      return merged;
     };
 
     // =========================================================================
@@ -1340,19 +1550,25 @@ export default async function handler(req: Request) {
           calculatedScore = Math.max(20, acousticQualityBonus * 2);
           feedback = `❌ Phát âm chưa đúng câu mẫu. AI nghe được: "${transcript}".`;
         } else {
-          calculatedScore = Math.min(100, Math.round(ratio * 85 + acousticQualityBonus));
-          feedback = `Phát âm chuẩn xác ${matchedCount}/${targetWords.length} từ mục tiêu.`;
+          const lexicalPron = Math.min(100, Math.round(ratio * 85 + acousticQualityBonus));
+          calculatedScore = phonemeAudit
+            ? Math.round(lexicalPron * 0.55 + phonemeAudit.phonemeAccuracyScore * 0.45)
+            : lexicalPron;
+          feedback = `Phát âm chuẩn xác ${matchedCount}/${targetWords.length} từ mục tiêu.` +
+            (phonemeAudit?.ipaFeedbackSummary ? ` ${phonemeAudit.ipaFeedbackSummary}` : '');
         }
       }
 
+      const s1Errors = mergePhonemeErrorsIntoList([]);
       return new Response(
         JSON.stringify({
           score: calculatedScore,
           transcript: transcript,
           feedback: feedback,
           isWin: calculatedScore >= 70,
-          errorWords: [],
-          wordAnalysis: buildWordAnalysisArray(transcript, []),
+          errorWords: s1Errors,
+          wordAnalysis: buildWordAnalysisArray(transcript, s1Errors),
+          phonemeAnalysis: phonemeAudit,
           provider: providerUsed,
           criteria: {
             pronunciation: calculatedScore,
@@ -1409,18 +1625,24 @@ export default async function handler(req: Request) {
       }
 
       const prosodyBoost = prosodyResult ? prosodyResult.score : 80;
+      const s3LexicalPron = Math.min(100, Math.round(accuracyRatio * 90 + acousticQualityBonus));
+      const s3FinalPron = phonemeAudit
+        ? Math.round(s3LexicalPron * 0.55 + phonemeAudit.phonemeAccuracyScore * 0.45)
+        : s3LexicalPron;
+      const s3Errors = mergePhonemeErrorsIntoList([]);
 
       return new Response(
         JSON.stringify({
           score: calculatedScore,
           transcript: transcript,
-          feedback: feedback,
+          feedback: feedback + (phonemeAudit?.ipaFeedbackSummary ? ` ${phonemeAudit.ipaFeedbackSummary}` : ''),
           isWin: calculatedScore >= 70,
-          errorWords: [],
-          wordAnalysis: buildWordAnalysisArray(transcript, []),
+          errorWords: s3Errors,
+          wordAnalysis: buildWordAnalysisArray(transcript, s3Errors),
+          phonemeAnalysis: phonemeAudit,
           provider: providerUsed,
           criteria: {
-            pronunciation: Math.min(100, Math.round(accuracyRatio * 90 + acousticQualityBonus)),
+            pronunciation: s3FinalPron,
             intonation: prosodyBoost,
             vocabulary: 80,
             grammar: 85,
@@ -1439,10 +1661,10 @@ export default async function handler(req: Request) {
       );
 
     // =========================================================================
-    // ⚡ NHÁNH 3: TRẠM 4 - SPEAKING EXPRESS (PHẢN XẠ ĐỘC THOẠI + 5 CHỈ SỐ NÂNG CAO)
+    // ⚡ NHÁNH 3: TRẠM 4 - SPEAKING EXPRESS (PHẢN XẠ ĐỘC THOẠI + ÂM VỊ HỌC)
     // =========================================================================
     } else if (stationType === 'STATION_4') {
-      const diagnostics = analyzeSpeechDiagnostics(spokenWords, targetPrompt, sttMeta);
+      const diagnostics = analyzeSpeechDiagnostics(spokenWords, targetPrompt, sttMeta, cefrLevel);
       const wordCount = diagnostics.effectiveWordCount;
       const hallucinationPhrases = ['thank you', 'thanks for watching', 'subtitles by', 'bye', 'goodbye'];
       const isHallucination = wordCount <= 2 && hallucinationPhrases.some(h => transcript.toLowerCase().includes(h));
@@ -1458,6 +1680,7 @@ export default async function handler(req: Request) {
             isWin: false,
             errorWords: [],
             wordAnalysis: [],
+            phonemeAnalysis: phonemeAudit,
             provider: providerUsed,
             criteria: { pronunciation: 30, intonation: 30, vocabulary: 30, grammar: 30, fluency: 30, content: 20 }
           }),
@@ -1469,11 +1692,13 @@ export default async function handler(req: Request) {
       const prosodyEval = evaluateProsodyScore(studentPitchData, referencePitchData);
       const hasMainVerbS4 = hasSentenceMainVerb(diagnostics.effectiveWords);
 
-      // Tính điểm từng tiêu chí tích hợp WPM, Từ đệm, TTR, Parroting và Nhiễu âm
       let baseFluency = Math.min(95, Math.max(30, wordCount * 4));
       if (diagnostics.wpm !== null) {
-        if (diagnostics.wpm >= 110 && diagnostics.wpm <= 165) baseFluency = Math.min(96, baseFluency + 6);
-        else if (diagnostics.isTooSlow) baseFluency = Math.max(35, baseFluency - 14);
+        if (diagnostics.wpm >= diagnostics.wpmBenchmark.idealLow && diagnostics.wpm <= diagnostics.wpmBenchmark.idealHigh) {
+          baseFluency = Math.min(96, baseFluency + 6);
+        } else if (diagnostics.isTooSlow) {
+          baseFluency = Math.max(35, baseFluency - 14);
+        }
       }
       if (diagnostics.hasLongPause) baseFluency = Math.max(35, baseFluency - 10);
       if (diagnostics.disfluencyRatio > 0.12) {
@@ -1481,6 +1706,9 @@ export default async function handler(req: Request) {
       }
 
       let basePronunciation = Math.min(100, Math.max(65, 76 + acousticQualityBonus * 1.5));
+      if (phonemeAudit) {
+        basePronunciation = Math.round(basePronunciation * 0.45 + phonemeAudit.phonemeAccuracyScore * 0.55);
+      }
       if (diagnostics.isMumbledOrNoisy) {
         basePronunciation = Math.min(48, basePronunciation);
       }
@@ -1508,10 +1736,11 @@ export default async function handler(req: Request) {
         `You are an expert Cambridge/IELTS speaking examiner evaluating a CEFR ${cefrLevel} student on a speaking prompt.
 ${getCefrGrammarRubricInstruction(cefrLevel)}
 CRITICAL CHECKS:
-1. Evaluate semantic relevance against the prompt topic/scenario ("${targetPrompt}"), accepting personal examples, paraphrases, and synonyms. NEVER penalize the student for using different examples from any Reference English Sample. Only set "is_off_topic": true if the student speaks about a completely unrelated subject.
-2. Catch ALL spoken errors (uncountable plurals like "are works"/"personal uses", missing "to be", wrong prepositions, double conjunctions, wrong tenses, and C1-C2 advanced structure errors).
-3. If the response is only a short fragment without a main verb or under 8 words, keep "content_score" <= 35 and "grammar_score" <= 50.
-4. For every mistake in "detected_errors", set "word" to the EXACT single offending word from the transcript.
+1. Evaluate semantic relevance against the prompt topic/scenario ("${targetPrompt}"), accepting personal examples, paraphrases, online ticket/service booking as valid online product purchases, and synonyms. NEVER penalize the student for using different examples from any Reference English Sample. Only set "is_off_topic": true if the student speaks about a completely unrelated subject.
+2. Catch ALL spoken errors (uncountable plurals like "are works"/"personal uses", missing "to be", wrong prepositions/articles like "go the website"/"open account"/"want buy", double conjunctions, wrong tenses, and C1-C2 advanced structure errors).
+3. Detect contextually nonsensical words caused by mispronunciation (e.g. saying "test debate" instead of "teddy bear" in a shopping story, or "taxi" instead of "taxes") and flag them in "detected_errors".
+4. If the response is only a short fragment without a main verb or under 8 words, keep "content_score" <= 35 and "grammar_score" <= 50.
+5. For every mistake in "detected_errors", set "word" to the EXACT single offending word from the transcript.
 Return JSON ONLY:
 {
   "vocab_score": number,
@@ -1556,11 +1785,12 @@ Return JSON ONLY:
         contentScore = Math.min(20, contentScore);
       }
 
-      const penalty = errorWordsList.length * 8;
-      const finalPronunciation = errorWordsList.length > 0
-        ? Math.max(40, basePronunciation - errorWordsList.length * 6)
+      const grammarPenalty = errorWordsList.length * 8;
+      const finalGrammar = Math.max(30, grammarScore - grammarPenalty);
+      const mergedDisplayErrors = mergePhonemeErrorsIntoList(errorWordsList);
+      const finalPronunciation = mergedDisplayErrors.length > 0
+        ? Math.max(40, basePronunciation - Math.min(18, mergedDisplayErrors.length * 4))
         : basePronunciation;
-      const finalGrammar = Math.max(30, grammarScore - penalty);
 
       calculatedScore = Math.max(
         20,
@@ -1604,6 +1834,9 @@ Return JSON ONLY:
         }
       }
 
+      if (phonemeAudit?.ipaFeedbackSummary && !isOffTopicFinal) {
+        dynamicFeedback = `${dynamicFeedback} 🔬 Âm vị IPA: ${phonemeAudit.ipaFeedbackSummary}`;
+      }
       if (diagnostics.diagnosticNotes.length > 0 && !diagnostics.isParroting) {
         dynamicFeedback = `${dynamicFeedback} (${diagnostics.diagnosticNotes.slice(0, 2).join(' ')})`;
       }
@@ -1622,8 +1855,9 @@ Return JSON ONLY:
             fillerCount: diagnostics.fillerCount,
             ttrScore: diagnostics.ttrScore,
           },
-          errorWords: errorWordsList,
-          wordAnalysis: buildWordAnalysisArray(transcript, errorWordsList),
+          errorWords: mergedDisplayErrors,
+          wordAnalysis: buildWordAnalysisArray(transcript, mergedDisplayErrors),
+          phonemeAnalysis: phonemeAudit,
           provider: providerUsed,
           criteria: {
             pronunciation: finalPronunciation,
@@ -1645,10 +1879,10 @@ Return JSON ONLY:
       );
 
     // =========================================================================
-    // 🎭 NHÁNH 4: TRẠM 2 - VOCABULARY & REFLEX ARENA (TÍCH HỢP TRỌN BỘ 5 CHỈ SỐ NÂNG CAO)
+    // 🎭 NHÁNH 4: TRẠM 2 - VOCABULARY & REFLEX ARENA (TÍCH HỢP ÂM VỊ HỌC + CEFR WPM)
     // =========================================================================
     } else {
-      const diagnostics = analyzeSpeechDiagnostics(spokenWords, targetPrompt, sttMeta);
+      const diagnostics = analyzeSpeechDiagnostics(spokenWords, targetPrompt, sttMeta, cefrLevel);
       const wordCount = diagnostics.effectiveWordCount;
       const hallucinationPhrases = ['thank you', 'thanks for watching', 'subtitles by', 'bye', 'goodbye'];
       const isHallucination = wordCount <= 3 && hallucinationPhrases.some(h => transcript.toLowerCase().includes(h));
@@ -1664,6 +1898,7 @@ Return JSON ONLY:
             isWin: false,
             errorWords: [],
             wordAnalysis: [],
+            phonemeAnalysis: phonemeAudit,
             provider: providerUsed,
             criteria: { pronunciation: 30, intonation: 30, vocabulary: 30, grammar: 30, fluency: 30, content: 20 }
           }),
@@ -1758,10 +1993,13 @@ Return JSON ONLY:
 
       const hasNoErrors = errorWordsList.length === 0;
 
-      // 3. 🎯 TÍNH ĐIỂM ĐỘC LẬP TÍCH HỢP WPM, TỪ ĐỆM, TTR, PARROTING VÀ NHIỄU ÂM
+      // 3. 🎯 TÍNH ĐIỂM ĐỘC LẬP TÍCH HỢP PHONEME IPA + WPM THEO CEFR + TTR + PARROTING
       let pronunciationScore = hasNoErrors
         ? Math.min(100, Math.max(72, 76 + acousticQualityBonus * 1.5))
         : Math.max(45, 74 + acousticQualityBonus - errorWordsList.length * 8);
+      if (phonemeAudit) {
+        pronunciationScore = Math.round(pronunciationScore * 0.45 + phonemeAudit.phonemeAccuracyScore * 0.55);
+      }
       if (diagnostics.isMumbledOrNoisy) {
         pronunciationScore = Math.min(48, pronunciationScore);
       }
@@ -1801,9 +2039,9 @@ Return JSON ONLY:
         baseFluency = Math.min(95, Math.max(72, 76 + (wordCount >= 28 ? 14 : 8) + (hasConnectors ? 5 : 0)));
       }
 
-      // Áp dụng điều chỉnh Fluency theo WPM thực tế, khoảng lặng và mật độ từ đệm uh/um
+      // Điều chỉnh Fluency theo định mức WPM của đúng cấp độ CEFR
       if (diagnostics.wpm !== null) {
-        if (diagnostics.wpm >= 110 && diagnostics.wpm <= 165 && wordCount >= 12) {
+        if (diagnostics.wpm >= diagnostics.wpmBenchmark.idealLow && diagnostics.wpm <= diagnostics.wpmBenchmark.idealHigh && wordCount >= 12) {
           baseFluency = Math.min(98, baseFluency + 5);
         } else if (diagnostics.isTooSlow) {
           baseFluency = Math.max(32, baseFluency - 14);
@@ -1832,7 +2070,7 @@ ${getCefrGrammarRubricInstruction(cefrLevel)}
 CRITICAL EVALUATION RULES (10 FOUNDATIONAL PILLARS A1–B2 + 8 ADVANCED PILLARS C1–C2 + FLEXIBLE TOPIC RELEVANCE):
 1. TOPIC RELEVANCE CHECK (FLEXIBLE & REALISTIC):
    - Evaluate semantic relevance against the main Scenario/Topic ONLY.
-   - If Mode is FREE_SPEECH, NEVER penalize the student for using different personal examples than the "Reference English Sample" (e.g. if the sample mentions buying "music and clothes online", and the student talks about buying "tech products and PC parts" or shopping habits, that IS relevant -> set "is_off_topic": false!).
+   - If Mode is FREE_SPEECH, NEVER penalize the student for using different personal examples than the "Reference English Sample" (e.g. if the sample mentions buying "music and clothes online", and the student talks about buying "tech products and PC parts", booking e-tickets/flights online, or shopping habits, that IS relevant -> set "is_off_topic": false!).
    - If the student addresses shopping/buying habits in general without explicitly mentioning "online" or websites, keep "is_off_topic": false and give a moderate "content_score" around 68–76 while advising in "feedback_vi" to mention online platforms/websites.
    - Accept synonyms and natural paraphrases (e.g., proposing "solutions" for a business case study when asked for "recommendations" -> "is_off_topic": false).
    - ONLY set "is_off_topic": true, "content_score": 15, and "vocab_score": 20 if the student recites a completely unrelated memorized speech OR merely parrots/repeats the prompt question word-for-word.
@@ -1840,12 +2078,13 @@ CRITICAL EVALUATION RULES (10 FOUNDATIONAL PILLARS A1–B2 + 8 ADVANCED PILLARS 
    - If the student speaks fewer than 8 effective words or utters a sentence fragment without a subject/main verb, keep "content_score" <= 30, "vocab_score" <= 35, and "grammar_score" <= 50!
 3. NEVER auto-correct or overlook spoken grammar/tense/ending/mispronunciation mistakes in the student's verbatim transcript.
 4. Check EVERY clause systematically across ALL 10 foundational & 8 advanced rules and report ALL errors in "detected_errors":
+   - Missing prepositions & articles ("go the shopping website" -> "go to the", "open account" -> "open an account", "want buy" -> "want to buy", "in shopping cart" -> "in the shopping cart"). Do NOT flag compound noun phrases like "buy card games" or "open account settings".
    - Uncountable nouns wrongly pluralized ("are works" -> "are for work", "personal uses" -> "personal use", "informations", "equipments", "advices", "softwares").
    - Missing "to be" before adjectives ("It very expensive" -> "It is very expensive").
    - Wrong prepositions & verb patterns ("spend money to" -> "on", "depend in/of" -> "on", "interested about" -> "in", "good in" -> "at", "discuss about" -> "discuss", "enjoy/suggest to V" -> "V-ing").
    - -ed vs -ing adjectives ("I am boring with" -> "bored", "website is interested" -> "interesting").
    - Double conjunctions ("Although ... but", "Because ... so").
-   - Contextual mispronunciations ("chicken" instead of "jacket", "change stuff" instead of "train staff").
+   - Contextual mispronunciations that produce wrong words in context ("chicken" instead of "jacket", "change stuff" instead of "train staff", "test debate" instead of "teddy bear", "taxi" instead of "taxes").
    - Basic (A1–A2): 3rd-person singular "-s/-es", wrong verb tense with past markers, articles ("a/an"), plural nouns.
    - Intermediate (B1–B2): No "will" inside time clauses, Past Continuous with "while" in past stories, "might have + V3/ed" for past speculation.
    - Advanced (C1–C2): Conditionals Type 3 & Mixed, Negative/Conditional Inversion ("Not only does...", "Had I known..."), Advanced Passive Voice, Prepositional/Reduced Relative Clauses, Participle Clauses & Parallelism, Subjunctive Mood ("vital that S + bare V"), Cleft Sentences, Past Modals ("must/should have + V3").
@@ -1929,8 +2168,10 @@ Return JSON ONLY:
       const cappedGrammar = errorWordsList.length > 0
         ? Math.min(grammarScore, Math.max(25, 84 - errorWordsList.length * 10))
         : grammarScore;
-      const cappedPronunciation = errorWordsList.length > 0
-        ? Math.min(pronunciationScore, Math.max(40, 84 - errorWordsList.length * 8))
+
+      const mergedDisplayErrors = mergePhonemeErrorsIntoList(errorWordsList);
+      const cappedPronunciation = mergedDisplayErrors.length > 0
+        ? Math.min(pronunciationScore, Math.max(40, 86 - mergedDisplayErrors.length * 5))
         : pronunciationScore;
 
       calculatedScore = Math.max(
@@ -1986,11 +2227,14 @@ Return JSON ONLY:
         }
       }
 
+      if (phonemeAudit?.ipaFeedbackSummary && !isCompletelyOffTopic) {
+        dynamicFeedback = `${dynamicFeedback} 🔬 Âm vị IPA: ${phonemeAudit.ipaFeedbackSummary}`;
+      }
       if (diagnostics.diagnosticNotes.length > 0 && !diagnostics.isParroting) {
         dynamicFeedback = `${dynamicFeedback} (${diagnostics.diagnosticNotes.slice(0, 2).join(' ')})`;
       }
 
-      const wordAnalysis = buildWordAnalysisArray(transcript, errorWordsList);
+      const wordAnalysis = buildWordAnalysisArray(transcript, mergedDisplayErrors);
 
       return new Response(
         JSON.stringify({
@@ -2006,8 +2250,9 @@ Return JSON ONLY:
             fillerCount: diagnostics.fillerCount,
             ttrScore: diagnostics.ttrScore,
           },
-          errorWords: errorWordsList,
+          errorWords: mergedDisplayErrors,
           wordAnalysis: wordAnalysis,
+          phonemeAnalysis: phonemeAudit,
           advancedStructures: advancedStructuresUsed,
           provider: providerUsed,
           criteria: {
