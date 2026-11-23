@@ -656,7 +656,7 @@ export function evaluateProsodyScore(studentPitch: number[], referencePitch: num
 }
 
 // =========================================================================
-// 🎯 BỘ KIỂM ĐỊNH ĐỘ KHỚP CHỦ ĐỀ LINH HOẠT
+// 🎯 BỘ KIỂM ĐỊNH ĐỘ KHỚP CHỦ ĐỀ LINH HOẠT (MỞ RỘNG ĐỒNG NGHĨA NGHỀ NGHIỆP & E-COMMERCE)
 // =========================================================================
 export interface TopicRelevanceResult {
   isOffTopic: boolean;
@@ -725,20 +725,29 @@ function evaluateTopicRelevance(transcript: string, targetPrompt: string): Topic
   });
 
   const matchRatio = matchedKeywords.length / promptKeywords.length;
-
+  const lowerPromptOnly = englishPromptOnly.toLowerCase();
   const lowerTranscript = transcript.toLowerCase();
-  const isPersonalMajorStory =
-    /\b(chose|decided to study|favorite classes|college program|my hometown|went home)\b/.test(lowerTranscript) &&
-    !englishPromptOnly.toLowerCase().includes('college') &&
-    !englishPromptOnly.toLowerCase().includes('study') &&
-    !englishPromptOnly.toLowerCase().includes('hometown');
 
+  const isPersonalMajorStory =
+    /\b(chose my major|decided to study|favorite classes|college program|my hometown|went home)\b/.test(lowerTranscript) &&
+    !lowerPromptOnly.includes('college') &&
+    !lowerPromptOnly.includes('study') &&
+    !lowerPromptOnly.includes('hometown');
+
+  // Chấp nhận quy trình mua sản phẩm / đặt vé / dịch vụ trực tuyến
   const isEcommerceOrBookingFlow =
-    (englishPromptOnly.toLowerCase().includes('buy') || englishPromptOnly.toLowerCase().includes('shop') || englishPromptOnly.toLowerCase().includes('product') || englishPromptOnly.toLowerCase().includes('step')) &&
+    (lowerPromptOnly.includes('buy') || lowerPromptOnly.includes('shop') || lowerPromptOnly.includes('product') || lowerPromptOnly.includes('step')) &&
     /\b(pay|card|wallet|ticket|book|booking|order|cart|checkout|price|compare|website|app|online|download|confirmation)\b/.test(lowerTranscript);
 
+  // Chấp nhận chủ đề nghề nghiệp / công việc mơ ước / lý do chọn nghề (Job & Career domain)
+  const isCareerOrJobTopic =
+    (lowerPromptOnly.includes('job') || lowerPromptOnly.includes('career') || lowerPromptOnly.includes('work') || lowerPromptOnly.includes('dream') || lowerPromptOnly.includes('profession')) &&
+    /\b(job|work|working|career|salary|dream|colleague|colleagues|commuting|hours|cleaner|photographer|attendant|pilot|doctor|teacher|engineer|manager|office|company)\b/.test(lowerTranscript);
+
+  const isSemanticDomainMatch = isEcommerceOrBookingFlow || isCareerOrJobTopic;
+
   const isOffTopic =
-    !isEcommerceOrBookingFlow &&
+    !isSemanticDomainMatch &&
     ((studentKeywords.length >= 10 && matchRatio < 0.2) ||
       (isPersonalMajorStory && matchRatio < 0.35));
 
@@ -753,8 +762,8 @@ function evaluateTopicRelevance(transcript: string, targetPrompt: string): Topic
     };
   }
 
-  const effectiveRatio = isEcommerceOrBookingFlow ? Math.max(matchRatio, 0.72) : matchRatio;
-  const computedScore = Math.min(100, Math.max(62, Math.round(58 + effectiveRatio * 42)));
+  const effectiveRatio = isSemanticDomainMatch ? Math.max(matchRatio, 0.78) : matchRatio;
+  const computedScore = Math.min(100, Math.max(66, Math.round(62 + effectiveRatio * 38)));
   return {
     isOffTopic: false,
     relevanceScore: computedScore,
@@ -784,10 +793,12 @@ function hasSentenceMainVerb(spokenWords: string[]): boolean {
     'improve', 'improves', 'improved', 'reduce', 'reduces', 'reduced', 'provide', 'provides',
     'process', 'processes', 'manage', 'manages', 'find', 'finds', 'found', 'give', 'gives',
     'take', 'takes', 'took', 'get', 'gets', 'got', 'go', 'goes', 'went', 'come', 'comes', 'came',
-    'say', 'says', 'said', 'know', 'knows', 'knew', 'see', 'sees', 'saw', 'like', 'likes', 'love', 'loves',
+    'say', 'says', 'said', 'know', 'knows', 'knew', 'see', 'sees', 'saw', 'like', 'likes', 'love', 'loves', 'loved',
     'buy', 'buys', 'bought', 'spend', 'spends', 'spent', 'order', 'orders', 'ordered', 'pay', 'pays', 'paid',
     'pick', 'picks', 'picked', 'compare', 'compares', 'compared', 'select', 'selects', 'selected',
-    'enter', 'enters', 'entered', 'download', 'downloads', 'downloaded', 'book', 'books', 'booked'
+    'enter', 'enters', 'entered', 'download', 'downloads', 'downloaded', 'book', 'books', 'booked',
+    'choose', 'chooses', 'chose', 'visit', 'visits', 'visited', 'learn', 'learns', 'learned',
+    'meet', 'meets', 'met', 'clean', 'cleans', 'cleaned', 'travel', 'travels', 'traveled'
   ]);
 
   return spokenWords.some((w, idx) => {
@@ -858,7 +869,7 @@ function buildWordAnalysisArray(
 }
 
 // =========================================================================
-// 🧠 BỘ QUÉT LỖI NGỮ PHÁP & LỌC DANH TỪ GHÉP CHÍNH XÁC
+// 🧠 BỘ QUÉT LỖI NGỮ PHÁP CHÍNH XÁC (KHÔNG BẮT OAN ALWAYS / CAN / I HAVE / I GO)
 // =========================================================================
 function scanComprehensiveGrammarErrors(
   spokenWords: string[],
@@ -886,22 +897,21 @@ function scanComprehensiveGrammarErrors(
     'set', 'learn', 'change', 'lead', 'understand', 'speak', 'read', 'spend', 'grow', 'open', 'walk', 'win', 'offer', 'remember', 'love', 'consider', 'appear', 'buy', 'wait', 'serve', 'die', 'send', 'expect', 'build', 'stay', 'fall', 'cut', 'reach', 'kill', 'remain', 'suggest', 'raise', 'pass', 'sell', 'require', 'report', 'decide', 'pull'
   ];
 
-  const hasPastTimeMarker =
-    /\b(yesterday|ago|last\s+night|last\s+week|last\s+month|last\s+year|earlier|this\s+morning|left|forgot|lost|went|came|was|were|did|bought)\b/.test(lowerTranscript);
+  const hasExplicitPastTimeMarker =
+    /\b(yesterday|ago|last\s+night|last\s+week|last\s+month|last\s+year|earlier|this\s+morning)\b/.test(lowerTranscript);
+
+  const isHypotheticalOrFutureSpeech =
+    /\b(if\s+i\s+had|would\s+be|dream\s+job|in\s+the\s+future|want\s+to\s+be)\b/.test(lowerTranscript);
 
   const isPastIncidentContext =
-    hasPastTimeMarker ||
-    lowerPrompt.includes('hôm qua') ||
-    lowerPrompt.includes('để quên') ||
-    lowerPrompt.includes('mất đồ') ||
-    lowerPrompt.includes('bị mất') ||
-    lowerPrompt.includes('làm rơi') ||
-    lowerPrompt.includes('trễ') ||
-    lowerPrompt.includes('tai nạn') ||
-    lowerPrompt.includes('lost') ||
-    lowerPrompt.includes('forgot') ||
-    lowerPrompt.includes('left my') ||
-    lowerPrompt.includes('bought');
+    !isHypotheticalOrFutureSpeech &&
+    (hasExplicitPastTimeMarker ||
+      lowerPrompt.includes('hôm qua') ||
+      lowerPrompt.includes('để quên') ||
+      lowerPrompt.includes('mất đồ') ||
+      lowerPrompt.includes('bị mất') ||
+      lowerPrompt.includes('làm rơi') ||
+      lowerPrompt.includes('tai nạn'));
 
   const isClothingJacketContext =
     lowerPrompt.includes('áo khoác') ||
@@ -958,7 +968,6 @@ function scanComprehensiveGrammarErrors(
     'cards', 'websites', 'apps', 'stores', 'shops', 'books', 'movies', 'cars', 'bikes'
   ]);
 
-  // Chỉ kiểm tra lặp liên từ (Although...but / Because...so) trong CÙNG MỘT CÂU
   const sentences = lowerTranscript.split(/[.!?]+/).map((s) => s.trim()).filter(Boolean);
   const doubleConjunctionIndices = new Set<number>();
   let runningIdx = 0;
@@ -1103,7 +1112,6 @@ function scanComprehensiveGrammarErrors(
       addError(i + 1, next, irregularPluralMap[next], `Sau "${curr}", danh từ phải chia số nhiều là "${irregularPluralMap[next]}".`);
     }
 
-    // Chỉ đối chiếu đuôi -s/-es câu mẫu khi chủ ngữ đứng trước KHÔNG phải ngôi số nhiều / ngôi thứ nhất (I, you, we, they)
     if (!isFreeSpeechMode && targetCleanWords.length > 0 && !['i', 'you', 'we', 'they'].includes(prev)) {
       const expected3rd = getThirdPersonForm(curr);
       const expectedPast = curr.endsWith('e') ? `${curr}d` : `${curr}ed`;
@@ -1124,10 +1132,6 @@ function scanComprehensiveGrammarErrors(
       addError(i, curr, pastBe, `Hành động đang diễn ra trong quá khứ sau "${prevTwo}" phải dùng Quá khứ tiếp diễn ("${pastBe} ${next}").`);
     }
 
-    if (isPastIncidentContext && ['may', 'can'].includes(curr) && commonBaseVerbs.includes(next)) {
-      addError(i, curr, `might have + V3`, `Suy đoán sự việc đã xảy ra trong quá khứ không dùng "${curr} ${next}", hãy dùng "might have + V3/ed" hoặc Quá khứ đơn.`);
-    }
-
     if (isPastIncidentContext && ['i', 'we', 'you', 'he', 'she', 'they'].includes(prev)) {
       const presentToPastMap: Record<string, string> = {
         'buy': 'bought', 'leave': 'left', 'forget': 'forgot', 'lose': 'lost',
@@ -1144,7 +1148,7 @@ function scanComprehensiveGrammarErrors(
             i,
             curr,
             presentToPastMap[curr],
-            `Sự việc đã xảy ra trong quá khứ (có dấu hiệu "yesterday" / bối cảnh trước đó), động từ "${curr}" phải chia quá khứ đơn là "${presentToPastMap[curr]}".`
+            `Sự việc đã xảy ra trong quá khứ (có dấu hiệu thời gian quá khứ), động từ "${curr}" phải chia quá khứ đơn là "${presentToPastMap[curr]}".`
           );
         }
       }
@@ -1153,11 +1157,9 @@ function scanComprehensiveGrammarErrors(
     if (curr === 'would' && ['if', 'wish'].includes(prevTwo)) {
       addError(i, curr, 'had / V2', `Không dùng "would" ngay trong mệnh đề điều kiện "${prevTwo}"; dùng Quá khứ đơn (loại 2) hoặc Quá khứ hoàn thành "had + V3" (loại 3).`);
     }
-    if (['had', 'have', 'has'].includes(prev) && wrongPastParticiples[curr]) {
+    // Chỉ kiểm tra phân từ V3 ngay sau trợ động từ have/has/had (bỏ qua nếu có trạng từ như "always" ở giữa)
+    if (['had', 'have', 'has'].includes(prev) && !adverbs.includes(curr) && wrongPastParticiples[curr]) {
       addError(i, curr, wrongPastParticiples[curr], `Sau "${prev}" (thì Hoàn thành / Câu điều kiện loại 3), động từ phải dùng quá khứ phân từ V3 là "${wrongPastParticiples[curr]}".`);
-    }
-    if (['had', 'have', 'has'].includes(prevTwo) && adverbs.includes(prev) && wrongPastParticiples[curr]) {
-      addError(i, curr, wrongPastParticiples[curr], `Sau "${prevTwo} ${prev}", động từ phải dùng quá khứ phân từ V3 là "${wrongPastParticiples[curr]}".`);
     }
     if (prevTwo === 'would' && prev === 'have' && wrongPastParticiples[curr]) {
       addError(i, curr, wrongPastParticiples[curr], `Cấu trúc điều kiện loại 3 chuẩn là "would have + V3/ed" ("would have ${wrongPastParticiples[curr]}").`);
@@ -1189,8 +1191,8 @@ function getCefrGrammarRubricInstruction(cefrLevel: string): string {
     case 'B1':
     case 'B2':
       return `CEFR ${cefrLevel} (Intermediate / Upper-Intermediate):
-- Evaluate both foundational accuracy (uncountable nouns like "information", "equipment", "for work", "personal use"; missing prepositions/articles like "go the website", "open account", "want buy", "in shopping cart"; no double conjunctions within the SAME clause like "although...but" or "because...so"; "Sometime" vs "Sometimes"; -ed vs -ing adjectives) AND intermediate structures: Past Continuous vs. Past Simple, Present Perfect, Conditional Type 1 & Type 2 ("If I were..., I would..."), Passive Voice, Relative Clauses (who/which/that), and Modal Verbs of deduction ("might have taken").
-- Recognize Conditional Type 2 and Present Perfect as VALID, advanced grammar—NEVER flag them as wrong tense.`;
+- Evaluate both foundational accuracy (uncountable nouns like "information", "equipment", "for work", "personal use"; missing prepositions/articles like "go the website", "open account", "want buy", "in shopping cart"; no double conjunctions within the SAME clause like "although...but" or "because...so"; "Sometime" vs "Sometimes"; -ed vs -ing adjectives) AND intermediate structures: Past Continuous vs. Past Simple, Present Perfect ("I have always loved..."), Conditional Type 1 & Type 2 ("If I had a chance..., it would be..."), Passive Voice, Relative Clauses (who/which/that), and Modal Verbs of ability/possibility ("I can have a chance to visit...").
+- Recognize Conditional Type 2 ("If I had..., it would be..."), Present Perfect ("I've always loved..."), and modal "can" ("I can have a chance...") as 100% VALID grammar—NEVER flag them as wrong tense!`;
     case 'C1':
     case 'C2':
     default:
@@ -1746,7 +1748,7 @@ export default async function handler(req: Request) {
         `You are an expert Cambridge/IELTS speaking examiner evaluating a CEFR ${cefrLevel} student on a speaking prompt.
 ${getCefrGrammarRubricInstruction(cefrLevel)}
 CRITICAL CHECKS:
-1. Evaluate semantic relevance against the prompt topic/scenario ("${targetPrompt}"), accepting personal examples, paraphrases, online ticket/service booking as valid online product purchases, and synonyms. NEVER penalize the student for using different examples from any Reference English Sample. Only set "is_off_topic": true if the student speaks about a completely unrelated subject.
+1. Evaluate semantic relevance against the prompt topic/scenario ("${targetPrompt}"), accepting personal examples, specific professions/jobs (flight attendant, photographer, cleaner, etc.), online ticket/service booking as valid online product purchases, and synonyms. NEVER penalize the student for using different examples from any Reference English Sample. Only set "is_off_topic": true if the student speaks about a completely unrelated subject.
 2. Catch ALL spoken errors (uncountable plurals like "are works"/"personal uses", missing "to be", wrong prepositions/articles like "go the website"/"open account"/"want buy", double conjunctions within the SAME clause, "Sometime" instead of "Sometimes", wrong tenses, and C1-C2 advanced structure errors).
 3. Detect contextually nonsensical words caused by mispronunciation (e.g. saying "test debate" instead of "teddy bear" in a shopping story, or "taxi" instead of "taxes") and flag them in "detected_errors".
 4. If the response is only a short fragment without a main verb or under 8 words, keep "content_score" <= 35 and "grammar_score" <= 50.
@@ -1795,11 +1797,12 @@ Return JSON ONLY:
         contentScore = Math.min(20, contentScore);
       }
 
-      const grammarPenalty = errorWordsList.length * 8;
-      const finalGrammar = Math.max(30, grammarScore - grammarPenalty);
+      // Tính điểm phạt tỷ lệ theo độ dài bài nói (bài dài được thưởng độ triển khai ý, không bị cộng dồn phạt oan)
+      const effectiveErrorPenalty = Math.min(28, Math.round((errorWordsList.length / Math.max(15, wordCount)) * 120));
+      const finalGrammar = Math.max(35, grammarScore - effectiveErrorPenalty);
       const mergedDisplayErrors = mergePhonemeErrorsIntoList(errorWordsList);
       const finalPronunciation = mergedDisplayErrors.length > 0
-        ? Math.max(40, basePronunciation - Math.min(18, mergedDisplayErrors.length * 4))
+        ? Math.max(45, basePronunciation - Math.min(16, Math.round((mergedDisplayErrors.length / Math.max(15, wordCount)) * 75)))
         : basePronunciation;
 
       calculatedScore = Math.max(
@@ -2005,7 +2008,7 @@ Return JSON ONLY:
 
       let pronunciationScore = hasNoErrors
         ? Math.min(100, Math.max(72, 76 + acousticQualityBonus * 1.5))
-        : Math.max(45, 74 + acousticQualityBonus - errorWordsList.length * 8);
+        : Math.max(55, 76 + acousticQualityBonus - Math.min(16, Math.round((errorWordsList.length / Math.max(15, wordCount)) * 75)));
       if (phonemeAudit) {
         pronunciationScore = Math.round(pronunciationScore * 0.45 + phonemeAudit.phonemeAccuracyScore * 0.55);
       }
@@ -2020,32 +2023,40 @@ Return JSON ONLY:
       let baseContent: number;
       let baseFluency: number;
 
+      // Mức phạt ngữ pháp tính theo tỷ lệ mật độ lỗi / tổng số từ (bài nói dài triển khai nhiều ý được cộng điểm)
+      const proportionalGrammarDeduction = Math.min(35, Math.round((errorWordsList.length / Math.max(15, wordCount)) * 140));
+
       if (isCompletelyOffTopic || diagnostics.isParroting) {
         baseContent = 15;
         baseVocab = 20;
-        baseGrammar = hasNoErrors ? 90 : Math.max(45, 78 - errorWordsList.length * 10);
+        baseGrammar = hasNoErrors ? 90 : Math.max(50, 82 - proportionalGrammarDeduction);
         baseFluency = Math.min(90, Math.max(70, 72 + Math.min(15, Math.floor(wordCount / 3))));
       } else if (wordCount < 8 || isIncompleteSentence || !hasMainVerb) {
         baseContent = Math.min(28, wordCount * 4);
         baseVocab = Math.min(35, wordCount * 5);
         baseFluency = Math.min(30, wordCount * 4);
-        baseGrammar = !hasMainVerb ? 45 : (hasNoErrors ? 60 : Math.max(25, 50 - errorWordsList.length * 12));
+        baseGrammar = !hasMainVerb ? 45 : (hasNoErrors ? 60 : Math.max(25, 52 - proportionalGrammarDeduction));
       } else if (wordCount < 14) {
         baseContent = Math.min(55, wordCount * 4);
         baseVocab = Math.min(62, Math.round(diagnostics.ttrScore * 0.65));
         baseFluency = Math.min(58, wordCount * 4 + 4);
-        baseGrammar = hasNoErrors ? 78 : Math.max(30, 68 - errorWordsList.length * 12);
+        baseGrammar = hasNoErrors ? 78 : Math.max(35, 70 - proportionalGrammarDeduction);
       } else if (wordCount < 20) {
-        baseContent = hasNoErrors ? topicCheck.relevanceScore : Math.min(72, topicCheck.relevanceScore);
-        baseGrammar = hasNoErrors ? 86 : Math.max(35, 72 - errorWordsList.length * 12);
-        baseVocab = Math.min(90, Math.max(60, Math.round(diagnostics.ttrScore * 0.85 + diagnostics.academicConnectorCount * 3)));
-        baseFluency = hasNoErrors ? 80 : 70;
+        baseContent = hasNoErrors ? topicCheck.relevanceScore : Math.min(76, topicCheck.relevanceScore);
+        baseGrammar = hasNoErrors ? 86 : Math.max(45, 78 - proportionalGrammarDeduction);
+        baseVocab = Math.min(90, Math.max(62, Math.round(diagnostics.ttrScore * 0.85 + diagnostics.academicConnectorCount * 3)));
+        baseFluency = hasNoErrors ? 80 : 72;
       } else {
         const hasConnectors = ['and', 'so', 'because', 'but', 'also', 'although', 'however', 'when', 'while', 'if', 'had'].some(c => lowerTranscript.includes(c));
-        baseContent = hasNoErrors ? Math.min(96, Math.max(topicCheck.relevanceScore, 86 + (wordCount >= 28 ? 6 : 2))) : 76;
-        baseGrammar = hasNoErrors ? Math.min(96, 90 + (wordCount >= 28 ? 5 : 2)) : Math.max(35, 72 - errorWordsList.length * 12);
-        baseVocab = Math.min(96, Math.max(65, Math.round(diagnostics.ttrScore * 0.90 + diagnostics.academicConnectorCount * 4)));
-        baseFluency = Math.min(95, Math.max(72, 76 + (wordCount >= 28 ? 14 : 8) + (hasConnectors ? 5 : 0)));
+        const lengthExpansionBonus = wordCount >= 40 ? 8 : (wordCount >= 28 ? 5 : 2);
+        baseContent = hasNoErrors
+          ? Math.min(98, Math.max(topicCheck.relevanceScore, 86 + lengthExpansionBonus))
+          : Math.max(76, topicCheck.relevanceScore);
+        baseGrammar = hasNoErrors
+          ? Math.min(96, 90 + Math.min(5, lengthExpansionBonus))
+          : Math.max(52, 82 - proportionalGrammarDeduction);
+        baseVocab = Math.min(96, Math.max(68, Math.round(diagnostics.ttrScore * 0.90 + diagnostics.academicConnectorCount * 4 + (wordCount >= 35 ? 4 : 0))));
+        baseFluency = Math.min(96, Math.max(74, 76 + lengthExpansionBonus * 2 + (hasConnectors ? 5 : 0)));
       }
 
       if (diagnostics.wpm !== null) {
@@ -2078,24 +2089,24 @@ ${getCefrGrammarRubricInstruction(cefrLevel)}
 CRITICAL EVALUATION RULES (10 FOUNDATIONAL PILLARS A1–B2 + 8 ADVANCED PILLARS C1–C2 + FLEXIBLE TOPIC RELEVANCE):
 1. TOPIC RELEVANCE CHECK (FLEXIBLE & REALISTIC):
    - Evaluate semantic relevance against the main Scenario/Topic ONLY.
-   - If Mode is FREE_SPEECH, NEVER penalize the student for using different personal examples than the "Reference English Sample" (e.g. if the sample mentions buying "music and clothes online", and the student talks about buying "tech products and PC parts", booking e-tickets/flights online, or shopping habits, that IS relevant -> set "is_off_topic": false!).
-   - If the student addresses shopping/buying habits in general without explicitly mentioning "online" or websites, keep "is_off_topic": false and give a moderate "content_score" around 68–76 while advising in "feedback_vi" to mention online platforms/websites.
+   - If Mode is FREE_SPEECH, NEVER penalize the student for using different personal examples than the "Reference English Sample" (e.g. if the sample mentions specific jobs/products and the student talks about being a flight attendant, photographer, cleaner, buying tech products, or booking e-tickets/flights online, that IS relevant -> set "is_off_topic": false!).
    - Accept synonyms and natural paraphrases (e.g., proposing "solutions" for a business case study when asked for "recommendations" -> "is_off_topic": false).
    - ONLY set "is_off_topic": true, "content_score": 15, and "vocab_score": 20 if the student recites a completely unrelated memorized speech OR merely parrots/repeats the prompt question word-for-word.
-2. SHORT / FRAGMENT PENALTY:
+2. SHORT / FRAGMENT PENALTY & LENGTH REWARD:
    - If the student speaks fewer than 8 effective words or utters a sentence fragment without a subject/main verb, keep "content_score" <= 30, "vocab_score" <= 35, and "grammar_score" <= 50!
+   - Conversely, reward well-developed answers (30+ words) that explain clear reasons and contrasts ("On the other hand...") with strong content and fluency scores.
 3. NEVER auto-correct or overlook spoken grammar/tense/ending/mispronunciation mistakes in the student's verbatim transcript.
-4. Check EVERY clause systematically across ALL 10 foundational & 8 advanced rules and report ALL errors in "detected_errors":
+4. Check EVERY clause systematically across ALL 10 foundational & 8 advanced rules and report ALL real errors in "detected_errors":
    - Missing prepositions & articles ("go the shopping website" -> "go to the", "open account" -> "open an account", "want buy" -> "want to buy", "in shopping cart" -> "in the shopping cart"). Do NOT flag compound noun phrases like "buy card games" or "open account settings".
    - Uncountable nouns wrongly pluralized ("are works" -> "are for work", "personal uses" -> "personal use", "informations", "equipments", "advices", "softwares").
    - Missing "to be" before adjectives ("It very expensive" -> "It is very expensive").
    - Wrong prepositions & verb patterns ("spend money to" -> "on", "depend in/of" -> "on", "interested about" -> "in", "good in" -> "at", "discuss about" -> "discuss", "enjoy/suggest to V" -> "V-ing").
    - -ed vs -ing adjectives ("I am boring with" -> "bored", "website is interested" -> "interesting").
    - Double conjunctions ONLY within the SAME sentence ("Although ... but", "Because ... so"). NEVER flag "so" starting a NEW sentence after a period!
-   - Frequency adverbs ("Sometime the delivery..." -> "Sometimes").
-   - Contextual mispronunciations that produce wrong words in context ("chicken" instead of "jacket", "change stuff" instead of "train staff", "test debate" instead of "teddy bear", "taxi" instead of "taxes").
-   - Basic (A1–A2): 3rd-person singular "-s/-es", wrong verb tense with past markers, articles ("a/an"), plural nouns. NEVER flag "I have", "I go", "I do", "we have", "they go" as missing -s/-es!
-   - Intermediate (B1–B2): No "will" inside time clauses, Past Continuous with "while" in past stories, "might have + V3/ed" for past speculation.
+   - Frequency adverbs ("Sometime I had to..." -> "Sometimes").
+   - Contextual mispronunciations that produce wrong words in context ("chicken" instead of "jacket", "change stuff" instead of "train staff", "fly attendant" instead of "flight attendant", "taxi" instead of "taxes").
+   - Basic (A1–A2): 3rd-person singular "-s/-es", wrong verb tense with past markers, articles ("a/an"), plural nouns. NEVER flag "I have", "I go", "I do", "I can", "I've always loved", or "If I had..., it would be..." as errors!
+   - Intermediate (B1–B2): No "will" inside time clauses, Past Continuous with "while" in past stories.
    - Advanced (C1–C2): Conditionals Type 3 & Mixed, Negative/Conditional Inversion ("Not only does...", "Had I known..."), Advanced Passive Voice, Prepositional/Reduced Relative Clauses, Participle Clauses & Parallelism, Subjunctive Mood ("vital that S + bare V"), Cleft Sentences, Past Modals ("must/should have + V3").
 5. IMPORTANT UI MAPPING RULE FOR "detected_errors":
    - Set "word" to the EXACT SINGLE offending word from the transcript so the UI highlights that exact word chip in RED!
@@ -2175,12 +2186,12 @@ Return JSON ONLY:
       }
 
       const cappedGrammar = errorWordsList.length > 0
-        ? Math.min(grammarScore, Math.max(25, 84 - errorWordsList.length * 10))
+        ? Math.min(grammarScore, Math.max(40, 86 - proportionalGrammarDeduction))
         : grammarScore;
 
       const mergedDisplayErrors = mergePhonemeErrorsIntoList(errorWordsList);
       const cappedPronunciation = mergedDisplayErrors.length > 0
-        ? Math.min(pronunciationScore, Math.max(40, 86 - mergedDisplayErrors.length * 5))
+        ? Math.min(pronunciationScore, Math.max(48, 88 - Math.min(16, Math.round((mergedDisplayErrors.length / Math.max(15, wordCount)) * 75))))
         : pronunciationScore;
 
       calculatedScore = Math.max(
