@@ -1405,6 +1405,30 @@ export default async function handler(req: Request) {
       );
     }
 
+    // 🛡️ KIỂM SOÁT DUNG LƯỢNG TỆP ÂM THANH (CHẶN FILE RỖNG < 500B HOẶC QUÁ LỚN > 8MB)
+    const fileSize = typeof audioFile.size === 'number' ? audioFile.size : 0;
+    if (fileSize > 0 && fileSize < 500) {
+      return new Response(
+        JSON.stringify({
+          score: 0,
+          transcript: '(Tệp âm thanh quá ngắn)',
+          feedback: '⚠️ Tệp âm thanh thu được quá ngắn hoặc rỗng. Vui lòng giữ micro và nói ít nhất 2–3 giây!',
+          isWin: false,
+          errorWords: [],
+          wordAnalysis: [],
+          phonemeAnalysis: null,
+          criteria: null,
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+    if (fileSize > 8 * 1024 * 1024) {
+      return new Response(
+        JSON.stringify({ error: 'Dung lượng tệp âm thanh vượt quá giới hạn 8MB.' }),
+        { status: 413, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+
     const mimeType = audioFile.type && audioFile.type.startsWith('audio/') ? audioFile.type : 'audio/webm';
     let audioBase64 = '';
     if (geminiApiKey && typeof audioFile.arrayBuffer === 'function') {
